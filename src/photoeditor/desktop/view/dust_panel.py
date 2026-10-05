@@ -39,6 +39,11 @@ _TOOLS = {
         "Heal a scratch or hair at any angle: click points along it, double-click or Enter to "
         "finish, Esc cancels, Backspace removes the last point.",
     ),
+    "curve": (
+        "Curved Scratch",
+        "Heal a curved scratch or hair: click points along it and a smooth curve is drawn through them. Double-click or Enter to finish, "
+        "Esc cancels, Backspace removes the last point. Uses Brush Size, and the curve is repaired the way the Scratch Tool is.",
+    ),
     "clone": (
         "Clone",
         "Copy film from another area over a defect. Alt-click the area to copy from (or press Set Source and click it), then paint over "
@@ -76,7 +81,7 @@ class DustToolPanel(CollapsiblePanel):
     hundreds of milliseconds."""
 
     changed = pyqtSignal(bool, float, float, float)  # auto, threshold, size, line sensitivity
-    tool_changed = pyqtSignal(object)  # "heal" | "smart" | "scratch" | "line" | "manualline" | "delete" | None
+    tool_changed = pyqtSignal(object)  # "heal" | "smart" | "scratch" | "curve" | "line" | "manualline" | "delete" | None
     overlay_toggled = pyqtSignal(bool)
     undo_requested = pyqtSignal()
     clear_requested = pyqtSignal()
@@ -189,7 +194,7 @@ class DustToolPanel(CollapsiblePanel):
             reset_value=DEFAULT_BRUSH_SIZE, decimals=0, step=1.0,
         )
         self._brush.set_value(DEFAULT_BRUSH_SIZE)
-        self._brush.setToolTip("Diameter of the Heal Tool, Scratch Tool and Manual Transport Line, matching the on-screen cursor.")
+        self._brush.setToolTip("Diameter of the Heal Tool, Scratch Tool, Curved Scratch and Manual Transport Line, matching the on-screen cursor.")
         manual_rows.addWidget(self._brush)
         self._smart_sens = SliderRow("Smart Sens.", min_value=0.0, max_value=1.0, reset_value=DEFAULT_MANUAL_SENSITIVITY)
         self._smart_sens.set_value(DEFAULT_MANUAL_SENSITIVITY)

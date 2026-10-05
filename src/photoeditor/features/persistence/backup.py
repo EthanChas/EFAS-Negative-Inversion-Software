@@ -8,6 +8,22 @@ import sqlite3
 _NAME = re.compile(r"^photoeditor-\d{4}-\d{2}-\d{2}\.db$")
 
 
+def list_backups(backup_dir: str) -> list[tuple[str, int, float]]:
+    """The daily copies in backup_dir, newest first, as (file name, bytes, modified time)."""
+    out = []
+    try:
+        names = [n for n in os.listdir(backup_dir) if _NAME.match(n)]
+    except OSError:
+        return []
+    for name in sorted(names, reverse=True):
+        try:
+            st = os.stat(os.path.join(backup_dir, name))
+        except OSError:
+            continue
+        out.append((name, st.st_size, st.st_mtime))
+    return out
+
+
 def backup_database(conn: sqlite3.Connection, backup_dir: str, keep: int = 14, force: bool = False, today: dt.date | None = None) -> str | None:
     """Copy the live database to backup_dir/photoeditor-YYYY-MM-DD.db with SQLite's own backup API (safe while the
     app is writing) and keep only the newest `keep` copies. One per day: None when today's already exists, unless

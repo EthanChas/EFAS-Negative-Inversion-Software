@@ -121,7 +121,7 @@ def _model_signature() -> str:
         return "none"
 
 
-def _cache_dir() -> str:
+def cache_dir() -> str:
     return os.path.join(app_data_dir(), "ai_dust_cache")
 
 
@@ -133,7 +133,7 @@ def cache_file(path: str, inverted: bool, mono: bool) -> str:
     except OSError:
         sig = "gone"
     key = f"{os.path.normcase(os.path.abspath(path))}|{sig}|{int(inverted)}|{int(mono)}|{_model_signature()}"
-    return os.path.join(_cache_dir(), hashlib.sha1(key.encode("utf-8")).hexdigest() + ".npz")
+    return os.path.join(cache_dir(), hashlib.sha1(key.encode("utf-8")).hexdigest() + ".npz")
 
 
 def load_cached(path: str, inverted: bool, mono: bool) -> Optional[np.ndarray]:
@@ -146,13 +146,13 @@ def load_cached(path: str, inverted: bool, mono: bool) -> Optional[np.ndarray]:
 
 def save_cached(path: str, inverted: bool, mono: bool, prob: np.ndarray) -> None:
     try:
-        os.makedirs(_cache_dir(), exist_ok=True)
+        os.makedirs(cache_dir(), exist_ok=True)
         target = cache_file(path, inverted, mono)
         tmp = target + ".part"
         with open(tmp, "wb") as f:
             np.savez_compressed(f, prob=prob)
         os.replace(tmp, target)
-        files = sorted((os.path.join(_cache_dir(), n) for n in os.listdir(_cache_dir()) if n.endswith(".npz")), key=os.path.getmtime)
+        files = sorted((os.path.join(cache_dir(), n) for n in os.listdir(cache_dir()) if n.endswith(".npz")), key=os.path.getmtime)
         for old in files[:-_CACHE_KEEP]:
             os.remove(old)
     except OSError:

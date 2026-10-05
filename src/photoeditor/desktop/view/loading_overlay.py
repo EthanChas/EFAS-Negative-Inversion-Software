@@ -1,32 +1,38 @@
-from PyQt6.QtCore import QRectF, Qt, QTimer
+from PyQt6.QtCore import QPointF, QRectF, Qt, QTimer
 from PyQt6.QtGui import QColor, QFontMetrics, QPainter, QPaintEvent, QPen
 from PyQt6.QtWidgets import QWidget
 
 from ...theme.tokens import THEME
 
-_SPINNER_SIZE = 44
-_SPINNER_WIDTH = 5
 _TICK_MS = 16
-_DEGREES_PER_TICK = 8
+_ROLL_R = 28  # radius of each film roll
+_GAP = 150  # how much film is on show between the two rolls
+_STRIP_H = 34
+_FRAME_W, _FRAME_PITCH = 32, 36  # one frame every 36 px of film, four sprocket holes to a frame
+_HOLE_PITCH = _FRAME_PITCH / 4
+_PX_PER_TICK = 2.0
+_DEGREES_PER_TICK = 4.0
+_SCALE = 1.1  # the whole icon is drawn this much larger
 
 
 class LoadingOverlay(QWidget):
-    """A full-covering veil with a rotating arc and "Loading..." text, shown
-    while AppController opens a file. The decode runs on a worker thread
-    (see workers.run_blocking) while the UI event loop keeps turning, which
-    is what lets the arc actually spin instead of freezing mid-frame."""
+    """A full-covering veil with an animated film strip - a roll on the left (its mouth facing right) feeding film across into a mirrored roll
+    on the right - and "Loading..." text, shown while AppController opens a file. The decode runs on a worker thread (see
+    workers.run_blocking) while the UI event loop keeps turning, which is what lets the film actually travel instead of freezing mid-frame."""
 
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
         self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, False)
-        self._angle = 0
+        self._shift = 0.0  # how far the film has travelled (px, wraps every frame pitch)
+        self._angle = 0.0  # how far the rolls have turned
         self._timer = QTimer(self)
         self._timer.setInterval(_TICK_MS)
         self._timer.timeout.connect(self._advance)
         self.hide()
 
     def _advance(self) -> None:
-        self._angle = (self._angle - _DEGREES_PER_TICK) % 360
+        self._shift = (self._shift + _PX_PER_TICK) % _FRAME_PITCH
+        self._angle = (self._angle + _DEGREES_PER_TICK) % 360
         self.update()
 
     def showEvent(self, event) -> None:
@@ -37,29 +43,87 @@ class LoadingOverlay(QWidget):
         self._timer.stop()
         super().hideEvent(event)
 
+    def _draw_roll(self, painter: QPainter, center_x: float, center_y: float, facing: int) -> None:
+        """One roll of film: facing=1 has its mouth (the slot the film passes through) on the right, facing=-1 is the mirror image."""
+        r = _ROLL_R
+        accent = QColor("#d6d6d6")  # monotone: greys only
+        painter.save()
+        painter.translate(center_x, center_y)
+        painter.scale(facing, 1)
+        # the mouth: a short lip the strip slides out of
+        painter.setPen(QPen(accent, 2))
+        painter.setBrush(QColor("#2a2a2a"))
+        painter.drawRoundedRect(QRectF(r - 5, -_STRIP_H / 2 - 4, 13, _STRIP_H + 8), 3, 3)
+        # the wound film
+        painter.setBrush(QColor("#1b1b1b"))
+        painter.drawEllipse(QRectF(-r, -r, 2 * r, 2 * r))
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        painter.setPen(QPen(QColor(255, 255, 255, 38), 1.5))
+        for k in (0.8, 0.62):
+            painter.drawEllipse(QRectF(-r * k, -r * k, 2 * r * k, 2 * r * k))
+        # the hub, turning the same way on both rolls (the mirror flips a rotation, so undo that)
+        painter.rotate(self._angle * facing)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QColor("#9a9a9a"))
+        hub = r * 0.38
+        painter.drawEllipse(QRectF(-hub, -hub, 2 * hub, 2 * hub))
+        painter.setBrush(QColor("#1b1b1b"))
+        for i in range(3):
+            painter.save()
+            painter.rotate(i * 120)
+            painter.drawRect(QRectF(-1.6, -hub * 0.85, 3.2, hub * 0.7))
+            painter.restore()
+        painter.setBrush(accent)
+        painter.drawEllipse(QRectF(-3, -3, 6, 6))
+        painter.restore()
+
+    def _draw_film(self, painter: QPainter, left: float, right: float, cy: float) -> None:
+        """The strip between the rolls, its frames and sprocket holes sliding to the right."""
+        top = cy - _STRIP_H / 2
+        painter.save()
+        painter.setClipRect(QRectF(left, top - 1, right - left, _STRIP_H + 2))
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QColor("#121212"))
+        painter.drawRect(QRectF(left, top, right - left, _STRIP_H))
+        x = left - _FRAME_PITCH + self._shift
+        while x < right:
+            painter.setBrush(QColor(150, 150, 150, 215))  # a frame
+            painter.drawRoundedRect(QRectF(x + 2, top + 6, _FRAME_W, _STRIP_H - 12), 2, 2)
+            x += _FRAME_PITCH
+        painter.setBrush(QColor(225, 225, 225, 235))
+        x = left - _HOLE_PITCH + (self._shift % _HOLE_PITCH)
+        while x < right:
+            painter.drawRoundedRect(QRectF(x, top + 1.8, 5, 3.4), 1, 1)
+            painter.drawRoundedRect(QRectF(x, top + _STRIP_H - 5.2, 5, 3.4), 1, 1)
+            x += _HOLE_PITCH
+        painter.restore()
+        painter.setPen(QPen(QColor(255, 255, 255, 60), 1))
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        painter.drawLine(QPointF(left, top), QPointF(right, top))
+        painter.drawLine(QPointF(left, top + _STRIP_H), QPointF(right, top + _STRIP_H))
+
     def paintEvent(self, event: QPaintEvent) -> None:
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         painter.fillRect(self.rect(), QColor(0, 0, 0, 140))
 
-        cx, cy = self.width() / 2, self.height() / 2
-        ring = QRectF(cx - _SPINNER_SIZE / 2, cy - _SPINNER_SIZE / 2 - 14, _SPINNER_SIZE, _SPINNER_SIZE)
-
-        track = QPen(QColor(255, 255, 255, 50), _SPINNER_WIDTH)
-        painter.setPen(track)
-        painter.drawEllipse(ring)
-
-        arc = QPen(QColor(THEME.accent_primary), _SPINNER_WIDTH)
-        arc.setCapStyle(Qt.PenCapStyle.RoundCap)
-        painter.setPen(arc)
-        painter.drawArc(ring, self._angle * 16, 100 * 16)
+        cx, cy = self.width() / 2, self.height() / 2 - 18
+        left_roll, right_roll = cx - _GAP / 2 - _ROLL_R, cx + _GAP / 2 + _ROLL_R
+        painter.save()
+        painter.translate(cx, cy)
+        painter.scale(_SCALE, _SCALE)
+        painter.translate(-cx, -cy)
+        self._draw_film(painter, left_roll + _ROLL_R, right_roll - _ROLL_R, cy)
+        self._draw_roll(painter, left_roll, cy, 1)
+        self._draw_roll(painter, right_roll, cy, -1)
+        painter.restore()
 
         painter.setPen(QColor(THEME.text_primary))
         font = painter.font()
         font.setPointSize(THEME.font_size_title + 2)
         font.setBold(True)
         painter.setFont(font)
-        text_rect = QRectF(0, ring.bottom() + 10, self.width(), 30)
+        text_rect = QRectF(0, cy + _ROLL_R * _SCALE + 14, self.width(), 30)
         painter.drawText(text_rect, Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop, "Loading…")
         painter.end()
 

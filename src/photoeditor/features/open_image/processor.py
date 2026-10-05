@@ -4,6 +4,7 @@ import numpy as np
 import rawpy
 from PIL import Image
 
+from ..settings import logic as settings
 from .logic import is_raw
 
 
@@ -11,7 +12,10 @@ def load_image_rgb(path: str) -> np.ndarray:
     """Decode `path` (standard image or RAW) to an HxWx3 uint8 RGB array."""
     if is_raw(path):
         with rawpy.imread(path) as raw:
-            rgb = raw.postprocess(use_camera_wb=True, no_auto_bright=False, output_bps=8)
+            rgb = raw.postprocess(
+                use_camera_wb=True, no_auto_bright=not settings.get("raw_auto_bright"), output_bps=8,
+                demosaic_algorithm=getattr(rawpy.DemosaicAlgorithm, settings.DEMOSAIC_CHOICES[settings.get("raw_demosaic")][1]),
+            )
         return rgb
     img = Image.open(path).convert("RGB")
     return np.array(img)

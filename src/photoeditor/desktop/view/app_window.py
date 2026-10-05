@@ -5,9 +5,9 @@ import weakref
 import numpy as np
 from PyQt6 import sip
 from PyQt6.QtCore import QEvent, QObject, QSize, Qt, QTimer, QUrl, pyqtSignal
-from PyQt6.QtGui import QAction, QCursor, QDesktopServices
+from PyQt6.QtGui import QAction, QCursor, QDesktopServices, QKeySequence
 from PyQt6.QtWidgets import (
-    QStackedWidget, QAbstractItemView, QAbstractSlider, QAbstractSpinBox, QApplication, QButtonGroup, QComboBox, QFileDialog, QHBoxLayout, QLabel, QMainWindow,
+    QStackedWidget, QAbstractItemView, QAbstractSlider, QAbstractSpinBox, QApplication, QButtonGroup, QComboBox, QDialog, QFileDialog, QHBoxLayout, QLabel, QMainWindow,
     QLineEdit, QMenu, QPlainTextEdit, QTextEdit, QMenuBar, QMessageBox, QProgressDialog, QPushButton, QScrollArea, QSizePolicy, QSplitter, QVBoxLayout, QWidget,
 )
 
@@ -30,11 +30,15 @@ from .local_contrast_panel import LocalContrastToolPanel
 from ...features.metadata.source_exif import read_exif_from_file
 from .contact_sheet_dialog import ContactSheetDialog
 from .credits_dialog import CreditsDialog
+from ..keybinds import KeyMap
+from .settings_dialog import SettingsDialog
 from .shortcuts_dialog import ShortcutsDialog
 from ..contactsheet_worker import ContactSheetWorker
 from ..peaking_worker import PeakingWorker
 from ..library_worker import LibraryIndexWorker
 from ...features.library import query as library_query
+from ...features.keybinds import logic as key_logic
+from ...features.settings import logic as app_settings
 from ...features.library.index import LibraryIndex
 from ...features.focuspeaking.logic import overlay_from_levels
 from ...features.whitebalance.logic import range_overlay, range_share
@@ -179,6 +183,9 @@ def _arrows_belong_to_focus(filmstrip_list) -> bool:
     return isinstance(widget, (QAbstractItemView, QAbstractSlider, QComboBox)) or any(isinstance(p, QComboBox) for p in (widget.parentWidget(),))
 
 
+_ROLL_KEYS = {"prev_photo": Qt.Key.Key_Left, "next_photo": Qt.Key.Key_Right, "first_photo": Qt.Key.Key_Home, "last_photo": Qt.Key.Key_End}
+
+
 class _HotkeyFilter(QObject):
     """Installed on the whole application (see AppWindow.__init__) so these
     keys work no matter which child widget currently has focus - a plain
@@ -187,76 +194,67 @@ class _HotkeyFilter(QObject):
     focus-traversal machinery swallows Tab before that. Same app-wide-filter
     pattern EthanDailyClocker uses for its resize cursor.
 
-    Tab collapses/expands the sidebar; [ and ] rotate the image left/right; hold the backslash key to see the original scan;
-    R / K / U reject, keep and unflag; 0-5 rate; the arrow keys, Home and End step through the roll; Z toggles fit and 100%. None of
-    them fire while you are typing in a field (see _typing_in_field)."""
+    Which key does what is up to the user (Settings > Keybinds; see desktop/keybinds.py). By default: Tab collapses/expands the sidebar; [ and ]
+    rotate the image; hold backslash to see the original scan; R / K / U reject, keep and unflag; 0-5 rate; the arrow keys, Home and End step
+    through the roll; Z toggles fit and 100%. None of them fire while you are typing in a field (see _typing_in_field)."""
 
     def __init__(self, window: "AppWindow"):
         super().__init__(window)
         self._window = window
 
     def eventFilter(self, watched, event) -> bool:
-        if event.type() == QEvent.Type.KeyRelease and event.key() == Qt.Key.Key_Backslash and not event.isAutoRepeat():
-            if self._window.is_comparing():  # let go of \ and the edit comes back
-                self._window.set_compare(False)
+        window = self._window
+        if event.type() == QEvent.Type.KeyRelease:
+            if not event.isAutoRepeat() and window.is_comparing() and window.keys().action_for(event) == "compare":
+                window.set_compare(False)  # let go of the compare key and the edit comes back
                 return True
             return False
-        if event.type() != QEvent.Type.KeyPress or not self._window.isActiveWindow():
+        if event.type() != QEvent.Type.KeyPress or not window.isActiveWindow():
             return False
         if _typing_in_field():  # in a field every key is just a key (Tab still moves focus as usual)
             return False
-        key = event.key()
-        no_mods = not (event.modifiers() & (Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.AltModifier | Qt.KeyboardModifier.MetaModifier))
-        if no_mods and key == Qt.Key.Key_W and not event.isAutoRepeat():  # W for Workbench
-            self._window.set_view("lighttable")
+        action = window.keys().action_for(event)
+        if action is None:
+            return False
+        repeat = event.isAutoRepeat()
+        if action in ("workbench", "editor"):
+            if not repeat:
+                window.set_view("lighttable" if action == "workbench" else "editor")
             return True
-        if no_mods and key == Qt.Key.Key_D and not event.isAutoRepeat():
-            self._window.set_view("editor")
-            return True
-        if self._window.lighttable_active():  # in the Lighttable the editor's own keys stay out of the way; 0-5, K, R, U act on its selection
-            if key == Qt.Key.Key_Question:
-                self._window.show_shortcuts()
+        if window.lighttable_active():  # in the Workbench the editor's own keys stay out of the way; ratings and flags act on its selection
+            if action == "shortcuts_help":
+                window.show_shortcuts()
                 return True
-            return self._window.lighttable_key(event)
-        if key == Qt.Key.Key_Backslash:
-            if not event.isAutoRepeat():
-                self._window.set_compare(True)
+            return window.lighttable_action(action)
+        if action == "compare":
+            if not repeat:
+                window.set_compare(True)
             return True
-        if key == Qt.Key.Key_Tab:
-            self._window.toggle_panels()
-            return True
-        if key == Qt.Key.Key_Question:
-            self._window.show_shortcuts()
-            return True
-        if key in (Qt.Key.Key_R, Qt.Key.Key_K, Qt.Key.Key_U) and not (
-            event.modifiers() & (Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.AltModifier)
-        ):
-            if key == Qt.Key.Key_R:
-                self._window.flag_and_advance("rejected")
-            elif key == Qt.Key.Key_K:
-                self._window.flag_and_advance("keeper")
-            else:
-                self._window.controller.set_flag(None)
-            return True
-        plain = not (event.modifiers() & (Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.AltModifier | Qt.KeyboardModifier.MetaModifier))
-        if plain and key == Qt.Key.Key_Z:
-            self._window.toggle_fit_100()
-            return True
-        if plain and Qt.Key.Key_0 <= key <= Qt.Key.Key_5 and not (event.modifiers() & Qt.KeyboardModifier.ShiftModifier):
-            self._window.controller.set_rating(key - Qt.Key.Key_0)
-            return True
-        if plain and key in (Qt.Key.Key_Left, Qt.Key.Key_Right, Qt.Key.Key_Home, Qt.Key.Key_End):
-            if _arrows_belong_to_focus(self._window.filmstrip_list()):
+        if action == "toggle_panels":
+            window.toggle_panels()
+        elif action == "shortcuts_help":
+            window.show_shortcuts()
+        elif action == "flag_rejected":
+            window.flag_and_advance("rejected")
+        elif action == "flag_keeper":
+            window.flag_and_advance("keeper")
+        elif action == "flag_clear":
+            window.controller.set_flag(None)
+        elif action == "fit_100":
+            window.toggle_fit_100()
+        elif action.startswith("rating_"):
+            window.controller.toggle_rating(int(action[-1]))
+        elif action in _ROLL_KEYS:
+            if _arrows_belong_to_focus(window.filmstrip_list()):
                 return False
-            self._window.step_roll(key)
-            return True
-        if key == Qt.Key.Key_BracketLeft:
-            self._window.controller.rotate(-1)
-            return True
-        if key == Qt.Key.Key_BracketRight:
-            self._window.controller.rotate(1)
-            return True
-        return False
+            window.step_roll(_ROLL_KEYS[action])
+        elif action == "rotate_left":
+            window.controller.rotate(-1)
+        elif action == "rotate_right":
+            window.controller.rotate(1)
+        else:
+            return False
+        return True
 
 
 class AppWindow(QMainWindow):
@@ -296,7 +294,7 @@ class AppWindow(QMainWindow):
         self._peaking_timer.setInterval(150)  # an edit, a drag, a new photo: wait for it to settle before analysing
         self._peaking_timer.timeout.connect(self._run_peaking)
         self._comparing = False  # holding \ (or the Before button): showing the original scan instead of the edit
-        self._auto_advance = True  # after K or R, open the next photo of the roll
+        self._keys = KeyMap()  # which key does what (Settings > Keybinds)
         self._base_pick_image = None  # the raw scan on screen while the film-base eyedropper is armed
         self._region_drawing = False  # the metering Draw Region tool is armed (it borrows the crop overlay)
         self._session = session_store.load()  # what was open last time, recent folders... (see features/session.py)
@@ -329,6 +327,7 @@ class AppWindow(QMainWindow):
         # frame, leaving a big blank gap above it (everything pushed down).
         # Two views over the same window, like darktable's darkroom and lighttable: the editor, and the Lighttable (the whole library as a grid)
         self._lighttable = LighttableView(thumbnail_cache_dir())
+        self._lighttable.set_key_resolver(self._keys.action_for)
         self._view_stack = QStackedWidget()
         self._view_stack.addWidget(self._splitter)
         self._view_stack.addWidget(self._lighttable)
@@ -380,6 +379,7 @@ class AppWindow(QMainWindow):
 
         self._hotkey_filter = _HotkeyFilter(self)
         QApplication.instance().installEventFilter(self._hotkey_filter)
+        self.apply_keybinds()  # the menu shortcuts, tooltips and cheat sheet follow the saved keys
 
         self._debug_controller = DebugController(self)
         QApplication.instance().installEventFilter(self._debug_controller)
@@ -394,16 +394,14 @@ class AppWindow(QMainWindow):
         open_action.triggered.connect(self._open_file)
         file_menu.addAction(open_action)
 
-        open_folder_action = QAction("Open Folder...", self)
-        open_folder_action.setShortcut("Ctrl+Shift+O")
+        open_folder_action = self._open_folder_action = QAction("Open Folder...", self)
         open_folder_action.setToolTip("Load a whole roll into the filmstrip")
         open_folder_action.triggered.connect(self._open_folder_dialog)
         file_menu.addAction(open_folder_action)
         self._recent_menu = file_menu.addMenu("Open Recent")
         self._recent_menu.aboutToShow.connect(self._fill_recent_menu)
 
-        quick_export_action = QAction("Quick Export", self)
-        quick_export_action.setShortcut("Ctrl+E")
+        quick_export_action = self._quick_export_action = QAction("Quick Export", self)
         quick_export_action.setToolTip("Export the open image with the highlighted export preset")
         quick_export_action.triggered.connect(self.quick_export)
         file_menu.addAction(quick_export_action)
@@ -433,50 +431,40 @@ class AppWindow(QMainWindow):
 
         edit_menu = menubar.addMenu("Edit")
         self._undo_action = QAction("Undo", self)
-        self._undo_action.setShortcut("Ctrl+Z")
         self._undo_action.triggered.connect(self.controller.undo)
         edit_menu.addAction(self._undo_action)
         self._redo_action = QAction("Redo", self)
-        self._redo_action.setShortcuts(["Ctrl+Y", "Ctrl+Shift+Z"])
         self._redo_action.triggered.connect(self.controller.redo)
         edit_menu.addAction(self._redo_action)
         edit_menu.addSeparator()
         self._auto_crop_action = QAction("Auto Crop && Straighten", self)
-        self._auto_crop_action.setShortcut("Ctrl+Shift+A")
         self._auto_crop_action.setToolTip("Find the picture inside the scan, level it and crop to it")
         self._auto_crop_action.triggered.connect(self._on_auto_crop)
         edit_menu.addAction(self._auto_crop_action)
+        self._gradient_crop_action = QAction("Gradient Border Crop && Rotate", self)
+        self._gradient_crop_action.setToolTip("Find the picture by the gradient where the border turns into it, level it and crop to it")
+        self._gradient_crop_action.triggered.connect(self._on_gradient_crop)
+        edit_menu.addAction(self._gradient_crop_action)
         self._reset_action = QAction("Reset All Edits...", self)
-        self._reset_action.setShortcut("Ctrl+Shift+R")
         self._reset_action.setToolTip("Put this photo back to how it was when first opened (one undoable step)")
         self._reset_action.triggered.connect(self._on_reset_edits)
         edit_menu.addAction(self._reset_action)
         self._peaking_action = QAction("Focus Peaking", self)
         self._peaking_action.setCheckable(True)
-        self._peaking_action.setShortcut("Ctrl+Shift+F")
         self._peaking_action.setToolTip("Mark what is in focus: blue some detail, green sharp, yellow very sharp")
         self._peaking_action.triggered.connect(lambda _c=False: self._peaking_btn.toggle())
         edit_menu.addAction(self._peaking_action)
         self._hq_action = QAction("High Quality (HQ)", self)
         self._hq_action.setCheckable(True)
-        self._hq_action.setShortcut("Ctrl+H")
         self._hq_action.setToolTip("Work at the photo's full resolution instead of the fast preview; a yellow HQ tag shows once it has loaded")
         self._hq_action.triggered.connect(lambda _c=False: self.toggle_hq())
         edit_menu.addAction(self._hq_action)
-        self._auto_advance_action = QAction("Auto-advance After Flagging", self)
-        self._auto_advance_action.setCheckable(True)
-        self._auto_advance_action.setChecked(True)
-        self._auto_advance_action.setToolTip("After marking a photo keeper (K) or rejected (R), open the next photo of the roll")
-        self._auto_advance_action.toggled.connect(lambda on: setattr(self, "_auto_advance", bool(on)))
-        edit_menu.addAction(self._auto_advance_action)
         edit_menu.addSeparator()
         self._copy_settings_action = QAction("Copy Settings", self)
-        self._copy_settings_action.setShortcut("Ctrl+Shift+C")
         self._copy_settings_action.setToolTip("Copy this photo's look (tone, color, film type, sharpening, watermark)")
         self._copy_settings_action.triggered.connect(self._on_copy_settings)
         edit_menu.addAction(self._copy_settings_action)
         self._paste_settings_action = QAction("Paste Settings", self)
-        self._paste_settings_action.setShortcut("Ctrl+Shift+V")
         self._paste_settings_action.triggered.connect(self.controller.paste_settings)
         edit_menu.addAction(self._paste_settings_action)
         self._paste_folder_action = QAction("Paste Settings to Whole Folder...", self)
@@ -486,9 +474,10 @@ class AppWindow(QMainWindow):
         edit_menu.aboutToShow.connect(self._refresh_edit_actions)
 
         settings_menu = menubar.addMenu("Settings")
-        placeholder = QAction("Coming soon", self)
-        placeholder.setEnabled(False)
-        settings_menu.addAction(placeholder)
+        preferences_action = QAction("Preferences...", self)
+        preferences_action.setToolTip("Auto-advance, RAW decoding, keybinds, backups and export, caches")
+        preferences_action.triggered.connect(self.show_settings)
+        settings_menu.addAction(preferences_action)
 
         extra_menu = menubar.addMenu("Extra")
         self._debug_action = QAction("Debug", self)
@@ -501,8 +490,7 @@ class AppWindow(QMainWindow):
         extra_menu.addAction(self._debug_action)
 
         info_menu = menubar.addMenu("Info")
-        shortcuts_action = QAction("Keyboard Shortcuts", self)
-        shortcuts_action.setShortcut("F1")
+        shortcuts_action = self._shortcuts_action = QAction("Keyboard Shortcuts", self)
         shortcuts_action.triggered.connect(self.show_shortcuts)
         info_menu.addAction(shortcuts_action)
         credits_action = QAction("Credits", self)
@@ -511,7 +499,7 @@ class AppWindow(QMainWindow):
         info_menu.addAction(credits_action)
 
         view_menu_anchor = menubar.addMenu("View")
-        self._lighttable_action = QAction("Workbench   (W)", self)
+        self._lighttable_action = QAction("Workbench", self)
         self._lighttable_action.setToolTip("The whole library as a grid: search, filter, sort, rate and flag")
         self._lighttable_action.triggered.connect(lambda: self.set_view("lighttable"))
         view_menu_anchor.addAction(self._lighttable_action)
@@ -889,6 +877,9 @@ class AppWindow(QMainWindow):
         self._crop_tool.crop_mode_toggled.connect(self._on_crop_mode_toggled)
         self._crop_tool.crop_cleared.connect(self._on_crop_cleared)
         self._crop_tool.auto_crop_requested.connect(self._on_auto_crop)
+        self._crop_tool.gradient_crop_requested.connect(self._on_gradient_crop)
+        self._crop_tool.auto_adjust_changed.connect(self.controller.adjust_auto_crop)
+        self.controller.auto_adjust_available.connect(self._crop_tool.set_auto_adjust_enabled)
         self._crop_tool.guide_changed.connect(self._image_view.set_crop_guide)
         self._crop_tool.ratio_changed.connect(self._image_view.set_crop_ratio)
         self._crop_tool.fine_rotation_changed.connect(self.controller.set_fine_rotation)
@@ -1233,12 +1224,51 @@ class AppWindow(QMainWindow):
         self._export_paths_override = list(paths)
         self._on_export_requested("paths", self._export_panel.preset_jobs() or self._export_panel.current_job())
 
+    def keys(self) -> KeyMap:
+        return self._keys
+
+    def lighttable_action(self, action_id: str) -> bool:
+        return self._lighttable.handle_action(action_id)
+
+    def apply_keybinds(self) -> None:
+        """Put the keys as they are bound now onto the menu items, the Workbench's tooltips and the cheat sheet."""
+        self._keys.reload()
+        current = self._keys.all()
+
+        def seq(action_id: str) -> list[QKeySequence]:
+            return [QKeySequence(current[action_id])] if current.get(action_id) else []
+
+        for action, ids in (
+            (self._open_folder_action, ("open_folder",)), (self._quick_export_action, ("quick_export",)), (self._undo_action, ("undo",)),
+            (self._redo_action, ("redo", "redo_alt")), (self._auto_crop_action, ("auto_crop",)), (self._gradient_crop_action, ("gradient_crop",)), (self._reset_action, ("reset_edits",)),
+            (self._peaking_action, ("peaking",)), (self._hq_action, ("hq",)), (self._copy_settings_action, ("copy_settings",)),
+            (self._paste_settings_action, ("paste_settings",)), (self._shortcuts_action, ("shortcuts_menu",)),
+        ):
+            action.setShortcuts([k for i in ids for k in seq(i)])
+        w = current.get("workbench", "")
+        self._lighttable_action.setText(f"Workbench   ({w})" if w else "Workbench")
+        e = current.get("editor", "")
+        self._editor_action.setText(f"Editor   ({e})" if e else "Editor")
+        self._lighttable.set_key_labels(current)
+        self._shortcuts_dialog = None  # drawn again, with the new keys, the next time it is opened
+
+    def show_settings(self) -> None:
+        dialog = SettingsDialog(self, self.controller)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        changed = dialog.decoding_changed()
+        app_settings.save(dialog.values())
+        self.apply_keybinds()
+        path = self.controller.state.image_path
+        if changed and path:  # the open photo was decoded the old way
+            self.controller.open_file(path)
+
     def show_credits(self) -> None:
         CreditsDialog(self).exec()
 
     def show_shortcuts(self) -> None:
         if getattr(self, "_shortcuts_dialog", None) is None:
-            self._shortcuts_dialog = ShortcutsDialog(self)
+            self._shortcuts_dialog = ShortcutsDialog(self, self._keys.all())
         self._shortcuts_dialog.show()
         self._shortcuts_dialog.raise_()
         self._shortcuts_dialog.activateWindow()
@@ -1309,9 +1339,9 @@ class AppWindow(QMainWindow):
     def restore_session(self) -> None:
         """At startup: bring back the sidebar widths, the open tab, the filmstrip filter and the photo that was open - in its folder."""
         sess = self._session
-        self._auto_advance = sess["auto_advance"]
+        if "auto_advance" in sess and not sess["auto_advance"] and not app_settings.has("auto_advance"):
+            app_settings.save({"auto_advance": False})  # the old Edit-menu choice moves to Settings
         self._image_view.peaking_slider.set_level(sess["peaking_level"])
-        self._auto_advance_action.setChecked(self._auto_advance)
         left, center, right = self._splitter.sizes()
         want_left, want_right = sess["left_width"] or left, sess["right_width"] or right
         total = left + center + right
@@ -1333,7 +1363,6 @@ class AppWindow(QMainWindow):
             self._session["right_width"] = right
         self._session["tab"] = self._open_tab
         self._session["filter"] = self._filmstrip.filter_mode()
-        self._session["auto_advance"] = self._auto_advance
         session_store.save(self._session)
 
     def _open_import_window(self) -> None:
@@ -1561,11 +1590,14 @@ class AppWindow(QMainWindow):
         self._paste_settings_action.setEnabled(opened and c.has_copied_settings())
         self._paste_folder_action.setEnabled(opened and c.has_copied_settings())
 
-    def _on_auto_crop(self) -> None:
+    def _on_auto_crop(self, method: str = "color") -> None:
         if self._crop_tool.is_crop_active():  # the crop overlay shows the uncropped frame; let that finish first
             self._crop_tool.set_crop_mode(False)
             self._on_crop_mode_toggled(False)
-        self.controller.auto_crop()
+        self.controller.auto_crop(method=method if isinstance(method, str) else "color")  # a menu item passes its 'checked' flag instead
+
+    def _on_gradient_crop(self) -> None:
+        self._on_auto_crop("gradient")
 
     def _on_reset_edits(self) -> None:
         if self.controller.state.image_path is None:
@@ -1592,11 +1624,12 @@ class AppWindow(QMainWindow):
                 self.controller.open_file(path)
 
     def flag_and_advance(self, flag: str) -> None:
-        """K / R: mark the photo, and (with Auto-advance on) move to the next one - which is looked up first, because the new mark may hide
+        """K / R: mark the photo, and (with Auto-advance on in Settings) move to the next one - which is looked up first, because the new mark may hide
         this photo from a filtered strip."""
-        nxt = self._filmstrip.neighbor(1) if self._auto_advance else None
+        advance = app_settings.get("auto_advance")
+        nxt = self._filmstrip.neighbor(1) if advance else None
         self.controller.toggle_flag(flag)
-        if self._auto_advance and self.controller.state.flag == flag and nxt is not None:
+        if advance and self.controller.state.flag == flag and nxt is not None:
             self.controller.open_file(nxt)
 
     def toggle_fit_100(self) -> None:
@@ -1807,7 +1840,7 @@ class AppWindow(QMainWindow):
         if tool in ("line", "delete"):
             iv.set_pick_mode(True, QCursor(Qt.CursorShape.CrossCursor))
         else:
-            mode = {"heal": "heal", "smart": "smart", "scratch": "polyline", "manualline": "line2", "clone": "clone"}[tool]
+            mode = {"heal": "heal", "smart": "smart", "scratch": "polyline", "curve": "curve", "manualline": "line2", "clone": "clone"}[tool]
             iv.set_tool(mode, lambda: self._brush_radius(tool))
 
     def _brush_radius(self, tool: str) -> float:
@@ -1830,7 +1863,7 @@ class AppWindow(QMainWindow):
             strength, feather, match_tone = self._dust_tool.clone_settings()
             self.controller.add_clone_stroke(points, self._dust_tool.brush_size(), strength, feather, match_tone)
             return
-        if tool not in ("heal", "scratch"):
+        if tool not in ("heal", "scratch", "curve"):
             return
         self.controller.add_heal_stroke(
             points,
@@ -1838,7 +1871,7 @@ class AppWindow(QMainWindow):
             DEFAULT_MANUAL_SENSITIVITY,  # unused: a forced stroke skips detection entirely
             True,  # the Heal Tool and Scratch Tool repair everything under the brush - no sensitivity gate
             self._dust_tool.repair_method(),
-            "Healed" if tool == "heal" else "Healed scratch",
+            {"heal": "Healed", "scratch": "Healed scratch", "curve": "Healed curved scratch"}[tool],
         )
 
     def _refresh_ai_dust_panel(self) -> None:

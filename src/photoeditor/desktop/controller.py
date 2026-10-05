@@ -7,6 +7,7 @@ from PyQt6.QtCore import QCoreApplication, QObject, pyqtSignal
 from ..features.aidust import logic as aidust
 from ..features.browse.logic import list_images_in_folder
 from ..features.geometry.autocrop import AUTO_STRAIGHTEN_MAX, AUTO_STRAIGHTEN_MIN, detect_frame
+from ..features.geometry.gradientcrop import detect_gradient_frame
 from ..features.geometry.logic import (
     FINE_ROTATION_LIMIT,
     map_display_to_raw,
@@ -30,7 +31,9 @@ from ..features.negative.metering import Metering
 from ..features.watermark.marks import Marks
 from ..features.open_image.processor import load_image_rgb, make_preview_rgb
 from ..features.persistence import edit_store
+from ..features.persistence import export as data_export
 from ..features.persistence.backup import backup_database
+from ..features.settings import logic as app_settings
 from ..features.persistence.legacy import merge_legacy_databases
 from ..features.retouch.logic import (
     DEFAULT_SCRATCH_SENSITIVITY,
@@ -96,6 +99,7 @@ class AppController(QObject):
     image_preview_changed = pyqtSignal()  # image only, for smooth interactive dragging
     history_changed = pyqtSignal()
     reverted = pyqtSignal()  # state restored from history - views resync their own widgets
+    auto_adjust_available = pyqtSignal(bool)  # an auto crop's result can (True) / can no longer (False) be nudged with the crop and rotate adjusters
     loading_started = pyqtSignal()  # about to do slow synchronous work (open_file) - show a veil
     loading_finished = pyqtSignal()
     notice = pyqtSignal(str)  # a short message for the user (e.g. "no scratch found there")
@@ -170,6 +174,10 @@ class AppController(QObject):
         # write frequency (one row per committed edit, not per drag tick).
         data_dir = app_data_dir()
         os.makedirs(data_dir, exist_ok=True)
+        try:
+            data_export.apply_pending_restore(data_dir)  # an Import chosen in Settings takes effect now, before the database is opened
+        except Exception:
+            pass
         self.db_path = os.path.join(data_dir, "photoeditor.db")
         self._db = edit_store.connect(self.db_path)
         merge_legacy_databases(self._db, data_dir, legacy_database_paths())  # edits saved under older launch names
@@ -229,6 +237,7 @@ class AppController(QObject):
             self.file_load_failed.emit(str(exc))
             return
 
+        self._drop_auto_run()
         self.state.image_path = path
         self.state.original_rgb = pixels
         self.state.preview_rgb = preview
@@ -274,6 +283,9 @@ class AppController(QObject):
             self.state.ai_threshold = float(saved.get("ai_threshold", 0.3))
             self.state.ai_grow = int(saved.get("ai_grow", 1))
             self.state.marks = Marks.from_dict(saved.get("marks"))
+            for module_key, preset_name in (saved.get("module_presets") or {}).items():  # the module presets this photo had loaded when it was last open
+                if isinstance(module_key, str) and isinstance(preset_name, str):
+                    self._module_preset_in_use[(path, module_key)] = preset_name
             self.state.film_type = saved["film_type"]
             self.state.invert_r = saved["invert_r"]
             self.state.invert_g = saved["invert_g"]
@@ -523,6 +535,8 @@ class AppController(QObject):
         """Straighten by a small angle (positive = clockwise)."""
         if self.state.preview_rgb is None:
             return
+        if not self._auto_busy:
+            self._drop_auto_run()
         self.state.fine_rotation = degrees
         self._settle()
         if degrees != self._last_logged_fine_rotation:
@@ -1291,6 +1305,10 @@ class AppController(QObject):
         shown = ("\u2605" * stars) if stars else "no rating"
         self.notice.emit(f"Rated {shown}: {os.path.basename(path)}")
 
+    def toggle_rating(self, stars: int) -> None:
+        """Pressing the star count the open photo already has takes it off again (0 always clears)."""
+        self.set_rating(0 if stars and self.state.rating == stars else stars)
+
     def set_rating_for(self, path: str, stars: int) -> None:
         """Rate any photo (the Lighttable's selection), not just the open one."""
         if path == self.state.image_path:
@@ -1450,6 +1468,8 @@ class AppController(QObject):
     def set_crop_rect(self, rect: tuple[int, int, int, int] | None) -> None:
         if self.state.preview_rgb is None:
             return
+        if not self._auto_busy:
+            self._drop_auto_run()
         self.state.crop_rect = rect
         self._recompute_image()
         self.image_adjusted.emit()
@@ -1560,6 +1580,7 @@ class AppController(QObject):
             "ai_threshold": s.ai_threshold,
             "ai_grow": s.ai_grow,
             "marks": s.marks.to_dict(),
+            "module_presets": {key: name for (p, key), name in self._module_preset_in_use.items() if p == s.image_path},
             "film_type": s.film_type,
             "invert_r": s.invert_r,
             "invert_g": s.invert_g,
@@ -1625,16 +1646,78 @@ class AppController(QObject):
         self.state.wm_camera = ""
         self.state.wm_lens = ""
 
-    def auto_crop(self, straighten: bool = True) -> bool:
+    _auto_run: dict | None = None  # the last auto crop: its method, the rotation it set and the crop it found (what the adjusters work from)
+    _auto_busy = False             # True while an auto crop is setting the crop and rotation itself
+
+    def _drop_auto_run(self) -> None:
+        """The crop or rotation changed some other way (by hand, undo, a new photo): the adjusters no longer have an auto result to work from."""
+        if self._auto_run is not None:
+            self._auto_run = None
+            self.auto_adjust_available.emit(False)
+
+    def adjust_auto_crop(self, margin_pct: float, rotate_deg: float) -> bool:
+        """Nudge the last auto crop. margin_pct crops that much of the crop's width and height in from every side (negative: lets that much more
+        of the picture in); rotate_deg turns the picture that many degrees (clockwise positive) beyond what the auto crop straightened it by.
+        The border is found again on the turned picture, so the crop follows the rotation."""
+        run, s = self._auto_run, self.state
+        if run is None or s.preview_rgb is None or s.pre_crop_rgb is None:
+            return False
+        self._auto_busy = True
+        try:
+            new_rot = round(max(-FINE_ROTATION_LIMIT, min(FINE_ROTATION_LIMIT, run["rotation"] + rotate_deg)), 2)
+            rect = run["rect"]
+            if abs(new_rot - s.fine_rotation) > 1e-6:
+                s.fine_rotation = new_rot
+                s.crop_rect = None
+                self._recompute_image()
+                self._last_logged_fine_rotation = new_rot
+                self._last_logged_crop = None
+                self._log(f"Auto rotate adjusted to {new_rot:+.1f}\u00b0")
+                if abs(new_rot - run["rotation"]) > 1e-6:  # a different angle: the frame has moved, so look for it again
+                    found = self._detect_for(run["method"], s.pre_crop_rgb)
+                    if found is not None:
+                        fh, fw = self._current_frame_size()
+                        ih, iw = s.pre_crop_rgb.shape[:2]
+                        kx, ky = fw / iw, fh / ih
+                        x1, y1, x2, y2 = found.rect
+                        rect = (round(x1 * kx), round(y1 * ky), round(x2 * kx), round(y2 * ky))
+            fh, fw = self._current_frame_size()
+            x1, y1, x2, y2 = rect
+            mx, my = (x2 - x1) * margin_pct / 100.0, (y2 - y1) * margin_pct / 100.0
+            nx1, ny1, nx2, ny2 = max(0, round(x1 + mx)), max(0, round(y1 + my)), min(fw, round(x2 - mx)), min(fh, round(y2 - my))
+            if nx2 - nx1 >= 8 and ny2 - ny1 >= 8:
+                self.set_crop_rect((nx1, ny1, nx2, ny2))
+            self.reverted.emit()  # the Straighten slider follows
+        finally:
+            self._auto_busy = False
+        return True
+
+    @staticmethod
+    def _detect_for(method: str, img):
+        """The frame in `img` the way the given auto crop method finds it, for an upright (already straightened) picture."""
+        if method == "gradient":
+            return detect_gradient_frame(img, max_skew=0.0)
+        return detect_frame(img)
+
+    def auto_crop(self, straighten: bool = True, method: str = "color") -> bool:
         """Find the picture inside the scan - the film border, sprocket holes and holder around it - and crop to it. With straighten, a
         frame that sits a little crooked is levelled first (the Straighten slider), then the crop is taken from the levelled picture.
-        False, with a notice, when there is no clear border to find."""
+        method "color" finds the frame by how it differs from the border colour; "gradient" by the gradient where the border turns into
+        the picture (features/geometry/gradientcrop.py). False, with a notice, when there is no clear border to find."""
         s = self.state
         if s.preview_rgb is None or s.pre_crop_rgb is None:
             return False
-        det = detect_frame(s.pre_crop_rgb)
+        gradient = method == "gradient"
+        name = "Gradient border crop" if gradient else "Auto crop"
+        if gradient:
+            def detect(img, upright=False):
+                return detect_gradient_frame(img, max_skew=0.0 if (upright or not straighten) else AUTO_STRAIGHTEN_MAX)
+        else:
+            def detect(img, upright=False):
+                return detect_frame(img)
+        det = detect(s.pre_crop_rgb)
         if det is None:
-            self.notice.emit("Auto crop: no clear border around the picture was found")
+            self.notice.emit(f"{name}: no clear border around the picture was found")
             return False
         straightened = None
         if straighten and AUTO_STRAIGHTEN_MIN <= abs(det.skew_deg) <= AUTO_STRAIGHTEN_MAX:
@@ -1646,16 +1729,23 @@ class AppController(QObject):
             self._last_logged_crop = None
             self._log(f"Auto-straightened to {new:+.1f}\u00b0")
             straightened = new
-            again = detect_frame(s.pre_crop_rgb)
+            again = detect(s.pre_crop_rgb, upright=True)
             if again is not None:
                 det = again
         fh, fw = self._current_frame_size()
         ih, iw = s.pre_crop_rgb.shape[:2]
         kx, ky = fw / iw, fh / ih  # the pre-crop picture can be bigger than the preview frame the crop rectangle is kept in (HQ)
         x1, y1, x2, y2 = det.rect
-        self.set_crop_rect((round(x1 * kx), round(y1 * ky), round(x2 * kx), round(y2 * ky)))
+        rect = (round(x1 * kx), round(y1 * ky), round(x2 * kx), round(y2 * ky))
+        self._auto_busy = True
+        try:
+            self.set_crop_rect(rect)
+        finally:
+            self._auto_busy = False
+        self._auto_run = {"method": method, "rotation": s.fine_rotation, "rect": rect}
+        self.auto_adjust_available.emit(True)
         self.reverted.emit()  # the Straighten slider follows
-        self.notice.emit("Auto-cropped" + (f" and straightened {straightened:+.1f}\u00b0" if straightened is not None else ""))
+        self.notice.emit(("Gradient-cropped" if gradient else "Auto-cropped") + (f" and straightened {straightened:+.1f}\u00b0" if straightened is not None else ""))
         return True
 
     def _apply_detected_defaults(self) -> None:
@@ -1673,6 +1763,8 @@ class AppController(QObject):
             return False
         self._apply_default_edits()
         self._apply_detected_defaults()
+        for key in [k for (p, k) in self._module_preset_in_use if p == self.state.image_path]:  # nothing is loaded on any module any more
+            del self._module_preset_in_use[(self.state.image_path, key)]
         self._log("Reset all edits")
         self._restore_entry(self.state.history[-1])
         self._finish_restore()
@@ -1693,6 +1785,7 @@ class AppController(QObject):
     def _restore_entry(self, entry: HistoryEntry) -> None:
         """Put every edit field (and the matching 'last logged' values) back as it was in entry."""
         s = self.state
+        self._drop_auto_run()
         s.exposure_ev = entry.exposure_ev
         s.tone_curve_points = list(entry.tone_curve_points)
         s.negative_inverted = entry.negative_inverted
@@ -1885,6 +1978,7 @@ class AppController(QObject):
             values["marks"] = {}
         if self.apply_look(values, f"Reset {self.module_title(key)}"):
             self._module_preset_in_use.pop((self.state.image_path, key), None)  # a reset module has no preset loaded any more
+            self._save_edit_state()
             self.module_presets_changed.emit(key)
             self.notice.emit(f"{self.module_title(key)} reset")
             return True
@@ -1925,6 +2019,7 @@ class AppController(QObject):
         if stored is None:
             return False
         self._module_preset_in_use[(self.state.image_path, key)] = stored
+        self._save_edit_state()  # which preset is on the module is remembered with the photo
         self.module_presets_changed.emit(key)
         self.notice.emit(f"Stored {self.module_title(key)} preset '{stored}'")
         return True
@@ -1937,6 +2032,7 @@ class AppController(QObject):
         label = f"{self.module_title(key)} preset '{name}'"
         if self.apply_look(values, label):
             self._module_preset_in_use[(self.state.image_path, key)] = name
+            self._save_edit_state()  # which preset is on the module is remembered with the photo
             self.module_presets_changed.emit(key)  # the panel's Update Preset button follows what is loaded
             self.notice.emit(f"Applied {label}")
             return True
@@ -2126,18 +2222,29 @@ class AppController(QObject):
 
     # ---- backups ----
     def backup_dir(self) -> str:
-        return os.path.join(os.path.dirname(self.db_path), "backups")
+        """Where the daily copies go: the folder chosen in Settings, or backups/ inside the data folder."""
+        chosen = app_settings.get("backup_dir")
+        return chosen if chosen else os.path.join(os.path.dirname(self.db_path), "backups")
 
     def daily_backup(self) -> str | None:
-        """Once a day, copy the database to backups/ (the newest 14 are kept)."""
+        """Once a day, copy the database to the backups folder (the newest few are kept - the number is set in Settings)."""
+        if not app_settings.get("backup_auto"):
+            return None
         try:
-            return backup_database(self._db, self.backup_dir())
+            return backup_database(self._db, self.backup_dir(), keep=app_settings.get("backup_keep"))
         except Exception:  # a backup problem must never stop the app from starting
             return None
 
+    def database(self):
+        return self._db
+
+    def export_all_data(self, dest_zip: str) -> list[str]:
+        """Settings > Export: the database, presets, settings and gear in one zip."""
+        return data_export.export_data(self._db, os.path.dirname(self.db_path), dest_zip)
+
     def backup_now(self) -> str | None:
         try:
-            path = backup_database(self._db, self.backup_dir(), force=True)
+            path = backup_database(self._db, self.backup_dir(), keep=app_settings.get("backup_keep"), force=True)
         except Exception as exc:
             self.notice.emit(f"Backup failed: {exc}")
             return None

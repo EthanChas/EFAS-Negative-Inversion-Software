@@ -7,6 +7,7 @@ from PyQt6.QtWidgets import QLabel, QScrollArea, QVBoxLayout, QWidget
 
 from ...theme.tokens import THEME
 from ...features.geometry.guides import CropGuide, guide_shapes
+from ...features.retouch.curve import smooth_path
 from .bevel_widgets import BevelPanel
 from .loading_overlay import ExportIndicator, HqIndicator
 from .peaking_slider import PeakingSlider
@@ -209,13 +210,16 @@ class _ImageLabel(QLabel):
         return (pos.x() / scale, pos.y() / scale)
 
     def _line_tool(self) -> bool:
-        """The click-point tools: "polyline" (any number of points, finished by hand) and "line2" (two points, finishes itself)."""
-        return self._tool in ("polyline", "line2")
+        """The click-point tools: "polyline" and "curve" (any number of points, finished by hand; the curve is smoothed through them) and
+        "line2" (two points, finishes itself)."""
+        return self._tool in ("polyline", "curve", "line2")
 
     def _finish_polyline(self) -> None:
         stroke, self._stroke = self._stroke, []
         self.update()
         if len(stroke) >= 2:
+            if self._tool == "curve":  # the smooth curve through the clicked points, as a dense polyline
+                stroke = smooth_path(stroke, 2.0)
             self.stroke_completed.emit(stroke)
 
     def keyPressEvent(self, event: QKeyEvent) -> None:
@@ -238,7 +242,7 @@ class _ImageLabel(QLabel):
         super().keyPressEvent(event)
 
     def mouseDoubleClickEvent(self, event: QMouseEvent) -> None:
-        if self._tool == "polyline" and event.button() == Qt.MouseButton.LeftButton:
+        if self._tool in ("polyline", "curve") and event.button() == Qt.MouseButton.LeftButton:
             self._finish_polyline()
             event.accept()
             return
@@ -600,6 +604,8 @@ class _ImageLabel(QLabel):
             else:  # polyline: the clicked points, plus a rubber band to the cursor
                 painter.setPen(QPen(QColor(255, 200, 0, 220), 1.5))
                 path = pts + ([self._hover] if self._hover is not None else [])
+                if self._tool == "curve" and len(path) > 1:  # the curve as it will be repaired, with the cursor as its next point
+                    path = [QPointF(x, y) for x, y in smooth_path([(p.x(), p.y()) for p in path], 3.0)]
                 if len(path) > 1:
                     painter.drawPolyline(path)
                 if self._tool == "line2" and len(pts) == 1 and self._hover is not None and abs(self._hover.x() - pts[0].x()) > 4:

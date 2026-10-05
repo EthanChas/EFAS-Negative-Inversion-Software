@@ -1,64 +1,51 @@
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import QDialog, QGridLayout, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
 
+from ...features.keybinds import logic as binds
 from ...theme.tokens import THEME
 
-# (section, [(keys, what it does)]) - the one list the cheat sheet is drawn from. A "/" inside keys separates alternatives.
-SHORTCUTS: list[tuple[str, list[tuple[str, str]]]] = [
-    ("Culling a roll", [
-        ("Left / Right", "Previous / next photo"),
-        ("Home / End", "First / last photo of the roll"),
-        ("K", "Mark keeper (then on to the next photo)"),
-        ("R", "Mark rejected (then on to the next photo)"),
-        ("U", "Clear the flag"),
-        ("0 - 5", "Star rating (0 clears it)"),
-    ]),
-    ("Viewing", [
-        ("Z", "Toggle fit to window / 100%"),
-        ("\\  (hold)", "Show the original scan while held"),
-        ("Tab", "Hide / show the side panels"),
-        ("Ctrl+H", "High quality (full resolution) on / off"),
-        ("Ctrl+Shift+F", "Focus peaking on / off"),
-        ("?  /  F1", "This cheat sheet"),
-    ]),
-    ("Editing", [
-        ("Ctrl+Z", "Undo"),
-        ("Ctrl+Y / Ctrl+Shift+Z", "Redo"),
-        ("[  /  ]", "Rotate left / right"),
-        ("Ctrl+Shift+A", "Auto crop & straighten"),
-        ("Ctrl+Shift+R", "Reset all edits on this photo"),
-        ("Ctrl+Shift+C", "Copy this photo's settings"),
-        ("Ctrl+Shift+V", "Paste settings"),
-    ]),
-    ("Workbench", [
-        ("W / D", "Workbench / back to the editor"),
-        ("Arrows", "Move through the grid"),
-        ("Enter", "Open the photo in the editor"),
-        ("0 - 5", "Rate the selection"),
-        ("K / R / U", "Keep / reject / clear the flag"),
-        ("Ctrl+wheel", "Thumbnail size"),
-    ]),
-    ("Files", [
-        ("Ctrl+Shift+O", "Open a folder"),
-        ("Ctrl+E", "Quick export"),
-        ("Drag and drop", "Drop a folder or photos on the window"),
-    ]),
-]
+
+def _show(seq: str) -> str:
+    return seq if seq else "(none)"
+
+
+def build_sections(current: dict[str, str]) -> list[tuple[str, list[tuple[str, str]]]]:
+    """The cheat sheet's rows - (section, [(keys, what it does)]) - from the keys as they are bound right now, plus the keys that never change.
+    The six rating keys share one row."""
+    order: list[str] = []
+    rows: dict[str, list[tuple[str, str]]] = {}
+    stars = [current.get(i, "") for i in binds.RATING_IDS]
+    for action in binds.ACTIONS:
+        if action.category not in rows:
+            order.append(action.category)
+            rows[action.category] = []
+        if action.id in binds.RATING_IDS:
+            if action.id == binds.RATING_IDS[0]:
+                default = stars == [binds.DEFAULT_BINDINGS[i] for i in binds.RATING_IDS]
+                rows[action.category].append(("0 - 5" if default else "  ".join(_show(x) for x in stars), "Star rating (0 clears it; the same number again removes it)"))
+            continue
+        rows[action.category].append((_show(current.get(action.id, "")), action.label))
+    for category, keys, what in binds.FIXED_KEYS:
+        rows.setdefault(category, []).append((keys, what))
+        if category not in order:
+            order.append(category)
+    return [(c, rows[c]) for c in order]
 
 
 class ShortcutsDialog(QDialog):
     """The keyboard cheat sheet: every shortcut in two columns. Non-modal, so it can stay open beside the photo while the keys are learned."""
 
-    def __init__(self, parent: QWidget | None = None):
+    def __init__(self, parent: QWidget | None = None, current: dict[str, str] | None = None):
         super().__init__(parent)
         self.setWindowTitle("Keyboard Shortcuts")
+        sections = build_sections(current if current is not None else binds.DEFAULT_BINDINGS)
         self.setModal(False)
         outer = QVBoxLayout(self)
         outer.setSpacing(THEME.space_lg)
         columns = QHBoxLayout()
         columns.setSpacing(THEME.space_xl)
-        half = (len(SHORTCUTS) + 1) // 2
-        for chunk in (SHORTCUTS[:half], SHORTCUTS[half:]):
+        half = (len(sections) + 1) // 2
+        for chunk in (sections[:half], sections[half:]):
             col = QVBoxLayout()
             col.setSpacing(THEME.space_md)
             for title, rows in chunk:
@@ -80,7 +67,7 @@ class ShortcutsDialog(QDialog):
             col.addStretch(1)
             columns.addLayout(col, 1)
         outer.addLayout(columns)
-        note = QLabel("Letter and number keys do nothing while you are typing in a field.")
+        note = QLabel("Letter and number keys do nothing while you are typing in a field. Change any of these in Settings > Preferences > Keybinds.")
         note.setStyleSheet(f"color: {THEME.text_hint};")
         outer.addWidget(note)
         close = QPushButton("Close")

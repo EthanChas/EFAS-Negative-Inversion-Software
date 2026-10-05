@@ -9,10 +9,10 @@ from collections import OrderedDict
 from datetime import date, timedelta
 
 from PyQt6.QtCore import QAbstractListModel, QModelIndex, QPointF, QRect, QSize, Qt, QTimer, pyqtSignal
-from PyQt6.QtGui import QColor, QFontMetrics, QKeyEvent, QPainter, QPen, QPolygonF
+from PyQt6.QtGui import QAction, QColor, QFontMetrics, QKeyEvent, QPainter, QPen, QPolygonF
 from PyQt6.QtWidgets import (
     QAbstractItemView, QComboBox, QDateEdit, QFrame, QHBoxLayout, QLabel, QLineEdit, QListView, QProgressBar, QPushButton, QScrollArea, QSlider,
-    QStyle, QStyledItemDelegate, QVBoxLayout, QWidget,
+    QMenu, QStyle, QStyledItemDelegate, QVBoxLayout, QWidget,
 )
 
 from ...features.library import query as Q
@@ -247,6 +247,7 @@ class LighttableView(QWidget):
 
     def __init__(self, cache_dir: str | None, parent: QWidget | None = None):
         super().__init__(parent)
+        self._resolve_key = lambda _event: None  # AppWindow plugs in the real key map (set_key_resolver)
         self._rows: list[dict] = []        # every photo in the library
         self._shown: list[dict] = []       # the ones the filters leave
         self._loading = False
@@ -330,6 +331,8 @@ class LighttableView(QWidget):
         self._search.setClearButtonEnabled(True)
         self._search.textChanged.connect(lambda _t: self._text_timer.start())
         body.addWidget(self._search)
+        body.addWidget(self._build_quick_menu())
+        self._search.textChanged.connect(self._sync_quick_terms)
         hint = QLabel("Words, or field:value (camera, lens, film, roll, folder, iso, date, rating, flag...). Hover the ? for all of them.")
         hint.setProperty("role", "hint")
         hint.setWordWrap(True)
@@ -381,6 +384,54 @@ class LighttableView(QWidget):
         body.addWidget(self._order)
         col.addStretch(1)
         return self._scroll(host, _PANEL_W)
+
+    def _build_quick_menu(self) -> QPushButton:
+        """A "Quick add" dropdown under the search box. A ready-made term (Keepers, 4+ stars...) is added to the search - and taken out again
+        when picked a second time - and is ticked while it is in the search. A field name ending in a colon (camera:) just starts the term and
+        leaves the cursor after it, ready for the value."""
+        today = date.today()
+        groups = [
+            ("Flag", [("Keepers", "flag:keeper"), ("Rejected", "flag:rejected"), ("Unflagged", "flag:none")]),
+            ("Rating", [("4+ stars", "rating:>=4"), ("Unrated", "rating:0")]),
+            ("Edits", [("Edited", "edited:yes"), ("Not edited", "edited:no")]),
+            ("Date taken", [("Today", f"date:{today:%Y-%m-%d}"), ("This month", f"date:{today:%Y-%m}"), ("This year", f"date:{today:%Y}")]),
+            ("Start a field", [("camera:", "camera:"), ("lens:", "lens:"), ("film:", "film:"), ("iso:", "iso:"), ("roll:", "roll:"), ("folder:", "folder:")]),
+        ]
+        menu = QMenu(self)
+        self._quick_actions: dict[str, QAction] = {}
+        for title, items in groups:
+            menu.addSection(title)
+            for label, term in items:
+                action = menu.addAction(label)
+                if not term.endswith(":"):
+                    action.setCheckable(True)
+                    action.setToolTip(term)
+                action.triggered.connect(lambda _checked=False, t=term: self._quick_term(t))
+                self._quick_actions[term] = action
+        button = QPushButton("Quick add")
+        button.setToolTip("Insert a ready-made search term")
+        button.setMenu(menu)
+        return button
+
+    def _quick_term(self, term: str) -> None:
+        words = self._search.text().split()
+        if term.endswith(":"):  # a field to fill in: add it and wait for the value
+            words.append(term)
+            self._search.setText(" ".join(words))
+        elif term in words:
+            self._search.setText(" ".join(w for w in words if w != term))
+        else:
+            self._search.setText(" ".join([*words, term]))
+        self._search.setFocus()
+        self._search.setCursorPosition(len(self._search.text()))
+        self._text_timer.stop()
+        self.apply_filters()
+
+    def _sync_quick_terms(self, *_args) -> None:
+        words = set(self._search.text().split())
+        for term, action in self._quick_actions.items():
+            if action.isCheckable():
+                action.setChecked(term in words)
 
     def _build_center(self) -> QVBoxLayout:
         col = QVBoxLayout()
@@ -443,23 +494,23 @@ class LighttableView(QWidget):
         body.addWidget(self._sel_label)
         stars = QHBoxLayout()
         stars.setSpacing(2)
-        for n in range(1, 6):
+        self._star_buttons: list[QPushButton] = []
+        for n in list(range(1, 6)) + [0]:
             b = QPushButton(str(n))
-            b.setToolTip(f"{n} star{'s' if n > 1 else ''} (key {n})")
             b.clicked.connect(lambda _c=False, n=n: self._emit_rate(n))
             stars.addWidget(b)
-        none = QPushButton("0")
-        none.setToolTip("No rating (key 0)")
-        none.clicked.connect(lambda: self._emit_rate(0))
-        stars.addWidget(none)
+            self._star_buttons.append(b)
+        self._star_buttons.sort(key=lambda b: int(b.text()))
         body.addLayout(stars)
         flags = QHBoxLayout()
         flags.setSpacing(THEME.space_sm)
-        for text, flag, tip in (("Keep", "keeper", "Mark as keeper (K)"), ("Reject", "rejected", "Mark as rejected (R)"), ("Clear", None, "Clear the flag (U)")):
+        self._flag_buttons: list[tuple[QPushButton, str, str]] = []
+        for text, flag, action_id, tip in (("Keep", "keeper", "flag_keeper", "Mark as keeper"), ("Reject", "rejected", "flag_rejected", "Mark as rejected"), ("Clear", None, "flag_clear", "Clear the flag")):
             b = QPushButton(text)
-            b.setToolTip(tip)
             b.clicked.connect(lambda _c=False, f=flag: self._emit_flag(f))
             flags.addWidget(b)
+            self._flag_buttons.append((b, action_id, tip))
+        self.set_key_labels({})
         body.addLayout(flags)
         self._open_btn = QPushButton("Open in Editor")
         self._open_btn.clicked.connect(self._emit_open)
@@ -653,7 +704,7 @@ class LighttableView(QWidget):
         lines = [f"{r['name']}.{r['ext']}", r["taken"] + ("" if r["taken_exif"] else "  (file date)"), r["folder_name"]]
         cam = r["camera"] or "-"
         lines += ["", f"Camera: {cam}", f"Lens: {r['lens'] or '-'}"]
-        shot = [f"ISO {r['iso']}" if r["iso"] else "", f"{r['focal']:g} mm" if r["focal"] else "", f"f/{r['aperture']:g}" if r["aperture"] else "", r["shutter"]]
+        shot = [f"Film ISO {r['iso']}" if r["iso"] else "", f"{r['focal']:g} mm" if r["focal"] else "", f"f/{r['aperture']:g}" if r["aperture"] else "", r["shutter"]]
         if any(shot):
             lines.append("  ".join(s for s in shot if s))
         if r["width"]:
@@ -673,8 +724,12 @@ class LighttableView(QWidget):
         return "\n".join(lines)
 
     def _emit_rate(self, stars: int) -> None:
+        """Rate the selection; pressing the rating every selected photo already has takes it off again."""
         paths = self.selected_paths()
         if paths:
+            rows = self._selected_rows()
+            if stars and rows and all(int(r["rating"]) == stars for r in rows):
+                stars = 0
             self.rate_requested.emit(paths, stars)
 
     def _emit_flag(self, flag) -> None:
@@ -702,18 +757,31 @@ class LighttableView(QWidget):
             event.accept()
 
     def handle_key(self, event: QKeyEvent) -> bool:
-        """0-5 rate and K / R / U flag the selection. True when the key was one of those."""
-        if event.modifiers() & (Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.AltModifier | Qt.KeyboardModifier.MetaModifier):
-            return False
-        key = event.key()
-        if Qt.Key.Key_0 <= key <= Qt.Key.Key_5 and not (event.modifiers() & Qt.KeyboardModifier.ShiftModifier):
-            self._emit_rate(key - Qt.Key.Key_0)
+        """The rating and flag keys act on the selection (whatever they are bound to). True when the key was one of those."""
+        return self.handle_action(self._resolve_key(event))
+
+    def set_key_resolver(self, resolve) -> None:
+        """`resolve(event)` says which action id (see features/keybinds) a key press is bound to, or None."""
+        self._resolve_key = resolve
+
+    def handle_action(self, action_id) -> bool:
+        if action_id and action_id.startswith("rating_"):
+            self._emit_rate(int(action_id[-1]))
             return True
-        flag = {Qt.Key.Key_K: "keeper", Qt.Key.Key_R: "rejected", Qt.Key.Key_U: None}
-        if key in flag:
-            self._emit_flag(flag[key])
+        flag = {"flag_keeper": "keeper", "flag_rejected": "rejected", "flag_clear": None}
+        if action_id in flag:
+            self._emit_flag(flag[action_id])
             return True
         return False
+
+    def set_key_labels(self, current: dict) -> None:
+        """Put the keys as they are bound now into the Selection panel's tooltips."""
+        for n, b in enumerate(self._star_buttons):
+            seq = current.get(f"rating_{n}", "")
+            b.setToolTip((f"{n} star{'s' if n != 1 else ''}" if n else "No rating") + (f" (key {seq})" if seq else ""))
+        for b, action_id, text in self._flag_buttons:
+            seq = current.get(action_id, "")
+            b.setToolTip(text + (f" ({seq})" if seq else ""))
 
     # ---- zoom and thumbnails ----
     def _on_zoom(self, value: int) -> None:

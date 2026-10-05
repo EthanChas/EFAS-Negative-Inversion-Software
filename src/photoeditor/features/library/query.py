@@ -17,6 +17,8 @@ from collections import Counter
 from dataclasses import dataclass, field
 from typing import Any, Optional
 
+from ..metadata.roll import KNOWN_FILMS
+
 FLAG_KEEPER = "keeper"
 FLAG_REJECTED = "rejected"
 SORT_KEYS = {"taken": "Date taken", "name": "File name", "rating": "Rating", "mtime": "File modified", "camera": "Camera", "iso": "ISO"}
@@ -34,6 +36,7 @@ class Meta:
     edited: set[str] = field(default_factory=set)
     rolls: dict[str, dict] = field(default_factory=dict)        # norm(folder) -> the Roll Card as a dict
     notes: dict[str, tuple[str, str]] = field(default_factory=dict)  # norm(path) -> (note, place)
+    film_iso: dict[str, int] = field(default_factory=dict)      # norm(path) -> the ISO of the film, as saved in the photo's own metadata
 
 
 def load_meta(conn, records: list[dict]) -> Meta:
@@ -60,8 +63,13 @@ def load_meta(conn, records: list[dict]) -> Meta:
                 d = json.loads(raw)
             except (TypeError, ValueError):
                 continue
-            if isinstance(d, dict) and (d.get("note") or d.get("location_city")):
+            if not isinstance(d, dict):
+                continue
+            if d.get("note") or d.get("location_city"):
                 meta.notes[norm(p)] = (str(d.get("note") or ""), str(d.get("location_city") or ""))
+            iso = d.get("film_iso")
+            if isinstance(iso, (int, float)) and not isinstance(iso, bool) and iso > 0:
+                meta.film_iso[norm(p)] = int(iso)
     except Exception:
         pass
     return meta
@@ -74,7 +82,12 @@ def build_rows(records: list[dict], meta: Meta) -> list[dict]:
         key = norm(rec["path"])
         card = meta.rolls.get(norm(rec["folder"]), {})
         note, place = meta.notes.get(key, ("", ""))
+        # The ISO is the film's, never the camera's: a scanned negative's EXIF ISO is whatever the digitising camera was set to. So only an ISO
+        # that was set counts - the Roll Card's (or its known film's) first, then the one saved in the photo's own metadata - and a photo with
+        # neither has no ISO (exif_iso keeps the file's value, but nothing searches or shows it).
+        film_iso = int(card.get("iso") or 0) or KNOWN_FILMS.get(str(card.get("film", "")).strip(), (0,))[0] or meta.film_iso.get(key, 0)
         row.update(
+            exif_iso=rec["iso"], iso=film_iso, iso_from_film=bool(film_iso),
             key=key, rating=meta.ratings.get(key, 0), flag=meta.flags.get(key), edited=key in meta.edited,
             film=str(card.get("film", "") or ""), roll=str(card.get("name", "") or ""),
             roll_camera=str(card.get("camera", "") or ""), roll_lens=str(card.get("lens", "") or ""),
@@ -83,7 +96,7 @@ def build_rows(records: list[dict], meta: Meta) -> list[dict]:
         )
         row["_blob"] = " ".join(str(v) for v in (
             rec["name"], rec["ext"], row["folder_name"], rec["camera"], row["roll_camera"], rec["lens"], row["roll_lens"], row["film"], row["roll"],
-            note, place, rec["taken"], row["shot_from"], row["shot_to"], f"iso {rec['iso']}" if rec["iso"] else "",
+            note, place, rec["taken"], row["shot_from"], row["shot_to"], f"iso {row['iso']}" if row["iso"] else "",
         )).lower()
         rows.append(row)
     return rows

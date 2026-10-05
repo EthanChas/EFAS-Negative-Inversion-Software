@@ -149,6 +149,7 @@ _MIGRATIONS = (
     ("wm_camera", "TEXT", "''"),
     ("wm_lens", "TEXT", "''"),
     ("metadata", "TEXT", "'{}'"),
+    ("module_presets", "TEXT", "'{}'"),  # {module key: the preset name last loaded or stored on that module of this photo}
 )
 
 # (field, kind) in column order. kind says how a value is stored: plain
@@ -200,6 +201,7 @@ _FIELDS = (
     ("wm_camera", "plain"),
     ("wm_lens", "plain"),
     ("metadata", "json"),
+    ("module_presets", "json"),
 )
 
 
@@ -250,6 +252,7 @@ def _decode(value, kind: str, field: str):
 
 def save_edit_state(conn: sqlite3.Connection, path: str, state: dict) -> None:
     names = [name for name, _ in _FIELDS]
+    state = {"module_presets": {}, **state}  # callers that build a state by hand need not know about it
     values = [_encode(state[name], kind) for name, kind in _FIELDS]
     marks = ", ".join("?" * (len(names) + 1))
     updates = ", ".join(f"{name}=excluded.{name}" for name in names)

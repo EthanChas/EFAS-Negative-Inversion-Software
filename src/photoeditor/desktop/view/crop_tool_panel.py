@@ -9,6 +9,8 @@ from .slider_row import SliderRow
 
 _PREVIEW_THROTTLE_MS = 33
 _SETTLE_DEBOUNCE_MS = 200
+AUTO_MARGIN_LIMIT = 10.0  # percent of the crop
+AUTO_ROTATE_LIMIT = 3.0   # degrees
 _GUIDE_KEY = "crop/guide"
 
 # (label, value): value is None (free), "original", or a landscape w/h. The
@@ -45,6 +47,8 @@ class CropToolPanel(CollapsiblePanel):
     crop_mode_toggled = pyqtSignal(bool)
     crop_cleared = pyqtSignal()
     auto_crop_requested = pyqtSignal()
+    gradient_crop_requested = pyqtSignal()
+    auto_adjust_changed = pyqtSignal(float, float)  # crop margin (% of the crop, positive = tighter), extra rotation (degrees)
     guide_changed = pyqtSignal(str, int)  # guide name, orientation
     ratio_changed = pyqtSignal(object)  # None | "original" | landscape w/h
     fine_rotation_changed = pyqtSignal(float)  # settled
@@ -109,6 +113,28 @@ class CropToolPanel(CollapsiblePanel):
         )
         auto_btn.clicked.connect(self.auto_crop_requested)
         body.addWidget(auto_btn)
+        gradient_btn = QPushButton("Gradient Border Crop && Rotate")
+        gradient_btn.setToolTip(
+            "Finds the picture by its edge instead of by its colour: the border is a solid colour with a margin, and where the picture starts there "
+            "is a gradient - a line of gradual change along the whole side. It follows that line on each side (and its tilt) and crops just inside "
+            "it. Better than Auto Crop where the picture fades into the border, such as a dark sky against a dark rebate."
+        )
+        gradient_btn.clicked.connect(self.gradient_crop_requested)
+        body.addWidget(gradient_btn)
+        adjust_tip = "Nudge the result of the Auto Crop or Gradient Border Crop you just ran. Double-click a slider to put it back to 0."
+        self._auto_margin = SliderRow("Crop", min_value=-AUTO_MARGIN_LIMIT, max_value=AUTO_MARGIN_LIMIT, reset_value=0.0, decimals=1, step=0.1)
+        self._auto_margin.setToolTip(adjust_tip + "\nPositive crops in more from every side, negative lets more of the picture in (percent of the crop).")
+        self._auto_rotate = SliderRow("Rotate", min_value=-AUTO_ROTATE_LIMIT, max_value=AUTO_ROTATE_LIMIT, reset_value=0.0, decimals=1, step=0.1)
+        self._auto_rotate.setToolTip(adjust_tip + "\nTurns the picture a little more or less than the auto crop straightened it (degrees, clockwise positive).")
+        self._auto_tips = (self._auto_margin.toolTip(), self._auto_rotate.toolTip())
+        for row in (self._auto_margin, self._auto_rotate):
+            row.value_changed.connect(lambda _v: self._auto_adjust_timer.start())
+            body.addWidget(row)
+        self._auto_adjust_timer = QTimer(self)
+        self._auto_adjust_timer.setSingleShot(True)
+        self._auto_adjust_timer.setInterval(_SETTLE_DEBOUNCE_MS)
+        self._auto_adjust_timer.timeout.connect(lambda: self.auto_adjust_changed.emit(self._auto_margin.value(), self._auto_rotate.value()))
+        self.set_auto_adjust_enabled(False)
 
         crop_row = QHBoxLayout()
         crop_row.setSpacing(THEME.space_sm)
@@ -198,6 +224,17 @@ class CropToolPanel(CollapsiblePanel):
         self._distortion_settle_timer.setInterval(_SETTLE_DEBOUNCE_MS)
         self._distortion_settle_timer.timeout.connect(lambda: self.distortion_changed.emit(self._distortion.value()))
 
+    # ---- auto crop adjusters ----
+    def set_auto_adjust_enabled(self, enabled: bool) -> None:
+        """The two adjusters work on the last auto crop: off (and back at 0) until one has been run, and again once the crop or rotation is changed
+        some other way. Never emits."""
+        self._auto_adjust_timer.stop()
+        for row in (self._auto_margin, self._auto_rotate):
+            row.set_value(0.0)
+            row.setEnabled(enabled)
+        for row, tip in zip((self._auto_margin, self._auto_rotate), self._auto_tips):
+            row.setToolTip(tip if enabled else "Run Auto Crop or Gradient Border Crop first, then nudge its result here.")
+
     # ---- distortion ----
     def _on_distortion_changed(self, value: float) -> None:
         if self._distortion_preview_timer.isActive():
@@ -283,6 +320,7 @@ class CropToolPanel(CollapsiblePanel):
         self._distortion_settle_timer.stop()
         self._pending_distortion = None
         self.set_distortion(0.0)
+        self.set_auto_adjust_enabled(False)
 
     def set_flips(self, flip_h: bool, flip_v: bool) -> None:
         """Sync the flip buttons without emitting anything - used after a
