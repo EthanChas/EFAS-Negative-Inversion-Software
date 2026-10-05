@@ -1,0 +1,589 @@
+[
+  {
+    "id": "lens-canon-fd-50-1.4",
+    "displayName": "Canon FD 50mm f/1.4",
+    "lensModel": "FD 50mm f/1.4 S.S.C.",
+    "make": "Canon",
+    "focalLength": 50,
+    "maxAperture": 1.4
+  },
+  {
+    "id": "lens-canon-fd-28-2.8",
+    "displayName": "Canon FD 28mm f/2.8",
+    "lensModel": "FD 28mm f/2.8",
+    "make": "Canon",
+    "focalLength": 28,
+    "maxAperture": 2.8
+  },
+  {
+    "id": "lens-leica-summicron-28-2.0",
+    "displayName": "Leica Summicron 28mm f/2.0",
+    "lensModel": "Summicron 28mm f/2 ASPH",
+    "make": "Leica",
+    "focalLength": 28,
+    "maxAperture": 2.0
+  },
+  {
+    "id": "lens-leica-summilux-50-1.4",
+    "displayName": "Leica Summilux 50mm f/1.4",
+    "lensModel": "Summilux 50mm f/1.4 ASPH",
+    "make": "Leica",
+    "focalLength": 50,
+    "maxAperture": 1.4
+  },
+  {
+    "id": "lens-leica-summicron-50-2.0",
+    "displayName": "Leica Summicron 50mm f/2.0",
+    "lensModel": "Summicron 50mm f/2.0",
+    "make": "Leica",
+    "focalLength": 50,
+    "maxAperture": 2.0
+  },
+  {
+    "id": "lens-nikon-ai-nikkor-18-4",
+    "displayName": "Nikkor 18mm f/4 AI",
+    "lensModel": "Nikkor 18mm f/4 AI",
+    "make": "Nikon",
+    "focalLength": 18.0,
+    "maxAperture": 4.0,
+    "notes": "Manual-focus F-mount."
+  },
+  {
+    "id": "lens-nikon-ais-nikkor-18-35",
+    "displayName": "Nikkor 18mm f/3.5 AI-S",
+    "lensModel": "Nikkor 18mm f/3.5 AI-S",
+    "make": "Nikon",
+    "focalLength": 18.0,
+    "maxAperture": 3.5,
+    "notes": "Manual-focus F-mount."
+  },
+  {
+    "id": "lens-nikon-ai-nikkor-20-35",
+    "displayName": "Nikkor 20mm f/3.5 AI",
+    "lensModel": "Nikkor 20mm f/3.5 AI",
+    "make": "Nikon",
+    "focalLength": 20.0,
+    "maxAperture": 3.5,
+    "notes": "Manual-focus F-mount."
+  },
+  {
+    "id": "lens-nikon-ais-nikkor-20-35",
+    "displayName": "Nikkor 20mm f/3.5 AI-S",
+    "lensModel": "Nikkor 20mm f/3.5 AI-S",
+    "make": "Nikon",
+    "focalLength": 20.0,
+    "maxAperture": 3.5,
+    "notes": "Manual-focus F-mount."
+  },
+  {
+    "id": "lens-nikon-ais-nikkor-20-28",
+    "displayName": "Nikkor 20mm f/2.8 AI-S",
+    "lensModel": "Nikkor 20mm f/2.8 AI-S",
+    "make": "Nikon",
+    "focalLength": 20.0,
+    "maxAperture": 2.8,
+    "notes": "Manual-focus F-mount."
+  },
+  {
+    "id": "lens-nikon-ai-nikkor-24-28",
+    "displayName": "Nikkor 24mm f/2.8 AI",
+    "lensModel": "Nikkor 24mm f/2.8 AI",
+    "make": "Nikon",
+    "focalLength": 24.0,
+    "maxAperture": 2.8,
+    "notes": "Manual-focus F-mount."
+  },
+  {
+    "id": "lens-nikon-ais-nikkor-24-28",
+    "displayName": "Nikkor 24mm f/2.8 AI-S",
+    "lensModel": "Nikkor 24mm f/2.8 AI-S",
+    "make": "Nikon",
+    "focalLength": 24.0,
+    "maxAperture": 2.8,
+    "notes": "Manual-focus F-mount."
+  },
+  {
+    "id": "lens-nikon-ai-nikkor-24-2",
+    "displayName": "Nikkor 24mm f/2 AI",
+    "lensModel": "Nikkor 24mm f/2 AI",
+    "make": "Nikon",
+    "focalLength": 24.0,
+    "maxAperture": 2.0,
+    "notes": "Manual-focus F-mount."
+  },
+  {
+    "id": "lens-nikon-ais-nikkor-24-2",
+    "displayName": "Nikkor 24mm f/2 AI-S",
+    "lensModel": "Nikkor 24mm f/2 AI-S",
+    "make": "Nikon",
+    "focalLength": 24.0,
+    "maxAperture": 2.0,
+    "notes": "Manual-focus F-mount."
+  },
+  {
+    "id": "lens-nikon-ai-nikkor-28-35",
+    "displayName": "Nikkor 28mm f/3.5 AI",
+    "lensModel": "Nikkor 28mm f/3.5 AI",
+    "make": "Nikon",
+    "focalLength": 28.0,
+    "maxAperture": 3.5,
+    "notes": "Manual-focus F-mount."
+  },
+  {
+    "id": "lens-nikon-ais-nikkor-28-35",
+    "displayName": "Nikkor 28mm f/3.5 AI-S",
+    "lensModel": "Nikkor 28mm f/3.5 AI-S",
+    "make": "Nikon",
+    "focalLength": 28.0,
+    "maxAperture": 3.5,
+    "notes": "Manual-focus F-mount."
+  },
+  {
+    "id": "lens-nikon-ai-nikkor-28-28",
+    "displayName": "Nikkor 28mm f/2.8 AI",
+    "lensModel": "Nikkor 28mm f/2.8 AI",
+    "make": "Nikon",
+    "focalLength": 28.0,
+    "maxAperture": 2.8,
+    "notes": "Manual-focus F-mount."
+  },
+  {
+    "id": "lens-nikon-ais-nikkor-28-28",
+    "displayName": "Nikkor 28mm f/2.8 AI-S",
+    "lensModel": "Nikkor 28mm f/2.8 AI-S",
+    "make": "Nikon",
+    "focalLength": 28.0,
+    "maxAperture": 2.8,
+    "notes": "Manual-focus F-mount."
+  },
+  {
+    "id": "lens-nikon-ai-nikkor-28-2",
+    "displayName": "Nikkor 28mm f/2 AI",
+    "lensModel": "Nikkor 28mm f/2 AI",
+    "make": "Nikon",
+    "focalLength": 28.0,
+    "maxAperture": 2.0,
+    "notes": "Manual-focus F-mount."
+  },
+  {
+    "id": "lens-nikon-ais-nikkor-28-2",
+    "displayName": "Nikkor 28mm f/2 AI-S",
+    "lensModel": "Nikkor 28mm f/2 AI-S",
+    "make": "Nikon",
+    "focalLength": 28.0,
+    "maxAperture": 2.0,
+    "notes": "Manual-focus F-mount."
+  },
+  {
+    "id": "lens-nikon-ai-nikkor-35-28",
+    "displayName": "Nikkor 35mm f/2.8 AI",
+    "lensModel": "Nikkor 35mm f/2.8 AI",
+    "make": "Nikon",
+    "focalLength": 35.0,
+    "maxAperture": 2.8,
+    "notes": "Manual-focus F-mount."
+  },
+  {
+    "id": "lens-nikon-ais-nikkor-35-28",
+    "displayName": "Nikkor 35mm f/2.8 AI-S",
+    "lensModel": "Nikkor 35mm f/2.8 AI-S",
+    "make": "Nikon",
+    "focalLength": 35.0,
+    "maxAperture": 2.8,
+    "notes": "Manual-focus F-mount."
+  },
+  {
+    "id": "lens-nikon-ai-nikkor-35-2",
+    "displayName": "Nikkor 35mm f/2 AI",
+    "lensModel": "Nikkor 35mm f/2 AI",
+    "make": "Nikon",
+    "focalLength": 35.0,
+    "maxAperture": 2.0,
+    "notes": "Manual-focus F-mount."
+  },
+  {
+    "id": "lens-nikon-ais-nikkor-35-2",
+    "displayName": "Nikkor 35mm f/2 AI-S",
+    "lensModel": "Nikkor 35mm f/2 AI-S",
+    "make": "Nikon",
+    "focalLength": 35.0,
+    "maxAperture": 2.0,
+    "notes": "Manual-focus F-mount."
+  },
+  {
+    "id": "lens-nikon-ai-nikkor-35-14",
+    "displayName": "Nikkor 35mm f/1.4 AI",
+    "lensModel": "Nikkor 35mm f/1.4 AI",
+    "make": "Nikon",
+    "focalLength": 35.0,
+    "maxAperture": 1.4,
+    "notes": "Manual-focus F-mount."
+  },
+  {
+    "id": "lens-nikon-ais-nikkor-35-14",
+    "displayName": "Nikkor 35mm f/1.4 AI-S",
+    "lensModel": "Nikkor 35mm f/1.4 AI-S",
+    "make": "Nikon",
+    "focalLength": 35.0,
+    "maxAperture": 1.4,
+    "notes": "Manual-focus F-mount."
+  },
+  {
+    "id": "lens-nikon-ai-nikkor-45-28-gn",
+    "displayName": "Nikkor 45mm f/2.8 GN AI",
+    "lensModel": "Nikkor 45mm f/2.8 GN AI",
+    "make": "Nikon",
+    "focalLength": 45.0,
+    "maxAperture": 2.8,
+    "notes": "Manual-focus F-mount."
+  },
+  {
+    "id": "lens-nikon-ai-nikkor-50-2",
+    "displayName": "Nikkor 50mm f/2 AI",
+    "lensModel": "Nikkor 50mm f/2 AI",
+    "make": "Nikon",
+    "focalLength": 50.0,
+    "maxAperture": 2.0,
+    "notes": "Manual-focus F-mount."
+  },
+  {
+    "id": "lens-nikon-ai-nikkor-50-18",
+    "displayName": "Nikkor 50mm f/1.8 AI",
+    "lensModel": "Nikkor 50mm f/1.8 AI",
+    "make": "Nikon",
+    "focalLength": 50.0,
+    "maxAperture": 1.8,
+    "notes": "Manual-focus F-mount."
+  },
+  {
+    "id": "lens-nikon-ais-nikkor-50-18",
+    "displayName": "Nikkor 50mm f/1.8 AI-S",
+    "lensModel": "Nikkor 50mm f/1.8 AI-S",
+    "make": "Nikon",
+    "focalLength": 50.0,
+    "maxAperture": 1.8,
+    "notes": "Manual-focus F-mount."
+  },
+  {
+    "id": "lens-nikon-ai-nikkor-50-14",
+    "displayName": "Nikkor 50mm f/1.4 AI",
+    "lensModel": "Nikkor 50mm f/1.4 AI",
+    "make": "Nikon",
+    "focalLength": 50.0,
+    "maxAperture": 1.4,
+    "notes": "Manual-focus F-mount."
+  },
+  {
+    "id": "lens-nikon-ais-nikkor-50-14",
+    "displayName": "Nikkor 50mm f/1.4 AI-S",
+    "lensModel": "Nikkor 50mm f/1.4 AI-S",
+    "make": "Nikon",
+    "focalLength": 50.0,
+    "maxAperture": 1.4,
+    "notes": "Manual-focus F-mount."
+  },
+  {
+    "id": "lens-nikon-ais-nikkor-50-12",
+    "displayName": "Nikkor 50mm f/1.2 AI-S",
+    "lensModel": "Nikkor 50mm f/1.2 AI-S",
+    "make": "Nikon",
+    "focalLength": 50.0,
+    "maxAperture": 1.2,
+    "notes": "Manual-focus F-mount."
+  },
+  {
+    "id": "lens-nikon-ai-micro-nikkor-55-35",
+    "displayName": "Micro-Nikkor 55mm f/3.5 AI",
+    "lensModel": "Micro-Nikkor 55mm f/3.5 AI",
+    "make": "Nikon",
+    "focalLength": 55.0,
+    "maxAperture": 3.5,
+    "notes": "Manual-focus F-mount."
+  },
+  {
+    "id": "lens-nikon-ai-micro-nikkor-55-28",
+    "displayName": "Micro-Nikkor 55mm f/2.8 AI",
+    "lensModel": "Micro-Nikkor 55mm f/2.8 AI",
+    "make": "Nikon",
+    "focalLength": 55.0,
+    "maxAperture": 2.8,
+    "notes": "Manual-focus F-mount."
+  },
+  {
+    "id": "lens-nikon-ais-micro-nikkor-55-28",
+    "displayName": "Micro-Nikkor 55mm f/2.8 AI-S",
+    "lensModel": "Micro-Nikkor 55mm f/2.8 AI-S",
+    "make": "Nikon",
+    "focalLength": 55.0,
+    "maxAperture": 2.8,
+    "notes": "Manual-focus F-mount."
+  },
+  {
+    "id": "lens-nikon-ai-nikkor-85-2",
+    "displayName": "Nikkor 85mm f/2 AI",
+    "lensModel": "Nikkor 85mm f/2 AI",
+    "make": "Nikon",
+    "focalLength": 85.0,
+    "maxAperture": 2.0,
+    "notes": "Manual-focus F-mount."
+  },
+  {
+    "id": "lens-nikon-ais-nikkor-85-2",
+    "displayName": "Nikkor 85mm f/2 AI-S",
+    "lensModel": "Nikkor 85mm f/2 AI-S",
+    "make": "Nikon",
+    "focalLength": 85.0,
+    "maxAperture": 2.0,
+    "notes": "Manual-focus F-mount."
+  },
+  {
+    "id": "lens-nikon-ais-nikkor-85-14",
+    "displayName": "Nikkor 85mm f/1.4 AI-S",
+    "lensModel": "Nikkor 85mm f/1.4 AI-S",
+    "make": "Nikon",
+    "focalLength": 85.0,
+    "maxAperture": 1.4,
+    "notes": "Manual-focus F-mount."
+  },
+  {
+    "id": "lens-nikon-ai-nikkor-105-25",
+    "displayName": "Nikkor 105mm f/2.5 AI",
+    "lensModel": "Nikkor 105mm f/2.5 AI",
+    "make": "Nikon",
+    "focalLength": 105.0,
+    "maxAperture": 2.5,
+    "notes": "Manual-focus F-mount."
+  },
+  {
+    "id": "lens-nikon-ais-nikkor-105-25",
+    "displayName": "Nikkor 105mm f/2.5 AI-S",
+    "lensModel": "Nikkor 105mm f/2.5 AI-S",
+    "make": "Nikon",
+    "focalLength": 105.0,
+    "maxAperture": 2.5,
+    "notes": "Manual-focus F-mount."
+  },
+  {
+    "id": "lens-nikon-ai-nikkor-105-18",
+    "displayName": "Nikkor 105mm f/1.8 AI",
+    "lensModel": "Nikkor 105mm f/1.8 AI",
+    "make": "Nikon",
+    "focalLength": 105.0,
+    "maxAperture": 1.8,
+    "notes": "Manual-focus F-mount."
+  },
+  {
+    "id": "lens-nikon-ais-nikkor-105-18",
+    "displayName": "Nikkor 105mm f/1.8 AI-S",
+    "lensModel": "Nikkor 105mm f/1.8 AI-S",
+    "make": "Nikon",
+    "focalLength": 105.0,
+    "maxAperture": 1.8,
+    "notes": "Manual-focus F-mount."
+  },
+  {
+    "id": "lens-nikon-ai-micro-nikkor-105-4",
+    "displayName": "Micro-Nikkor 105mm f/4 AI",
+    "lensModel": "Micro-Nikkor 105mm f/4 AI",
+    "make": "Nikon",
+    "focalLength": 105.0,
+    "maxAperture": 4.0,
+    "notes": "Manual-focus F-mount."
+  },
+  {
+    "id": "lens-nikon-ais-micro-nikkor-105-28",
+    "displayName": "Micro-Nikkor 105mm f/2.8 AI-S",
+    "lensModel": "Micro-Nikkor 105mm f/2.8 AI-S",
+    "make": "Nikon",
+    "focalLength": 105.0,
+    "maxAperture": 2.8,
+    "notes": "Manual-focus F-mount."
+  },
+  {
+    "id": "lens-nikon-ai-nikkor-135-35",
+    "displayName": "Nikkor 135mm f/3.5 AI",
+    "lensModel": "Nikkor 135mm f/3.5 AI",
+    "make": "Nikon",
+    "focalLength": 135.0,
+    "maxAperture": 3.5,
+    "notes": "Manual-focus F-mount."
+  },
+  {
+    "id": "lens-nikon-ais-nikkor-135-35",
+    "displayName": "Nikkor 135mm f/3.5 AI-S",
+    "lensModel": "Nikkor 135mm f/3.5 AI-S",
+    "make": "Nikon",
+    "focalLength": 135.0,
+    "maxAperture": 3.5,
+    "notes": "Manual-focus F-mount."
+  },
+  {
+    "id": "lens-nikon-ai-nikkor-135-28",
+    "displayName": "Nikkor 135mm f/2.8 AI",
+    "lensModel": "Nikkor 135mm f/2.8 AI",
+    "make": "Nikon",
+    "focalLength": 135.0,
+    "maxAperture": 2.8,
+    "notes": "Manual-focus F-mount."
+  },
+  {
+    "id": "lens-nikon-ais-nikkor-135-28",
+    "displayName": "Nikkor 135mm f/2.8 AI-S",
+    "lensModel": "Nikkor 135mm f/2.8 AI-S",
+    "make": "Nikon",
+    "focalLength": 135.0,
+    "maxAperture": 2.8,
+    "notes": "Manual-focus F-mount."
+  },
+  {
+    "id": "lens-nikon-ai-nikkor-135-2",
+    "displayName": "Nikkor 135mm f/2 AI",
+    "lensModel": "Nikkor 135mm f/2 AI",
+    "make": "Nikon",
+    "focalLength": 135.0,
+    "maxAperture": 2.0,
+    "notes": "Manual-focus F-mount."
+  },
+  {
+    "id": "lens-nikon-ais-nikkor-135-2",
+    "displayName": "Nikkor 135mm f/2 AI-S",
+    "lensModel": "Nikkor 135mm f/2 AI-S",
+    "make": "Nikon",
+    "focalLength": 135.0,
+    "maxAperture": 2.0,
+    "notes": "Manual-focus F-mount."
+  },
+  {
+    "id": "lens-nikon-ai-nikkor-180-28-ed",
+    "displayName": "Nikkor 180mm f/2.8 ED AI",
+    "lensModel": "Nikkor 180mm f/2.8 ED AI",
+    "make": "Nikon",
+    "focalLength": 180.0,
+    "maxAperture": 2.8,
+    "notes": "Manual-focus F-mount."
+  },
+  {
+    "id": "lens-nikon-ais-nikkor-180-28-ed",
+    "displayName": "Nikkor 180mm f/2.8 ED AI-S",
+    "lensModel": "Nikkor 180mm f/2.8 ED AI-S",
+    "make": "Nikon",
+    "focalLength": 180.0,
+    "maxAperture": 2.8,
+    "notes": "Manual-focus F-mount."
+  },
+  {
+    "id": "lens-nikon-ai-nikkor-200-4",
+    "displayName": "Nikkor 200mm f/4 AI",
+    "lensModel": "Nikkor 200mm f/4 AI",
+    "make": "Nikon",
+    "focalLength": 200.0,
+    "maxAperture": 4.0,
+    "notes": "Manual-focus F-mount."
+  },
+  {
+    "id": "lens-nikon-ais-nikkor-200-4",
+    "displayName": "Nikkor 200mm f/4 AI-S",
+    "lensModel": "Nikkor 200mm f/4 AI-S",
+    "make": "Nikon",
+    "focalLength": 200.0,
+    "maxAperture": 4.0,
+    "notes": "Manual-focus F-mount."
+  },
+  {
+    "id": "lens-nikon-ai-zoom-nikkor-25-50-4",
+    "displayName": "Zoom-Nikkor 25-50mm f/4 AI",
+    "lensModel": "Zoom-Nikkor 25-50mm f/4 AI",
+    "make": "Nikon",
+    "focalLength": 25.0,
+    "maxAperture": 4.0,
+    "notes": "Manual-focus F-mount."
+  },
+  {
+    "id": "lens-nikon-ais-zoom-nikkor-25-50-4",
+    "displayName": "Zoom-Nikkor 25-50mm f/4 AI-S",
+    "lensModel": "Zoom-Nikkor 25-50mm f/4 AI-S",
+    "make": "Nikon",
+    "focalLength": 25.0,
+    "maxAperture": 4.0,
+    "notes": "Manual-focus F-mount."
+  },
+  {
+    "id": "lens-nikon-ai-zoom-nikkor-35-70-35",
+    "displayName": "Zoom-Nikkor 35-70mm f/3.5 AI",
+    "lensModel": "Zoom-Nikkor 35-70mm f/3.5 AI",
+    "make": "Nikon",
+    "focalLength": 35.0,
+    "maxAperture": 3.5,
+    "notes": "Manual-focus F-mount."
+  },
+  {
+    "id": "lens-nikon-ais-zoom-nikkor-35-70-35",
+    "displayName": "Zoom-Nikkor 35-70mm f/3.5 AI-S",
+    "lensModel": "Zoom-Nikkor 35-70mm f/3.5 AI-S",
+    "make": "Nikon",
+    "focalLength": 35.0,
+    "maxAperture": 3.5,
+    "notes": "Manual-focus F-mount."
+  },
+  {
+    "id": "lens-nikon-ais-zoom-nikkor-50-135-35",
+    "displayName": "Zoom-Nikkor 50-135mm f/3.5 AI-S",
+    "lensModel": "Zoom-Nikkor 50-135mm f/3.5 AI-S",
+    "make": "Nikon",
+    "focalLength": 50.0,
+    "maxAperture": 3.5,
+    "notes": "Manual-focus F-mount."
+  },
+  {
+    "id": "lens-nikon-ai-zoom-nikkor-80-200-4",
+    "displayName": "Zoom-Nikkor 80-200mm f/4 AI",
+    "lensModel": "Zoom-Nikkor 80-200mm f/4 AI",
+    "make": "Nikon",
+    "focalLength": 80.0,
+    "maxAperture": 4.0,
+    "notes": "Manual-focus F-mount."
+  },
+  {
+    "id": "lens-nikon-ais-zoom-nikkor-80-200-4",
+    "displayName": "Zoom-Nikkor 80-200mm f/4 AI-S",
+    "lensModel": "Zoom-Nikkor 80-200mm f/4 AI-S",
+    "make": "Nikon",
+    "focalLength": 80.0,
+    "maxAperture": 4.0,
+    "notes": "Manual-focus F-mount."
+  },
+  {
+    "id": "lens-nikon-ai-zoom-nikkor-50-300-45-ed",
+    "displayName": "Zoom-Nikkor 50-300mm f/4.5 ED AI",
+    "lensModel": "Zoom-Nikkor 50-300mm f/4.5 ED AI",
+    "make": "Nikon",
+    "focalLength": 50.0,
+    "maxAperture": 4.5,
+    "notes": "Manual-focus F-mount."
+  },
+  {
+    "id": "lens-nikon-ais-zoom-nikkor-50-300-45-ed",
+    "displayName": "Zoom-Nikkor 50-300mm f/4.5 ED AI-S",
+    "lensModel": "Zoom-Nikkor 50-300mm f/4.5 ED AI-S",
+    "make": "Nikon",
+    "focalLength": 50.0,
+    "maxAperture": 4.5,
+    "notes": "Manual-focus F-mount."
+  },
+  {
+    "id": "lens-pentax-smc-50-1.7",
+    "displayName": "SMC Pentax-M 50mm f/1.7",
+    "lensModel": "SMC Pentax-M 50mm f/1.7",
+    "make": "Pentax",
+    "focalLength": 50,
+    "maxAperture": 1.7
+  },
+  {
+    "id": "lens-olympus-zuiko-50-1.8",
+    "displayName": "Olympus Zuiko 50mm f/1.8",
+    "lensModel": "Zuiko Auto-S 50mm f/1.8",
+    "make": "Olympus",
+    "focalLength": 50,
+    "maxAperture": 1.8
+  }
+]

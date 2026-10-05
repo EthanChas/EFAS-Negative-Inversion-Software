@@ -1,0 +1,296 @@
+[
+  {
+    "id": "cam-leica-ma",
+    "make": "Leica",
+    "model": "M-A",
+    "displayName": "Leica M-A",
+    "notes": "35mm rangefinder."
+  },
+  {
+    "id": "cam-leica-m2",
+    "make": "Leica",
+    "model": "M2",
+    "displayName": "Leica M2",
+    "notes": "35mm rangefinder."
+  },
+  {
+    "id": "cam-leica-m3",
+    "make": "Leica",
+    "model": "M3",
+    "displayName": "Leica M3",
+    "notes": "35mm rangefinder."
+  },
+  {
+    "id": "cam-leica-m4",
+    "make": "Leica",
+    "model": "M4",
+    "displayName": "Leica M4",
+    "notes": "35mm rangefinder."
+  },
+  {
+    "id": "cam-leica-m42",
+    "make": "Leica",
+    "model": "M4-2",
+    "displayName": "Leica M4-2",
+    "notes": "35mm rangefinder."
+  },
+  {
+    "id": "cam-leica-m4p",
+    "make": "Leica",
+    "model": "M4-P",
+    "displayName": "Leica M4-P",
+    "notes": "35mm rangefinder."
+  },
+  {
+    "id": "cam-leica-m5",
+    "make": "Leica",
+    "model": "M5",
+    "displayName": "Leica M5",
+    "notes": "35mm rangefinder."
+  },
+  {
+    "id": "cam-leica-m6",
+    "make": "Leica",
+    "model": "M6",
+    "displayName": "Leica M6",
+    "notes": "35mm rangefinder."
+  },
+  {
+    "id": "cam-leica-mp",
+    "make": "Leica",
+    "model": "MP",
+    "displayName": "Leica MP",
+    "notes": "35mm rangefinder."
+  },
+  {
+    "id": "cam-canon-ae1p",
+    "make": "Canon",
+    "model": "AE-1 Program",
+    "displayName": "Canon AE-1 Program",
+    "notes": "35mm SLR, 1981-1987, FD mount."
+  },
+  {
+    "id": "cam-nikon-s2",
+    "make": "Nikon",
+    "model": "S2",
+    "displayName": "Nikon S2",
+    "notes": "35mm rangefinder, S-mount."
+  },
+  {
+    "id": "cam-nikon-sp",
+    "make": "Nikon",
+    "model": "SP",
+    "displayName": "Nikon SP",
+    "notes": "35mm rangefinder, S-mount."
+  },
+  {
+    "id": "cam-nikon-f",
+    "make": "Nikon",
+    "model": "F",
+    "displayName": "Nikon F",
+    "notes": "35mm SLR, F-mount."
+  },
+  {
+    "id": "cam-nikon-f-photomic",
+    "make": "Nikon",
+    "model": "F Photomic",
+    "displayName": "Nikon F Photomic",
+    "notes": "35mm SLR with Photomic meter, F-mount."
+  },
+  {
+    "id": "cam-nikkormat-ftn",
+    "make": "Nikon",
+    "model": "Nikkormat FTn",
+    "displayName": "Nikkormat FT / FTn",
+    "notes": "35mm SLR, F-mount (Nikkormat body)."
+  },
+  {
+    "id": "cam-nikon-f-apollo",
+    "make": "Nikon",
+    "model": "F Apollo",
+    "displayName": "Nikon F Apollo",
+    "notes": "Late-production Nikon F, F-mount."
+  },
+  {
+    "id": "cam-nikon-f2",
+    "make": "Nikon",
+    "model": "F2",
+    "displayName": "Nikon F2",
+    "notes": "35mm professional SLR, F-mount."
+  },
+  {
+    "id": "cam-nikkormat-ft2",
+    "make": "Nikon",
+    "model": "Nikkormat FT2",
+    "displayName": "Nikkormat FT2",
+    "notes": "35mm SLR, F-mount (Nikkormat body)."
+  },
+  {
+    "id": "cam-nikkormat-ft3",
+    "make": "Nikon",
+    "model": "Nikkormat FT3",
+    "displayName": "Nikkormat FT3",
+    "notes": "35mm SLR, F-mount (Nikkormat body)."
+  },
+  {
+    "id": "cam-nikon-el2",
+    "make": "Nikon",
+    "model": "EL2",
+    "displayName": "Nikon EL2",
+    "notes": "35mm electronic SLR, F-mount."
+  },
+  {
+    "id": "cam-nikon-fm",
+    "make": "Nikon",
+    "model": "FM",
+    "displayName": "Nikon FM",
+    "notes": "35mm mechanical SLR, F-mount."
+  },
+  {
+    "id": "cam-nikon-fe",
+    "make": "Nikon",
+    "model": "FE",
+    "displayName": "Nikon FE",
+    "notes": "35mm electronic SLR, F-mount."
+  },
+  {
+    "id": "cam-nikon-f3",
+    "make": "Nikon",
+    "model": "F3",
+    "displayName": "Nikon F3",
+    "notes": "35mm professional SLR, F-mount."
+  },
+  {
+    "id": "cam-nikon-fe2",
+    "make": "Nikon",
+    "model": "FE2",
+    "displayName": "Nikon FE2",
+    "notes": "35mm electronic SLR, F-mount."
+  },
+  {
+    "id": "cam-nikon-fm2",
+    "make": "Nikon",
+    "model": "FM2",
+    "displayName": "Nikon FM2",
+    "notes": "35mm fully mechanical SLR, F-mount."
+  },
+  {
+    "id": "cam-nikon-f301",
+    "make": "Nikon",
+    "model": "F-301",
+    "displayName": "Nikon F-301 / N2000",
+    "notes": "35mm autofocus SLR, F-mount."
+  },
+  {
+    "id": "cam-nikon-f501",
+    "make": "Nikon",
+    "model": "F-501",
+    "displayName": "Nikon F-501 / N2020",
+    "notes": "35mm autofocus SLR, F-mount."
+  },
+  {
+    "id": "cam-nikon-f4",
+    "make": "Nikon",
+    "model": "F4",
+    "displayName": "Nikon F4",
+    "notes": "35mm professional autofocus SLR, F-mount."
+  },
+  {
+    "id": "cam-nikon-f801",
+    "make": "Nikon",
+    "model": "F-801",
+    "displayName": "Nikon F-801 / N8008",
+    "notes": "35mm autofocus SLR, F-mount."
+  },
+  {
+    "id": "cam-nikon-f801s",
+    "make": "Nikon",
+    "model": "F-801s",
+    "displayName": "Nikon F-801s / N8008s",
+    "notes": "35mm autofocus SLR, F-mount."
+  },
+  {
+    "id": "cam-nikon-f90",
+    "make": "Nikon",
+    "model": "F90",
+    "displayName": "Nikon F90 / N90",
+    "notes": "35mm autofocus SLR, F-mount."
+  },
+  {
+    "id": "cam-nikon-f90x",
+    "make": "Nikon",
+    "model": "F90X",
+    "displayName": "Nikon F90X / N90s",
+    "notes": "35mm autofocus SLR, F-mount."
+  },
+  {
+    "id": "cam-nikon-f5",
+    "make": "Nikon",
+    "model": "F5",
+    "displayName": "Nikon F5",
+    "notes": "35mm professional autofocus SLR, F-mount."
+  },
+  {
+    "id": "cam-nikon-pronea-600i",
+    "make": "Nikon",
+    "model": "Pronea 600i",
+    "displayName": "Nikon Pronea 600i / S",
+    "notes": "APS IX240 autofocus SLR, Pronea mount."
+  },
+  {
+    "id": "cam-nikon-f100",
+    "make": "Nikon",
+    "model": "F100",
+    "displayName": "Nikon F100",
+    "notes": "35mm autofocus SLR, F-mount."
+  },
+  {
+    "id": "cam-nikon-fm3a",
+    "make": "Nikon",
+    "model": "FM3A",
+    "displayName": "Nikon FM3A",
+    "notes": "35mm mechanical/electronic hybrid SLR, F-mount."
+  },
+  {
+    "id": "cam-nikon-f80",
+    "make": "Nikon",
+    "model": "F80",
+    "displayName": "Nikon F80 / N80",
+    "notes": "35mm autofocus SLR, F-mount."
+  },
+  {
+    "id": "cam-nikon-f75",
+    "make": "Nikon",
+    "model": "F75",
+    "displayName": "Nikon F75 / N75",
+    "notes": "35mm autofocus SLR, F-mount."
+  },
+  {
+    "id": "cam-nikon-f6",
+    "make": "Nikon",
+    "model": "F6",
+    "displayName": "Nikon F6",
+    "notes": "35mm professional autofocus SLR, F-mount."
+  },
+  {
+    "id": "cam-pentax-k1000",
+    "make": "Pentax",
+    "model": "K1000",
+    "displayName": "Pentax K1000",
+    "notes": "35mm mechanical SLR, K-mount."
+  },
+  {
+    "id": "cam-olympus-om1",
+    "make": "Olympus",
+    "model": "OM-1",
+    "displayName": "Olympus OM-1",
+    "notes": "35mm compact mechanical SLR, OM-mount."
+  },
+  {
+    "id": "cam-mamiya-645",
+    "make": "Mamiya",
+    "model": "M645 1000s",
+    "displayName": "Mamiya 645 1000s",
+    "notes": "Medium-format 6x4.5 SLR."
+  }
+]

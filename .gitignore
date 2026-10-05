@@ -1,0 +1,16 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+build/
+dist/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+
+# local run/build leftovers
+bat_out.txt
+build_log.txt
+start.ps1
+*.db
+*.spec

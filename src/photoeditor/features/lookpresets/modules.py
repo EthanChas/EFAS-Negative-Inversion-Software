@@ -1,0 +1,95 @@
+"""The editing modules a preset can carry, and the fields each one owns - what the Advanced Preset Edit dialog is drawn from. No Qt imports.
+
+A preset holds only the fields of the modules it includes, so applying it leaves every other module of the photo alone."""
+
+from dataclasses import dataclass, field
+from typing import Any
+
+from ..denoise.logic import CHROMA_DENOISE_MAX
+from ..exposure.logic import EV_RANGE
+from ..negative.logic import FILM_TYPE_LABELS, FILM_TYPES
+from ..sharpening.logic import DEFAULT_METHOD, METHOD_LABELS, SharpenMethod
+from ..tonecurve.logic import DEFAULT_POINTS
+from ..watermark.logic import DEFAULT_POSITION, DEFAULT_SIZE, DEFAULT_TEXTURE, FILMS, POSITIONS, SIZES, TEXTURES, WATERMARK_OFF
+
+
+@dataclass(frozen=True)
+class FieldSpec:
+    key: str
+    label: str
+    kind: str                      # "float", "bool", "choice", "text" or "curve"
+    default: Any
+    low: float = 0.0               # float only
+    high: float = 1.0
+    step: float = 0.01
+    choices: tuple[tuple[str, str], ...] = ()  # choice only: (stored value, label)
+
+
+@dataclass(frozen=True)
+class ModuleSpec:
+    id: str
+    title: str
+    fields: tuple[FieldSpec, ...] = field(default_factory=tuple)
+
+
+def _trim(key: str, label: str) -> FieldSpec:
+    return FieldSpec(key, label, "float", 0.0, -1.0, 1.0)
+
+
+MODULES: tuple[ModuleSpec, ...] = (
+    ModuleSpec("negative", "Negative", (
+        FieldSpec("negative_inverted", "Invert the negative", "bool", True),
+        FieldSpec("film_type", "Film type", "choice", "auto", choices=tuple((t, FILM_TYPE_LABELS[t]) for t in FILM_TYPES)),
+        _trim("invert_r", "Red trim"), _trim("invert_g", "Green trim"), _trim("invert_b", "Blue trim"),
+    )),
+    ModuleSpec("exposure", "Exposure", (FieldSpec("exposure_ev", "Exposure", "float", 0.0, -EV_RANGE, EV_RANGE),)),
+    ModuleSpec("whitebalance", "White balance", (_trim("temperature", "Temperature"), _trim("tint", "Tint"))),
+    ModuleSpec("tonecurve", "Tone curve", (FieldSpec("tone_curve_points", "Curve", "curve", DEFAULT_POINTS),)),
+    ModuleSpec("contrast", "Contrast", (_trim("contrast", "Contrast"),)),
+    ModuleSpec("shadows_highlights", "Shadows & highlights", (_trim("shadows", "Shadows"), _trim("highlights", "Highlights"))),
+    ModuleSpec("color", "Color", (_trim("saturation", "Saturation"),)),
+    ModuleSpec("sharpening", "Sharpening", (
+        FieldSpec("sharpen_method", "Method", "choice", DEFAULT_METHOD, choices=tuple((m.value, METHOD_LABELS[m]) for m in SharpenMethod)),
+        FieldSpec("sharpen_amount", "Amount", "float", 0.0, 0.0, 1.0),
+        FieldSpec("sharpen_radius", "Radius", "float", 1.0, 0.5, 3.0),
+        FieldSpec("sharpen_masking", "Masking", "float", 0.0, 0.0, 1.0),
+    )),
+    ModuleSpec("denoise", "Chroma denoise", (FieldSpec("chroma_denoise", "Amount", "float", 0.0, 0.0, CHROMA_DENOISE_MAX),)),
+    ModuleSpec("watermark", "Canister watermark", (
+        FieldSpec("wm_film", "Canister", "choice", WATERMARK_OFF, choices=((WATERMARK_OFF, "Off"),) + tuple(FILMS.items())),
+        FieldSpec("wm_texture", "Texture", "choice", DEFAULT_TEXTURE, choices=tuple(TEXTURES.items())),
+        FieldSpec("wm_size", "Size", "choice", DEFAULT_SIZE, choices=tuple((k, v[0]) for k, v in SIZES.items())),
+        FieldSpec("wm_position", "Position", "choice", DEFAULT_POSITION, choices=tuple(POSITIONS.items())),
+        FieldSpec("wm_info", "Show camera and lens text", "bool", False),
+        FieldSpec("wm_camera", "Camera text", "text", ""),
+        FieldSpec("wm_lens", "Lens text", "text", ""),
+    )),
+)
+
+LOOK_KEYS = tuple(f.key for m in MODULES for f in m.fields)
+
+
+def module_included(look: dict, module: ModuleSpec) -> bool:
+    """A module is in a preset when the preset carries any of its fields."""
+    return any(f.key in look for f in module.fields)
+
+
+def clamp(spec: FieldSpec, value: Any) -> Any:
+    """A stored value made safe for its field: numbers pulled into range, choices checked against the list, text trimmed; None when it
+    cannot be used at all (the caller then falls back to the field's default)."""
+    try:
+        if spec.kind == "float":
+            return max(spec.low, min(spec.high, float(value)))
+        if spec.kind == "bool":
+            return bool(value)
+        if spec.kind == "choice":
+            return value if value in {v for v, _ in spec.choices} else None
+        if spec.kind == "text":
+            return str(value)[:80]
+        if spec.kind == "curve":
+            pts = sorted({(max(0, min(255, int(p[0]))), max(0, min(255, int(p[1])))) for p in value})
+            xs = [p[0] for p in pts]
+            return pts if len(pts) >= 2 and len(set(xs)) == len(xs) else None
+    except (TypeError, ValueError, IndexError):
+        return None
+    return None
