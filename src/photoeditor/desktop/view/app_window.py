@@ -7,7 +7,7 @@ from PyQt6 import sip
 from PyQt6.QtCore import QEvent, QObject, QSize, Qt, QTimer, QUrl, pyqtSignal
 from PyQt6.QtGui import QAction, QCursor, QDesktopServices
 from PyQt6.QtWidgets import (
-    QAbstractItemView, QAbstractSlider, QAbstractSpinBox, QApplication, QButtonGroup, QComboBox, QFileDialog, QHBoxLayout, QLabel, QMainWindow,
+    QStackedWidget, QAbstractItemView, QAbstractSlider, QAbstractSpinBox, QApplication, QButtonGroup, QComboBox, QFileDialog, QHBoxLayout, QLabel, QMainWindow,
     QLineEdit, QMenu, QPlainTextEdit, QTextEdit, QMenuBar, QMessageBox, QProgressDialog, QPushButton, QScrollArea, QSizePolicy, QSplitter, QVBoxLayout, QWidget,
 )
 
@@ -26,10 +26,18 @@ from .bevel_widgets import thin_sunken_panel
 from .collapsible_panel import CollapsiblePanel
 from .contrast_panel import ContrastToolPanel
 from .denoise_panel import ChromaDenoiseToolPanel
+from .local_contrast_panel import LocalContrastToolPanel
 from ...features.metadata.source_exif import read_exif_from_file
 from .contact_sheet_dialog import ContactSheetDialog
+from .credits_dialog import CreditsDialog
 from .shortcuts_dialog import ShortcutsDialog
 from ..contactsheet_worker import ContactSheetWorker
+from ..peaking_worker import PeakingWorker
+from ..library_worker import LibraryIndexWorker
+from ...features.library import query as library_query
+from ...features.library.index import LibraryIndex
+from ...features.focuspeaking.logic import overlay_from_levels
+from ...features.whitebalance.logic import range_overlay, range_share
 from ...features.contactsheet.logic import SheetOptions
 from ...features.metadata.roll import RollCard
 from .roll_card_panel import RollCardTab
@@ -46,8 +54,12 @@ from .icons import correction_icon, eyedropper_cursor, metadata_icon, negative_i
 from .image_view import ImageView
 from .import_window import ImportWindow
 from .library_panel import LibraryPanel
+from .lighttable_view import LighttableView
+from ..paths import thumbnail_cache_dir
 from .advanced_preset_dialog import AdvancedPresetDialog
+from .ai_dust_panel import AiDustPanel
 from .look_presets_panel import LookPresetsPanel
+from .module_menu import ModuleMenus
 from .loading_overlay import LoadingOverlay
 from .masking_panel import MaskingToolPanel
 from .negative_tool_panel import NegativeToolPanel
@@ -194,6 +206,18 @@ class _HotkeyFilter(QObject):
         if _typing_in_field():  # in a field every key is just a key (Tab still moves focus as usual)
             return False
         key = event.key()
+        no_mods = not (event.modifiers() & (Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.AltModifier | Qt.KeyboardModifier.MetaModifier))
+        if no_mods and key == Qt.Key.Key_W and not event.isAutoRepeat():  # W for Workbench
+            self._window.set_view("lighttable")
+            return True
+        if no_mods and key == Qt.Key.Key_D and not event.isAutoRepeat():
+            self._window.set_view("editor")
+            return True
+        if self._window.lighttable_active():  # in the Lighttable the editor's own keys stay out of the way; 0-5, K, R, U act on its selection
+            if key == Qt.Key.Key_Question:
+                self._window.show_shortcuts()
+                return True
+            return self._window.lighttable_key(event)
         if key == Qt.Key.Key_Backslash:
             if not event.isAutoRepeat():
                 self._window.set_compare(True)
@@ -262,9 +286,19 @@ class AppWindow(QMainWindow):
         self._export_worker = None
         self._sheet_worker = None
         self._quick_export = False
+        self._index_worker = None  # the Lighttable's library indexing, while it runs
+        self._export_paths_override: list[str] = []  # the photos 'Export Selected' (Lighttable) is exporting
+        self._peaking_request = 0  # which focus-peaking analysis is the latest asked for
+        self._peaking_levels = None  # the latest sharpness level map of the picture on screen (colors are picked from it)
+        self._peaking_workers: list = []  # the analysis threads still alive (at most one is ever running)
+        self._peaking_timer = QTimer(self)
+        self._peaking_timer.setSingleShot(True)
+        self._peaking_timer.setInterval(150)  # an edit, a drag, a new photo: wait for it to settle before analysing
+        self._peaking_timer.timeout.connect(self._run_peaking)
         self._comparing = False  # holding \ (or the Before button): showing the original scan instead of the edit
         self._auto_advance = True  # after K or R, open the next photo of the roll
         self._base_pick_image = None  # the raw scan on screen while the film-base eyedropper is armed
+        self._region_drawing = False  # the metering Draw Region tool is armed (it borrows the crop overlay)
         self._session = session_store.load()  # what was open last time, recent folders... (see features/session.py)
         self._open_tab = ""
         self._filmstrip_folder = ""  # the folder the filmstrip is showing
@@ -276,6 +310,8 @@ class AppWindow(QMainWindow):
         self.controller.image_preview_changed.connect(self._on_image_preview_changed)
         self.controller.file_load_failed.connect(self._on_file_load_failed)
         self.controller.history_changed.connect(self._on_history_changed)
+        self.controller.image_adjusted.connect(self._queue_peaking)
+        self.controller.image_preview_changed.connect(self._queue_peaking)
         self.controller.reverted.connect(self._on_reverted)
         self.controller.hq_busy_changed.connect(self._on_hq_busy)
 
@@ -291,7 +327,39 @@ class AppWindow(QMainWindow):
         # Expanding - without an explicit stretch factor here it was sized
         # to its children's sizeHint instead of filling the rest of the
         # frame, leaving a big blank gap above it (everything pushed down).
-        frame.layout().addWidget(self._splitter, 1)
+        # Two views over the same window, like darktable's darkroom and lighttable: the editor, and the Lighttable (the whole library as a grid)
+        self._lighttable = LighttableView(thumbnail_cache_dir())
+        self._view_stack = QStackedWidget()
+        self._view_stack.addWidget(self._splitter)
+        self._view_stack.addWidget(self._lighttable)
+        frame.layout().addWidget(self._view_stack, 1)
+        self._lighttable.open_requested.connect(self.open_in_editor)
+        self._lighttable.rate_requested.connect(self._on_lighttable_rate)
+        self._lighttable.flag_requested.connect(self._on_lighttable_flag)
+        self._lighttable.export_requested.connect(self.export_selected)
+        self._lighttable.copy_settings_requested.connect(self.controller.copy_settings_from_path)
+        self._lighttable_paste = lambda paths: self.controller.paste_settings_to_paths(paths) and self._lighttable_reload_rows()
+        self._lighttable.paste_settings_requested.connect(self._lighttable_paste)
+        self._lighttable.refresh_requested.connect(lambda: self.lighttable_refresh(force=True))
+        self._lighttable.reveal_requested.connect(self._reveal_in_folder)
+        self.controller.rating_changed.connect(lambda path, stars: self._lighttable.update_item(library_query.norm(path), rating=stars))
+        self.controller.flag_changed.connect(lambda path, flag: self._lighttable.update_item(library_query.norm(path), flag=flag))
+        self.controller.history_changed.connect(self._mark_lighttable_edited)
+
+        # Reset and Presets in the header of every module that has a look (darktable-style)
+        self._module_menus = ModuleMenus(self.controller, self)
+        for key, panel in (
+            ("exposure", self._exposure_tool), ("contrast", self._contrast_tool), ("tonecurve", self._curve_tool),
+            ("shadows_highlights", self._shadows_highlights_tool), ("color", self._color_tool), ("sharpening", self._sharpening_tool),
+            ("localcontrast", self._local_contrast_tool), ("denoise", self._denoise_tool), ("negative", self._negative_tool),
+            ("watermark", self._watermark_tool),
+        ):
+            self._module_menus.attach(panel, key)
+        for signal in (
+            self.controller.module_presets_changed, self.controller.history_changed, self.controller.image_adjusted,
+            self.controller.image_preview_changed, self.controller.reverted, self.controller.file_changed,
+        ):
+            signal.connect(self._module_menus.refresh)
 
         # Full window width, below everything - the same darktable-style
         # filmstrip layout as its own bottom strip, not confined to the
@@ -383,6 +451,12 @@ class AppWindow(QMainWindow):
         self._reset_action.setToolTip("Put this photo back to how it was when first opened (one undoable step)")
         self._reset_action.triggered.connect(self._on_reset_edits)
         edit_menu.addAction(self._reset_action)
+        self._peaking_action = QAction("Focus Peaking", self)
+        self._peaking_action.setCheckable(True)
+        self._peaking_action.setShortcut("Ctrl+Shift+F")
+        self._peaking_action.setToolTip("Mark what is in focus: blue some detail, green sharp, yellow very sharp")
+        self._peaking_action.triggered.connect(lambda _c=False: self._peaking_btn.toggle())
+        edit_menu.addAction(self._peaking_action)
         self._hq_action = QAction("High Quality (HQ)", self)
         self._hq_action.setCheckable(True)
         self._hq_action.setShortcut("Ctrl+H")
@@ -431,6 +505,37 @@ class AppWindow(QMainWindow):
         shortcuts_action.setShortcut("F1")
         shortcuts_action.triggered.connect(self.show_shortcuts)
         info_menu.addAction(shortcuts_action)
+        credits_action = QAction("Credits", self)
+        credits_action.setToolTip("Who this editor was inspired by")
+        credits_action.triggered.connect(self.show_credits)
+        info_menu.addAction(credits_action)
+
+        view_menu_anchor = menubar.addMenu("View")
+        self._lighttable_action = QAction("Workbench   (W)", self)
+        self._lighttable_action.setToolTip("The whole library as a grid: search, filter, sort, rate and flag")
+        self._lighttable_action.triggered.connect(lambda: self.set_view("lighttable"))
+        view_menu_anchor.addAction(self._lighttable_action)
+        self._editor_action = QAction("Editor   (D)", self)
+        self._editor_action.triggered.connect(lambda: self.set_view("editor"))
+        view_menu_anchor.addAction(self._editor_action)
+
+        # darktable's "lighttable | darkroom" switch, in the corner of the menu bar
+        corner = QWidget()
+        corner_row = QHBoxLayout(corner)
+        corner_row.setContentsMargins(0, 0, THEME.space_sm, 0)
+        corner_row.setSpacing(2)
+        self._view_buttons: dict[str, QPushButton] = {}
+        for key, text in (("lighttable", "Workbench"), ("editor", "Editor")):
+            btn = QPushButton(text)
+            btn.setCheckable(True)
+            btn.setFixedHeight(22)
+            btn.setStyleSheet("padding: 0px 10px;")
+            btn.setToolTip("Workbench: the whole library as a grid (W)" if key == "lighttable" else "Editor (D)")
+            btn.clicked.connect(lambda _c=False, k=key: self.set_view(k))
+            self._view_buttons[key] = btn
+            corner_row.addWidget(btn)
+        self._view_buttons["editor"].setChecked(True)
+        menubar.setCornerWidget(corner, Qt.Corner.TopRightCorner)
 
         return menubar
 
@@ -538,6 +643,16 @@ class AppWindow(QMainWindow):
         reset_zoom_btn.clicked.connect(self._image_view.reset_zoom)
         bottom_row.addWidget(reset_zoom_btn, 0)
 
+        self._peaking_btn = QPushButton("Peaking")
+        self._peaking_btn.setCheckable(True)
+        self._peaking_btn.setToolTip(
+            "Focus peaking (Ctrl+Shift+F): mark what is in focus, the way darktable does - blue for some detail, green for sharp, "
+            "yellow for very sharp. It follows your edits."
+        )
+        self._peaking_btn.toggled.connect(self._on_peaking_toggled)
+        self._image_view.peaking_slider.level_changed.connect(self._on_peaking_level)
+        bottom_row.addWidget(self._peaking_btn, 0)
+
         self._hq_btn = QPushButton("HQ")
         self._hq_btn.setCheckable(True)
         self._hq_btn.setToolTip(
@@ -643,6 +758,8 @@ class AppWindow(QMainWindow):
         self._histogram_panel.setFixedHeight(150)
         self._histogram_panel.bin_hovered.connect(self._on_bin_hovered)
         self._histogram_panel.hover_cleared.connect(self._on_graph_hover_cleared)
+        self._histogram_panel.range_selected.connect(self._on_range_selected)
+        self._histogram_panel.range_cleared.connect(self._on_range_cleared)
         body.addWidget(self._histogram_panel)
 
         self._graph_reading_label = QLabel("Hover the graph for a reading.")
@@ -667,7 +784,7 @@ class AppWindow(QMainWindow):
         self._tool_rail.add_tab("exposure", sun_icon(18), "WB Correction")
         self._tool_rail.add_tab("correction", correction_icon(18), "Correction")
         self._tool_rail.add_tab("negative", negative_icon(18), "Negative")
-        self._tool_rail.add_tab("watermark", watermark_icon(18), "Canister Watermark")
+        self._tool_rail.add_tab("watermark", watermark_icon(18), "Watermark")
         self._tool_rail.add_tab("metadata", metadata_icon(18), "Roll Card")
         self._tool_rail.tab_toggled.connect(self._on_tool_tab_toggled)
         # AlignTop: without it, QHBoxLayout stretches the shorter item to
@@ -744,6 +861,11 @@ class AppWindow(QMainWindow):
         self._negative_tool.base_cleared.connect(lambda: self.controller.set_film_base(None))
         self.controller.film_base_changed.connect(self._sync_film_base)
         self._negative_tool.rgb_changed.connect(self.controller.set_invert_rgb)
+        self._negative_tool.metering_changed.connect(self.controller.set_metering)
+        self._negative_tool.metering_preview.connect(self.controller.preview_metering)
+        self._negative_tool.region_draw_toggled.connect(self._on_region_draw_toggled)
+        self._negative_tool.region_cleared.connect(lambda: self.controller.set_metering_rect(None))
+        self._negative_tool.metering_reset_requested.connect(self._on_metering_reset)
         self._negative_tool.rgb_preview_requested.connect(self.controller.preview_invert_rgb)
         self.controller.negative_state_changed.connect(self._sync_negative_panel)
         negative_tools_col.addWidget(self._negative_tool)
@@ -775,17 +897,20 @@ class AppWindow(QMainWindow):
         self._crop_tool.distortion_preview.connect(self.controller.preview_distortion)
         self._image_view.set_crop_guide(*self._crop_tool.current_guide())
         self._image_view.crop_requested.connect(self._on_crop_requested)
-        negative_tools_col.addWidget(self._crop_tool)
-
         self._color_tool = ColorToolPanel()
         self._color_tool.color_changed.connect(self.controller.set_color)
         self._color_tool.preview_requested.connect(self.controller.preview_color)
-        correction_widgets = [self._color_tool]  # these live in the Correction tab
+        correction_widgets = [self._crop_tool, self._color_tool]  # these live in the Correction tab: crop and rotate first
 
         self._sharpening_tool = SharpeningToolPanel()
         self._sharpening_tool.changed.connect(self.controller.set_sharpen)
         self._sharpening_tool.preview_requested.connect(self.controller.preview_sharpen)
         correction_widgets.append(self._sharpening_tool)
+
+        self._local_contrast_tool = LocalContrastToolPanel()
+        self._local_contrast_tool.changed.connect(self.controller.set_local_contrast)
+        self._local_contrast_tool.preview_requested.connect(self.controller.preview_local_contrast)
+        correction_widgets.append(self._local_contrast_tool)
 
         self._denoise_tool = ChromaDenoiseToolPanel()
         self._denoise_tool.changed.connect(self.controller.set_chroma_denoise)
@@ -803,8 +928,18 @@ class AppWindow(QMainWindow):
         self.controller.scratches_changed.connect(self._dust_tool.set_manual_count)
         self._image_view.stroke_completed.connect(self._on_stroke_completed)
         self._image_view.tool_clicked.connect(self._on_tool_clicked)
+        self._image_view.source_picked.connect(self.controller.set_clone_source)
+        self.controller.clone_source_changed.connect(self._refresh_clone_marker)
+        self.controller.image_adjusted.connect(self._refresh_clone_marker)
+        self._dust_tool.clone_tool_shown.connect(lambda _on: self._refresh_clone_marker())
         self.controller.notice.connect(self._coord_label.setText)
         negative_tools_col.addWidget(self._dust_tool)
+
+        self._ai_dust_tool = AiDustPanel()
+        self._ai_dust_tool.changed.connect(self.controller.set_ai_dust)
+        self._ai_dust_tool.cancel_requested.connect(self.controller.cancel_ai_dust)
+        self.controller.ai_dust_status.connect(self._refresh_ai_dust_panel)
+        negative_tools_col.addWidget(self._ai_dust_tool)
 
         negative_tools_col.addStretch(1)
 
@@ -819,8 +954,8 @@ class AppWindow(QMainWindow):
         self._negative_panel = SlideOutPanel(negative_tools_scroll)
         tool_row.addWidget(self._negative_panel, 0)
 
-        # A third tab/dropdown, the same structure again: Color, Sharpening and
-        # Chroma Denoise - the corrections applied to the finished picture.
+        # A third tab/dropdown, the same structure again: Crop & Rotate, Color, Sharpening, Local Contrast
+        # and Chroma Denoise - the corrections applied to the finished picture.
         correction_content = QWidget()
         correction_col = QVBoxLayout(correction_content)
         correction_col.setContentsMargins(0, 0, 0, 0)
@@ -843,6 +978,7 @@ class AppWindow(QMainWindow):
         # A fourth tab: the Canister Watermark (features/watermark/logic.py).
         self._watermark_tool = CanisterWatermarkPanel()
         self._watermark_tool.changed.connect(self.controller.set_watermark)
+        self._watermark_tool.marks_changed.connect(self.controller.set_marks)
         watermark_content = QWidget()
         watermark_col = QVBoxLayout(watermark_content)
         watermark_col.setContentsMargins(0, 0, 0, 0)
@@ -984,6 +1120,122 @@ class AppWindow(QMainWindow):
         if box.clickedButton() is open_btn:
             QDesktopServices.openUrl(QUrl.fromLocalFile(summary["path"]))
 
+    # ---- lighttable ----
+    def lighttable_active(self) -> bool:
+        return self._view_stack.currentIndex() == 1
+
+    def lighttable_key(self, event) -> bool:
+        return self._lighttable.handle_key(event)
+
+    def set_view(self, name: str) -> None:
+        """Switch between the editor and the Lighttable."""
+        want_lighttable = name == "lighttable"
+        if want_lighttable == self.lighttable_active():
+            return
+        c = self.controller
+        if want_lighttable:
+            self._metadata_tab.flush()
+            if c.state.image_path is not None:
+                c._save_edit_state()  # what the editor shows is what the library should know
+                self._lighttable.thumbnail_changed(c.state.image_path)
+            self._peaking_timer.stop()
+            self._view_stack.setCurrentIndex(1)
+            self._filmstrip.setVisible(False)
+            self._lighttable_reload_rows()
+            self.lighttable_refresh()
+            self._lighttable.focus_grid()
+        else:
+            self._view_stack.setCurrentIndex(0)
+            self._filmstrip.setVisible(bool(self._filmstrip.paths()) and not self._panels_hidden)
+            self._image_view.setFocus()
+        for key, btn in self._view_buttons.items():
+            btn.setChecked((key == "lighttable") == want_lighttable)
+
+    def open_in_editor(self, path: str) -> None:
+        self.set_view("editor")
+        self.controller.open_file(path)
+
+    def lighttable_roots(self) -> list[str]:
+        """The folders the Lighttable covers: the Library panel's roots, and the folders opened recently or now (outside them)."""
+        roots = [r for r in self._library_panel._tree.roots() if r]
+        extra = [f for f in (*self._session.get("recent_folders", []), self._filmstrip_folder) if f and os.path.isdir(f)]
+        chosen: list[str] = []
+        for r in sorted(roots + extra, key=lambda p: len(library_query.norm(p))):
+            n = library_query.norm(r).rstrip("\\/") + os.sep
+            if not any(n.startswith(library_query.norm(c).rstrip("\\/") + os.sep) or n == library_query.norm(c) + os.sep for c in chosen):
+                chosen.append(r)
+        return chosen
+
+    def _lighttable_reload_rows(self) -> None:
+        """Show what the index already holds, with the editor's ratings, flags and edits joined in."""
+        roots = self.lighttable_roots()
+        index = LibraryIndex()
+        try:
+            records = index.under(roots)
+        finally:
+            index.close()
+        meta = library_query.load_meta(self.controller._db, records)
+        self._lighttable.set_rows(library_query.build_rows(records, meta))
+
+    def lighttable_refresh(self, force: bool = False) -> None:
+        """Bring the index up to date in the background (new, changed and removed photos); the grid reloads when it has news."""
+        if self._index_worker is not None and self._index_worker.isRunning():
+            return
+        roots = self.lighttable_roots()
+        if not roots:
+            self._lighttable.set_index_status("No folders yet: add one in the Library panel")
+            return
+        worker = LibraryIndexWorker(roots)
+        worker.progress.connect(lambda done, total: self._lighttable.set_index_status(f"Reading photos {done:,} of {total:,}", done, total))
+        worker.finished_ok.connect(self._on_index_finished)
+        self._index_worker = worker
+        self._lighttable.set_index_status("Looking for photos...")
+        worker.start()
+
+    def _on_index_finished(self, added: int, changed: int, removed: int) -> None:
+        self._index_worker = None
+        self._lighttable.set_index_status(
+            f"{added:,} new, {changed:,} changed, {removed:,} removed" if (added or changed or removed) else "Up to date"
+        )
+        if added or changed or removed:
+            self._lighttable_reload_rows()
+
+    def _on_lighttable_rate(self, paths: list, stars: int) -> None:
+        for path in paths:
+            self.controller.set_rating_for(path, stars)
+        self._coord_label.setText(f"Rated {len(paths)} photo{'s' if len(paths) != 1 else ''}: " + (("\u2605" * stars) if stars else "no rating"))
+
+    def _on_lighttable_flag(self, paths: list, flag) -> None:
+        for path in paths:
+            self.controller.set_flag_for(path, flag)
+        self._coord_label.setText(f"{ {'keeper': 'Kept', 'rejected': 'Rejected', None: 'Cleared the flag on'}[flag] } {len(paths)} photo{'s' if len(paths) != 1 else ''}")
+
+    def _mark_lighttable_edited(self) -> None:
+        state = self.controller.state
+        if state.image_path is not None and len(state.history) > 1:
+            self._lighttable.update_item(library_query.norm(state.image_path), edited=True)
+
+    def _reveal_in_folder(self, path: str) -> None:
+        import subprocess
+
+        try:
+            subprocess.Popen(["explorer", "/select,", os.path.normpath(path)])
+        except OSError:
+            QDesktopServices.openUrl(QUrl.fromLocalFile(os.path.dirname(path)))
+
+    def export_selected(self, paths: list) -> None:
+        """Lighttable > Export Selected: the photos picked there, with the presets ticked in the Export panel."""
+        if not paths:
+            return
+        if self._export_worker is not None:
+            self._lighttable.set_index_status("An export is already running")
+            return
+        self._export_paths_override = list(paths)
+        self._on_export_requested("paths", self._export_panel.preset_jobs() or self._export_panel.current_job())
+
+    def show_credits(self) -> None:
+        CreditsDialog(self).exec()
+
     def show_shortcuts(self) -> None:
         if getattr(self, "_shortcuts_dialog", None) is None:
             self._shortcuts_dialog = ShortcutsDialog(self)
@@ -1058,6 +1310,7 @@ class AppWindow(QMainWindow):
         """At startup: bring back the sidebar widths, the open tab, the filmstrip filter and the photo that was open - in its folder."""
         sess = self._session
         self._auto_advance = sess["auto_advance"]
+        self._image_view.peaking_slider.set_level(sess["peaking_level"])
         self._auto_advance_action.setChecked(self._auto_advance)
         left, center, right = self._splitter.sizes()
         want_left, want_right = sess["left_width"] or left, sess["right_width"] or right
@@ -1107,6 +1360,8 @@ class AppWindow(QMainWindow):
             paths, edit_store.get_flags(db, paths), edit_store.get_ratings(db, paths), edit_store.touched_paths(db, paths, DEFAULT_POINTS)
         )
         self._library_panel.reveal(folder)
+        if self.lighttable_active():
+            self._filmstrip.setVisible(False)
 
     def _on_library_folder_double_clicked(self, folder: str) -> None:
         self._on_library_folder_selected(folder)
@@ -1115,6 +1370,7 @@ class AppWindow(QMainWindow):
         c = self.controller
         path = c.state.image_path
         self._metadata_tab.refresh_suggestions()
+        self._watermark_tool.refresh_suggestions()
         self._metadata_tab.set_state(c.state.roll, c.state.metadata, c.frame_position(), os.path.dirname(path) if path else "")
 
     def _on_roll_changed(self) -> None:
@@ -1131,7 +1387,11 @@ class AppWindow(QMainWindow):
     def _on_file_changed(self) -> None:
         state = self.controller.state
         self._presets_panel.set_has_photo(state.image_path is not None)
+        self._peaking_levels = None  # the marks belong to the photo that was open; the new picture is analysed when it lands
+        self._image_view.set_peaking_overlay(None)
+        self._queue_peaking()
         self._comparing = False  # a newly opened photo shows its edit
+        self._region_drawing = False  # a region being drawn belonged to the photo that was open
         if self._base_pick_image is not None:  # a pick in progress belonged to the photo that was open
             self._base_pick_image = None
             self._negative_tool.set_pick_active(False)
@@ -1159,9 +1419,12 @@ class AppWindow(QMainWindow):
         self._shadows_highlights_tool.set_values(state.shadows, state.highlights)
         self._denoise_tool.reset()
         self._denoise_tool.set_value(state.chroma_denoise)
+        self._local_contrast_tool.reset()
+        self._local_contrast_tool.set_value(state.local_contrast)
         self._watermark_tool.set_values(
             state.wm_film, state.wm_texture, state.wm_size, state.wm_position, state.wm_info, state.wm_camera, state.wm_lens
         )
+        self._watermark_tool.set_marks(state.marks)
         self._sync_roll_card()
         self._sharpening_tool.reset()
         self._sharpening_tool.set_values(
@@ -1169,6 +1432,8 @@ class AppWindow(QMainWindow):
         )
         self._dust_tool.reset()
         self._dust_tool.set_values(state.dust_auto, state.dust_threshold, state.dust_size, state.scratch_sensitivity)
+        self._ai_dust_tool.set_values(state.ai_dust, state.ai_threshold, state.ai_grow)
+        self._refresh_ai_dust_panel()
         self._image_view.set_pick_mode(False)
         self._image_view.set_tool(None)
         self._hq_btn.blockSignals(True)
@@ -1193,6 +1458,8 @@ class AppWindow(QMainWindow):
         self._refresh_overlay()
         self._refresh_export_hints()
         self._refresh_size_label()
+        self._histogram_panel.clear_selection()  # a selection belongs to the photo it was dragged on
+        self._image_view.set_range_overlay(None)
         self._histogram_panel.set_data(state.histogram, state.luminance_histogram)
         self._stats_panel.set_stats(state.channel_stats, state.exposure_label, state.luminance["avg"])
         self._coord_label.setText("Move the mouse over the image to inspect a pixel.")
@@ -1204,6 +1471,7 @@ class AppWindow(QMainWindow):
         self._negative_tool.set_film_type(state.film_type)
         self._negative_tool.set_inverted(state.negative_inverted)
         self._negative_tool.set_rgb(state.invert_r, state.invert_g, state.invert_b)
+        self._negative_tool.set_metering(state.metering)
 
     def _refresh_flatfield_panel(self) -> None:
         self._flatfield_tool.refresh(self.controller.flatfield_info())
@@ -1250,7 +1518,7 @@ class AppWindow(QMainWindow):
         # full pre-crop frame (so the overlay's coordinates stay valid) -
         # keep it that way rather than snapping back to the real (cropped)
         # image out from under an in-progress drag.
-        if self._crop_tool.is_crop_active():
+        if self._showing_pre_crop():
             self._image_view.update_pixels(state.pre_crop_rgb)
         elif not (self._comparing or self._base_pick_image is not None):
             self._image_view.update_pixels(state.image_rgb)
@@ -1260,16 +1528,19 @@ class AppWindow(QMainWindow):
         self._histogram_panel.set_data(state.histogram, state.luminance_histogram)
         self._stats_panel.set_stats(state.channel_stats, state.exposure_label, state.luminance["avg"])
         self._filmstrip.update_active_thumbnail(state.image_rgb)
+        self._refresh_range()
 
     def _on_image_preview_changed(self) -> None:
         # Image only - histogram/stats panels intentionally don't refresh
         # here, since recomputing those on every tick was the actual source
         # of the lag (see AppController.preview_exposure_ev).
         state = self.controller.state
-        if self._crop_tool.is_crop_active():
+        if self._showing_pre_crop():
             self._image_view.update_pixels(state.pre_crop_rgb)
         elif not (self._comparing or self._base_pick_image is not None):
             self._image_view.update_pixels(state.image_rgb)
+        if self._histogram_panel.selection() is not None:
+            self._refresh_range()  # the green grid follows a drag; the graph itself catches up when the edit settles
 
     def _on_history_changed(self) -> None:
         descriptions = [entry.description for entry in self.controller.state.history]
@@ -1342,7 +1613,10 @@ class AppWindow(QMainWindow):
         others = [n for n in self.controller.look_presets() if n.casefold() != name.casefold()]
         dialog = AdvancedPresetDialog(name, look, others, self)
         if dialog.exec() == dialog.DialogCode.Accepted:
-            self.controller.replace_look_preset(name, dialog.name(), dialog.look())
+            new_look = dialog.look()
+            if "marks" in look and any(k.startswith("wm_") for k in new_look):  # the dialog edits the canister's fields; the text/logo marks ride along
+                new_look["marks"] = look["marks"]
+            self.controller.replace_look_preset(name, dialog.name(), new_look)
 
     def _on_apply_preset_to_folder(self, name: str) -> None:
         path = self.controller.state.image_path
@@ -1352,7 +1626,7 @@ class AppWindow(QMainWindow):
         count = len(list_images_in_folder(folder))
         answer = QMessageBox.question(
             self, "Apply Preset to Whole Folder",
-            f"Apply \u201c{name}\u201d to all {count} photos in \u201c{os.path.basename(folder)}\u201d?\n\n"
+            f"Apply '{name}' to all {count} photos in '{os.path.basename(folder)}'?\n\n"
             "Each photo keeps its own crop, rotation and dust repairs. This replaces their current tone and color settings.",
         )
         if answer == QMessageBox.StandardButton.Yes:
@@ -1367,7 +1641,7 @@ class AppWindow(QMainWindow):
         answer = QMessageBox.question(
             self, "Paste Settings to Whole Folder",
             f"Apply the copied look (tone, color, film type, sharpening, watermark) to all {count} photos in "
-            f"\u201c{os.path.basename(folder)}\u201d?\n\nEach photo keeps its own crop, rotation and dust repairs. "
+            f"'{os.path.basename(folder)}'?\n\nEach photo keeps its own crop, rotation and dust repairs. "
             "This replaces their current tone and color settings.",
         )
         if answer == QMessageBox.StandardButton.Yes:
@@ -1418,13 +1692,17 @@ class AppWindow(QMainWindow):
         self._color_tool.set_values(state.saturation, state.temperature, state.tint)
         self._shadows_highlights_tool.set_values(state.shadows, state.highlights)
         self._denoise_tool.set_value(state.chroma_denoise)
+        self._local_contrast_tool.set_value(state.local_contrast)
         self._watermark_tool.set_values(
             state.wm_film, state.wm_texture, state.wm_size, state.wm_position, state.wm_info, state.wm_camera, state.wm_lens
         )
+        self._watermark_tool.set_marks(state.marks)
         self._sharpening_tool.set_values(
             state.sharpen_amount, state.sharpen_radius, state.sharpen_masking, state.sharpen_method
         )
         self._dust_tool.set_values(state.dust_auto, state.dust_threshold, state.dust_size, state.scratch_sensitivity)
+        self._ai_dust_tool.set_values(state.ai_dust, state.ai_threshold, state.ai_grow)
+        self._refresh_ai_dust_panel()
         if self._crop_tool.is_crop_active():
             self._image_view.enter_crop_mode(state.pre_crop_rgb, state.crop_rect, QCursor(Qt.CursorShape.CrossCursor))
 
@@ -1451,6 +1729,7 @@ class AppWindow(QMainWindow):
             self._end_base_pick()
             return
         c = self.controller
+        self._end_region_draw()
         raw = c.render_raw_scan()
         if raw is None:
             self._negative_tool.set_pick_active(False)
@@ -1475,7 +1754,7 @@ class AppWindow(QMainWindow):
         self._negative_tool.set_pick_active(False)
         state = self.controller.state
         if state.image_rgb is not None:
-            self._image_view.update_pixels(state.pre_crop_rgb if self._crop_tool.is_crop_active() else state.image_rgb)
+            self._image_view.update_pixels(state.pre_crop_rgb if self._showing_pre_crop() else state.image_rgb)
 
     def _sample_base(self, x: int, y: int) -> tuple[int, int, int]:
         """The median color of a small patch around the click on the raw scan - steadier than one pixel, which is grain and dust."""
@@ -1528,7 +1807,7 @@ class AppWindow(QMainWindow):
         if tool in ("line", "delete"):
             iv.set_pick_mode(True, QCursor(Qt.CursorShape.CrossCursor))
         else:
-            mode = {"heal": "heal", "smart": "smart", "scratch": "polyline"}[tool]
+            mode = {"heal": "heal", "smart": "smart", "scratch": "polyline", "manualline": "line2", "clone": "clone"}[tool]
             iv.set_tool(mode, lambda: self._brush_radius(tool))
 
     def _brush_radius(self, tool: str) -> float:
@@ -1540,6 +1819,17 @@ class AppWindow(QMainWindow):
 
     def _on_stroke_completed(self, points: list) -> None:
         tool = self._dust_tool.active_tool()
+        if tool == "manualline" and len(points) >= 2:
+            self.controller.add_manual_line(points[0], points[1], self._dust_tool.brush_size(), self._dust_tool.repair_method())
+            return
+        if tool == "clone":
+            if self._dust_tool.clone_source_armed():  # Set Source: this click is the source, not a stroke
+                self._dust_tool.set_clone_source_armed(False)
+                self.controller.set_clone_source(*points[0])
+                return
+            strength, feather, match_tone = self._dust_tool.clone_settings()
+            self.controller.add_clone_stroke(points, self._dust_tool.brush_size(), strength, feather, match_tone)
+            return
         if tool not in ("heal", "scratch"):
             return
         self.controller.add_heal_stroke(
@@ -1551,12 +1841,73 @@ class AppWindow(QMainWindow):
             "Healed" if tool == "heal" else "Healed scratch",
         )
 
+    def _refresh_ai_dust_panel(self) -> None:
+        self._ai_dust_tool.set_info(self.controller.ai_dust_info())
+
+    def _refresh_clone_marker(self) -> None:
+        """The dashed circle of the clone tool: where it copies from. Only drawn while the clone tool is the active one."""
+        c = self.controller
+        active = self._dust_tool.active_tool() == "clone"
+        self._image_view.set_clone_marker(c.clone_source_display() if active else None, c.clone_offset_display() if active else None)
+        self._dust_tool.set_clone_hint(c.clone_source_display() is not None)
+
     def _on_tool_clicked(self, x: float, y: float) -> None:
         if self._dust_tool.active_tool() == "smart":
             self.controller.smart_heal_at(x, y, self._dust_tool.smart_sensitivity())
 
     def _on_clipping_toggled(self, _checked: bool = False) -> None:
         self.controller.set_clipping(self._shadow_clip_btn.isChecked(), self._highlight_clip_btn.isChecked())
+
+    # ---- focus peaking ----
+    def _on_peaking_toggled(self, on: bool) -> None:
+        self._peaking_action.setChecked(on)
+        self._peaking_request += 1  # whatever was being analysed no longer matters
+        self._image_view.set_peaking_slider_visible(on, self._peaking_anchor_x)
+        if on:
+            self._peaking_timer.start(0)
+        else:
+            self._peaking_timer.stop()
+            self._image_view.set_peaking_overlay(None)
+
+    def _peaking_anchor_x(self) -> int:
+        """Where the slider sits: centred over the Peaking button, in the image view's coordinates."""
+        btn = self._peaking_btn
+        return self._image_view.mapFromGlobal(btn.mapToGlobal(btn.rect().center())).x()
+
+    def _on_peaking_level(self, level: int) -> None:
+        self._session["peaking_level"] = level
+        self._apply_peaking()
+
+    def _apply_peaking(self) -> None:
+        """Colour the latest level map for the slider's level and put it on the picture."""
+        if not self._peaking_btn.isChecked():
+            return
+        self._image_view.set_peaking_overlay(overlay_from_levels(self._peaking_levels, self._image_view.peaking_slider.level()))
+
+    def _queue_peaking(self, *_args) -> None:
+        """The picture on screen changed: analyse it again once the changes stop. The old marks stay until the new ones arrive."""
+        if self._peaking_btn.isChecked():
+            self._peaking_timer.start()
+
+    def _run_peaking(self) -> None:
+        pixels = self.controller.state.image_rgb
+        if not self._peaking_btn.isChecked() or pixels is None:
+            return
+        self._peaking_workers = [w for w in self._peaking_workers if w.isRunning()]
+        if self._peaking_workers:
+            self._peaking_timer.start()  # one analysis at a time; ask again once it has finished
+            return
+        self._peaking_request += 1
+        worker = PeakingWorker(self._peaking_request, pixels)
+        worker.done.connect(self._on_peaking_done)
+        self._peaking_workers.append(worker)  # held here: a QThread must not be dropped while it is still running
+        worker.start()
+
+    def _on_peaking_done(self, request: int, levels) -> None:
+        if request != self._peaking_request or not self._peaking_btn.isChecked():
+            return  # superseded, or switched off meanwhile
+        self._peaking_levels = levels
+        self._apply_peaking()
 
     def _on_hq_toggled(self, enabled: bool) -> None:
         self._hq_action.setChecked(enabled)
@@ -1600,11 +1951,44 @@ class AppWindow(QMainWindow):
             )
 
     def _on_graph_hover_cleared(self) -> None:
-        self._graph_reading_label.setText("Hover the graph for a reading.")
+        self._graph_reading_label.setText(self._range_summary() or "Hover the graph for a reading.")
+
+    # ---- brightness range selected on the Exposure graph ----
+    def _range_summary(self) -> str:
+        """\"Selected 96-160: 23.4% of the picture (123,456 pixels)\" - or "" with no selection."""
+        sel = self._histogram_panel.selection()
+        hist = self.controller.state.luminance_histogram
+        if sel is None or not hist:
+            return ""
+        pixels, share = range_share(hist, *sel)
+        return f"Selected {sel[0]}-{sel[1]}: {share * 100:.1f}% of the picture ({pixels:,} pixels)"
+
+    def _on_range_selected(self, low: int, high: int) -> None:
+        self._refresh_range(shown_share=True)
+
+    def _on_range_cleared(self) -> None:
+        self._image_view.set_range_overlay(None)
+        self._on_graph_hover_cleared()
+
+    def _refresh_range(self, shown_share: bool = False) -> None:
+        """Put the selected span of the graph on the picture as a green grid, and say how much of the picture it is."""
+        sel = self._histogram_panel.selection()
+        state = self.controller.state
+        if sel is None or state.image_rgb is None:
+            self._image_view.set_range_overlay(None)
+            return
+        self._image_view.set_range_overlay(range_overlay(state.image_rgb, *sel))
+        hist = state.luminance_histogram
+        if hist:
+            pixels, share = range_share(hist, *sel)
+            self._histogram_panel.set_share_text(f"{share * 100:.1f}%")
+        self._graph_reading_label.setText(self._range_summary() or "Hover the graph for a reading.")
 
     def _on_mode_button_clicked(self, button: QPushButton) -> None:
         mode = "exposure" if button is self._exposure_btn else "color"
-        self._histogram_panel.set_mode(mode)
+        self._histogram_panel.set_mode(mode)  # leaving Exposure drops the selection with it
+        if mode != "exposure":
+            self._image_view.set_range_overlay(None)
         self._clip_row.setVisible(mode == "exposure")
         if mode != "exposure":  # the marks belong to the Exposure view - leaving it switches them off
             self._shadow_clip_btn.setChecked(False)
@@ -1655,9 +2039,48 @@ class AppWindow(QMainWindow):
         if mode is not None:
             self._negative_tool.show_detection(mode)
 
+    # ---- metering region ----
+    def _on_metering_reset(self) -> None:
+        self.controller.reset_metering()
+        self._negative_tool.set_metering(self.controller.state.metering)
+
+    def _on_region_draw_toggled(self, on: bool) -> None:
+        """Armed: the whole uncropped frame is shown with a rectangle to drag out, and what is drawn becomes the area the negative is
+        metered on (it borrows the crop overlay, but the crop itself is left alone). Disarmed: the edit comes back."""
+        state = self.controller.state
+        if not on:
+            self._end_region_draw()
+            return
+        if state.preview_rgb is None:
+            self._negative_tool.set_region_draw_active(False)
+            return
+        self._end_base_pick()
+        if self._crop_tool.is_crop_active():
+            self._crop_tool.set_crop_mode(False)
+            self._image_view.exit_crop_mode(state.image_rgb)
+        self._dust_tool.deactivate_tools()
+        self._image_view.set_tool(None)
+        self.set_compare(False)
+        self._region_drawing = True
+        pre_crop = state.pre_crop_rgb if state.pre_crop_rgb is not None else state.image_rgb
+        self._image_view.enter_crop_mode(pre_crop, state.metering.rect, QCursor(Qt.CursorShape.CrossCursor))
+        self._coord_label.setText("Metering: drag a rectangle over a clean, typical part of the film, then switch Draw Region off.")
+
+    def _showing_pre_crop(self) -> bool:
+        """The view is deliberately showing the whole uncropped frame: crop mode, or the metering region being drawn."""
+        return self._crop_tool.is_crop_active() or self._region_drawing
+
+    def _end_region_draw(self) -> None:
+        if not self._region_drawing:
+            return
+        self._region_drawing = False
+        self._negative_tool.set_region_draw_active(False)
+        self._image_view.exit_crop_mode(self.controller.state.image_rgb)
+
     def _on_crop_mode_toggled(self, enabled: bool) -> None:
         state = self.controller.state
         if enabled:
+            self._end_region_draw()
             self._dust_tool.deactivate_tools()
             self._image_view.set_tool(None)
             # Fully zoomed out, on the pre-crop frame, with any existing
@@ -1672,6 +2095,9 @@ class AppWindow(QMainWindow):
     def _on_crop_requested(self, x1: int, y1: int, x2: int, y2: int) -> None:
         # Still in crop mode afterward - the overlay just reflects the
         # drag's result, so further moves/resizes keep working.
+        if self._region_drawing:
+            self.controller.set_metering_rect((x1, y1, x2, y2))
+            return
         self.controller.set_crop_rect((x1, y1, x2, y2))
 
     def _on_crop_cleared(self) -> None:
@@ -1712,6 +2138,10 @@ class AppWindow(QMainWindow):
                 return
             self.controller._save_edit_state()  # make sure the stored edits match what's on screen
             paths = [state.image_path]
+        elif scope == "paths":  # chosen in the Lighttable
+            paths = list(self._export_paths_override)
+            if state.image_path in paths:
+                self.controller._save_edit_state()
         else:
             paths = self._filmstrip.paths()
             if not paths and state.image_path is not None:
@@ -1746,6 +2176,9 @@ class AppWindow(QMainWindow):
             lambda done, total, _name, n=len(paths), k=steps_per_photo: self._image_view.set_export_progress(min(n, done // k), n, done / max(1, total))
         )
         self._image_view.set_export_progress(0, len(paths), 0.0)
+        worker.progress.connect(
+            lambda done, total, _name, n=len(paths), k=steps_per_photo: self._lighttable.set_index_status(f"Exporting {min(n, done // k)} of {n}", done, total)
+        )
         worker.finished_all.connect(self._on_export_finished)
         self._export_worker = worker
         panel.set_busy(True)
@@ -1777,6 +2210,7 @@ class AppWindow(QMainWindow):
         panel = self._export_panel
         panel.set_busy(False)
         self._image_view.end_export_progress()
+        self._lighttable.set_index_status("Export finished")
         done, skipped, failed = summary["done"], summary["skipped"], summary["failed"]
         parts = [f"Wrote {len(done)} file{'s' if len(done) != 1 else ''}"]
         if skipped:
@@ -1794,6 +2228,13 @@ class AppWindow(QMainWindow):
             self._coord_label.setText("Quick export: " + (f"saved {os.path.basename(done[0])}" if done else ". ".join(parts)))
 
     def closeEvent(self, event) -> None:
+        if self._index_worker is not None:
+            self._index_worker.cancel()
+            self._index_worker.wait(5000)
+        self._lighttable.shutdown()
+        self._peaking_timer.stop()
+        for worker in self._peaking_workers:
+            worker.wait(5000)
         self._metadata_tab.flush()
         self._save_session_layout()
         if self._sheet_worker is not None:

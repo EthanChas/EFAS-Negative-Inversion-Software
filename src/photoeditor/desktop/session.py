@@ -5,6 +5,8 @@ import numpy as np
 from ..features.metadata.models import MetadataConfig
 from ..features.metadata.roll import RollCard
 from ..features.negative.logic import ProcessMode
+from ..features.negative.metering import Metering
+from ..features.watermark.marks import Marks
 from ..features.tonecurve.logic import DEFAULT_POINTS
 
 
@@ -52,6 +54,13 @@ class HistoryEntry:
     wm_info: bool
     wm_camera: str
     wm_lens: str
+    local_contrast: float = 0.0
+    metering: Metering = field(default_factory=Metering)
+    clone_strokes: list = field(default_factory=list)
+    ai_dust: bool = False
+    ai_threshold: float = 0.3
+    ai_grow: int = 1
+    marks: Marks = field(default_factory=Marks)
 
 
 @dataclass
@@ -91,12 +100,19 @@ class AppState:
     scratch_lines: list = field(default_factory=list)  # traced scratches, 0..1 raw-frame coords
     scratch_sensitivity: float = 0.5
     heal_strokes: list = field(default_factory=list)  # painted heals: (points, size, mult, force, method)
+    clone_strokes: list = field(default_factory=list)  # clones: (points, size, dx, dy, strength, feather, match_tone)
+    ai_dust: bool = False  # repair what the AI model marks
+    ai_threshold: float = 0.3
+    ai_grow: int = 1
+    marks: Marks = field(default_factory=Marks)  # the text and logo watermarks
     film_type: str = "auto"  # "auto" | "c41" | "bw" | "e6" - picked by hand, or detected
     invert_r: float = 0.0  # manual red/green/blue trim of the inverted positive
     invert_g: float = 0.0
     invert_b: float = 0.0
     contrast: float = 0.0
     chroma_denoise: float = 0.0  # smoothing of color noise only, 0..5
+    local_contrast: float = 0.0  # CLAHE on lightness, 0..1
+    metering: Metering = field(default_factory=Metering)  # how the negative is read when inverted
     distortion: float = 0.0  # radial lens distortion correction (k1): + corrects barrel, - pincushion
     fine_rotation: float = 0.0  # degrees, clockwise, applied to the raw frame before the quarter turns
     wm_film: str = "off"  # canister watermark: "off" or a film key (features/watermark/logic.py)

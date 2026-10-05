@@ -182,6 +182,12 @@ class ExportPanel(CollapsiblePanel):
         wv.addWidget(self._webp_method)
         body.addWidget(self._webp_box)
 
+        self._prefix = QLineEdit()
+        self._prefix.setPlaceholderText("(none)")
+        self._prefix.setToolTip("Put in front of the file name for this preset, e.g. SOCIAL_ gives SOCIAL_name.jpg. Keeps two presets of one format apart.")
+        self._prefix.textChanged.connect(self._on_changed)
+        body.addLayout(self._row("Prefix", self._prefix))
+
         self._suffix = QLineEdit()
         self._suffix.setPlaceholderText("(none)")
         self._suffix.setToolTip("Added to the file name for this preset, e.g. _web. Keeps two presets of one format apart.")
@@ -415,6 +421,7 @@ class ExportPanel(CollapsiblePanel):
             grayscale=self._gray.isChecked(),
             copy_exif=self._exif.isChecked(),
             suffix=self._suffix.text(),
+            prefix=self._prefix.text(),
             dest_mode=self._dest_mode.currentData(),
             folder=self._folder.text().strip(),
             subfolder=self._subfolder.text(),
@@ -443,6 +450,7 @@ class ExportPanel(CollapsiblePanel):
         self._webp_lossless.setChecked(o.webp_lossless)
         self._webp_method.set_value(o.webp_method)
         self._suffix.setText(o.suffix)
+        self._prefix.setText(o.prefix)
         pick(self._size_mode, o.size_mode)
         self._long_edge.setValue(int(o.long_edge))
         self._percent.setValue(float(o.percent))
@@ -482,6 +490,11 @@ class ExportPanel(CollapsiblePanel):
             presets = None
         if not isinstance(presets, list) or not all(isinstance(p, dict) and "name" in p for p in presets):
             presets = self._default_presets()
+        for preset in presets:  # a preset saved before presets had a prefix gets the one the built-in preset of that name has now
+            built_in = X.PRESETS.get(preset["name"], {})
+            options = preset.get("options")
+            if "prefix" in built_in and isinstance(options, dict) and "prefix" not in options:
+                options["prefix"] = built_in["prefix"]
         self._presets = presets
         try:
             shared = json.loads(settings.value(_GLOBAL_KEY, "") or "{}")
@@ -652,7 +665,7 @@ class ExportPanel(CollapsiblePanel):
             self._size_hint.setText("Open an image to see its export size.")
             size = (0, 0)
         stem = X.render_filename(o.pattern, self._example_name, 1, size, o.fmt)
-        names = [stem + o.suffix + X.EXTENSIONS[o.fmt]]
+        names = [o.prefix + stem + o.suffix + X.EXTENSIONS[o.fmt]]
         self._name_preview.setText(f"e.g. {names[0]}")
 
     # ---- driven by the window ----

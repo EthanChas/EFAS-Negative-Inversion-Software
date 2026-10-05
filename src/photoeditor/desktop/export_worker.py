@@ -6,6 +6,7 @@ import os
 
 from PyQt6.QtCore import QThread, pyqtSignal
 
+from ..features.aidust import logic as aidust
 from ..features.export.logic import ExportOptions, read_exif_bytes, resolve_output_path, save_image, target_size
 from ..features.flatfield.logic import gain_token
 from ..features.metadata import store as metadata_store
@@ -51,6 +52,11 @@ def default_edit_state(negative_inverted: bool) -> dict:
         "scratch_lines": [],
         "scratch_sensitivity": DEFAULT_SCRATCH_SENSITIVITY,
         "heal_strokes": [],
+        "clone_strokes": [],
+        "ai_dust": False,
+        "ai_threshold": 0.3,
+        "ai_grow": 1,
+        "marks": {},
         "film_type": "auto",
         "invert_r": 0.0,
         "invert_g": 0.0,
@@ -59,6 +65,8 @@ def default_edit_state(negative_inverted: bool) -> dict:
         "fine_rotation": 0.0,
         "distortion": 0.0,
         "chroma_denoise": 0.0,
+        "local_contrast": 0.0,
+        "metering": {},
         "wm_film": "off",
         "wm_texture": "plastic",
         "wm_size": "medium",
@@ -101,7 +109,10 @@ def render_full_resolution(path: str, conn) -> "tuple":
     full = load_image_rgb(path)
     preview = make_preview_rgb(full)
     params, flatfield = _edits_for(path, conn, preview)
-    image, _pre, _stats, _overlay = Renderer().render(
+    renderer = Renderer()
+    if params.ai_dust:  # the photo's analysis, from the cache or made now - an export waits for it rather than leaving the dust in
+        renderer.ai_prob_lookup = lambda token, inverted, mono: aidust.probability(path, full, inverted, mono)
+    image, _pre, _stats, _overlay = renderer.render(
         full, params, path, preview.shape[1], live=None, want_stats=False, overlay=False, flatfield=flatfield
     )
     return image, (None if is_raw(path) else read_exif_bytes(path))

@@ -9,6 +9,7 @@ from ...theme.tokens import THEME
 from ...features.geometry.guides import CropGuide, guide_shapes
 from .bevel_widgets import BevelPanel
 from .loading_overlay import ExportIndicator, HqIndicator
+from .peaking_slider import PeakingSlider
 
 _PLACEHOLDER_TEXT = "No image open.\nUse File → Open Image... to get started."
 _NO_MAX = 16777215  # Qt's own QWIDGETSIZE_MAX
@@ -25,6 +26,17 @@ def _checker_pixmap(cell: int = 4) -> QPixmap:
     p = QPainter(pix)
     p.fillRect(0, 0, cell, cell, QColor(0, 0, 0, 255))
     p.fillRect(cell, cell, cell, cell, QColor(0, 0, 0, 255))
+    p.end()
+    return pix
+
+
+def _grid_pixmap(cell: int = 7) -> QPixmap:
+    """A square tile with a one-pixel line along its top and left edge - tiled, a grid of lines every `cell` pixels."""
+    pix = QPixmap(cell, cell)
+    pix.fill(Qt.GlobalColor.transparent)
+    p = QPainter(pix)
+    p.fillRect(0, 0, cell, 1, QColor(0, 0, 0, 255))
+    p.fillRect(0, 0, 1, cell, QColor(0, 0, 0, 255))
     p.end()
     return pix
 
@@ -49,6 +61,7 @@ class _ImageLabel(QLabel):
     drag_moved = pyqtSignal(int, int)  # dx, dy since the last drag_moved (screen pixels)
     stroke_completed = pyqtSignal(object)  # list of (x, y) image-pixel points - a painted stroke or a finished polyline
     tool_clicked = pyqtSignal(float, float)  # a click while the single-click heal tool is active
+    source_picked = pyqtSignal(float, float)  # an Alt-click while the clone tool is active: where to copy from, in image pixels
 
     def __init__(self):
         super().__init__()
@@ -69,6 +82,13 @@ class _ImageLabel(QLabel):
         self._overlay_buf: np.ndarray | None = None
         self._clip: QImage | None = None
         self._clip_buf: np.ndarray | None = None
+        self._range: QImage | None = None
+        self._range_buf: np.ndarray | None = None
+        self._range_grid = QBrush(_grid_pixmap())
+        self._peak: QImage | None = None
+        self._clone_source: tuple[float, float] | None = None  # the clone tool's source and offset (image pixels), for the dashed marker
+        self._clone_offset: tuple[float, float] | None = None
+        self._peak_buf: np.ndarray | None = None
         self._checker = QBrush(_checker_pixmap())
         self._crop_ratio = None  # None = free, "original" = the frame's own shape, or a landscape w/h number
         self._guide = CropGuide.THIRDS
@@ -108,6 +128,55 @@ class _ImageLabel(QLabel):
             self._clip = QImage(self._clip_buf.data, w, h, w * 4, QImage.Format.Format_RGBA8888)
         self.update()
 
+    def set_clone_marker(self, source, offset) -> None:
+        """The clone tool's marker: source is the picked point (or None), offset the brush-to-source offset once fixed - both in image pixels."""
+        self._clone_source, self._clone_offset = source, offset
+        self.update()
+
+    def set_range_overlay(self, rgba: np.ndarray | None) -> None:
+        """The part of the picture whose brightness is selected on the Exposure graph: an (h, w, 4) green mask, stretched over the image and
+        drawn through a grid pattern."""
+        if rgba is None:
+            self._range = self._range_buf = None
+        else:
+            self._range_buf = np.ascontiguousarray(rgba)
+            h, w = self._range_buf.shape[:2]
+            self._range = QImage(self._range_buf.data, w, h, w * 4, QImage.Format.Format_RGBA8888)
+        self.update()
+
+    def _paint_range(self, painter: QPainter, region: QRect) -> None:
+        # Off-screen for just the exposed region, like the clipping marks: a faint green wash over the selected pixels, then the same
+        # mask again kept only along the lines of a grid, so the area reads as a green lattice with the picture still visible through it.
+        img = QImage(region.size(), QImage.Format.Format_ARGB32_Premultiplied)
+        img.fill(Qt.GlobalColor.transparent)
+        p = QPainter(img)
+        p.translate(-region.topLeft())
+        p.setOpacity(0.16)
+        p.drawImage(QRectF(self.rect()), self._range)
+        p.setOpacity(1.0)
+        lattice = QImage(region.size(), QImage.Format.Format_ARGB32_Premultiplied)
+        lattice.fill(Qt.GlobalColor.transparent)
+        q = QPainter(lattice)
+        q.translate(-region.topLeft())
+        q.drawImage(QRectF(self.rect()), self._range)
+        q.setCompositionMode(QPainter.CompositionMode.CompositionMode_DestinationIn)
+        q.fillRect(QRect(region.topLeft(), region.size()), self._range_grid)
+        q.end()
+        p.resetTransform()
+        p.drawImage(0, 0, lattice)
+        p.end()
+        painter.drawImage(region.topLeft(), img)
+
+    def set_peaking_overlay(self, rgba: np.ndarray | None) -> None:
+        """Focus peaking marks: an (h, w, 4) RGBA (blue, green, yellow by how sharp), stretched over the image."""
+        if rgba is None:
+            self._peak = self._peak_buf = None
+        else:
+            self._peak_buf = np.ascontiguousarray(rgba)
+            h, w = self._peak_buf.shape[:2]
+            self._peak = QImage(self._peak_buf.data, w, h, w * 4, QImage.Format.Format_RGBA8888)
+        self.update()
+
     def _paint_clip(self, painter: QPainter, region: QRect) -> None:
         # Composited off-screen for just the exposed region (a zoomed-in
         # label can be thousands of pixels wide): the marks, then a checker
@@ -139,6 +208,10 @@ class _ImageLabel(QLabel):
         scale = self._scale if self._scale > 0 else 1.0
         return (pos.x() / scale, pos.y() / scale)
 
+    def _line_tool(self) -> bool:
+        """The click-point tools: "polyline" (any number of points, finished by hand) and "line2" (two points, finishes itself)."""
+        return self._tool in ("polyline", "line2")
+
     def _finish_polyline(self) -> None:
         stroke, self._stroke = self._stroke, []
         self.update()
@@ -146,7 +219,7 @@ class _ImageLabel(QLabel):
             self.stroke_completed.emit(stroke)
 
     def keyPressEvent(self, event: QKeyEvent) -> None:
-        if self._tool == "polyline":
+        if self._line_tool():
             key = event.key()
             if key in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
                 self._finish_polyline()
@@ -397,11 +470,17 @@ class _ImageLabel(QLabel):
         if self._tool is not None and event.button() == Qt.MouseButton.LeftButton and self._pixels is not None:
             pt = self._img_pt(event.position())
             self.setFocus()
-            if self._tool == "heal":
+            if self._tool == "clone" and event.modifiers() & Qt.KeyboardModifier.AltModifier:
+                self.source_picked.emit(*pt)
+            elif self._tool in ("heal", "clone"):
                 self._painting = True
                 self._stroke = [pt]
             elif self._tool == "smart":
                 self.tool_clicked.emit(*pt)
+            elif self._tool == "line2":  # two clicks: the second one finishes it
+                self._stroke.append(pt)
+                if len(self._stroke) >= 2:
+                    self._finish_polyline()
             else:  # polyline: each click adds a point; double-click or Enter finishes
                 self._stroke.append(pt)
             self.update()
@@ -509,7 +588,7 @@ class _ImageLabel(QLabel):
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         if self._stroke:
             pts = [QPointF(x * scale, y * scale) for x, y in self._stroke]
-            if self._tool == "heal":  # the capsule the brush has painted so far
+            if self._tool in ("heal", "clone"):  # the capsule the brush has painted so far
                 band = QPen(QColor(255, 200, 0, 90), 2 * radius)
                 band.setCapStyle(Qt.PenCapStyle.RoundCap)
                 band.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
@@ -523,16 +602,39 @@ class _ImageLabel(QLabel):
                 path = pts + ([self._hover] if self._hover is not None else [])
                 if len(path) > 1:
                     painter.drawPolyline(path)
+                if self._tool == "line2" and len(pts) == 1 and self._hover is not None and abs(self._hover.x() - pts[0].x()) > 4:
+                    # the line as it will be repaired: carried on past both points to the edges of the picture
+                    slope = (self._hover.y() - pts[0].y()) / (self._hover.x() - pts[0].x())
+                    right = float(self.width())
+                    painter.setPen(QPen(QColor(255, 200, 0, 120), 1, Qt.PenStyle.DashLine))
+                    painter.drawLine(QPointF(0.0, pts[0].y() - slope * pts[0].x()), QPointF(right, pts[0].y() + slope * (right - pts[0].x())))
                 painter.setBrush(QColor(255, 200, 0, 220))
                 for p in pts:
                     painter.drawEllipse(p, 3, 3)
-        if self._hover is not None and self._tool in ("heal", "smart"):
+        if self._tool == "clone" and self._clone_source is not None:
+            # where the brush copies from: the picked source until the first stroke, then following the brush at the same offset
+            if self._clone_offset is not None and self._hover is not None:
+                at = QPointF(self._hover.x() + self._clone_offset[0] * scale, self._hover.y() + self._clone_offset[1] * scale)
+            elif self._clone_offset is None:
+                at = QPointF(self._clone_source[0] * scale, self._clone_source[1] * scale)
+            else:
+                at = None
+            if at is not None:
+                painter.setBrush(Qt.BrushStyle.NoBrush)
+                painter.setPen(QPen(QColor(0, 0, 0, 200), 3))
+                painter.drawEllipse(at, radius, radius)
+                dashed = QPen(QColor(255, 255, 255, 240), 1.5, Qt.PenStyle.DashLine)
+                painter.setPen(dashed)
+                painter.drawEllipse(at, radius, radius)
+                painter.drawLine(QPointF(at.x() - 4, at.y()), QPointF(at.x() + 4, at.y()))
+                painter.drawLine(QPointF(at.x(), at.y() - 4), QPointF(at.x(), at.y() + 4))
+        if self._hover is not None and self._tool in ("heal", "smart", "clone"):
             painter.setBrush(Qt.BrushStyle.NoBrush)
             painter.setPen(QPen(QColor(0, 0, 0, 200), 3))
             painter.drawEllipse(self._hover, radius, radius)
             painter.setPen(QPen(QColor(255, 255, 255, 240), 1.5))
             painter.drawEllipse(self._hover, radius, radius)
-        elif self._hover is not None and self._tool == "polyline":
+        elif self._hover is not None and self._line_tool():
             painter.setPen(QPen(QColor(255, 255, 255, 240), 1.5))
             painter.drawLine(QPointF(self._hover.x() - 6, self._hover.y()), QPointF(self._hover.x() + 6, self._hover.y()))
             painter.drawLine(QPointF(self._hover.x(), self._hover.y() - 6), QPointF(self._hover.x(), self._hover.y() + 6))
@@ -546,6 +648,14 @@ class _ImageLabel(QLabel):
         if self._clip is not None and not self._crop_mode:
             painter = QPainter(self)
             self._paint_clip(painter, event.rect().intersected(self.rect()))
+            painter.end()
+        if self._range is not None and not self._crop_mode:
+            painter = QPainter(self)
+            self._paint_range(painter, event.rect().intersected(self.rect()))
+            painter.end()
+        if self._peak is not None and not self._crop_mode:
+            painter = QPainter(self)
+            painter.drawImage(QRectF(self.rect()), self._peak)
             painter.end()
         if self._tool is not None and not self._crop_mode:
             painter = QPainter(self)
@@ -612,6 +722,7 @@ class ImageView(QWidget):
     zoom_changed = pyqtSignal(float)
     stroke_completed = pyqtSignal(object)
     tool_clicked = pyqtSignal(float, float)
+    source_picked = pyqtSignal(float, float)
 
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
@@ -639,10 +750,13 @@ class ImageView(QWidget):
         self._label.drag_moved.connect(self._on_drag_moved)
         self._label.stroke_completed.connect(self.stroke_completed)
         self._label.tool_clicked.connect(self.tool_clicked)
+        self._label.source_picked.connect(self.source_picked)
         self._scroll.setWidget(self._label)
 
         self._hq_indicator = HqIndicator(self)
         self._export_indicator = ExportIndicator(self)
+        self.peaking_slider = PeakingSlider(self)
+        self._peaking_anchor = None  # () -> x in this view's coordinates that the slider is centred over (the Peaking button)
         self._pixmap: QPixmap | None = None
         self._fit_scale = 1.0
         self._zoom = 1.0
@@ -678,6 +792,15 @@ class ImageView(QWidget):
     def set_clip_overlay(self, rgba: np.ndarray | None) -> None:
         self._label.set_clip_overlay(rgba)
 
+    def set_peaking_overlay(self, rgba: np.ndarray | None) -> None:
+        self._label.set_peaking_overlay(rgba)
+
+    def set_range_overlay(self, rgba: np.ndarray | None) -> None:
+        self._label.set_range_overlay(rgba)
+
+    def set_clone_marker(self, source, offset) -> None:
+        self._label.set_clone_marker(source, offset)
+
     def set_hq_state(self, mode: str, detail: str = "") -> None:
         """The HQ tag in the bottom-right corner: "loading" (a loading bar), "ready" (a yellow HQ tag, with detail beside it) or "off"."""
         if mode == "loading":
@@ -693,6 +816,14 @@ class ImageView(QWidget):
         self._export_indicator.set_progress(photos_done, photos_total, fraction)
         self._place_badge()
 
+    def set_peaking_slider_visible(self, visible: bool, anchor=None) -> None:
+        """Show the focus-peaking level slider above the Peaking button; anchor() gives the x (in this view) to centre it over."""
+        self._peaking_anchor = anchor
+        self.peaking_slider.setVisible(visible)
+        if visible:
+            self.peaking_slider.raise_()
+        self._place_badge()
+
     def end_export_progress(self) -> None:
         self._export_indicator.finish()
 
@@ -700,6 +831,10 @@ class ImageView(QWidget):
         ind = self._hq_indicator
         ind.move(self.width() - ind.width() - 16, self.height() - ind.height() - 16)
         self._export_indicator.move(16, 16)
+        slider = self.peaking_slider
+        if slider.isVisible():
+            x = self._peaking_anchor() if self._peaking_anchor is not None else self.width() // 2
+            slider.move(max(8, min(self.width() - slider.width() - 8, x - slider.width() // 2)), self.height() - slider.height() - 12)
 
     def resizeEvent(self, event) -> None:
         super().resizeEvent(event)

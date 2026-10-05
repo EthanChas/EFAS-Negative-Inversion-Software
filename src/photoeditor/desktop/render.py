@@ -19,6 +19,10 @@ from PyQt6.QtCore import QThread, pyqtSignal
 from ..features.color.logic import adjust_saturation, adjust_temperature_tint
 from ..features.contrast.logic import apply_contrast
 from ..features.denoise.logic import apply_chroma_denoise
+from ..features.localcontrast.logic import apply_local_contrast
+from ..features.negative.metering import Metering
+from ..features.aidust import logic as aidust
+from ..features.watermark.marks import Marks, apply_marks
 from ..features.watermark.logic import apply_watermark, is_active as watermark_active
 from ..features.exposure.logic import apply_exposure
 from ..features.geometry.logic import (
@@ -101,6 +105,13 @@ class EditParams:
     wm_camera: str
     wm_lens: str
     film_base: tuple | None  # the roll's measured film base (r, g, b), or None to estimate it from each photo
+    local_contrast: float = 0.0  # CLAHE on lightness, 0-1
+    clone_strokes: tuple = ()  # copied-over repairs (features/retouch/clone.py)
+    ai_dust: bool = False  # repair what the FilmDefectNet model marks (features/aidust/logic.py)
+    ai_threshold: float = aidust.DEFAULT_THRESHOLD
+    ai_grow: int = aidust.DEFAULT_GROW
+    marks: Marks = Marks()  # the text and logo watermarks (features/watermark/marks.py)
+    metering: Metering = Metering()  # how the negative is read when inverted (features/negative/metering.py)
 
     @classmethod
     def from_dict(cls, d: dict) -> "EditParams":
@@ -149,6 +160,13 @@ class EditParams:
             wm_camera=s.wm_camera or getattr(s, "roll_camera", ""),
             wm_lens=s.wm_lens or getattr(s, "roll_lens", ""),
             film_base=tuple(getattr(s, "film_base", None) or ()) or None,
+            local_contrast=getattr(s, "local_contrast", 0.0),
+            clone_strokes=tuple(_freeze(stroke) for stroke in getattr(s, "clone_strokes", ())),
+            ai_dust=bool(getattr(s, "ai_dust", False)),
+            ai_threshold=float(getattr(s, "ai_threshold", aidust.DEFAULT_THRESHOLD)),
+            ai_grow=int(getattr(s, "ai_grow", aidust.DEFAULT_GROW)),
+            marks=Marks.from_dict(getattr(s, "marks", None)),
+            metering=Metering.from_dict(getattr(s, "metering", None)),
         )
 
 
@@ -217,6 +235,7 @@ class Renderer:
         self._invert_lut = None
         self._invert_key = None
         self._retouch: OrderedDict = OrderedDict()
+        self.ai_prob_lookup = None  # (token, inverted, mono) -> the model's probability map for that photo, or None while it has none yet
         self._flat: OrderedDict = OrderedDict()
         self._dust_stats = DustStatsCache()
 
@@ -243,13 +262,13 @@ class Renderer:
         return result
 
     def _get_invert_lut(self, pixels, params: EditParams, rect, token):
-        key = (token, params.film_type == "bw", params.rotation_quarter_turns, params.flip_h, params.flip_v, params.crop_rect, params.film_base)
+        key = (token, params.film_type == "bw", params.rotation_quarter_turns, params.flip_h, params.flip_v, params.crop_rect, params.film_base, params.metering)
         if self._invert_lut is None or self._invert_key != key:
             base = params.film_base
             if base is not None and params.film_type == "bw":  # a B&W scan is made monochrome before inverting, so its base is a grey
                 gray = round(0.299 * base[0] + 0.587 * base[1] + 0.114 * base[2])
                 base = (gray, gray, gray)
-            self._invert_lut = compute_invert_lut(pixels, rect, base)
+            self._invert_lut = compute_invert_lut(pixels, rect, base, params.metering)
             self._invert_key = key
         return self._invert_lut
 
@@ -260,7 +279,10 @@ class Renderer:
         alone when Auto Dust Removal is off, so its markers preview what
         turning it on would repair."""
         detect_only = want_masks and not params.dust_auto
-        if not params.dust_auto and not params.scratch_lines and not params.heal_strokes and not detect_only:
+        ai_prob = None
+        if params.ai_dust and self.ai_prob_lookup is not None:
+            ai_prob = self.ai_prob_lookup(token, params.negative_inverted, params.film_type == "bw")
+        if not params.dust_auto and not params.scratch_lines and not params.heal_strokes and not params.clone_strokes and ai_prob is None and not detect_only:
             return RetouchResult(source)
         key = (
             token,
@@ -272,6 +294,8 @@ class Renderer:
             params.scratch_lines,
             round(params.scratch_sensitivity, 6),
             params.heal_strokes,
+            params.clone_strokes,
+            (id(ai_prob), params.ai_threshold, params.ai_grow) if ai_prob is not None else None,
         )
         if key in self._retouch:
             self._retouch.move_to_end(key)
@@ -285,6 +309,8 @@ class Renderer:
             scratch_lines=list(params.scratch_lines),
             scratch_sensitivity=params.scratch_sensitivity,
             heal_strokes=list(params.heal_strokes),
+            clone_strokes=list(params.clone_strokes),
+            ai_mask=aidust.mask_for_source(ai_prob, source.shape[:2], params.ai_threshold, params.ai_grow) if ai_prob is not None else None,
             stats_cache=self._dust_stats,
             cache_token=cache_token,
         )
@@ -392,10 +418,12 @@ class Renderer:
             # over the image. Shadows/highlights and saturation mix channels,
             # so when either is active the table is split around them.
             denoise = params.chroma_denoise > 0 and (live is None or "denoise" in live)
-            mixing = bool(params.shadows or params.highlights or params.saturation or denoise)
+            local = params.local_contrast > 0  # cheap enough at preview size to stay on while other sliders are dragged
+            mixing = bool(params.shadows or params.highlights or params.saturation or denoise or local)
             ramp = identity_ramp()
             if params.negative_inverted:
-                ramp = apply_invert_lut(ramp, self._get_invert_lut(pixels, params, rect, token))
+                meter_rect = rect if params.metering.rect is None else _scale_rect(params.metering.rect, scale, pixels.shape[1], pixels.shape[0])
+                ramp = apply_invert_lut(ramp, self._get_invert_lut(pixels, params, meter_rect, token))
             ramp = apply_channel_offsets(ramp, (params.invert_r, params.invert_g, params.invert_b))
             ramp = adjust_temperature_tint(ramp, params.temperature, params.tint)
             ramp = apply_exposure(ramp, params.exposure_ev)
@@ -407,6 +435,8 @@ class Renderer:
                     pixels = apply_channel_lut(pixels, pre)
                 if denoise:  # before saturation, which would amplify color noise
                     pixels = apply_chroma_denoise(pixels, params.chroma_denoise, scale)
+                if local:
+                    pixels = apply_local_contrast(pixels, params.local_contrast)
                 pixels = adjust_shadows_highlights(pixels, params.shadows, params.highlights)
                 pixels = adjust_saturation(pixels, params.saturation)
                 post = ramp_to_lut(apply_tone_curve(identity_ramp(), curve))
@@ -433,6 +463,8 @@ class Renderer:
                     image, params.wm_film, params.wm_texture, params.wm_size, params.wm_position,
                     params.wm_info, params.wm_camera, params.wm_lens,
                 )
+            if params.marks.active():  # the plain text/logo marks go over the canister, last of all
+                image = apply_marks(image, params.marks)
             return image, pixels, stats, overlay_rgba
 
 

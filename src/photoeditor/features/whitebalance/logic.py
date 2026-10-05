@@ -31,6 +31,28 @@ def luminance_histogram(pixels: np.ndarray) -> list[int]:
     return counts[:256].tolist()
 
 
+def range_overlay(pixels: np.ndarray, low: int, high: int, max_dim: int = 1600) -> np.ndarray | None:
+    """An RGBA mask (green, opaque) over the pixels whose brightness bin - the same 0-255 binning the Exposure graph uses - lies in
+    low..high, for drawing the selected part of the graph on the picture. At most max_dim on its longer side (a plain stride, enough for a
+    mask that is stretched over the picture); None when nothing falls in the range."""
+    step = max(1, max(pixels.shape[:2]) // max_dim)
+    small = pixels[::step, ::step]
+    luma = _luminance_array(small).astype(np.uint8)
+    inside = (luma >= low) & (luma <= high)
+    if not inside.any():
+        return None
+    rgba = np.zeros((*inside.shape, 4), dtype=np.uint8)
+    rgba[inside] = (60, 225, 90, 255)
+    return rgba
+
+
+def range_share(histogram: list[int], low: int, high: int) -> tuple[int, float]:
+    """(pixels, share 0-1) of the picture in brightness bins low..high, from the Exposure graph's own histogram."""
+    total = sum(histogram)
+    inside = sum(histogram[max(0, low): min(255, high) + 1])
+    return inside, (inside / total if total else 0.0)
+
+
 def _luminance_array(pixels: np.ndarray) -> np.ndarray:
     return (
         _LUMA_WEIGHTS[0] * pixels[:, :, 0]

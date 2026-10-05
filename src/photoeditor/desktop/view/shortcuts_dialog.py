@@ -18,6 +18,7 @@ SHORTCUTS: list[tuple[str, list[tuple[str, str]]]] = [
         ("\\  (hold)", "Show the original scan while held"),
         ("Tab", "Hide / show the side panels"),
         ("Ctrl+H", "High quality (full resolution) on / off"),
+        ("Ctrl+Shift+F", "Focus peaking on / off"),
         ("?  /  F1", "This cheat sheet"),
     ]),
     ("Editing", [
@@ -28,6 +29,14 @@ SHORTCUTS: list[tuple[str, list[tuple[str, str]]]] = [
         ("Ctrl+Shift+R", "Reset all edits on this photo"),
         ("Ctrl+Shift+C", "Copy this photo's settings"),
         ("Ctrl+Shift+V", "Paste settings"),
+    ]),
+    ("Workbench", [
+        ("W / D", "Workbench / back to the editor"),
+        ("Arrows", "Move through the grid"),
+        ("Enter", "Open the photo in the editor"),
+        ("0 - 5", "Rate the selection"),
+        ("K / R / U", "Keep / reject / clear the flag"),
+        ("Ctrl+wheel", "Thumbnail size"),
     ]),
     ("Files", [
         ("Ctrl+Shift+O", "Open a folder"),

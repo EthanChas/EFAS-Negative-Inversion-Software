@@ -159,7 +159,7 @@ class AdvancedPresetDialog(QDialog):
             QMessageBox.warning(self, "Preset", "Give the preset a name.")
             return
         if name.casefold() in self._other:
-            QMessageBox.warning(self, "Preset", f"There is already a preset called “{name}”.")
+            QMessageBox.warning(self, "Preset", f"There is already a preset called '{name}'.")
             return
         if not self.look():
             QMessageBox.warning(self, "Preset", "Include at least one module, or the preset would do nothing.")

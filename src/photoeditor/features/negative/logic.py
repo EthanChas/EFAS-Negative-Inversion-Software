@@ -15,6 +15,7 @@ from enum import Enum
 import numpy as np
 
 from ..lut.logic import apply_channel_lut
+from .metering import POINT_SHIFT, RANGE_STEP, Metering
 
 _ANALYSIS_BUFFER = 0.12  # center-crop ratio - drops film rebate/sprocket holes
 _ANALYSIS_MAX_DIM = 256  # downsample the analysis crop to this before any statistics -
@@ -53,7 +54,7 @@ def _downsample_for_analysis(pixels: np.ndarray, max_dim: int) -> np.ndarray:
     return pixels[::step, ::step]
 
 
-def _analysis_region(pixels: np.ndarray, region: tuple[int, int, int, int] | None) -> np.ndarray:
+def _analysis_region(pixels: np.ndarray, region: tuple[int, int, int, int] | None, buffer: float = _ANALYSIS_BUFFER) -> np.ndarray:
     """region (x1,y1,x2,y2), when given, is normally the user's own crop
     rect - detection/inversion then reads only the kept composition, not
     whatever's outside it, and tracks the crop automatically since nothing
@@ -65,7 +66,7 @@ def _analysis_region(pixels: np.ndarray, region: tuple[int, int, int, int] | Non
         y1, y2 = sorted((max(0, min(region[1], h)), max(0, min(region[3], h))))
         if x2 - x1 >= 1 and y2 - y1 >= 1:
             return _downsample_for_analysis(pixels[y1:y2, x1:x2], _ANALYSIS_MAX_DIM)
-    return _downsample_for_analysis(_center_crop(pixels, _ANALYSIS_BUFFER), _ANALYSIS_MAX_DIM)
+    return _downsample_for_analysis(_center_crop(pixels, buffer), _ANALYSIS_MAX_DIM)
 
 
 def _corr(a: np.ndarray, b: np.ndarray) -> float:
@@ -116,7 +117,8 @@ def detect_process_mode(pixels: np.ndarray, region: tuple[int, int, int, int] | 
 
 
 def compute_invert_lut(
-    pixels: np.ndarray, region: tuple[int, int, int, int] | None = None, base_rgb: tuple[int, int, int] | None = None
+    pixels: np.ndarray, region: tuple[int, int, int, int] | None = None, base_rgb: tuple[int, int, int] | None = None,
+    metering: Metering | None = None,
 ) -> np.ndarray:
     """The expensive half of invert_negative, split out so a caller can
     cache it: measures each channel's film-base (floor) and max-exposure
@@ -129,23 +131,41 @@ def compute_invert_lut(
     recomputing when the region or the pre-invert pixels change (a crop, a
     rotation/flip, or a new file) - not on every unrelated slider tick, which
     is what made dragging exposure/tone curve/color sliders stutter while a
-    negative was inverted, before AppController started caching this."""
-    crop = _analysis_region(pixels, region).astype(np.float32) / 255.0
+    negative was inverted, before AppController started caching this.
+
+    metering (features/negative/metering.py) steers the reading: the edge margin used when there is no region, how hard the tails are
+    clipped, how much each channel is stretched alone (cast removal), and where white and black land, overall and per channel."""
+    m = metering or Metering()
+    crop = _analysis_region(pixels, region, m.buffer).astype(np.float32) / 255.0
     crop_density = -np.log10(np.clip(crop, _EPS, 1.0))
 
     sample_values = np.arange(256, dtype=np.float32)
     sample_density = -np.log10(np.clip(sample_values / 255.0, _EPS, 1.0))
 
-    lut = np.empty((3, 256), dtype=np.uint8)
+    low_p = max(0.0, min(25.0, _FLOOR_DENSITY_PERCENTILE + m.range_clip * RANGE_STEP))
+    high_p = max(75.0, min(100.0, _CEIL_DENSITY_PERCENTILE - m.range_clip * RANGE_STEP))
+    floors, ceils = [], []
     for c in range(3):
-        floor = np.percentile(crop_density[:, :, c], _FLOOR_DENSITY_PERCENTILE)
-        ceil = np.percentile(crop_density[:, :, c], _CEIL_DENSITY_PERCENTILE)
+        floor = float(np.percentile(crop_density[:, :, c], low_p))
+        ceil = float(np.percentile(crop_density[:, :, c], high_p))
         if base_rgb is not None:
             measured = float(-np.log10(np.clip(base_rgb[c] / 255.0, _EPS, 1.0)))
             if ceil - measured > 0.15:  # a base that leaves no density range above it is a bad pick; the picture's own estimate stands
                 floor = measured
-        span = max(ceil - floor, _EPS)
-        out = (sample_density - floor) / span
+        floors.append(floor)
+        ceils.append(ceil)
+    if m.cast_removal < 1.0:  # less than full: the channels are pulled toward a shared range, so part of the film's cast stays
+        mean_floor, mean_ceil = sum(floors) / 3.0, sum(ceils) / 3.0
+        floors = [mean_floor + m.cast_removal * (f - mean_floor) for f in floors]
+        ceils = [mean_ceil + m.cast_removal * (c_ - mean_ceil) for c_ in ceils]
+    whites, blacks = m.white_points(), m.black_points()
+
+    lut = np.empty((3, 256), dtype=np.uint8)
+    for c in range(3):
+        span = max(ceils[c] - floors[c], _EPS)
+        floor = floors[c] + blacks[c] * POINT_SHIFT * span   # a higher black point raises the floor: more shadow goes to pure black
+        ceil = ceils[c] - whites[c] * POINT_SHIFT * span     # a higher white point lowers the ceiling: more highlight goes to pure white
+        out = (sample_density - floor) / max(ceil - floor, _EPS)
         lut[c] = np.clip(out * 255.0, 0, 255).astype(np.uint8)
     return lut
 

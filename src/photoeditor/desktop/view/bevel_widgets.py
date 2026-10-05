@@ -146,6 +146,9 @@ class CaptionButton(QPushButton):
         elif self._kind == "add":
             painter.drawLine(cx - 4, cy, cx + 4, cy)
             painter.drawLine(cx, cy - 4, cx, cy + 4)
+        elif self._kind == "menu":  # three lines: a presets menu
+            for dy in (-3, 0, 3):
+                painter.drawLine(cx - 4, cy + dy, cx + 4, cy + dy)
         elif self._kind == "refresh":
             painter.setBrush(Qt.BrushStyle.NoBrush)
             r = 4

@@ -39,35 +39,48 @@ _TOOLS = {
         "Heal a scratch or hair at any angle: click points along it, double-click or Enter to "
         "finish, Esc cancels, Backspace removes the last point.",
     ),
+    "clone": (
+        "Clone",
+        "Copy film from another area over a defect. Alt-click the area to copy from (or press Set Source and click it), then paint over "
+        "the defect: the source follows the brush at the same distance. Uses Brush Size.",
+    ),
     "delete": (
         "Delete Repair",
         "Click a manual repair to remove just that one. Show Detections is turned on so repairs "
         "appear in amber.",
     ),
     "line": (
-        "Transport Line",
-        "Click once on a long transport scratch and the whole line is traced and repaired. Only "
-        "traces marks running close to horizontal in the original scan - use the Scratch Tool for "
-        "other angles.",
+        "Smart Transport Line Selection",
+        "Click once on a long transport scratch and the whole line is found, traced and repaired. Only "
+        "traces marks running close to horizontal in the original scan - use the Manual Transport Line "
+        "or the Scratch Tool when it will not find one.",
+    ),
+    "manualline": (
+        "Manual Transport Line",
+        "Click two points on a transport scratch, as far apart as you can: the straight line through "
+        "them is carried to both edges of the frame and repaired, Brush Size wide - no detection, so it "
+        "goes exactly where you click. Esc cancels the first point, Backspace removes it.",
     ),
 }
+_FULL_ROW_TOOLS = ("line", "manualline")  # their names are long: each takes a whole row of the tool grid
 
 
 class DustToolPanel(CollapsiblePanel):
     """Dust and scratch removal ported from NegPy (features/retouch/logic.py).
 
     Automatic: Auto Dust Removal finds specks and hairs statistically. Manual:
-    a Heal brush, one-click Smart Heal, a polyline Scratch Tool and the
-    one-click Transport Line trace. Show Detections overlays what's found.
+    a Heal brush, one-click Smart Heal, a polyline Scratch Tool, the one-click
+    Smart Transport Line Selection and the two-click Manual Transport Line. Show Detections overlays what's found.
     Everything repairs the raw scan before anything else touches it; the
     automatic settings apply once the sliders settle, since detection takes
     hundreds of milliseconds."""
 
     changed = pyqtSignal(bool, float, float, float)  # auto, threshold, size, line sensitivity
-    tool_changed = pyqtSignal(object)  # "heal" | "smart" | "scratch" | "line" | "delete" | None
+    tool_changed = pyqtSignal(object)  # "heal" | "smart" | "scratch" | "line" | "manualline" | "delete" | None
     overlay_toggled = pyqtSignal(bool)
     undo_requested = pyqtSignal()
     clear_requested = pyqtSignal()
+    clone_tool_shown = pyqtSignal(bool)  # the clone tool was switched on or off (its source marker follows)
 
     def __init__(self, parent: QWidget | None = None):
         super().__init__(
@@ -117,14 +130,57 @@ class DustToolPanel(CollapsiblePanel):
         grid = QGridLayout()
         grid.setSpacing(THEME.space_sm)
         self._tool_buttons: dict[str, QPushButton] = {}
-        for i, (tool, (text, tip)) in enumerate(_TOOLS.items()):
+        short_row, short_col = 0, 0
+        for tool, (text, tip) in _TOOLS.items():
             button = QPushButton(text)
             button.setCheckable(True)
             button.setToolTip(tip)
             button.toggled.connect(lambda checked, t=tool: self._on_tool_toggled(t, checked))
             self._tool_buttons[tool] = button
-            grid.addWidget(button, i // 2, i % 2)
+            if tool in _FULL_ROW_TOOLS:
+                continue  # placed below the short ones
+            grid.addWidget(button, short_row, short_col)
+            short_row, short_col = (short_row + 1, 0) if short_col else (short_row, 1)
+        next_row = short_row + (1 if short_col else 0)
+        for tool in _FULL_ROW_TOOLS:
+            grid.addWidget(self._tool_buttons[tool], next_row, 0, 1, 2)
+            next_row += 1
         body.addLayout(grid)
+
+        # The clone tool's own controls: only shown while the clone tool is the active one
+        self._clone_group = QWidget()
+        clone_col = QVBoxLayout(self._clone_group)
+        clone_col.setContentsMargins(0, 0, 0, 0)
+        clone_col.setSpacing(THEME.space_sm)
+        self._clone_hint = QLabel("Alt-click the area to copy from, then paint over the defect.")
+        self._clone_hint.setProperty("role", "hint")
+        self._clone_hint.setWordWrap(True)
+        clone_col.addWidget(self._clone_hint)
+        clone_row = QHBoxLayout()
+        clone_row.setSpacing(THEME.space_sm)
+        self._clone_source_btn = QPushButton("Set Source")
+        self._clone_source_btn.setCheckable(True)
+        self._clone_source_btn.setToolTip("The next click picks the area to copy from (same as Alt-click)")
+        clone_row.addWidget(self._clone_source_btn, 1)
+        self._clone_match = QPushButton("Match Tone")
+        self._clone_match.setCheckable(True)
+        self._clone_match.setChecked(True)
+        self._clone_match.setToolTip(
+            "The copied patch keeps the source's texture but takes the brightness and color of where it lands, so it does not show as a "
+            "lighter or darker patch."
+        )
+        clone_row.addWidget(self._clone_match, 1)
+        clone_col.addLayout(clone_row)
+        self._clone_strength = SliderRow("Strength", min_value=0.0, max_value=1.0, reset_value=1.0)
+        self._clone_strength.set_value(1.0)
+        self._clone_strength.setToolTip("How much of the copy replaces what is there. 1 replaces it fully.")
+        clone_col.addWidget(self._clone_strength)
+        self._clone_feather = SliderRow("Feather", min_value=0.0, max_value=1.0, reset_value=0.5)
+        self._clone_feather.set_value(0.5)
+        self._clone_feather.setToolTip("Fade width at the brush edge, as a share of its radius. 0 is a hard edge.")
+        clone_col.addWidget(self._clone_feather)
+        self._clone_group.setVisible(False)
+        body.addWidget(self._clone_group)
 
         manual_rows = QVBoxLayout()
         manual_rows.setSpacing(THEME.space_sm)
@@ -133,7 +189,7 @@ class DustToolPanel(CollapsiblePanel):
             reset_value=DEFAULT_BRUSH_SIZE, decimals=0, step=1.0,
         )
         self._brush.set_value(DEFAULT_BRUSH_SIZE)
-        self._brush.setToolTip("Diameter of the Heal Tool and Scratch Tool, matching the on-screen cursor.")
+        self._brush.setToolTip("Diameter of the Heal Tool, Scratch Tool and Manual Transport Line, matching the on-screen cursor.")
         manual_rows.addWidget(self._brush)
         self._smart_sens = SliderRow("Smart Sens.", min_value=0.0, max_value=1.0, reset_value=DEFAULT_MANUAL_SENSITIVITY)
         self._smart_sens.set_value(DEFAULT_MANUAL_SENSITIVITY)
@@ -144,7 +200,7 @@ class DustToolPanel(CollapsiblePanel):
         manual_rows.addWidget(self._smart_sens)
         self._line_sens = SliderRow("Line Sens.", min_value=0.05, max_value=0.95, reset_value=DEFAULT_SCRATCH_SENSITIVITY)
         self._line_sens.value_changed.connect(self._on_value_changed)
-        self._line_sens.setToolTip("How readily a Transport Line is followed. Lower repairs a wider band.")
+        self._line_sens.setToolTip("How readily a Smart Transport Line is followed. Lower repairs a wider band.")
         manual_rows.addWidget(self._line_sens)
         body.addLayout(manual_rows)
 
@@ -190,6 +246,24 @@ class DustToolPanel(CollapsiblePanel):
     def repair_method(self) -> str:
         return self._method.currentData()
 
+    def clone_settings(self) -> tuple[float, float, bool]:
+        """(strength, feather, match tone) the next clone stroke is painted with."""
+        return self._clone_strength.value(), self._clone_feather.value(), self._clone_match.isChecked()
+
+    def clone_source_armed(self) -> bool:
+        return self._clone_source_btn.isChecked()
+
+    def set_clone_source_armed(self, armed: bool) -> None:
+        self._clone_source_btn.blockSignals(True)
+        self._clone_source_btn.setChecked(armed)
+        self._clone_source_btn.blockSignals(False)
+
+    def set_clone_hint(self, has_source: bool) -> None:
+        self._clone_hint.setText(
+            "Paint over the defect; the dashed circle marks where it copies from." if has_source
+            else "Alt-click the area to copy from (or press Set Source), then paint over the defect."
+        )
+
     def active_tool(self) -> str | None:
         for tool, button in self._tool_buttons.items():
             if button.isChecked():
@@ -232,6 +306,7 @@ class DustToolPanel(CollapsiblePanel):
             button.blockSignals(True)
             button.setChecked(False)
             button.blockSignals(False)
+        self._show_clone_group(False)
 
     def _on_tool_toggled(self, tool: str, checked: bool) -> None:
         if checked:  # tools are mutually exclusive
@@ -240,9 +315,18 @@ class DustToolPanel(CollapsiblePanel):
                     button.blockSignals(True)
                     button.setChecked(False)
                     button.blockSignals(False)
+            self._show_clone_group(tool == "clone")
             self.tool_changed.emit(tool)
         elif self.active_tool() is None:
+            self._show_clone_group(False)
             self.tool_changed.emit(None)
+
+    def _show_clone_group(self, shown: bool) -> None:
+        if self._clone_group.isVisibleTo(self) != shown:
+            self._clone_group.setVisible(shown)
+            self.clone_tool_shown.emit(shown)
+        if not shown:
+            self.set_clone_source_armed(False)
 
     def _on_value_changed(self, _value=None) -> None:
         self._settle_timer.start()

@@ -46,6 +46,7 @@ MODULES: tuple[ModuleSpec, ...] = (
     ModuleSpec("whitebalance", "White balance", (_trim("temperature", "Temperature"), _trim("tint", "Tint"))),
     ModuleSpec("tonecurve", "Tone curve", (FieldSpec("tone_curve_points", "Curve", "curve", DEFAULT_POINTS),)),
     ModuleSpec("contrast", "Contrast", (_trim("contrast", "Contrast"),)),
+    ModuleSpec("localcontrast", "Local contrast", (FieldSpec("local_contrast", "Amount", "float", 0.0, 0.0, 1.0),)),
     ModuleSpec("shadows_highlights", "Shadows & highlights", (_trim("shadows", "Shadows"), _trim("highlights", "Highlights"))),
     ModuleSpec("color", "Color", (_trim("saturation", "Saturation"),)),
     ModuleSpec("sharpening", "Sharpening", (
@@ -55,7 +56,7 @@ MODULES: tuple[ModuleSpec, ...] = (
         FieldSpec("sharpen_masking", "Masking", "float", 0.0, 0.0, 1.0),
     )),
     ModuleSpec("denoise", "Chroma denoise", (FieldSpec("chroma_denoise", "Amount", "float", 0.0, 0.0, CHROMA_DENOISE_MAX),)),
-    ModuleSpec("watermark", "Canister watermark", (
+    ModuleSpec("watermark", "Watermark", (
         FieldSpec("wm_film", "Canister", "choice", WATERMARK_OFF, choices=((WATERMARK_OFF, "Off"),) + tuple(FILMS.items())),
         FieldSpec("wm_texture", "Texture", "choice", DEFAULT_TEXTURE, choices=tuple(TEXTURES.items())),
         FieldSpec("wm_size", "Size", "choice", DEFAULT_SIZE, choices=tuple((k, v[0]) for k, v in SIZES.items())),
@@ -67,6 +68,33 @@ MODULES: tuple[ModuleSpec, ...] = (
 )
 
 LOOK_KEYS = tuple(f.key for m in MODULES for f in m.fields)
+
+# The panels that carry a Reset and Presets button in their header, and the editing modules each one covers: key -> (title, module ids).
+PANEL_MODULES: dict[str, tuple[str, tuple[str, ...]]] = {
+    "exposure": ("Exposure", ("exposure",)),
+    "contrast": ("Contrast", ("contrast",)),
+    "tonecurve": ("Tone Curve", ("tonecurve",)),
+    "shadows_highlights": ("Shadows & Highlights", ("shadows_highlights",)),
+    "color": ("Color", ("whitebalance", "color")),
+    "sharpening": ("Sharpening", ("sharpening",)),
+    "localcontrast": ("Local Contrast", ("localcontrast",)),
+    "denoise": ("Chroma Denoise", ("denoise",)),
+    "negative": ("Negative", ("negative",)),
+    "watermark": ("Watermark", ("watermark",)),
+}
+
+
+def panel_fields(key: str) -> tuple[FieldSpec, ...]:
+    ids = PANEL_MODULES[key][1]
+    return tuple(f for m in MODULES if m.id in ids for f in m.fields)
+
+
+def panel_defaults(key: str) -> dict[str, Any]:
+    """What a panel's fields hold when nothing has been done to them (the curve as plain lists, so it is JSON-ready)."""
+    out: dict[str, Any] = {}
+    for f in panel_fields(key):
+        out[f.key] = [list(p) for p in f.default] if f.kind == "curve" else f.default
+    return out
 
 
 def module_included(look: dict, module: ModuleSpec) -> bool:

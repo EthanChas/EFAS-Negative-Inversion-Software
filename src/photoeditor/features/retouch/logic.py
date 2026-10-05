@@ -105,7 +105,7 @@ REPAIR_STRUCTURE = "structure"
 REPAIR_METHODS = (REPAIR_AUTO, REPAIR_SMOOTH, REPAIR_STRUCTURE)
 
 DUST_SIZE_RANGE = (3, 8)
-BRUSH_SIZE_RANGE = (2, 16)
+BRUSH_SIZE_RANGE = (2, 50)
 DEFAULT_BRUSH_SIZE = 6
 DEFAULT_MANUAL_SENSITIVITY = 0.5
 DEFAULT_THRESHOLD = 0.66
@@ -591,6 +591,29 @@ def lines_to_score(lin: np.ndarray, lines: List[Tuple], threshold: float = DEFAU
     return _mask_to_score(mask, _DETECT_PAD_PX * scale) if touched and mask.any() else None
 
 
+MANUAL_LINE_MIN_RUN = 0.05  # the two clicked points must be at least this far apart across the frame (0-1)
+
+
+def extend_line_to_frame(p1, p2):
+    """The straight line through two points (0-1 raw-frame coordinates), carried on to the frame's edges: ((x, y), (x, y)) - or None when
+    the points are too close together across the frame to give a reliable direction, or the line misses the frame."""
+    (x1, y1), (x2, y2) = p1, p2
+    dx = x2 - x1
+    if abs(dx) < MANUAL_LINE_MIN_RUN:
+        return None
+    slope = (y2 - y1) / dx
+    lo, hi = 0.0, 1.0  # the stretch of x where the line is still inside the frame vertically
+    if slope != 0.0:
+        a, b = x1 + (0.0 - y1) / slope, x1 + (1.0 - y1) / slope
+        lo, hi = max(lo, min(a, b)), min(hi, max(a, b))
+    elif not 0.0 <= y1 <= 1.0:
+        return None
+    if hi - lo < 1e-4:
+        return None
+    y_at = lambda x: min(1.0, max(0.0, y1 + slope * (x - x1)))
+    return ((lo, y_at(lo)), (hi, y_at(hi)))
+
+
 def smooth_polyline(pts, closed: bool = False, samples_per_seg: int = 16):
     """Densify a polyline into a uniform Catmull-Rom curve through its points
     (fewer than 3 points are returned unchanged)."""
@@ -805,19 +828,31 @@ def remove_dust_and_scratches(
     scratch_lines: Optional[List[Tuple]] = None,
     scratch_sensitivity: float = DEFAULT_SCRATCH_SENSITIVITY,
     heal_strokes: Optional[List[Tuple]] = None,
+    clone_strokes: Optional[List[Tuple]] = None,
+    ai_mask: Optional[np.ndarray] = None,
     stats_cache: Optional[DustStatsCache] = None,
     cache_token=None,
 ) -> RetouchResult:
-    """Repairs dust specks, hairs (auto), painted heal strokes and traced
-    scratches in a raw scan (uint8 sRGB). pixels in the result is the input
-    itself, untouched, if nothing was found."""
+    """Repairs dust specks, hairs (auto), painted heal strokes, traced
+    scratches and clone strokes in a raw scan (uint8 sRGB). pixels in the
+    result is the input itself, untouched, if nothing was found. Clone strokes
+    go first, so everything after them - detection, heals - sees the cloned
+    picture."""
     scratch_lines = list(scratch_lines or [])
     heal_strokes = list(heal_strokes or [])
-    if not auto and not scratch_lines and not heal_strokes:
+    clone_strokes = list(clone_strokes or [])
+    if ai_mask is not None and not ai_mask.any():
+        ai_mask = None
+    if not auto and not scratch_lines and not heal_strokes and not clone_strokes and ai_mask is None:
         return RetouchResult(pixels)
     lin = _linearize(pixels)
-    out = lin
     changed = False
+    if clone_strokes:
+        from .clone import apply_clone_strokes
+
+        lin = apply_clone_strokes(lin, clone_strokes)
+        changed = True
+    out = lin
     specks = hairs = manual = None
 
     if auto:
@@ -837,9 +872,13 @@ def remove_dust_and_scratches(
     # darken as well as lighten.
     stroke_score, method_mask = strokes_to_score(lin, heal_strokes)
     line_score = lines_to_score(lin, scratch_lines, scratch_sensitivity)
-    parts = [p for p in (stroke_score, line_score) if p is not None]
+    # What the AI model marked is a mask already: it becomes a score the same way a traced line's band does, and is repaired with the rest
+    ai_score = _mask_to_score(ai_mask, _DETECT_PAD_PX * film_scale(lin.shape[:2])) if ai_mask is not None else None
+    parts = [p for p in (stroke_score, line_score, ai_score) if p is not None]
     if parts:
-        score = parts[0] if len(parts) == 1 else np.minimum(*parts)
+        score = parts[0]
+        for extra in parts[1:]:
+            score = np.minimum(score, extra)
         out = _repair_components(out, score, floor=False, factor=film_scale(lin.shape[:2]))
         manual = (score < 1.0).astype(np.uint8)
         routed = route_wide_defects(score)

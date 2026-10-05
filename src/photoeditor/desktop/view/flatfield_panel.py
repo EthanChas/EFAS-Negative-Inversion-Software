@@ -95,11 +95,11 @@ class FlatFieldPanel(CollapsiblePanel):
         if not opened:
             self._hint.setText("Open a photo to set a flat field for its folder.")
         elif not has:
-            self._hint.setText(f"No flat field for “{folder}” yet.")
+            self._hint.setText(f"No flat field for '{folder}' yet.")
         elif info["enabled"]:
-            self._hint.setText(f"Active for “{folder}” (from {info['source'] or 'a reference'}) - applies to every photo in it.")
+            self._hint.setText(f"Active for '{folder}' (from {info['source'] or 'a reference'}) - applies to every photo in it.")
         else:
-            self._hint.setText(f"Saved for “{folder}” but switched off.")
+            self._hint.setText(f"Saved for '{folder}' but switched off.")
         self._enable.blockSignals(True)
         self._enable.setChecked(bool(info["enabled"]))
         self._enable.blockSignals(False)

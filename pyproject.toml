@@ -9,6 +9,7 @@ dependencies = [
     "rawpy>=0.19",
     "numpy>=1.26",
     "opencv-python-headless>=4.8",
+    "onnxruntime>=1.17",
 ]
 
 [project.scripts]

@@ -15,6 +15,21 @@ from .logic import thumbnail_cache_key
 _THUMB_QUALITY = 85
 
 
+def _embedded_preview(path: str, max_dim: int):
+    """The JPEG preview most RAW files carry inside them, decoded at about the size wanted - tens of milliseconds, where a demosaic takes
+    most of a second. None when the file has none (or it cannot be read), and the caller falls back to decoding the RAW itself."""
+    try:
+        with rawpy.imread(path) as raw:
+            thumb = raw.extract_thumb()
+        if thumb.format != rawpy.ThumbFormat.JPEG:
+            return None
+        img = Image.open(io.BytesIO(thumb.data))
+        img.draft("RGB", (max_dim * 2, max_dim * 2))  # the JPEG decoder can skip straight to a fraction of the size
+        return img.convert("RGB")
+    except Exception:
+        return None
+
+
 def make_thumbnail_bytes(path: str, max_dim: int = 200) -> bytes | None:
     """A small JPEG thumbnail of `path`, auto-inverted to a positive if it
     looks like a negative (matching the main editor's own auto-invert on
@@ -23,12 +38,14 @@ def make_thumbnail_bytes(path: str, max_dim: int = 200) -> bytes | None:
     None if the file is unreadable."""
     try:
         if is_raw(path):
-            with rawpy.imread(path) as raw:
-                # half_size: a fast, low-detail decode is plenty for a
-                # thumbnail - a full demosaic here would make browsing a
-                # folder of RAWs noticeably slower for no visible benefit.
-                rgb = raw.postprocess(use_camera_wb=True, half_size=True, output_bps=8)
-            img = Image.fromarray(rgb)
+            img = _embedded_preview(path, max_dim)
+            if img is None:
+                with rawpy.imread(path) as raw:
+                    # half_size: a fast, low-detail decode is plenty for a
+                    # thumbnail - a full demosaic here would make browsing a
+                    # folder of RAWs noticeably slower for no visible benefit.
+                    rgb = raw.postprocess(use_camera_wb=True, half_size=True, output_bps=8)
+                img = Image.fromarray(rgb)
         else:
             img = Image.open(path).convert("RGB")
 

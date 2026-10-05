@@ -1,6 +1,6 @@
 from PyQt6.QtCore import QEasingCurve, QPropertyAnimation, Qt, pyqtSignal
 from PyQt6.QtGui import QColor, QPainter, QPaintEvent
-from PyQt6.QtWidgets import QHBoxLayout, QLabel, QMessageBox, QVBoxLayout, QWidget
+from PyQt6.QtWidgets import QHBoxLayout, QLabel, QMessageBox, QPushButton, QVBoxLayout, QWidget
 
 from ...theme.tokens import THEME
 from .bevel_widgets import BevelPanel, CaptionButton
@@ -36,10 +36,36 @@ class _CollapsibleHeader(QWidget):
         # mousePressEvent below, instead of being swallowed by the label.
         label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
         row.addWidget(label, 0, Qt.AlignmentFlag.AlignVCenter)
+
+        # "PRESET: name" in small grey beside the title while a module preset is applied; nothing at all otherwise
+        self.preset_label = QLabel("")
+        self.preset_label.setStyleSheet(f"color: {THEME.text_muted}; font-size: {THEME.font_size_small}pt;")
+        self.preset_label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        self.preset_label.hide()
+        row.addWidget(self.preset_label, 0, Qt.AlignmentFlag.AlignVCenter)
         row.addStretch(1)
+
+        # Reset and Presets: shown only on the panels that opt in (see CollapsiblePanel.enable_module_buttons)
+        self.reset_button = CaptionButton("refresh")
+        self.reset_button.setToolTip("Reset this module to its defaults")
+        self.presets_button = CaptionButton("menu")
+        self.presets_button.setToolTip("Presets for this module: load one, store the current settings as a new one")
+        for button in (self.reset_button, self.presets_button):
+            button.hide()
+            row.addWidget(button, 0, Qt.AlignmentFlag.AlignVCenter)
 
         self.help_button = CaptionButton("help")
         row.addWidget(self.help_button, 0, Qt.AlignmentFlag.AlignVCenter)
+
+    def set_preset_name(self, name: str | None) -> None:
+        if not name:
+            self.preset_label.hide()
+            self.preset_label.setToolTip("")
+            return
+        shown = name if len(name) <= 16 else name[:15] + "..."
+        self.preset_label.setText(f"PRESET: {shown}")
+        self.preset_label.setToolTip(f"The preset '{name}' is applied to this module")
+        self.preset_label.show()
 
     def paintEvent(self, event: QPaintEvent) -> None:
         painter = QPainter(self)
@@ -73,6 +99,7 @@ class CollapsiblePanel(BevelPanel):
         self._help_text = help_text
         self._collapsible = collapsible
         self._expanded = start_expanded
+        self._module_update_button: QPushButton | None = None
 
         self._header = _CollapsibleHeader(title, collapsible=collapsible)
         if collapsible:
@@ -98,6 +125,45 @@ class CollapsiblePanel(BevelPanel):
 
     def body(self) -> QVBoxLayout:
         return self._body_layout
+
+    def enable_module_buttons(self) -> None:
+        """Show a Reset button and a Presets (menu) button in the header, next to the help button. The panel only provides the buttons;
+        whoever uses it connects reset_button.clicked and presets_button.clicked."""
+        self._header.reset_button.show()
+        self._header.presets_button.show()
+        if self._module_update_button is None:  # at the top of the body, shown only while the loaded preset has been changed
+            self._module_update_button = QPushButton("Update Preset")
+            self._module_update_button.hide()
+            self._body_layout.insertWidget(0, self._module_update_button)
+
+    def enable_reset_button(self, tooltip: str) -> CaptionButton:
+        """Show just the Reset button in the header (no presets), for panels that only need to put their own controls back to default."""
+        self._header.reset_button.setToolTip(tooltip)
+        self._header.reset_button.show()
+        return self._header.reset_button
+
+    @property
+    def update_preset_button(self) -> QPushButton | None:
+        return self._module_update_button
+
+    def set_preset_status(self, name: str | None, modified: bool) -> None:
+        """name is the preset loaded on this module (or None); the Update Preset button shows only while its values have been changed."""
+        self._header.set_preset_name(name)
+        button = self._module_update_button
+        if button is None:
+            return
+        button.setVisible(bool(name) and modified)
+        if name:
+            button.setToolTip(f"Save the current settings over the preset '{name}'")
+            button.setText(f"Update Preset  ({name})" if len(name) <= 18 else "Update Preset")
+
+    @property
+    def reset_button(self) -> CaptionButton:
+        return self._header.reset_button
+
+    @property
+    def presets_button(self) -> CaptionButton:
+        return self._header.presets_button
 
     def toggle(self) -> None:
         self.set_expanded(not self._expanded)

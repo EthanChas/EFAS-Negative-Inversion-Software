@@ -426,7 +426,7 @@ class RollCardTab(QWidget):
         autofill.upsert(kind, name, lens=self._plens.text(), iso=self._piso.value() or None, format="" if self._pfmt.currentIndex() == 0 else self._pfmt.currentText())
         self._reload_presets(select=name)
         self.refresh_suggestions()
-        self._pstatus.setText(f"{'Updated' if existed else 'Saved'} \u201c{name}\u201d.")
+        self._pstatus.setText(f"{'Updated' if existed else 'Saved'} '{name}'.")
 
     def _new_preset(self) -> None:
         self._plist.clearSelection(); self._plist.setCurrentItem(None); self._clear_preset_fields(); self._pstatus.setText("")
@@ -436,7 +436,7 @@ class RollCardTab(QWidget):
         name = self._pname.text().strip()
         if autofill.remove(self._preset_kind(), name):
             self._reload_presets(); self.refresh_suggestions()
-            self._pstatus.setText(f"Removed \u201c{name}\u201d.")
+            self._pstatus.setText(f"Removed '{name}'.")
         else:
             self._pstatus.setText("Pick a preset in the list to remove it.")
 
@@ -612,7 +612,7 @@ class RollCardTab(QWidget):
         card = self._roll
         self._ticket.set_data(card, index, total)
         folder = os.path.basename(self._folder.rstrip("\\/")) or self._folder
-        self._roll_hint.setText(f"Applies to all {total} photos in “{folder}”." if total else "Open a photo to fill in its roll.")
+        self._roll_hint.setText(f"Applies to all {total} photos in '{folder}'." if total else "Open a photo to fill in its roll.")
         auto = frame_date(card, index, total)
         self._date.setPlaceholderText(auto or "uses the roll's dates")
         self._frame_no.setSpecialValueText(f"auto ({index})" if index else "auto")

@@ -18,6 +18,7 @@ _DEFAULTS: dict[str, Any] = {
     "right_width": 0,
     "filter": "all",
     "auto_advance": True,
+    "peaking_level": 0,        # the focus-peaking slider: 0 blue ... 3 red
     "sheet_columns": 5,        # the contact sheet dialog's last choices
     "sheet_page": "Letter",
     "sheet_landscape": True,

@@ -89,6 +89,7 @@ class ExportOptions:
     on_conflict: str = "rename"
     preset_folders: bool = False  # one subfolder per export preset
     suffix: str = ""  # per preset: appended to the name, e.g. "_web"
+    prefix: str = ""  # per preset: put in front of the name, e.g. "SOCIAL_"
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -103,7 +104,7 @@ class ExportOptions:
 
 PRESETS: dict[str, dict] = {
     "Web (2048 px JPEG)": dict(fmt="jpeg", jpeg_quality=85, jpeg_subsampling="420", size_mode="long_edge", long_edge=2048, dpi=72, embed_srgb=True),
-    "Social (1080 px JPEG)": dict(fmt="jpeg", jpeg_quality=90, jpeg_subsampling="420", size_mode="long_edge", long_edge=1080, dpi=72, embed_srgb=True),
+    "Social (1080 px JPEG)": dict(fmt="jpeg", jpeg_quality=90, jpeg_subsampling="420", size_mode="long_edge", long_edge=1080, dpi=72, embed_srgb=True, prefix="SOCIAL_"),
     "High quality JPEG (full size)": dict(fmt="jpeg", jpeg_quality=95, jpeg_subsampling="444", size_mode="original", dpi=300),
     "Print (full-size TIFF)": dict(fmt="tiff", tiff_compression="lzw", size_mode="original", dpi=300),
     "Archive (full-size PNG)": dict(fmt="png", png_compress=6, size_mode="original", dpi=300),
@@ -195,7 +196,11 @@ def resolve_output_path(
     name is the original file's own name. An export never overwrites the
     source file itself, whatever on_conflict says."""
     name = os.path.splitext(os.path.basename(source_path))[0]
-    stem = render_filename(opts.pattern, name, index, size, opts.fmt, roll=roll, frame=frame) + _BAD_FILENAME_CHARS.sub("_", opts.suffix)
+    stem = (
+        _BAD_FILENAME_CHARS.sub("_", opts.prefix)
+        + render_filename(opts.pattern, name, index, size, opts.fmt, roll=roll, frame=frame)
+        + _BAD_FILENAME_CHARS.sub("_", opts.suffix)
+    )
     path = os.path.join(resolve_directory(source_path, opts, preset_name), stem + EXTENSIONS[opts.fmt])
     if os.path.abspath(path).lower() == os.path.abspath(source_path).lower():
         return unique_path(path)

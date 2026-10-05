@@ -120,7 +120,7 @@ class LookPresetsPanel(CollapsiblePanel):
             return
         if any(n.casefold() == name.casefold() for n in self._names):
             answer = QMessageBox.question(
-                self, "Save Preset", f"A preset called “{name}” already exists. Replace it with this photo's look?",
+                self, "Save Preset", f"A preset called '{name}' already exists. Replace it with this photo's look?",
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, QMessageBox.StandardButton.No,
             )
             if answer != QMessageBox.StandardButton.Yes:
@@ -132,7 +132,7 @@ class LookPresetsPanel(CollapsiblePanel):
         if name is None:
             return
         answer = QMessageBox.question(
-            self, "Delete Preset", f"Delete the preset “{name}”? Photos it was applied to keep their edits.",
+            self, "Delete Preset", f"Delete the preset '{name}'? Photos it was applied to keep their edits.",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, QMessageBox.StandardButton.No,
         )
         if answer == QMessageBox.StandardButton.Yes:

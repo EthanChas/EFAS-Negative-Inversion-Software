@@ -48,6 +48,8 @@ class HistogramPanel(BevelPanel):
 
     bin_hovered = pyqtSignal(int, dict)   # value 0-255, {"r":n,"g":n,"b":n} or {"luminance":n}
     hover_cleared = pyqtSignal()
+    range_selected = pyqtSignal(int, int)  # Exposure view: a span of brightness dragged out on the graph, low and high (0-255)
+    range_cleared = pyqtSignal()
 
     def __init__(self, parent: QWidget | None = None):
         super().__init__(sunken=True, bg=THEME.bg_input, thickness=1, parent=parent)
@@ -59,6 +61,9 @@ class HistogramPanel(BevelPanel):
         self._marker_value: float | None = None
         self._cursor_value: int | None = None
         self._zoom_min, self._zoom_max = _FULL_RANGE
+        self._selection: tuple[int, int] | None = None  # the dragged-out brightness span (Exposure view only)
+        self._drag_anchor: tuple[int, int] | None = None  # (value, x) where the drag began
+        self._share_text = ""  # "23.4% of pixels", drawn on the selection
 
     def set_data(self, rgb_histogram: dict[str, list[int]], luminance_histogram: list[int]) -> None:
         self._rgb_histogram = rgb_histogram
@@ -67,7 +72,52 @@ class HistogramPanel(BevelPanel):
 
     def set_mode(self, mode: str) -> None:
         self._mode = mode
+        if mode != "exposure":
+            self.clear_selection()
         self.update()
+
+    # ---- the selected span ----
+    def selection(self) -> tuple[int, int] | None:
+        return self._selection
+
+    def clear_selection(self, emit: bool = False) -> None:
+        had = self._selection is not None
+        self._selection = self._drag_anchor = None
+        self._share_text = ""
+        self.update()
+        if had and emit:
+            self.range_cleared.emit()
+
+    def set_share_text(self, text: str) -> None:
+        """How much of the picture the selection covers, shown on the selection itself."""
+        self._share_text = text
+        self.update()
+
+    def _clamped_value_at(self, x: float) -> int:
+        rect = self._plot_rect()
+        fraction = min(1.0, max(0.0, (x - rect.left()) / rect.width())) if rect.width() > 0 else 0.0
+        return min(max(int(round(self._zoom_min + fraction * (self._zoom_max - self._zoom_min))), 0), 255)
+
+    def mousePressEvent(self, event: QMouseEvent) -> None:
+        if event.button() == Qt.MouseButton.LeftButton and self._mode == "exposure" and self._luminance_histogram:
+            pos = event.position()
+            value = self._value_at_x(int(pos.x()), int(pos.y()))
+            if value is not None:
+                self._drag_anchor = (value, int(pos.x()))
+                event.accept()
+                return
+        super().mousePressEvent(event)
+
+    def mouseReleaseEvent(self, event: QMouseEvent) -> None:
+        if event.button() == Qt.MouseButton.LeftButton and self._drag_anchor is not None:
+            moved = self._selection is not None and self._drag_anchor is not None and getattr(self, "_drag_moved", False)
+            self._drag_anchor = None
+            self._drag_moved = False
+            if not moved:  # a plain click: let go of the selection
+                self.clear_selection(emit=True)
+            event.accept()
+            return
+        super().mouseReleaseEvent(event)
 
     def set_marker(self, value: float | None) -> None:
         """The brightness marker driven by hovering the main image."""
@@ -117,6 +167,17 @@ class HistogramPanel(BevelPanel):
         if not self._active_series():
             return
         pos = event.position()
+        if self._drag_anchor is not None and event.buttons() & Qt.MouseButton.LeftButton:
+            anchor_value, anchor_x = self._drag_anchor
+            if abs(pos.x() - anchor_x) >= 3 or self._selection is not None:  # a few pixels of travel make it a drag, not a click
+                self._drag_moved = True
+                now = self._clamped_value_at(pos.x())
+                span = (min(anchor_value, now), max(anchor_value, now))
+                if span != self._selection:
+                    self._selection = span
+                    self.update()
+                    self.range_selected.emit(*span)
+                return  # while dragging, the readout is about the selection, not the bin under the cursor
         value = self._value_at_x(int(pos.x()), int(pos.y()))
         if value is None:
             if self._cursor_value is not None:
@@ -203,12 +264,37 @@ class HistogramPanel(BevelPanel):
             for name, points in series.items():
                 self._stroke_series(painter, points, _CHANNEL_COLORS[name])
 
+        if self._selection is not None and self._mode == "exposure":
+            self._draw_selection(painter, rect)
         if self._marker_value is not None:
             self._draw_line(painter, rect, self._marker_value, QColor(THEME.text_primary), Qt.PenStyle.SolidLine, 2)
         if self._cursor_value is not None:
             self._draw_line(painter, rect, self._cursor_value, QColor(THEME.accent_primary), Qt.PenStyle.DashLine, 1)
 
         painter.end()
+
+    def _draw_selection(self, painter: QPainter, rect: QRect) -> None:
+        """The dragged-out span: a green band over the graph, with its limits and the share of the picture it covers."""
+        low, high = self._selection
+        x1 = max(rect.left(), self._x_for_value(rect, low - 0.5))
+        x2 = min(rect.right(), self._x_for_value(rect, high + 0.5))
+        if x2 <= x1:
+            return
+        green = QColor(60, 225, 90)
+        painter.fillRect(QRect(int(x1), rect.top(), max(1, int(x2 - x1)), rect.height()), QColor(60, 225, 90, 55))
+        painter.setPen(QPen(green, 1))
+        painter.drawLine(int(x1), rect.top(), int(x1), rect.bottom())
+        painter.drawLine(int(x2), rect.top(), int(x2), rect.bottom())
+        text = f"{low}-{high}" + (f"   {self._share_text}" if self._share_text else "")
+        font = painter.font()
+        font.setPointSize(THEME.font_size_small)
+        painter.setFont(font)
+        width = painter.fontMetrics().horizontalAdvance(text) + 8
+        left = int(min(max(rect.left(), (x1 + x2) / 2 - width / 2), rect.right() - width))
+        label = QRect(left, rect.top() + 2, width, 14)
+        painter.fillRect(label, QColor(0, 0, 0, 190))
+        painter.setPen(green)
+        painter.drawText(label, int(Qt.AlignmentFlag.AlignCenter), text)
 
     def _draw_header(self, painter: QPainter) -> None:
         x = self.rect().left() + THEME.border_width + THEME.space_sm

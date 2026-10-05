@@ -125,6 +125,11 @@ def apply_edits_to_document(root: ET.Element, state: dict, frame_size: tuple[int
     pe("ScratchLines", json.dumps(state["scratch_lines"]))
     pe("ScratchSensitivity", _fmt(state["scratch_sensitivity"]))
     pe("HealStrokes", json.dumps(state["heal_strokes"]))
+    pe("CloneStrokes", json.dumps(state.get("clone_strokes", [])))
+    pe("AiDust", str(bool(state.get("ai_dust", False))))
+    pe("AiThreshold", _fmt(state.get("ai_threshold", 0.3)))
+    pe("AiGrow", str(int(state.get("ai_grow", 1))))
+    pe("Marks", json.dumps(state.get("marks", {})))
     pe("FilmType", state["film_type"])
     pe("InvertR", _fmt(state["invert_r"]))
     pe("InvertG", _fmt(state["invert_g"]))
@@ -133,6 +138,8 @@ def apply_edits_to_document(root: ET.Element, state: dict, frame_size: tuple[int
     pe("FineRotation", _fmt(state["fine_rotation"]))
     pe("Distortion", _fmt(state["distortion"]))
     pe("ChromaDenoise", _fmt(state["chroma_denoise"]))
+    pe("LocalContrast", _fmt(state.get("local_contrast", 0.0)))
+    pe("Metering", json.dumps(state.get("metering", {})))
     pe("WmFilm", state["wm_film"])
     pe("WmTexture", state["wm_texture"])
     pe("WmSize", state["wm_size"])
@@ -238,6 +245,11 @@ def read_sidecar(image_path: str) -> dict | None:
             "scratch_lines": [tuple(line) for line in json.loads(get("ScratchLines") or "[]")],
             "scratch_sensitivity": float(get("ScratchSensitivity") or 0.5),
             "heal_strokes": json.loads(get("HealStrokes") or "[]"),
+            "clone_strokes": json.loads(get("CloneStrokes") or "[]"),
+            "ai_dust": get("AiDust") == "True",
+            "ai_threshold": float(get("AiThreshold") or 0.3),
+            "ai_grow": int(get("AiGrow") or 1),
+            "marks": json.loads(get("Marks") or "{}"),
             "film_type": get("FilmType") or "auto",
             "invert_r": float(get("InvertR") or 0.0),
             "invert_g": float(get("InvertG") or 0.0),
@@ -246,6 +258,8 @@ def read_sidecar(image_path: str) -> dict | None:
             "fine_rotation": float(get("FineRotation") or 0.0),
             "distortion": float(get("Distortion") or 0.0),
             "chroma_denoise": float(get("ChromaDenoise") or 0.0),
+            "local_contrast": float(get("LocalContrast") or 0.0),
+            "metering": json.loads(get("Metering") or "{}"),
             "wm_film": get("WmFilm") or "off",
             "wm_texture": get("WmTexture") or "plastic",
             "wm_size": get("WmSize") or "medium",
