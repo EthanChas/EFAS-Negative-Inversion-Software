@@ -32,7 +32,6 @@ from ...features.metadata.source_exif import read_exif_from_file
 from .contact_sheet_dialog import ContactSheetDialog
 from .credits_dialog import CreditsDialog
 from .finishing_panel import FinishingPanel
-from .proof_dialog import ProofDialog
 from ..keybinds import KeyMap
 from .settings_dialog import SettingsDialog
 from .snapshots_panel import SnapshotsPanel
@@ -43,6 +42,7 @@ from ..peaking_worker import PeakingWorker
 from ..library_worker import LibraryIndexWorker
 from ...features.library import query as library_query
 from ...features.export import logic as export_logic
+from ...features.proofs import logic as proof_logic
 from ...features.keybinds import logic as key_logic
 from ...features.settings import logic as app_settings
 from ...features.library.index import LibraryIndex
@@ -219,8 +219,9 @@ class _HotkeyFilter(QObject):
             return False
         if _typing_in_field():  # in a field every key is just a key (Tab still moves focus as usual)
             return False
-        if event.key() == Qt.Key.Key_Escape and window.split_active() and not window.lighttable_active():
-            window.set_split(False)  # Esc closes the Before / After split
+        if event.key() == Qt.Key.Key_Escape and not window.lighttable_active() and (window.split_active() or window.proof_active()):
+            window.set_split(False)  # Esc closes the Before / After split, or the test strip / ring-around
+            window.close_proof()
             return True
         action = window.keys().action_for(event)
         if action is None:
@@ -245,7 +246,7 @@ class _HotkeyFilter(QObject):
             return True
         if action in ("test_strip", "ring_around"):
             if not repeat:
-                window.show_proof("strip" if action == "test_strip" else "ring")
+                window.toggle_proof("strip" if action == "test_strip" else "ring")
             return True
         if action == "toggle_panels":
             window.toggle_panels()
@@ -312,6 +313,7 @@ class AppWindow(QMainWindow):
         self._peaking_timer.timeout.connect(self._run_peaking)
         self._comparing = False  # holding \ (or the Before button): showing the original scan instead of the edit
         self._split = False  # the Before / After split is up
+        self._proof_kind: str | None = None  # "strip" / "ring" while that mosaic is on the picture
         self._keys = KeyMap()  # which key does what (Settings > Keybinds)
         self._base_pick_image = None  # the raw scan on screen while the film-base eyedropper is armed
         self._region_drawing = False  # the metering Draw Region tool is armed (it borrows the crop overlay)
@@ -466,11 +468,11 @@ class AppWindow(QMainWindow):
         edit_menu.addAction(self._gradient_crop_action)
         self._test_strip_action = QAction("Test Strip...", self)
         self._test_strip_action.setToolTip("Print this photo at 25 exposure and contrast steps side by side and pick the one that looks right")
-        self._test_strip_action.triggered.connect(lambda: self.show_proof("strip"))
+        self._test_strip_action.triggered.connect(lambda: self.toggle_proof("strip"))
         edit_menu.addAction(self._test_strip_action)
         self._ring_around_action = QAction("Ring-Around...", self)
         self._ring_around_action.setToolTip("Step the colour balance round this photo in a 5 x 5 mosaic: the tile where a cast disappears shows which way to move")
-        self._ring_around_action.triggered.connect(lambda: self.show_proof("ring"))
+        self._ring_around_action.triggered.connect(lambda: self.toggle_proof("ring"))
         edit_menu.addAction(self._ring_around_action)
         self._reset_action = QAction("Reset All Edits...", self)
         self._reset_action.setToolTip("Put this photo back to how it was when first opened (one undoable step)")
@@ -924,6 +926,8 @@ class AppWindow(QMainWindow):
         self._crop_tool.flip_h_toggled.connect(self.controller.set_flip_h)
         self._crop_tool.flip_v_toggled.connect(self.controller.set_flip_v)
         self._crop_tool.crop_mode_toggled.connect(self._on_crop_mode_toggled)
+        self._image_view.proof_picked.connect(self._on_proof_picked)
+        self._exposure_tool.proof_requested.connect(self.toggle_proof)
         self._crop_tool.straighten_tool_toggled.connect(self._on_straighten_tool_toggled)
         self._crop_tool.crop_cleared.connect(self._on_crop_cleared)
         self._crop_tool.auto_crop_requested.connect(self._on_auto_crop)
@@ -1509,6 +1513,7 @@ class AppWindow(QMainWindow):
         self._image_view.set_peaking_overlay(None)
         self._queue_peaking()
         self._comparing = False  # a newly opened photo shows its edit
+        self.close_proof()  # ... and no mosaic
         if self._split:
             self._split = False  # ... and no split
             self._sync_split_widgets(False)
@@ -1785,8 +1790,19 @@ class AppWindow(QMainWindow):
     def split_active(self) -> bool:
         return self._split
 
+    def proof_active(self) -> bool:
+        return self._proof_kind is not None
+
+    def toggle_proof(self, kind: str) -> None:
+        """Test Strip / Ring-Around (the buttons under WB Correction > Exposure, the Edit menu, Shift+T / Shift+F): the same kind again closes it."""
+        if self._proof_kind == kind:
+            self.close_proof()
+        else:
+            self.show_proof(kind)
+
     def show_proof(self, kind: str) -> None:
-        """Test Strip / Ring-Around (Edit menu, Shift+T / Shift+F): a 5 x 5 mosaic of the open photo; the tile you click becomes the edit."""
+        """Put a 5 x 5 mosaic of the open photo on the picture - exposure and contrast, or colour balance, stepped across and down - and let a
+        click on a tile make its values the photo's (one undoable step). Esc, or the same button, closes it."""
         c = self.controller
         if c.state.preview_rgb is None or self.lighttable_active():
             self._coord_label.setText("Test strip / ring-around: open a photo in the editor first.")
@@ -1794,18 +1810,46 @@ class AppWindow(QMainWindow):
         if self._crop_tool.is_crop_active():
             self._crop_tool.set_crop_mode(False)
             self._on_crop_mode_toggled(False)
+        self.set_split(False)
+        if self._comparing:
+            self.set_compare(False)
         QApplication.setOverrideCursor(QCursor(Qt.CursorShape.WaitCursor))
         try:
-            tiles = c.render_proof(kind)
+            tiles = c.render_proof(kind, 420)
         finally:
             QApplication.restoreOverrideCursor()
         if not tiles:
             return
-        dialog = ProofDialog(kind, tiles, self)
-        dialog.exec()
-        choice = dialog.choice()
-        if choice is not None:
-            c.apply_proof_cell(kind, *choice)
+        n = proof_logic.GRID
+        th, tw = tiles[0].shape[:2]
+        gap = max(2, tw // 80)
+        mosaic = np.zeros((n * th + (n - 1) * gap, n * tw + (n - 1) * gap, 3), dtype=np.uint8)
+        k = proof_logic.KINDS[kind]
+        labels = []
+        for row in range(n):
+            for col in range(n):
+                tile = tiles[row * n + col]
+                mosaic[row * (th + gap): row * (th + gap) + th, col * (tw + gap): col * (tw + gap) + tw] = tile
+                if (row, col) == (n // 2, n // 2):
+                    labels.append("NOW")
+                else:
+                    labels.append(
+                        f"{k.columns.title[:4].lower()} {proof_logic.axis_label(k.columns, col)}   {k.rows.title[:4].lower()} {proof_logic.axis_label(k.rows, row)}"
+                    )
+        self._proof_kind = kind
+        self._image_view.set_proof(mosaic, (tw, th), gap, n, labels, f"{k.title}: {k.columns.title} across, {k.rows.title} down  -  click a tile, Esc closes")
+
+    def close_proof(self) -> None:
+        if self._proof_kind is None:
+            return
+        self._proof_kind = None
+        self._image_view.set_proof(None)
+
+    def _on_proof_picked(self, row: int, col: int) -> None:
+        kind = self._proof_kind
+        self.close_proof()
+        if kind is not None and (row, col) != (proof_logic.GRID // 2, proof_logic.GRID // 2):
+            self.controller.apply_proof_cell(kind, row, col)
 
     def set_split(self, on: bool) -> None:
         """The Before / After split view: the picture before the edit left of a draggable divider, the edit right of it."""
@@ -1818,6 +1862,8 @@ class AppWindow(QMainWindow):
             return
         if on and self._comparing:
             self.set_compare(False)
+        if on:
+            self.close_proof()
         self._split = on
         self._sync_split_widgets(on)
         self._refresh_split()
@@ -2288,6 +2334,7 @@ class AppWindow(QMainWindow):
         state = self.controller.state
         if enabled:
             self.set_split(False)
+            self.close_proof()
             self._crop_tool.set_straighten_active(False)
             self._end_region_draw()
             self._dust_tool.deactivate_tools()

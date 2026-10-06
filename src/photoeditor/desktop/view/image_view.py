@@ -60,6 +60,7 @@ class _ImageLabel(QLabel):
     pixel_picked = pyqtSignal(int, int, object)  # a click while in pick mode
     crop_requested = pyqtSignal(int, int, int, int)  # x1, y1, x2, y2, a drag while in crop mode
     drag_moved = pyqtSignal(int, int)  # dx, dy since the last drag_moved (screen pixels)
+    proof_picked = pyqtSignal(int, int)  # a tile of the test strip / ring-around was clicked: row, column
     stroke_completed = pyqtSignal(object)  # list of (x, y) image-pixel points - a painted stroke or a finished polyline
     tool_clicked = pyqtSignal(float, float)  # a click while the single-click heal tool is active
     source_picked = pyqtSignal(float, float)  # an Alt-click while the clone tool is active: where to copy from, in image pixels
@@ -101,6 +102,12 @@ class _ImageLabel(QLabel):
         self._hover: QPointF | None = None
         self._drag_button = Qt.MouseButton.LeftButton
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self._proof: QImage | None = None  # the test strip / ring-around mosaic, drawn over the whole picture
+        self._proof_buf = None
+        self._proof_geometry = (1, 1, 0, 1, 1)  # tile width, tile height, gap, rows, columns - in mosaic pixels
+        self._proof_labels: list[str] = []
+        self._proof_banner = ""
+        self._proof_hover: tuple[int, int] | None = None
         self._split: QImage | None = None  # the "before" picture, drawn over the left of the divider
         self._split_buf = None
         self._split_pos = 0.5              # the divider, as a share of the picture's width
@@ -127,6 +134,72 @@ class _ImageLabel(QLabel):
 
     def split_active(self) -> bool:
         return self._split is not None
+
+    def set_proof(self, mosaic: np.ndarray | None, tile: tuple[int, int] = (1, 1), gap: int = 0, grid: int = 5, labels: list[str] | None = None, banner: str = "") -> None:
+        """A test strip / ring-around: `mosaic` is the grid x grid tiles (each tile[0] x tile[1] pixels, `gap` apart) already laid out; it covers the
+        whole picture on screen like a contact sheet, each tile named by `labels` (row by row). None puts the picture back."""
+        if mosaic is None:
+            self._proof = self._proof_buf = None
+            self._proof_hover = None
+        else:
+            self._proof_buf = np.ascontiguousarray(mosaic)
+            h, w = self._proof_buf.shape[:2]
+            self._proof = QImage(self._proof_buf.data, w, h, w * 3, QImage.Format.Format_RGB888)
+            self._proof_geometry = (tile[0], tile[1], gap, grid, grid)
+            self._proof_labels = list(labels or [])
+            self._proof_banner = banner
+        self.setCursor(Qt.CursorShape.PointingHandCursor) if mosaic is not None else self.unsetCursor()
+        self.update()
+
+    def proof_active(self) -> bool:
+        return self._proof is not None
+
+    def _proof_cell_rect(self, row: int, col: int) -> QRectF:
+        tw, th, gap, rows, cols = self._proof_geometry
+        mw, mh = cols * tw + (cols - 1) * gap, rows * th + (rows - 1) * gap
+        sx, sy = self.width() / mw, self.height() / mh
+        return QRectF(col * (tw + gap) * sx, row * (th + gap) * sy, tw * sx, th * sy)
+
+    def _proof_cell_at(self, pos) -> tuple[int, int] | None:
+        rows, cols = self._proof_geometry[3:]
+        for row in range(rows):
+            for col in range(cols):
+                if self._proof_cell_rect(row, col).contains(pos):
+                    return row, col
+        return None
+
+    def _paint_proof(self, painter: QPainter) -> None:
+        painter.fillRect(self.rect(), QColor(0, 0, 0))
+        painter.drawImage(QRectF(self.rect()), self._proof)
+        rows, cols = self._proof_geometry[3:]
+        font = painter.font()
+        font.setBold(True)
+        painter.setFont(font)
+        for row in range(rows):
+            for col in range(cols):
+                rect = self._proof_cell_rect(row, col)
+                centre = (row, col) == (rows // 2, cols // 2)
+                text = self._proof_labels[row * cols + col] if row * cols + col < len(self._proof_labels) else ""
+                if text:
+                    width = min(rect.width() - 8, painter.fontMetrics().horizontalAdvance(text) + 12)
+                    badge = QRectF(rect.left() + 4, rect.bottom() - 24, width, 20)
+                    painter.setPen(Qt.PenStyle.NoPen)
+                    painter.setBrush(QColor(0, 0, 0, 170))
+                    painter.drawRoundedRect(badge, 3, 3)
+                    painter.setPen(QColor(255, 255, 255) if not centre else QColor(255, 210, 90))
+                    painter.drawText(badge, Qt.AlignmentFlag.AlignCenter, text)
+                if centre or (row, col) == self._proof_hover:
+                    painter.setBrush(Qt.BrushStyle.NoBrush)
+                    painter.setPen(QPen(QColor(255, 210, 90) if centre else QColor(255, 255, 255, 235), 2))
+                    painter.drawRect(rect.adjusted(1, 1, -1, -1))
+        if self._proof_banner:
+            width = painter.fontMetrics().horizontalAdvance(self._proof_banner) + 24
+            banner = QRectF((self.width() - width) / 2, 8, width, 24)
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(QColor(0, 0, 0, 190))
+            painter.drawRoundedRect(banner, 4, 4)
+            painter.setPen(QColor(255, 255, 255))
+            painter.drawText(banner, Qt.AlignmentFlag.AlignCenter, self._proof_banner)
 
     def _near_divider(self, x: float) -> bool:
         return self._split is not None and abs(x - self._split_pos * self.width()) <= 10
@@ -505,6 +578,13 @@ class _ImageLabel(QLabel):
         return img_x, img_y, (r, g, b)
 
     def mousePressEvent(self, event: QMouseEvent) -> None:
+        if self._proof is not None:
+            if event.button() == Qt.MouseButton.LeftButton:
+                cell = self._proof_cell_at(event.position())
+                if cell is not None:
+                    self.proof_picked.emit(*cell)
+            event.accept()
+            return
         if event.button() == Qt.MouseButton.LeftButton and self._split is not None and self._tool is None and self._near_divider(event.position().x()):
             self._split_drag = True  # grab the divider
             event.accept()
@@ -568,6 +648,13 @@ class _ImageLabel(QLabel):
         super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event: QMouseEvent) -> None:
+        if self._proof is not None:
+            cell = self._proof_cell_at(event.position())
+            if cell != self._proof_hover:
+                self._proof_hover = cell
+                self.update()
+            event.accept()
+            return
         if self._split_drag:
             self._split_pos = min(1.0, max(0.0, event.position().x() / max(1, self.width())))
             self.update()
@@ -737,6 +824,12 @@ class _ImageLabel(QLabel):
             painter.setRenderHint(QPainter.RenderHint.Antialiasing)
             self._paint_split(painter)
             painter.end()
+        if self._proof is not None and not self._crop_mode:
+            painter = QPainter(self)
+            painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
+            self._paint_proof(painter)
+            painter.end()
+            return
         if self._tool is not None and not self._crop_mode:
             painter = QPainter(self)
             self._paint_tool(painter)
@@ -801,6 +894,7 @@ class ImageView(QWidget):
     crop_requested = pyqtSignal(int, int, int, int)
     zoom_changed = pyqtSignal(float)
     stroke_completed = pyqtSignal(object)
+    proof_picked = pyqtSignal(int, int)
     tool_clicked = pyqtSignal(float, float)
     source_picked = pyqtSignal(float, float)
 
@@ -829,6 +923,7 @@ class ImageView(QWidget):
         self._label.crop_requested.connect(self.crop_requested)
         self._label.drag_moved.connect(self._on_drag_moved)
         self._label.stroke_completed.connect(self.stroke_completed)
+        self._label.proof_picked.connect(self.proof_picked)
         self._label.tool_clicked.connect(self.tool_clicked)
         self._label.source_picked.connect(self.source_picked)
         self._scroll.setWidget(self._label)
@@ -925,6 +1020,12 @@ class ImageView(QWidget):
 
     def set_split(self, pixels: np.ndarray | None) -> None:
         self._label.set_split(pixels)
+
+    def set_proof(self, mosaic, tile=(1, 1), gap: int = 0, grid: int = 5, labels=None, banner: str = "") -> None:
+        self._label.set_proof(mosaic, tile, gap, grid, labels, banner)
+
+    def proof_active(self) -> bool:
+        return self._label.proof_active()
 
     def split_active(self) -> bool:
         return self._label.split_active()

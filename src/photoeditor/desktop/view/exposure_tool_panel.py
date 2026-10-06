@@ -1,6 +1,6 @@
 from PyQt6.QtCore import QTimer, Qt, pyqtSignal
 from PyQt6.QtGui import QMouseEvent
-from PyQt6.QtWidgets import QDoubleSpinBox, QSlider, QWidget
+from PyQt6.QtWidgets import QDoubleSpinBox, QHBoxLayout, QPushButton, QSlider, QWidget
 
 from ...features.exposure.logic import EV_RANGE
 from ...theme.tokens import THEME
@@ -56,6 +56,7 @@ class ExposureToolPanel(CollapsiblePanel):
 
     exposure_changed = pyqtSignal(float)
     preview_requested = pyqtSignal(float)
+    proof_requested = pyqtSignal(str)  # "strip" (test strip) or "ring" (ring-around): show that mosaic on the picture
 
     def __init__(self, parent: QWidget | None = None):
         super().__init__(
@@ -101,6 +102,24 @@ class ExposureToolPanel(CollapsiblePanel):
         self._spin.setAlignment(Qt.AlignmentFlag.AlignRight)
         self._spin.valueChanged.connect(self._on_spin_changed)
         body.addWidget(self._spin)
+
+        proof_row = QHBoxLayout()
+        proof_row.setSpacing(THEME.space_sm)
+        self._strip_btn = QPushButton("Test Strip")
+        self._strip_btn.setToolTip(
+            "Print this photo 25 ways on the picture itself: exposure steps across, contrast steps down, like a darkroom test strip. Click a tile "
+            "to take its values; Esc or the button again closes it. (Shift+T)"
+        )
+        self._strip_btn.clicked.connect(lambda: self.proof_requested.emit("strip"))
+        self._ring_btn = QPushButton("Ring-Around")
+        self._ring_btn.setToolTip(
+            "Step the colour balance round this photo in a 5 x 5 mosaic on the picture: tint across, temperature down. The tile where a cast "
+            "disappears shows which way to move. Click a tile to take it. (Shift+F)"
+        )
+        self._ring_btn.clicked.connect(lambda: self.proof_requested.emit("ring"))
+        proof_row.addWidget(self._strip_btn)
+        proof_row.addWidget(self._ring_btn)
+        body.addLayout(proof_row)
 
     def reset(self) -> None:
         """Back to 0.00 EV without emitting anything - used when a new file
