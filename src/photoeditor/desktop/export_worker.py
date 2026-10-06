@@ -18,6 +18,7 @@ from ..features.negative.logic import ProcessMode, detect_process_mode
 from ..features.open_image.logic import is_raw
 from ..features.open_image.processor import load_image_rgb, make_preview_rgb, to_uint8
 from ..features.persistence import edit_store
+from ..features.tags.export import embed_keywords
 from ..features.retouch.logic import DEFAULT_SCRATCH_SENSITIVITY, DEFAULT_SIZE, DEFAULT_THRESHOLD
 from ..features.sharpening.logic import DEFAULT_METHOD
 from ..features.tonecurve.logic import DEFAULT_POINTS
@@ -205,6 +206,7 @@ class ExportWorker(QThread):
                                     embed_into_file(dest, metadata, path, options.copy_exif, int(options.dpi))
                                 except Exception as exc:  # the picture is written; only the notes are missing
                                     summary["failed"].append((path, f"{name}: metadata not written ({type(exc).__name__}: {exc})"))
+                                embed_keywords(dest, edit_store.get_tags(conn, [path]).get(path, []))
                                 summary["done"].append(dest)
                         except Exception as exc:
                             summary["failed"].append((path, f"{name}: {type(exc).__name__}: {exc}"))

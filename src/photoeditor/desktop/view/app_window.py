@@ -32,6 +32,8 @@ from .contact_sheet_dialog import ContactSheetDialog
 from .credits_dialog import CreditsDialog
 from ..keybinds import KeyMap
 from .settings_dialog import SettingsDialog
+from .snapshots_panel import SnapshotsPanel
+from .tags_panel import TagsPanel
 from .shortcuts_dialog import ShortcutsDialog
 from ..contactsheet_worker import ContactSheetWorker
 from ..peaking_worker import PeakingWorker
@@ -334,6 +336,7 @@ class AppWindow(QMainWindow):
         frame.layout().addWidget(self._view_stack, 1)
         self._lighttable.open_requested.connect(self.open_in_editor)
         self._lighttable.rate_requested.connect(self._on_lighttable_rate)
+        self._lighttable.tags_requested.connect(lambda paths, add, remove: self.controller.set_tags_for(paths, add, remove))
         self._lighttable.flag_requested.connect(self._on_lighttable_flag)
         self._lighttable.export_requested.connect(self.export_selected)
         self._lighttable.copy_settings_requested.connect(self.controller.copy_settings_from_path)
@@ -578,6 +581,15 @@ class AppWindow(QMainWindow):
         self._presets_panel.advanced_requested.connect(self._on_advanced_preset_edit)
         self.controller.look_presets_changed.connect(lambda select: self._presets_panel.set_presets(self.controller.look_presets(), select or None))
         left_tools_col.addWidget(self._presets_panel)
+        self._snapshots_panel = SnapshotsPanel()
+        self._snapshots_panel.take_requested.connect(self.controller.take_snapshot)
+        self._snapshots_panel.apply_requested.connect(self.controller.apply_snapshot)
+        self._snapshots_panel.update_requested.connect(self.controller.update_snapshot)
+        self._snapshots_panel.delete_requested.connect(self.controller.delete_snapshot)
+        self.controller.snapshots_changed.connect(
+            lambda select: self._snapshots_panel.set_snapshots(self.controller.snapshot_list(), select or None)
+        )
+        left_tools_col.addWidget(self._snapshots_panel)
 
         self._export_panel = ExportPanel()
         self._export_panel.export_requested.connect(self._on_export_requested)
@@ -999,6 +1011,11 @@ class AppWindow(QMainWindow):
         metadata_col = QVBoxLayout(metadata_content)
         metadata_col.setContentsMargins(0, 0, 0, 0)
         metadata_col.setSpacing(THEME.space_sm)
+        self._tags_panel = TagsPanel()
+        self._tags_panel.editor.add_requested.connect(lambda tags: self.controller.set_tags_for([self.controller.state.image_path], add=tags))
+        self._tags_panel.editor.remove_requested.connect(lambda tags: self.controller.set_tags_for([self.controller.state.image_path], remove=tags))
+        self.controller.tags_changed.connect(self._on_tags_changed)
+        metadata_col.addWidget(self._tags_panel)
         metadata_col.addWidget(self._metadata_tab)
         metadata_col.addStretch(1)
 
@@ -1190,6 +1207,19 @@ class AppWindow(QMainWindow):
         )
         if added or changed or removed:
             self._lighttable_reload_rows()
+
+    def _on_tags_changed(self, paths: list) -> None:
+        """Tags changed (here, or on opening a photo): the open photo's panel and the Workbench's rows follow."""
+        current = self.controller.state.image_path
+        if current is not None and current in paths:
+            self._tags_panel.editor.set_active(True)
+            self._tags_panel.editor.set_tags(self.controller.photo_tags(current))
+        elif current is None:
+            self._tags_panel.editor.set_active(False)
+            self._tags_panel.editor.set_tags([])
+        self._tags_panel.editor.set_suggestions(self.controller.all_tags())
+        if self.lighttable_active():
+            self._lighttable_reload_rows()  # (switching to the Workbench reloads the rows anyway, so nothing is kept for later)
 
     def _on_lighttable_rate(self, paths: list, stars: int) -> None:
         for path in paths:
@@ -1416,6 +1446,7 @@ class AppWindow(QMainWindow):
     def _on_file_changed(self) -> None:
         state = self.controller.state
         self._presets_panel.set_has_photo(state.image_path is not None)
+        self._snapshots_panel.set_has_photo(state.image_path is not None)
         self._peaking_levels = None  # the marks belong to the photo that was open; the new picture is analysed when it lands
         self._image_view.set_peaking_overlay(None)
         self._queue_peaking()

@@ -114,7 +114,8 @@ class SettingsDialog(QDialog):
         col = QVBoxLayout(page)
         col.setSpacing(THEME.space_md)
         col.addWidget(_hint("How RAW files (CR2, NEF, ARW, DNG...) are turned into a picture when you open or export them. "
-                            "The open photo is reopened when you save a change."))
+                            "The open photo is reopened when you save a change. RAW files and 16-bit TIFF/PNG scans are read at 16 bits and keep every one "
+                            "through inversion, exposure, contrast and the tone curve, so a negative's narrow range is not left banded."))
         form = QFormLayout()
         form.setSpacing(THEME.space_md)
         self._demosaic = QComboBox()

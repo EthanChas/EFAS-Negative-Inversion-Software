@@ -96,6 +96,27 @@ CREATE TABLE IF NOT EXISTS ratings (
 )
 """
 
+# Keywords on photos: one row per (photo, tag). Case-insensitive, so "Holiday" and "holiday" are one tag.
+_TAGS_SCHEMA = """
+CREATE TABLE IF NOT EXISTS tags (
+    path TEXT NOT NULL,
+    tag TEXT NOT NULL COLLATE NOCASE,
+    PRIMARY KEY (path, tag)
+)
+"""
+_TAGS_INDEX = "CREATE INDEX IF NOT EXISTS idx_tags_tag ON tags (tag)"
+
+# Snapshots: a photo's whole edit state saved under a name (state is the JSON of state_to_json).
+_SNAPSHOTS_SCHEMA = """
+CREATE TABLE IF NOT EXISTS snapshots (
+    path TEXT NOT NULL,
+    name TEXT NOT NULL COLLATE NOCASE,
+    state TEXT NOT NULL,
+    created TEXT NOT NULL,
+    PRIMARY KEY (path, name)
+)
+"""
+
 # The film base (the unexposed rebate's color) measured for a roll: one per folder, like its flat-field.
 _BASE_SCHEMA = """
 CREATE TABLE IF NOT EXISTS folder_base (
@@ -213,6 +234,9 @@ def connect(db_path: str) -> sqlite3.Connection:
     conn.execute(_ROLL_SCHEMA)
     conn.execute(_RATINGS_SCHEMA)
     conn.execute(_BASE_SCHEMA)
+    conn.execute(_TAGS_SCHEMA)
+    conn.execute(_TAGS_INDEX)
+    conn.execute(_SNAPSHOTS_SCHEMA)
     _migrate(conn)
     conn.commit()
     return conn
@@ -421,6 +445,83 @@ def get_ratings(conn: sqlite3.Connection, paths: list[str]) -> dict[str, int]:
         marks = ",".join("?" * len(chunk))
         found.update(conn.execute(f"SELECT path, rating FROM ratings WHERE path IN ({marks})", chunk).fetchall())
     return found
+
+
+def state_to_json(state: dict) -> str:
+    """An edit state (as AppController._edit_state_dict builds it) as one JSON text, each field encoded the way its column is."""
+    state = {"module_presets": {}, **state}
+    return json.dumps({name: _encode(state[name], kind) for name, kind in _FIELDS if name in state})
+
+
+def state_from_json(text: str) -> dict:
+    """The edit state a snapshot holds; a field it does not have (it was taken before the field existed) is simply missing."""
+    raw = json.loads(text)
+    return {name: _decode(raw[name], kind, name) for name, kind in _FIELDS if name in raw}
+
+
+def save_snapshot(conn: sqlite3.Connection, path: str, name: str, state: dict) -> None:
+    conn.execute(
+        "INSERT INTO snapshots (path, name, state, created) VALUES (?, ?, ?, datetime('now', 'localtime')) "
+        "ON CONFLICT(path, name) DO UPDATE SET state=excluded.state, created=excluded.created",
+        (path, name, state_to_json(state)),
+    )
+    conn.commit()
+
+
+def list_snapshots(conn: sqlite3.Connection, path: str) -> list[tuple[str, str]]:
+    """(name, when taken) of a photo's snapshots, newest first."""
+    return [(n, c) for n, c in conn.execute("SELECT name, created FROM snapshots WHERE path = ? ORDER BY created DESC, rowid DESC", (path,))]
+
+
+def get_snapshot(conn: sqlite3.Connection, path: str, name: str) -> dict | None:
+    row = conn.execute("SELECT state FROM snapshots WHERE path = ? AND name = ?", (path, name)).fetchone()
+    return state_from_json(row[0]) if row else None
+
+
+def delete_snapshot(conn: sqlite3.Connection, path: str, name: str) -> bool:
+    cur = conn.execute("DELETE FROM snapshots WHERE path = ? AND name = ?", (path, name))
+    conn.commit()
+    return cur.rowcount > 0
+
+
+def get_tags(conn: sqlite3.Connection, paths: list[str]) -> dict[str, list[str]]:
+    """{path: its tags, A-Z} for the photos that have any."""
+    found: dict[str, list[str]] = {}
+    for i in range(0, len(paths), 500):
+        chunk = paths[i : i + 500]
+        marks = ",".join("?" * len(chunk))
+        for path, tag in conn.execute(f"SELECT path, tag FROM tags WHERE path IN ({marks}) ORDER BY tag COLLATE NOCASE", chunk):
+            found.setdefault(path, []).append(tag)
+    return found
+
+
+def all_tagged(conn: sqlite3.Connection) -> dict[str, list[str]]:
+    """Every tagged photo's tags - for the Workbench, which shows the whole library at once."""
+    found: dict[str, list[str]] = {}
+    for path, tag in conn.execute("SELECT path, tag FROM tags ORDER BY tag COLLATE NOCASE"):
+        found.setdefault(path, []).append(tag)
+    return found
+
+
+def set_tags(conn: sqlite3.Connection, path: str, tags: list[str]) -> None:
+    conn.execute("DELETE FROM tags WHERE path = ?", (path,))
+    conn.executemany("INSERT OR IGNORE INTO tags (path, tag) VALUES (?, ?)", [(path, t) for t in tags])
+    conn.commit()
+
+
+def add_tags(conn: sqlite3.Connection, paths: list[str], tags: list[str]) -> None:
+    conn.executemany("INSERT OR IGNORE INTO tags (path, tag) VALUES (?, ?)", [(p, t) for p in paths for t in tags])
+    conn.commit()
+
+
+def remove_tags(conn: sqlite3.Connection, paths: list[str], tags: list[str]) -> None:
+    conn.executemany("DELETE FROM tags WHERE path = ? AND tag = ?", [(p, t) for p in paths for t in tags])
+    conn.commit()
+
+
+def tag_counts(conn: sqlite3.Connection) -> list[tuple[str, int]]:
+    """Every tag in use with how many photos carry it, most used first."""
+    return [(t, n) for t, n in conn.execute("SELECT tag, COUNT(*) FROM tags GROUP BY tag COLLATE NOCASE ORDER BY COUNT(*) DESC, tag COLLATE NOCASE")]
 
 
 # What an unedited photo's row holds (negative_inverted is left out: it depends on what the scan turned out to be).

@@ -8,7 +8,7 @@ carry field terms, darktable-style but typed:
     camera:canon  lens:100  film:delta  roll:tokyo  folder:hotstack  name:7077  note:"light leak"  place:shibuya  ext:cr2
     iso:400  iso:>=800  iso:100-400  focal:50..135  aperture:<2.8      (a number, a comparison, or a range)
     date:2026  date:2026-10  date:2026-10-05  date:2026-09..2026-10  date:>=2026-10-01
-    rating:>=3  flag:keeper|rejected|none  edited:yes|no
+    rating:>=3  flag:keeper|rejected|none  edited:yes|no  tag:holiday
     -word  -camera:canon                                               (a leading minus leaves matches out)"""
 
 import os
@@ -36,6 +36,7 @@ class Meta:
     edited: set[str] = field(default_factory=set)
     rolls: dict[str, dict] = field(default_factory=dict)        # norm(folder) -> the Roll Card as a dict
     notes: dict[str, tuple[str, str]] = field(default_factory=dict)  # norm(path) -> (note, place)
+    tags: dict[str, list[str]] = field(default_factory=dict)    # norm(path) -> its tags
     film_iso: dict[str, int] = field(default_factory=dict)      # norm(path) -> the ISO of the film, as saved in the photo's own metadata
 
 
@@ -51,6 +52,8 @@ def load_meta(conn, records: list[dict]) -> Meta:
     for p, v in edit_store.get_flags(conn, paths).items():
         meta.flags[norm(p)] = v
     meta.edited = {norm(p) for p in edit_store.touched_paths(conn, paths, DEFAULT_POINTS)}
+    for p, tags in edit_store.all_tagged(conn).items():
+        meta.tags[norm(p)] = tags
     for folder in {r["folder"] for r in records}:
         card = edit_store.get_folder_roll(conn, edit_store.folder_key(folder, is_file=False))
         if card:
@@ -82,6 +85,7 @@ def build_rows(records: list[dict], meta: Meta) -> list[dict]:
         key = norm(rec["path"])
         card = meta.rolls.get(norm(rec["folder"]), {})
         note, place = meta.notes.get(key, ("", ""))
+        tags = meta.tags.get(key, [])
         # The ISO is the film's, never the camera's: a scanned negative's EXIF ISO is whatever the digitising camera was set to. So only an ISO
         # that was set counts - the Roll Card's (or its known film's) first, then the one saved in the photo's own metadata - and a photo with
         # neither has no ISO (exif_iso keeps the file's value, but nothing searches or shows it).
@@ -92,11 +96,11 @@ def build_rows(records: list[dict], meta: Meta) -> list[dict]:
             film=str(card.get("film", "") or ""), roll=str(card.get("name", "") or ""),
             roll_camera=str(card.get("camera", "") or ""), roll_lens=str(card.get("lens", "") or ""),
             shot_from=str(card.get("shot_from", "") or ""), shot_to=str(card.get("shot_to", "") or ""),
-            note=note, place=place, day=rec["taken"][:10], folder_name=os.path.basename(rec["folder"].rstrip("\\/")) or rec["folder"],
+            note=note, place=place, tags=tags, tags_text=" ".join(tags), day=rec["taken"][:10], folder_name=os.path.basename(rec["folder"].rstrip("\\/")) or rec["folder"],
         )
         row["_blob"] = " ".join(str(v) for v in (
             rec["name"], rec["ext"], row["folder_name"], rec["camera"], row["roll_camera"], rec["lens"], row["roll_lens"], row["film"], row["roll"],
-            note, place, rec["taken"], row["shot_from"], row["shot_to"], f"iso {row['iso']}" if row["iso"] else "",
+            note, place, " ".join(tags), rec["taken"], row["shot_from"], row["shot_to"], f"iso {row['iso']}" if row["iso"] else "",
         )).lower()
         rows.append(row)
     return rows
@@ -109,6 +113,7 @@ _NUM_KEYS = {"iso": "iso", "focal": "focal", "aperture": "aperture", "fnumber": 
 _TEXT_KEYS = {
     "camera": ("camera", "roll_camera"), "cam": ("camera", "roll_camera"), "make": ("make",), "lens": ("lens", "roll_lens"), "film": ("film",),
     "roll": ("roll",), "folder": ("folder_name", "folder"), "name": ("name",), "file": ("name",), "note": ("note",), "place": ("place",), "ext": ("ext",),
+    "tag": ("tags_text",), "tags": ("tags_text",), "keyword": ("tags_text",),
 }
 
 
@@ -215,6 +220,7 @@ class Query:
     lens: str = ""
     film: str = ""
     folder: str = ""
+    tag: str = ""
     iso: int = 0
     date_from: str = ""                 # 'YYYY-MM-DD', inclusive
     date_to: str = ""
@@ -223,7 +229,7 @@ class Query:
 
     def is_filtering(self) -> bool:
         return bool(self.text.strip() or self.rating_min or self.flags or self.edited is not None or self.camera or self.lens or self.film
-                    or self.folder or self.iso or self.date_from or self.date_to)
+                    or self.folder or self.tag or self.iso or self.date_from or self.date_to)
 
 
 def matches(row: dict, q: Query, terms: list | None = None) -> bool:
@@ -246,6 +252,8 @@ def matches(row: dict, q: Query, terms: list | None = None) -> bool:
     if q.film and q.film != row["film"]:
         return False
     if q.folder and q.folder != row["folder"]:
+        return False
+    if q.tag and q.tag.casefold() not in (t.casefold() for t in row.get("tags", ())):
         return False
     if q.iso and q.iso != row["iso"]:
         return False
@@ -270,8 +278,10 @@ def filter_rows(rows: list[dict], q: Query) -> list[dict]:
 
 def facets(rows: list[dict]) -> dict[str, list[tuple[Any, str, int]]]:
     """The values the filter panel offers: {facet: [(value, label, count)]}, most photos first."""
-    cams, lenses, films, folders, isos = Counter(), Counter(), Counter(), Counter(), Counter()
+    cams, lenses, films, folders, isos, tags = Counter(), Counter(), Counter(), Counter(), Counter(), Counter()
     for r in rows:
+        for t in r.get("tags", ()):
+            tags[t] += 1
         for c in {r["camera"], r["roll_camera"]} - {""}:
             cams[c] += 1
         for l in {r["lens"], r["roll_lens"]} - {""}:
@@ -289,4 +299,5 @@ def facets(rows: list[dict]) -> dict[str, list[tuple[Any, str, int]]]:
         "camera": ordered(cams), "lens": ordered(lenses), "film": ordered(films),
         "folder": ordered(folders, label=lambda f: os.path.basename(f.rstrip("\\/")) or f, key=lambda kv: os.path.basename(kv[0].rstrip("\\/")).lower()),
         "iso": ordered(isos, key=lambda kv: kv[0]),
+        "tag": ordered(tags),
     }

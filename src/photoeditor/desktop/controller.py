@@ -34,6 +34,7 @@ from ..features.watermark.marks import Marks
 from ..features.open_image.processor import load_image_rgb, make_preview_rgb, to_uint8
 from ..features.persistence import edit_store
 from ..features.persistence import export as data_export
+from ..features.tags import logic as tag_logic
 from ..features.persistence.backup import backup_database
 from ..features.settings import logic as app_settings
 from ..features.persistence.legacy import merge_legacy_databases
@@ -119,6 +120,8 @@ class AppController(QObject):
     module_presets_changed = pyqtSignal(str)  # the saved presets of one module (its panel key) changed
     look_presets_changed = pyqtSignal(str)  # the saved presets changed; the name to highlight ("" for none)
     rating_changed = pyqtSignal(str, int)  # path, 0-5 stars
+    snapshots_changed = pyqtSignal(str)  # a snapshot was taken (its name) or deleted (empty) - the panel lists them again
+    tags_changed = pyqtSignal(list)  # the paths whose tags changed (or were just read in, on opening a photo)
 
     def __init__(self):
         super().__init__()
@@ -227,6 +230,109 @@ class AppController(QObject):
         finally:
             self.loading_finished.emit()
 
+    def _apply_saved_state(self, saved: dict, path: str) -> None:
+        """Put a saved edit state (the database row, a sidecar, a snapshot) into the editor's state. Does not touch the frame details (metadata)."""
+        self.state.exposure_ev = saved["exposure_ev"]
+        self.state.tone_curve_points = saved["tone_curve_points"]
+        self.state.negative_inverted = saved["negative_inverted"]
+        self.state.rotation_quarter_turns = saved["rotation_quarter_turns"]
+        self.state.flip_h = saved["flip_h"]
+        self.state.flip_v = saved["flip_v"]
+        self.state.crop_rect = saved["crop_rect"]
+        self.state.saturation = saved["saturation"]
+        self.state.temperature = saved["temperature"]
+        self.state.tint = saved["tint"]
+        self.state.shadows = saved["shadows"]
+        self.state.highlights = saved["highlights"]
+        self.state.sharpen_amount = saved["sharpen_amount"]
+        self.state.sharpen_radius = saved["sharpen_radius"]
+        self.state.sharpen_masking = saved["sharpen_masking"]
+        self.state.sharpen_method = saved["sharpen_method"]
+        self.state.dust_auto = saved["dust_auto"]
+        self.state.dust_threshold = saved["dust_threshold"]
+        self.state.dust_size = saved["dust_size"]
+        self.state.scratch_lines = list(saved["scratch_lines"])
+        self.state.scratch_sensitivity = saved["scratch_sensitivity"]
+        self.state.heal_strokes = [list(s) for s in saved["heal_strokes"]]
+        self.state.clone_strokes = [list(s) for s in saved.get("clone_strokes", [])]
+        self.state.ai_dust = bool(saved.get("ai_dust", False))
+        self.state.ai_threshold = float(saved.get("ai_threshold", 0.3))
+        self.state.ai_grow = int(saved.get("ai_grow", 1))
+        self.state.marks = Marks.from_dict(saved.get("marks"))
+        for module_key, preset_name in (saved.get("module_presets") or {}).items():  # the module presets this photo had loaded when it was last open
+            if isinstance(module_key, str) and isinstance(preset_name, str):
+                self._module_preset_in_use[(path, module_key)] = preset_name
+        self.state.film_type = saved["film_type"]
+        self.state.invert_r = saved["invert_r"]
+        self.state.invert_g = saved["invert_g"]
+        self.state.invert_b = saved["invert_b"]
+        self.state.contrast = saved["contrast"]
+        self.state.fine_rotation = saved["fine_rotation"]
+        self.state.distortion = saved["distortion"]
+        self.state.chroma_denoise = saved["chroma_denoise"]
+        self.state.local_contrast = saved.get("local_contrast", 0.0)
+        self.state.metering = Metering.from_dict(saved.get("metering"))
+        self.state.wm_film = saved["wm_film"]
+        self.state.wm_texture = saved["wm_texture"]
+        self.state.wm_size = saved["wm_size"]
+        self.state.wm_position = saved["wm_position"]
+        self.state.wm_info = saved["wm_info"]
+        self.state.wm_camera = saved["wm_camera"]
+        self.state.wm_lens = saved["wm_lens"]
+
+    # ---- snapshots ----
+    def snapshot_list(self) -> list[tuple[str, str]]:
+        path = self.state.image_path
+        return edit_store.list_snapshots(self._db, path) if path is not None else []
+
+    def take_snapshot(self, name: str = "") -> str | None:
+        """Save the open photo's whole edit under a name (an empty name is numbered). A name already used is overwritten. Returns the name."""
+        path = self.state.image_path
+        if path is None or self.state.preview_rgb is None:
+            return None
+        name = " ".join(name.split())[:60]
+        if not name:
+            taken = {n.casefold() for n, _w in self.snapshot_list()}
+            n = len(taken) + 1
+            while f"Snapshot {n}".casefold() in taken:
+                n += 1
+            name = f"Snapshot {n}"
+        state = self._edit_state_dict()
+        state.pop("metadata", None)  # frame details are not part of an edit
+        edit_store.save_snapshot(self._db, path, name, state)
+        self.snapshots_changed.emit(name)
+        self.notice.emit(f"Snapshot '{name}' saved")
+        return name
+
+    def update_snapshot(self, name: str) -> bool:
+        return self.take_snapshot(name) is not None
+
+    def apply_snapshot(self, name: str) -> bool:
+        """Go back to a snapshot: the photo's edit becomes exactly what it was saved as. One undoable step."""
+        path, s = self.state.image_path, self.state
+        saved = edit_store.get_snapshot(self._db, path, name) if path is not None else None
+        if saved is None or s.preview_rgb is None:
+            return False
+        merged = {**self._edit_state_dict(), **saved}  # a field the snapshot predates keeps the photo's own value
+        merged.pop("metadata", None)
+        for key in [k for (p, k) in self._module_preset_in_use if p == path]:
+            del self._module_preset_in_use[(path, key)]
+        self._apply_saved_state(merged, path)
+        self._log(f"Snapshot '{name}'")
+        self._restore_entry(s.history[-1])
+        self._finish_restore()
+        self._save_edit_state()
+        self.notice.emit(f"Applied snapshot '{name}'")
+        return True
+
+    def delete_snapshot(self, name: str) -> bool:
+        path = self.state.image_path
+        if path is None or not edit_store.delete_snapshot(self._db, path, name):
+            return False
+        self.snapshots_changed.emit("")
+        self.notice.emit(f"Snapshot '{name}' deleted")
+        return True
+
     def _open_file_impl(self, path: str) -> None:
         def decode():
             full = load_image_rgb(path)  # 16-bit for a RAW or 16-bit scan, 8-bit otherwise
@@ -260,53 +366,7 @@ class AppController(QObject):
             # restore it instead of re-running auto-detect, since the
             # user's own prior choice (e.g. manually un-inverting a
             # false-positive C41 read) should win over the heuristic.
-            self.state.exposure_ev = saved["exposure_ev"]
-            self.state.tone_curve_points = saved["tone_curve_points"]
-            self.state.negative_inverted = saved["negative_inverted"]
-            self.state.rotation_quarter_turns = saved["rotation_quarter_turns"]
-            self.state.flip_h = saved["flip_h"]
-            self.state.flip_v = saved["flip_v"]
-            self.state.crop_rect = saved["crop_rect"]
-            self.state.saturation = saved["saturation"]
-            self.state.temperature = saved["temperature"]
-            self.state.tint = saved["tint"]
-            self.state.shadows = saved["shadows"]
-            self.state.highlights = saved["highlights"]
-            self.state.sharpen_amount = saved["sharpen_amount"]
-            self.state.sharpen_radius = saved["sharpen_radius"]
-            self.state.sharpen_masking = saved["sharpen_masking"]
-            self.state.sharpen_method = saved["sharpen_method"]
-            self.state.dust_auto = saved["dust_auto"]
-            self.state.dust_threshold = saved["dust_threshold"]
-            self.state.dust_size = saved["dust_size"]
-            self.state.scratch_lines = list(saved["scratch_lines"])
-            self.state.scratch_sensitivity = saved["scratch_sensitivity"]
-            self.state.heal_strokes = [list(s) for s in saved["heal_strokes"]]
-            self.state.clone_strokes = [list(s) for s in saved.get("clone_strokes", [])]
-            self.state.ai_dust = bool(saved.get("ai_dust", False))
-            self.state.ai_threshold = float(saved.get("ai_threshold", 0.3))
-            self.state.ai_grow = int(saved.get("ai_grow", 1))
-            self.state.marks = Marks.from_dict(saved.get("marks"))
-            for module_key, preset_name in (saved.get("module_presets") or {}).items():  # the module presets this photo had loaded when it was last open
-                if isinstance(module_key, str) and isinstance(preset_name, str):
-                    self._module_preset_in_use[(path, module_key)] = preset_name
-            self.state.film_type = saved["film_type"]
-            self.state.invert_r = saved["invert_r"]
-            self.state.invert_g = saved["invert_g"]
-            self.state.invert_b = saved["invert_b"]
-            self.state.contrast = saved["contrast"]
-            self.state.fine_rotation = saved["fine_rotation"]
-            self.state.distortion = saved["distortion"]
-            self.state.chroma_denoise = saved["chroma_denoise"]
-            self.state.local_contrast = saved.get("local_contrast", 0.0)
-            self.state.metering = Metering.from_dict(saved.get("metering"))
-            self.state.wm_film = saved["wm_film"]
-            self.state.wm_texture = saved["wm_texture"]
-            self.state.wm_size = saved["wm_size"]
-            self.state.wm_position = saved["wm_position"]
-            self.state.wm_info = saved["wm_info"]
-            self.state.wm_camera = saved["wm_camera"]
-            self.state.wm_lens = saved["wm_lens"]
+            self._apply_saved_state(saved, path)
             self.state.metadata = metadata_store.from_dict(saved["metadata"])
         else:
             self._apply_default_edits()
@@ -361,7 +421,13 @@ class AppController(QObject):
             if rating:
                 edit_store.set_rating(self._db, path, rating)
         self.state.rating = rating
+        if not edit_store.get_tags(self._db, [path]):  # keywords in a sidecar carried over from another machine or program
+            carried = tag_logic.unique(xmp.read_tags(path))
+            if carried:
+                edit_store.set_tags(self._db, path, carried)
         self._recompute_image()
+        self.tags_changed.emit([path])
+        self.snapshots_changed.emit("")
         self._log(f"Opened {os.path.basename(path)}")
         if saved is not None:
             # Only one entry (not the original session's full history,
@@ -1317,6 +1383,31 @@ class AppController(QObject):
     def toggle_rating(self, stars: int) -> None:
         """Pressing the star count the open photo already has takes it off again (0 always clears)."""
         self.set_rating(0 if stars and self.state.rating == stars else stars)
+
+    # ---- tags (keywords) ----
+    def photo_tags(self, path: str) -> list[str]:
+        return edit_store.get_tags(self._db, [path]).get(path, [])
+
+    def all_tags(self) -> list[str]:
+        """Every tag in use, most used first - what the tag boxes suggest."""
+        return [t for t, _n in edit_store.tag_counts(self._db)]
+
+    def set_tags_for(self, paths: list[str], add=(), remove=()) -> None:
+        """Add and/or remove tags on any photos (the open one, or the Workbench's selection); each photo's sidecar follows."""
+        add, remove = tag_logic.unique(add), tag_logic.unique(remove)
+        paths = [p for p in paths if p]
+        if not paths or not (add or remove):
+            return
+        if remove:
+            edit_store.remove_tags(self._db, paths, remove)
+        if add:
+            edit_store.add_tags(self._db, paths, add)
+        for path in paths:
+            xmp.write_tags(path, self.photo_tags(path))
+        self.tags_changed.emit(paths)
+        if path := (paths[0] if len(paths) == 1 else None):
+            if path == self.state.image_path:
+                self.notice.emit(("Tagged: " + ", ".join(add)) if add else ("Untagged: " + ", ".join(remove)))
 
     def set_rating_for(self, path: str, stars: int) -> None:
         """Rate any photo (the Lighttable's selection), not just the open one."""

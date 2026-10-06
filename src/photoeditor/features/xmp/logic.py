@@ -26,8 +26,9 @@ NS_RDF = "http://www.w3.org/1999/02/22-rdf-syntax-ns#"
 NS_XMP = "http://ns.adobe.com/xap/1.0/"
 NS_CRS = "http://ns.adobe.com/camera-raw-settings/1.0/"
 NS_PE = "http://ns.photoeditor.local/1.0/"
+NS_DC = "http://purl.org/dc/elements/1.1/"
 
-for _prefix, _uri in (("x", NS_X), ("rdf", NS_RDF), ("xmp", NS_XMP), ("crs", NS_CRS), ("pe", NS_PE)):
+for _prefix, _uri in (("x", NS_X), ("rdf", NS_RDF), ("xmp", NS_XMP), ("crs", NS_CRS), ("pe", NS_PE), ("dc", NS_DC)):
     ET.register_namespace(_prefix, _uri)
 
 _PE_ATTRS = (
@@ -355,6 +356,50 @@ def write_rating(image_path: str, stars: int) -> bool:
     except OSError:
         return False
     return True
+
+
+def write_tags(image_path: str, tags: list[str]) -> bool:
+    """Records the photo's keywords in the sidecar as dc:subject (a bag of rdf:li), the standard place other programs look for them."""
+    path = sidecar_path(image_path)
+    root = None
+    if os.path.exists(path):
+        try:
+            root = ET.parse(path).getroot()
+        except (ET.ParseError, OSError):
+            return False
+        if _description(root) is None:
+            return False
+    if root is None:
+        if not tags:
+            return True
+        root = _new_document()
+    desc = _description(root)
+    subject = _q(NS_DC, "subject")
+    for old in desc.findall(subject):
+        desc.remove(old)
+    if tags:
+        bag = ET.SubElement(ET.SubElement(desc, subject), _q(NS_RDF, "Bag"))
+        for tag in tags:
+            ET.SubElement(bag, _q(NS_RDF, "li")).text = tag
+    tmp = path + ".tmp"
+    try:
+        ET.indent(root)
+        ET.ElementTree(root).write(tmp, encoding="utf-8", xml_declaration=True)
+        os.replace(tmp, path)
+    except OSError:
+        return False
+    return True
+
+
+def read_tags(image_path: str) -> list[str]:
+    try:
+        desc = _description(ET.parse(sidecar_path(image_path)).getroot())
+    except (ET.ParseError, OSError):
+        return []
+    if desc is None:
+        return []
+    subject = desc.find(_q(NS_DC, "subject"))  # only the keywords: the tone curve and others keep their own rdf:li lists in the same description
+    return [li.text.strip() for li in subject.iter(_q(NS_RDF, "li")) if li.text and li.text.strip()] if subject is not None else []
 
 
 def read_rating(image_path: str) -> int:

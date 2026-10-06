@@ -19,6 +19,7 @@ from ...features.library import query as Q
 from ...theme.tokens import THEME
 from ..library_worker import ThumbPool
 from .collapsible_panel import CollapsiblePanel
+from .tags_panel import TagsEditor
 
 ROLE_ROW = Qt.ItemDataRole.UserRole + 10
 CELL_RANGE = (90, 300)
@@ -238,6 +239,7 @@ class LighttableList(QListView):
 class LighttableView(QWidget):
     open_requested = pyqtSignal(str)
     rate_requested = pyqtSignal(list, int)
+    tags_requested = pyqtSignal(list, list, list)  # paths, tags to add, tags to remove
     flag_requested = pyqtSignal(list, object)  # paths, "keeper" | "rejected" | None
     export_requested = pyqtSignal(list)
     copy_settings_requested = pyqtSignal(str)
@@ -342,13 +344,14 @@ class LighttableView(QWidget):
         body.addWidget(clear)
 
         body = self._section(col, "Collection", "Narrow the library to one folder, camera, lens, film or ISO. The number is how many photos have it.",
-                             reset=lambda: self._reset_combos(self._folder, self._camera, self._lens, self._film, self._iso))
+                             reset=lambda: self._reset_combos(self._folder, self._camera, self._lens, self._film, self._iso, self._tag))
         self._folder = self._combo([("Any", "")])
         self._camera = self._combo([("Any", "")])
         self._lens = self._combo([("Any", "")])
         self._film = self._combo([("Any", "")])
         self._iso = self._combo([("Any", 0)])
-        for label, w in (("Folder", self._folder), ("Camera", self._camera), ("Lens", self._lens), ("Film", self._film), ("ISO", self._iso)):
+        self._tag = self._combo([("Any", "")])
+        for label, w in (("Folder", self._folder), ("Camera", self._camera), ("Lens", self._lens), ("Film", self._film), ("ISO", self._iso), ("Tag", self._tag)):
             self._row(body, label, w)
 
         body = self._section(col, "Date", "The day a photo was taken (from the file's own EXIF - for a scanned negative, the day it was scanned). Custom range is inclusive.",
@@ -395,7 +398,7 @@ class LighttableView(QWidget):
             ("Rating", [("4+ stars", "rating:>=4"), ("Unrated", "rating:0")]),
             ("Edits", [("Edited", "edited:yes"), ("Not edited", "edited:no")]),
             ("Date taken", [("Today", f"date:{today:%Y-%m-%d}"), ("This month", f"date:{today:%Y-%m}"), ("This year", f"date:{today:%Y}")]),
-            ("Start a field", [("camera:", "camera:"), ("lens:", "lens:"), ("film:", "film:"), ("iso:", "iso:"), ("roll:", "roll:"), ("folder:", "folder:")]),
+            ("Start a field", [("camera:", "camera:"), ("lens:", "lens:"), ("film:", "film:"), ("iso:", "iso:"), ("roll:", "roll:"), ("folder:", "folder:"), ("tag:", "tag:")]),
         ]
         menu = QMenu(self)
         self._quick_actions: dict[str, QAction] = {}
@@ -504,6 +507,11 @@ class LighttableView(QWidget):
         body.addLayout(stars)
         flags = QHBoxLayout()
         flags.setSpacing(THEME.space_sm)
+        self._tags = TagsEditor()
+        self._tags.add_requested.connect(lambda tags: self.tags_requested.emit(self.selected_paths(), tags, []))
+        self._tags.remove_requested.connect(lambda tags: self.tags_requested.emit(self.selected_paths(), [], tags))
+        body.addWidget(QLabel("Tags"))
+        body.addWidget(self._tags)
         self._flag_buttons: list[tuple[QPushButton, str, str]] = []
         for text, flag, action_id, tip in (("Keep", "keeper", "flag_keeper", "Mark as keeper"), ("Reject", "rejected", "flag_rejected", "Mark as rejected"), ("Clear", None, "flag_clear", "Clear the flag")):
             b = QPushButton(text)
@@ -543,7 +551,7 @@ class LighttableView(QWidget):
     def _fill_facets(self) -> None:
         f = Q.facets(self._rows)
         self._loading = True
-        for combo, key, any_value in ((self._folder, "folder", ""), (self._camera, "camera", ""), (self._lens, "lens", ""), (self._film, "film", ""), (self._iso, "iso", 0)):
+        for combo, key, any_value in ((self._folder, "folder", ""), (self._camera, "camera", ""), (self._lens, "lens", ""), (self._film, "film", ""), (self._iso, "iso", 0), (self._tag, "tag", "")):
             keep = combo.currentData()
             combo.clear()
             combo.addItem("Any", any_value)
@@ -590,7 +598,7 @@ class LighttableView(QWidget):
             date_from, date_to = self._from.date().toString("yyyy-MM-dd"), self._to.date().toString("yyyy-MM-dd")
         return Q.Query(
             text=self._search.text(), rating_min=self._rating.currentData(), flags=_FLAG_FILTERS.get(self._flag.currentData() or "any", ()), edited=self._edited.currentData(),
-            camera=self._camera.currentData(), lens=self._lens.currentData(), film=self._film.currentData(), folder=self._folder.currentData(),
+            camera=self._camera.currentData(), lens=self._lens.currentData(), film=self._film.currentData(), folder=self._folder.currentData(), tag=self._tag.currentData(),
             iso=self._iso.currentData(), date_from=date_from, date_to=date_to, sort=self._sort.currentData(), descending=self._order.isChecked(),
         )
 
@@ -635,7 +643,7 @@ class LighttableView(QWidget):
     def clear_filters(self) -> None:
         self._loading = True
         self._search.clear()
-        for combo in (self._folder, self._camera, self._lens, self._film, self._iso, self._rating, self._flag, self._edited, self._when):
+        for combo in (self._folder, self._camera, self._lens, self._film, self._iso, self._tag, self._rating, self._flag, self._edited, self._when):
             combo.setCurrentIndex(0)
         self._loading = False
         self._from.setEnabled(False)
@@ -687,6 +695,7 @@ class LighttableView(QWidget):
         for b in (self._open_btn, self._reveal_btn):
             b.setEnabled(n >= 1 or self._current_row() is not None)
         self._export_btn.setEnabled(n >= 1)
+        self._refresh_tag_editor(rows)
         self._copy_btn.setEnabled(n == 1)
         self._paste_btn.setEnabled(n >= 1)
         row = self._current_row() if n <= 1 else None
@@ -698,6 +707,18 @@ class LighttableView(QWidget):
             self._info.setText(self._describe(row))
         elif n == 0:
             self._info.setText("Select a photo.")
+
+    def _refresh_tag_editor(self, rows: list[dict]) -> None:
+        """The tags of the selection: each with how many of the selected photos carry it, when more than one is selected."""
+        counts: dict[str, int] = {}
+        for r in rows:
+            for t in r.get("tags", ()):
+                counts[t] = counts.get(t, 0) + 1
+        tags = sorted(counts, key=str.casefold)
+        labels = {t: f"{t}  ({counts[t]} of {len(rows)})" for t in tags} if len(rows) > 1 else None
+        self._tags.set_active(bool(rows))
+        self._tags.set_tags(tags, labels)
+        self._tags.set_suggestions(sorted({t for r in self._rows for t in r.get("tags", ())}, key=str.casefold))
 
     @staticmethod
     def _describe(r: dict) -> str:
@@ -718,6 +739,8 @@ class LighttableView(QWidget):
                 lines.append(f"Roll lens: {r['roll_lens']}")
         if r["note"] or r["place"]:
             lines += ["", f"Note: {r['note']}" if r["note"] else "", f"Place: {r['place']}" if r["place"] else ""]
+        if r.get("tags"):
+            lines += ["", "Tags: " + ", ".join(r["tags"])]
         status = [("*" * r["rating"]) if r["rating"] else "", r["flag"] or "", "edited" if r["edited"] else ""]
         if any(status):
             lines += ["", "  ".join(s for s in status if s)]
