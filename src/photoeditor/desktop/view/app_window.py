@@ -1438,6 +1438,7 @@ class AppWindow(QMainWindow):
 
     def restore_session(self) -> None:
         """At startup: bring back the sidebar widths, the open tab, the filmstrip filter and the photo that was open - in its folder."""
+        QApplication.processEvents()  # let a window that was just maximized actually take its size: widths set against its old, small one scale up with it
         sess = self._session
         if "auto_advance" in sess and not sess["auto_advance"] and not app_settings.has("auto_advance"):
             app_settings.save({"auto_advance": False})  # the old Edit-menu choice moves to Settings
