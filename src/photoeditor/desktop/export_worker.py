@@ -16,7 +16,7 @@ from ..features.metadata.roll import RollCard, compose
 from ..features.browse.logic import list_images_in_folder
 from ..features.negative.logic import ProcessMode, detect_process_mode
 from ..features.open_image.logic import is_raw
-from ..features.open_image.processor import load_image_rgb, make_preview_rgb
+from ..features.open_image.processor import load_image_rgb, make_preview_rgb, to_uint8
 from ..features.persistence import edit_store
 from ..features.retouch.logic import DEFAULT_SCRATCH_SENSITIVITY, DEFAULT_SIZE, DEFAULT_THRESHOLD
 from ..features.sharpening.logic import DEFAULT_METHOD
@@ -108,7 +108,7 @@ def render_full_resolution(path: str, conn) -> "tuple":
     applied, EXIF bytes or None)."""
     full = load_image_rgb(path)
     preview = make_preview_rgb(full)
-    params, flatfield = _edits_for(path, conn, preview)
+    params, flatfield = _edits_for(path, conn, to_uint8(preview))
     renderer = Renderer()
     if params.ai_dust:  # the photo's analysis, from the cache or made now - an export waits for it rather than leaving the dust in
         renderer.ai_prob_lookup = lambda token, inverted, mono: aidust.probability(path, full, inverted, mono)
@@ -123,7 +123,7 @@ def render_edited_thumbnail(path: str, conn, max_dim: int = 800):
     every frame, not full resolution."""
     full = load_image_rgb(path)
     preview = make_preview_rgb(full)
-    params, flatfield = _edits_for(path, conn, preview)
+    params, flatfield = _edits_for(path, conn, to_uint8(preview))
     small = make_preview_rgb(preview, max_dim)  # the crop rectangle is kept in preview coordinates; the renderer scales it to the source
     image, _pre, _stats, _overlay = Renderer().render(
         small, params, path, preview.shape[1], live=None, want_stats=False, overlay=False, flatfield=flatfield

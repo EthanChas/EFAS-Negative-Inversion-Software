@@ -74,7 +74,8 @@ class AppState:
     # The single open file's workspace (File > Open Image...).
     image_path: str | None = None
     original_rgb: np.ndarray | None = None  # as decoded, full resolution, never modified
-    preview_rgb: np.ndarray | None = None  # downsampled copy interactive edits run against
+    preview_rgb: np.ndarray | None = None  # downsampled copy interactive edits run against (always 8-bit: the analyses read it)
+    preview_rgb16: np.ndarray | None = None  # the same preview with all 16 bits, for a RAW or 16-bit scan - the renders start from this one
     image_rgb: np.ndarray | None = None  # preview_rgb with edits (e.g. exposure) applied - what's displayed
     pre_crop_rgb: np.ndarray | None = None  # image_rgb's edits minus the crop step - what crop mode shows
     exposure_ev: float = 0.0

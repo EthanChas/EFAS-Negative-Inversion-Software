@@ -15,15 +15,21 @@ def build_lut(points: list[tuple[int, int]]) -> np.ndarray:
     Catmull-Rom choice) - so the curve passes exactly through every point
     and bends smoothly between them, instead of the sharp corners a plain
     connect-the-dots polyline would have."""
+    return curve_values(points, np.arange(256, dtype=np.float64)).round().astype(np.uint8)
+
+
+def curve_values(points: list[tuple[int, int]], sample_x: np.ndarray) -> np.ndarray:
+    """The curve's own (unrounded, 0..255) value at each x of `sample_x`, any shape - build_lut samples it at 0..255, the wide path at every
+    one of 65536 levels."""
     pts = sorted(points)
     xs = np.array([p[0] for p in pts], dtype=np.float64)
     ys = np.array([p[1] for p in pts], dtype=np.float64)
 
     if len(pts) == 1:
-        return np.clip(np.full(256, ys[0]), 0, 255).round().astype(np.uint8)
+        return np.clip(np.full(np.shape(sample_x), ys[0]), 0, 255)
 
     tangents = _tangents(xs, ys)
-    sample_x = np.arange(256, dtype=np.float64)
+    sample_x = np.asarray(sample_x, dtype=np.float64)
     segment = np.clip(np.searchsorted(xs, sample_x, side="right") - 1, 0, len(xs) - 2)
 
     x0, x1 = xs[segment], xs[segment + 1]
@@ -40,7 +46,7 @@ def build_lut(points: list[tuple[int, int]]) -> np.ndarray:
     h11 = t3 - t2
     sample_y = h00 * y0 + h10 * h * m0 + h01 * y1 + h11 * h * m1
 
-    return np.clip(sample_y, 0, 255).round().astype(np.uint8)
+    return np.clip(sample_y, 0, 255)
 
 
 def _tangents(xs: np.ndarray, ys: np.ndarray) -> np.ndarray:
@@ -56,5 +62,10 @@ def _tangents(xs: np.ndarray, ys: np.ndarray) -> np.ndarray:
 def apply_tone_curve(pixels: np.ndarray, points: list[tuple[int, int]]) -> np.ndarray:
     """Remap every pixel through the same curve - one combined RGB curve,
     not three independent per-channel curves."""
+    if pixels.dtype == np.float32:  # a wide ramp: the curve's own values, not rounded
+        if tuple(map(tuple, points)) == DEFAULT_POINTS:
+            return pixels
+        grid = np.linspace(0.0, 255.0, 4097)  # the spline sampled finely, then read off by interpolation: far cheaper than evaluating it 196608 times
+        return np.interp(pixels, grid, curve_values(points, grid)).astype(np.float32)
     lut = build_lut(points)
     return apply_channel_lut(pixels, np.broadcast_to(lut, (3, 256)))

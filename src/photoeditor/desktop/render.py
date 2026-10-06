@@ -33,7 +33,9 @@ from ..features.geometry.logic import (
     radial_distort,
     rotate_quarter_turns,
 )
-from ..features.lut.logic import apply_channel_lut, identity_ramp, is_identity, ramp_to_lut
+from ..features.lut.logic import (
+    apply_channel_lut, apply_wide_lut, identity_ramp, is_identity, ramp_to_lut, to_uint8, wide_ramp, wide_ramp_to_lut,
+)
 from ..features.flatfield.logic import apply_flatfield
 from ..features.negative.logic import (
     apply_channel_offsets,
@@ -237,6 +239,8 @@ class Renderer:
         self._retouch: OrderedDict = OrderedDict()
         self.ai_prob_lookup = None  # (token, inverted, mono) -> the model's probability map for that photo, or None while it has none yet
         self._flat: OrderedDict = OrderedDict()
+        self._eight: OrderedDict = OrderedDict()    # (token, shape) -> the 8-bit copy of a 16-bit source
+        self._patched: OrderedDict = OrderedDict()  # (token, shape, retouch key) -> the 16-bit source with the repairs laid into it
         self._dust_stats = DustStatsCache()
 
     def reset(self) -> None:
@@ -245,7 +249,38 @@ class Renderer:
             self._invert_key = None
             self._retouch.clear()
             self._flat.clear()
+            self._eight.clear()
+            self._patched.clear()
             self._dust_stats = DustStatsCache()
+
+    def _as_uint8(self, source16: np.ndarray, token) -> np.ndarray:
+        """The 8-bit copy of a 16-bit source (what dust detection, repair and the analyses work on), cached - it is a full-image pass."""
+        key = (token, source16.shape)
+        if key in self._eight:
+            self._eight.move_to_end(key)
+            return self._eight[key]
+        eight = to_uint8(source16)
+        self._eight[key] = eight
+        while len(self._eight) > _RETOUCH_CACHE_SIZE:
+            self._eight.popitem(last=False)
+        return eight
+
+    def _retouched16(self, source16: np.ndarray, source8: np.ndarray, retouched: RetouchResult, token) -> np.ndarray:
+        """The 16-bit source with the dust/scratch/heal repairs laid in. The repair itself runs on the 8-bit copy; only the pixels it changed are
+        taken from it (spread back to 16 bits), so everything else keeps its full precision."""
+        if retouched.pixels is source8:
+            return source16
+        key = (token, source16.shape, id(retouched))
+        if key in self._patched:
+            self._patched.move_to_end(key)
+            return self._patched[key][1]
+        changed = np.any(retouched.pixels != source8, axis=2)
+        patched = source16.copy()
+        patched[changed] = retouched.pixels[changed].astype(np.uint16) * np.uint16(257)
+        self._patched[key] = (retouched, patched)  # the result is kept too, so its id cannot be reused while this entry lives
+        while len(self._patched) > _RETOUCH_CACHE_SIZE:
+            self._patched.popitem(last=False)
+        return patched
 
     def _flatfielded(self, source: np.ndarray, token, flatfield) -> np.ndarray:
         """The scan evened out by the folder's gain map - cached per source and
@@ -262,7 +297,7 @@ class Renderer:
         return result
 
     def _get_invert_lut(self, pixels, params: EditParams, rect, token):
-        key = (token, params.film_type == "bw", params.rotation_quarter_turns, params.flip_h, params.flip_v, params.crop_rect, params.film_base, params.metering)
+        key = (token, pixels.dtype.str, params.film_type == "bw", params.rotation_quarter_turns, params.flip_h, params.flip_v, params.crop_rect, params.film_base, params.metering)
         if self._invert_lut is None or self._invert_key != key:
             base = params.film_base
             if base is not None and params.film_type == "bw":  # a B&W scan is made monochrome before inverting, so its base is a grey
@@ -387,29 +422,46 @@ class Renderer:
         is scaled up here when source is bigger."""
         with self.lock:
             scale = source.shape[1] / base_width
+            source16 = None
+            if source.dtype == np.uint16:
+                # A 16-bit source rides along (pixels16) through the geometry and into the first tone stage, which maps it to the 8-bit picture
+                # in one go; repair and the analyses use its 8-bit copy. A flat-fielded scan is 8-bit only (the gain map is applied there).
+                if flatfield is None:
+                    source16 = source
+                source = self._as_uint8(source, token)
             if flatfield is not None:
                 source = self._flatfielded(source, token, flatfield)
                 token = (token, flatfield[0])  # downstream caches must not mix flat-fielded and plain scans
             retouched = self._retouched(source, params, token, overlay)
             pixels = retouched.pixels
+            pixels16 = self._retouched16(source16, source, retouched, token) if source16 is not None else None
+
+            def geometry(step, *args):
+                nonlocal pixels, pixels16
+                if pixels16 is not None:  # the tone stage replaces the 8-bit copy with its own output, so only the 16-bit one is turned
+                    pixels16 = step(pixels16, *args)
+                else:
+                    pixels = step(pixels, *args)
+
             if params.film_type == "bw":
-                pixels = monochrome(pixels)
+                geometry(monochrome)
             # Fine rotation first, on the raw frame: it keeps the frame's size, so
             # quarter turns, flips and the crop rect all behave exactly as before.
-            pixels = fine_rotate(pixels, params.fine_rotation)
-            pixels = radial_distort(pixels, params.distortion)
+            geometry(fine_rotate, params.fine_rotation)
+            geometry(radial_distort, params.distortion)
 
             # Orientation first (so everything downstream - invert's analysis
             # crop, the user's own crop rect - works against the final
             # frame), then invert, then white balance/exposure/shadows-
             # highlights/saturation/tone curve, then sharpening, crop last.
             if params.rotation_quarter_turns:
-                pixels = rotate_quarter_turns(pixels, params.rotation_quarter_turns)
+                geometry(rotate_quarter_turns, params.rotation_quarter_turns)
             if params.flip_h:
-                pixels = flip_horizontal(pixels)
+                geometry(flip_horizontal)
             if params.flip_v:
-                pixels = flip_vertical(pixels)
-            rect = _scale_rect(params.crop_rect, scale, pixels.shape[1], pixels.shape[0])
+                geometry(flip_vertical)
+            frame = pixels16 if pixels16 is not None else pixels  # the picture as it is now oriented
+            rect = _scale_rect(params.crop_rect, scale, frame.shape[1], frame.shape[0])
 
             # Invert, white balance offsets, exposure and the tone curve are
             # all pointwise per-channel maps: composed into one lookup table
@@ -420,19 +472,26 @@ class Renderer:
             denoise = params.chroma_denoise > 0 and (live is None or "denoise" in live)
             local = params.local_contrast > 0  # cheap enough at preview size to stay on while other sliders are dragged
             mixing = bool(params.shadows or params.highlights or params.saturation or denoise or local)
-            ramp = identity_ramp()
+            wide = pixels16 is not None  # the stages up to the first 8-bit picture run on a 65536-entry float ramp (features/lut/logic.py)
+            ramp = wide_ramp() if wide else identity_ramp()
             if params.negative_inverted:
-                meter_rect = rect if params.metering.rect is None else _scale_rect(params.metering.rect, scale, pixels.shape[1], pixels.shape[0])
-                ramp = apply_invert_lut(ramp, self._get_invert_lut(pixels, params, meter_rect, token))
+                meter_rect = rect if params.metering.rect is None else _scale_rect(params.metering.rect, scale, frame.shape[1], frame.shape[0])
+                if wide:
+                    ramp = np.ascontiguousarray(self._get_invert_lut(pixels16, params, meter_rect, token).T[None])
+                else:
+                    ramp = apply_invert_lut(ramp, self._get_invert_lut(pixels, params, meter_rect, token))
             ramp = apply_channel_offsets(ramp, (params.invert_r, params.invert_g, params.invert_b))
             ramp = adjust_temperature_tint(ramp, params.temperature, params.tint)
             ramp = apply_exposure(ramp, params.exposure_ev)
             ramp = apply_contrast(ramp, params.contrast)
             curve = list(params.tone_curve_points)
             if mixing:
-                pre = ramp_to_lut(ramp)
-                if not is_identity(pre):
-                    pixels = apply_channel_lut(pixels, pre)
+                if wide:
+                    pixels = apply_wide_lut(pixels16, wide_ramp_to_lut(ramp))
+                else:
+                    pre = ramp_to_lut(ramp)
+                    if not is_identity(pre):
+                        pixels = apply_channel_lut(pixels, pre)
                 if denoise:  # before saturation, which would amplify color noise
                     pixels = apply_chroma_denoise(pixels, params.chroma_denoise, scale)
                 if local:
@@ -442,6 +501,8 @@ class Renderer:
                 post = ramp_to_lut(apply_tone_curve(identity_ramp(), curve))
                 if not is_identity(post):
                     pixels = apply_channel_lut(pixels, post)
+            elif wide:
+                pixels = apply_wide_lut(pixels16, wide_ramp_to_lut(apply_tone_curve(ramp, curve)))
             else:
                 lut = ramp_to_lut(apply_tone_curve(ramp, curve))
                 if not is_identity(lut):

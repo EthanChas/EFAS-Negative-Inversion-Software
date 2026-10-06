@@ -41,4 +41,6 @@ def adjust_temperature_tint(pixels: np.ndarray, temperature: float, tint: float)
     out[:, :, 0] += temperature * _TEMP_TINT_STRENGTH + tint * _TEMP_TINT_STRENGTH * 0.5
     out[:, :, 1] -= tint * _TEMP_TINT_STRENGTH
     out[:, :, 2] += -temperature * _TEMP_TINT_STRENGTH + tint * _TEMP_TINT_STRENGTH * 0.5
+    if pixels.dtype == np.float32:  # a wide ramp: keep every fraction
+        return np.clip(out, 0, 255)
     return np.clip(out, 0, 255).astype(np.uint8)

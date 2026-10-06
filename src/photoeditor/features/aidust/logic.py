@@ -19,7 +19,7 @@ import cv2
 import numpy as np
 
 from ..datadir import app_data_dir
-from ..lut.logic import apply_channel_lut
+from ..lut.logic import apply_channel_lut, to_uint8
 from ..negative.logic import compute_invert_lut
 
 MODEL_FILE = Path(__file__).resolve().parents[2] / "assets" / "models" / "defectnet.onnx"
@@ -59,7 +59,7 @@ def _get_session():
 def positive_view(raw: np.ndarray, inverted: bool, mono: bool = False) -> np.ndarray:
     """The scan as a positive-looking picture for the model: a negative inverted with its own levels (the same inversion the editor does), a
     positive left as it is. mono makes a black-and-white scan grey first, like the editor does before inverting."""
-    pixels = raw
+    pixels = to_uint8(raw)  # the model works on 8-bit pictures; a 16-bit scan is rounded down to one
     if mono:
         gray = (0.299 * pixels[..., 0] + 0.587 * pixels[..., 1] + 0.114 * pixels[..., 2]).astype(np.uint8)
         pixels = np.repeat(gray[..., None], 3, axis=2)

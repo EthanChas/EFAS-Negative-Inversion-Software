@@ -13,4 +13,6 @@ def apply_exposure(pixels: np.ndarray, ev: float) -> np.ndarray:
     if ev == 0.0:
         return pixels
     adjusted = pixels.astype(np.float32) * (2.0**ev)
+    if pixels.dtype == np.float32:  # a wide ramp (features/lut/logic.py): keep every fraction
+        return np.clip(adjusted, 0, 255)
     return np.clip(adjusted, 0, 255).astype(np.uint8)

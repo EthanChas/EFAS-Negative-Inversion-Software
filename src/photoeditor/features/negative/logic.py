@@ -136,11 +136,13 @@ def compute_invert_lut(
     metering (features/negative/metering.py) steers the reading: the edge margin used when there is no region, how hard the tails are
     clipped, how much each channel is stretched alone (cast removal), and where white and black land, overall and per channel."""
     m = metering or Metering()
-    crop = _analysis_region(pixels, region, m.buffer).astype(np.float32) / 255.0
+    wide = pixels.dtype == np.uint16  # a 16-bit scan: the table has an entry for every one of its 65536 levels and holds unrounded floats
+    top = 65535.0 if wide else 255.0
+    crop = _analysis_region(pixels, region, m.buffer).astype(np.float32) / top
     crop_density = -np.log10(np.clip(crop, _EPS, 1.0))
 
-    sample_values = np.arange(256, dtype=np.float32)
-    sample_density = -np.log10(np.clip(sample_values / 255.0, _EPS, 1.0))
+    sample_values = np.arange(int(top) + 1, dtype=np.float32)
+    sample_density = -np.log10(np.clip(sample_values / top, _EPS, 1.0))
 
     low_p = max(0.0, min(25.0, _FLOOR_DENSITY_PERCENTILE + m.range_clip * RANGE_STEP))
     high_p = max(75.0, min(100.0, _CEIL_DENSITY_PERCENTILE - m.range_clip * RANGE_STEP))
@@ -160,13 +162,13 @@ def compute_invert_lut(
         ceils = [mean_ceil + m.cast_removal * (c_ - mean_ceil) for c_ in ceils]
     whites, blacks = m.white_points(), m.black_points()
 
-    lut = np.empty((3, 256), dtype=np.uint8)
+    lut = np.empty((3, int(top) + 1), dtype=np.float32 if wide else np.uint8)
     for c in range(3):
         span = max(ceils[c] - floors[c], _EPS)
         floor = floors[c] + blacks[c] * POINT_SHIFT * span   # a higher black point raises the floor: more shadow goes to pure black
         ceil = ceils[c] - whites[c] * POINT_SHIFT * span     # a higher white point lowers the ceiling: more highlight goes to pure white
         out = (sample_density - floor) / max(ceil - floor, _EPS)
-        lut[c] = np.clip(out * 255.0, 0, 255).astype(np.uint8)
+        lut[c] = np.clip(out * 255.0, 0, 255) if wide else np.clip(out * 255.0, 0, 255).astype(np.uint8)
     return lut
 
 
@@ -202,7 +204,10 @@ def monochrome(pixels: np.ndarray) -> np.ndarray:
     no color information worth keeping (any tint is film base or scanner)."""
     h, w, _ = pixels.shape
     luma = (pixels.reshape(-1, 3).astype(np.float32) @ _MONO_WEIGHTS).reshape(h, w)
-    gray = np.clip(luma + 0.5, 0, 255).astype(np.uint8)
+    if pixels.dtype == np.uint16:
+        gray = np.clip(luma + 0.5, 0, 65535).astype(np.uint16)
+    else:
+        gray = np.clip(luma + 0.5, 0, 255).astype(np.uint8)
     return np.repeat(gray[:, :, None], 3, axis=2)
 
 
@@ -215,4 +220,6 @@ def apply_channel_offsets(pixels: np.ndarray, offsets: tuple[float, float, float
     out = pixels.astype(np.float32)
     for c in range(3):
         out[..., c] += offsets[c] * INVERT_OFFSET_LEVELS
+    if pixels.dtype == np.float32:  # a wide ramp: keep every fraction
+        return np.clip(out, 0, 255)
     return np.clip(out, 0, 255).astype(np.uint8)

@@ -2,6 +2,8 @@ import copy
 import dataclasses
 import os
 
+import numpy as np
+
 from PyQt6.QtCore import QCoreApplication, QObject, pyqtSignal
 
 from ..features.aidust import logic as aidust
@@ -29,7 +31,7 @@ from ..features.negative import metering as metering_mod
 from ..features.negative.logic import FILM_TYPE_LABELS, ProcessMode, detect_process_mode
 from ..features.negative.metering import Metering
 from ..features.watermark.marks import Marks
-from ..features.open_image.processor import load_image_rgb, make_preview_rgb
+from ..features.open_image.processor import load_image_rgb, make_preview_rgb, to_uint8
 from ..features.persistence import edit_store
 from ..features.persistence import export as data_export
 from ..features.persistence.backup import backup_database
@@ -227,12 +229,13 @@ class AppController(QObject):
 
     def _open_file_impl(self, path: str) -> None:
         def decode():
-            full = load_image_rgb(path)
+            full = load_image_rgb(path)  # 16-bit for a RAW or 16-bit scan, 8-bit otherwise
             preview = make_preview_rgb(full)
-            return full, preview, detect_process_mode(preview)
+            preview8 = to_uint8(preview)
+            return full, preview, preview8, detect_process_mode(preview8)
 
         try:
-            pixels, preview, mode = run_blocking(decode)
+            pixels, preview16, preview, mode = run_blocking(decode)
         except Exception as exc:
             self.file_load_failed.emit(str(exc))
             return
@@ -241,6 +244,7 @@ class AppController(QObject):
         self.state.image_path = path
         self.state.original_rgb = pixels
         self.state.preview_rgb = preview
+        self.state.preview_rgb16 = preview16 if preview16.dtype == np.uint16 else None
         self.state.detected_mode = mode
         self.state.hq_enabled = False
         self._set_hq_busy(False)
@@ -376,6 +380,11 @@ class AppController(QObject):
     def _token(self):
         return self.state.image_path
 
+    def _render_base(self):
+        """The picture a render starts from: the preview with all its bits when the photo has more than 8."""
+        s = self.state
+        return s.preview_rgb16 if s.preview_rgb16 is not None else s.preview_rgb
+
     def _submit(self, *, full: bool, live=None, hq: bool = False, hq_only: bool = False) -> None:
         """Queues a render on the worker thread (never blocks). hq adds the
         full-resolution pass after the preview one."""
@@ -384,7 +393,7 @@ class AppController(QObject):
         job = RenderJob(
             gen=self._gen,
             params=EditParams.from_state(self.state),
-            base=self.state.preview_rgb,
+            base=self._render_base(),
             hq=self.state.original_rgb if (hq and self.state.hq_enabled) else None,
             token=self._token(),
             full=full,
@@ -458,7 +467,7 @@ class AppController(QObject):
         self._gen += 1
         gen = self._gen
         params = EditParams.from_state(self.state)
-        base = self.state.preview_rgb
+        base = self._render_base()
         image, pre_crop, stats, overlay = self._renderer.render(
             base, params, self._token(), base.shape[1], None, want_stats=True, overlay=self.state.show_detections,
             flatfield=self._ff,
@@ -2203,7 +2212,7 @@ class AppController(QObject):
         return self._render_neutral(keep_inversion=True)
 
     def _render_neutral(self, keep_inversion: bool):
-        base = self.state.preview_rgb
+        base = self._render_base()
         if base is None:
             return None
         params = dataclasses.replace(
