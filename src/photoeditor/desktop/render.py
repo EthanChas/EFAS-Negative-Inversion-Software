@@ -25,6 +25,7 @@ from ..features.aidust import logic as aidust
 from ..features.watermark.marks import Marks, apply_marks
 from ..features.watermark.logic import apply_watermark, is_active as watermark_active
 from ..features.exposure.logic import apply_exposure
+from ..features.finishing.logic import apply_border, apply_vignette, is_active as finishing_active
 from ..features.geometry.logic import (
     apply_crop,
     fine_rotate,
@@ -108,6 +109,11 @@ class EditParams:
     wm_lens: str
     film_base: tuple | None  # the roll's measured film base (r, g, b), or None to estimate it from each photo
     local_contrast: float = 0.0  # CLAHE on lightness, 0-1
+    vignette: float = 0.0  # finishing: + darkens the corners, - lightens (features/finishing/logic.py)
+    vignette_size: float = 0.5
+    border: float = 0.0
+    border_color: str = "white"
+    carrier: bool = False
     clone_strokes: tuple = ()  # copied-over repairs (features/retouch/clone.py)
     ai_dust: bool = False  # repair what the FilmDefectNet model marks (features/aidust/logic.py)
     ai_threshold: float = aidust.DEFAULT_THRESHOLD
@@ -163,6 +169,11 @@ class EditParams:
             wm_lens=s.wm_lens or getattr(s, "roll_lens", ""),
             film_base=tuple(getattr(s, "film_base", None) or ()) or None,
             local_contrast=getattr(s, "local_contrast", 0.0),
+            vignette=float(getattr(s, "vignette", 0.0)),
+            vignette_size=float(getattr(s, "vignette_size", 0.5)),
+            border=float(getattr(s, "border", 0.0)),
+            border_color=str(getattr(s, "border_color", "white")),
+            carrier=bool(getattr(s, "carrier", False)),
             clone_strokes=tuple(_freeze(stroke) for stroke in getattr(s, "clone_strokes", ())),
             ai_dust=bool(getattr(s, "ai_dust", False)),
             ai_threshold=float(getattr(s, "ai_threshold", aidust.DEFAULT_THRESHOLD)),
@@ -519,13 +530,17 @@ class Renderer:
             if overlay:
                 base_hw = (round(image.shape[0] / scale), round(image.shape[1] / scale))
                 overlay_rgba = self._build_overlay(retouched, params, base_width, base_hw)
+            if params.vignette:  # the vignette goes under the watermark, so the marks are not darkened with the corners
+                image = apply_vignette(image, params.vignette, params.vignette_size)
             if watermark_active(params.wm_film):  # last, over the finished crop: not part of the stats/histogram
                 image = apply_watermark(
                     image, params.wm_film, params.wm_texture, params.wm_size, params.wm_position,
                     params.wm_info, params.wm_camera, params.wm_lens,
                 )
-            if params.marks.active():  # the plain text/logo marks go over the canister, last of all
+            if params.marks.active():  # the plain text/logo marks go over the canister
                 image = apply_marks(image, params.marks)
+            if params.border > 0 or params.carrier:  # the frame goes round everything, marks included
+                image = apply_border(image, params.border, params.border_color, params.carrier)
             return image, pixels, stats, overlay_rgba
 
 

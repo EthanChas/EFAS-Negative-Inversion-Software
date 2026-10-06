@@ -161,6 +161,11 @@ _MIGRATIONS = (
     ("distortion", "REAL", "0.0"),
     ("chroma_denoise", "REAL", "0.0"),
     ("local_contrast", "REAL", "0.0"),
+    ("vignette", "REAL", "0.0"),
+    ("vignette_size", "REAL", "0.5"),
+    ("border", "REAL", "0.0"),
+    ("border_color", "TEXT", "'white'"),
+    ("carrier", "INTEGER", "0"),
     ("metering", "TEXT", "'{}'"),
     ("wm_film", "TEXT", "'off'"),
     ("wm_texture", "TEXT", "'plastic'"),
@@ -213,6 +218,11 @@ _FIELDS = (
     ("distortion", "plain"),
     ("chroma_denoise", "plain"),
     ("local_contrast", "plain"),
+    ("vignette", "plain"),
+    ("vignette_size", "plain"),
+    ("border", "plain"),
+    ("border_color", "plain"),
+    ("carrier", "bool"),
     ("metering", "json"),
     ("wm_film", "plain"),
     ("wm_texture", "plain"),
@@ -530,6 +540,7 @@ _UNTOUCHED = {
     "temperature": 0.0, "tint": 0.0, "shadows": 0.0, "highlights": 0.0, "sharpen_amount": 0.0, "dust_auto": False,
     "scratch_lines": [], "heal_strokes": [], "clone_strokes": [], "ai_dust": False, "marks": {}, "film_type": "auto", "invert_r": 0.0, "invert_g": 0.0, "invert_b": 0.0, "contrast": 0.0,
     "fine_rotation": 0.0, "distortion": 0.0, "chroma_denoise": 0.0, "local_contrast": 0.0, "metering": {}, "wm_film": "off",
+    "vignette": 0.0, "border": 0.0, "carrier": False,
 }
 
 

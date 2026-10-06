@@ -43,6 +43,7 @@ class SheetFrame:
     number: int          # the frame's place on the roll (1-based), whatever was left out
     rating: int = 0      # 0-5
     flag: Optional[str] = None  # "keeper", "rejected" or None
+    name: str = ""       # the file's name (without its extension), printed beside the number
 
 
 def page_pixels(options: SheetOptions) -> tuple[int, int]:
@@ -160,7 +161,18 @@ def draw_pages(frames: list[SheetFrame], options: SheetOptions, title: str, line
                 thumb = Image.blend(thumb, Image.new("RGB", thumb.size, _PAPER), 0.55)
             page.paste(thumb, (x + (w - thumb.width) // 2, y + (h - thumb.height) // 2))
             cap_y = y + h + 3
-            d.text((x, cap_y), str(frame.number), fill=_INK, font=tiny)
+            label = str(frame.number)
+            d.text((x, cap_y), label, fill=_INK, font=tiny)
+            if frame.name:  # the file name after the number, cut to what the stars (right) leave of the width
+                stars_w = round(frame.rating * (max(4.0, dpi * 0.032) * 2.1 + 1)) + 4 if frame.rating else 0
+                room = w - (d.textbbox((0, 0), label + "  ", font=tiny)[2]) - stars_w
+                name = frame.name
+                while name and d.textbbox((0, 0), name, font=tiny)[2] > room:
+                    name = name[:-1]
+                if name and name != frame.name:
+                    name = name[:-1] + "…" if len(name) > 1 else name
+                if name:
+                    d.text((x + d.textbbox((0, 0), label + "  ", font=tiny)[2], cap_y), name, fill=_MUTED, font=tiny)
             if frame.flag == "rejected":
                 d.line((x + 6, y + 6, x + w - 7, y + h - 7), fill=_REJECT, width=max(2, dpi // 50))
                 d.line((x + w - 7, y + 6, x + 6, y + h - 7), fill=_REJECT, width=max(2, dpi // 50))

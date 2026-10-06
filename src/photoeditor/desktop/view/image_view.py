@@ -101,12 +101,63 @@ class _ImageLabel(QLabel):
         self._hover: QPointF | None = None
         self._drag_button = Qt.MouseButton.LeftButton
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self._split: QImage | None = None  # the "before" picture, drawn over the left of the divider
+        self._split_buf = None
+        self._split_pos = 0.5              # the divider, as a share of the picture's width
+        self._split_drag = False
+        self.setMouseTracking(True)
 
     def set_source(self, pixels: np.ndarray | None) -> None:
         self._pixels = pixels
 
     def set_scale(self, scale: float) -> None:
         self._scale = scale
+
+    def set_split(self, pixels: np.ndarray | None) -> None:
+        """Before / after: `pixels` (the same picture before the edit, framed the same way) is shown left of a draggable divider, the edit right of
+        it. None turns the split off."""
+        if pixels is None:
+            self._split = self._split_buf = None
+            self._split_drag = False
+        else:
+            self._split_buf = np.ascontiguousarray(pixels)
+            h, w = self._split_buf.shape[:2]
+            self._split = QImage(self._split_buf.data, w, h, w * 3, QImage.Format.Format_RGB888)
+        self.update()
+
+    def split_active(self) -> bool:
+        return self._split is not None
+
+    def _near_divider(self, x: float) -> bool:
+        return self._split is not None and abs(x - self._split_pos * self.width()) <= 10
+
+    def _paint_split(self, painter: QPainter) -> None:
+        x = round(self._split_pos * self.width())
+        h = self.height()
+        painter.save()
+        painter.setClipRect(0, 0, x, h)
+        painter.drawImage(QRectF(self.rect()), self._split)
+        painter.restore()
+        painter.setPen(QPen(QColor(255, 255, 255, 235), 2))
+        painter.drawLine(x, 0, x, h)
+        painter.setBrush(QColor(0, 0, 0, 180))
+        painter.drawEllipse(QPointF(x, h / 2), 11, 11)
+        painter.setPen(QPen(QColor(255, 255, 255, 235), 2))
+        painter.drawLine(x - 4, int(h / 2) - 4, x - 7, int(h / 2))
+        painter.drawLine(x - 7, int(h / 2), x - 4, int(h / 2) + 4)
+        painter.drawLine(x + 4, int(h / 2) - 4, x + 7, int(h / 2))
+        painter.drawLine(x + 7, int(h / 2), x + 4, int(h / 2) + 4)
+        font = painter.font()
+        font.setBold(True)
+        painter.setFont(font)
+        for text, at, align in (("BEFORE", 8, Qt.AlignmentFlag.AlignLeft), ("AFTER", self.width() - 8, Qt.AlignmentFlag.AlignRight)):
+            width = painter.fontMetrics().horizontalAdvance(text) + 12
+            left = at if align == Qt.AlignmentFlag.AlignLeft else at - width
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(QColor(0, 0, 0, 160))
+            painter.drawRoundedRect(QRectF(left, 8, width, 20), 3, 3)
+            painter.setPen(QColor(255, 255, 255))
+            painter.drawText(QRectF(left, 8, width, 20), Qt.AlignmentFlag.AlignCenter, text)
 
     def set_overlay(self, rgba: np.ndarray | None) -> None:
         """A (h, w, 4) RGBA wash drawn stretched over the whole image."""
@@ -212,7 +263,7 @@ class _ImageLabel(QLabel):
     def _line_tool(self) -> bool:
         """The click-point tools: "polyline" and "curve" (any number of points, finished by hand; the curve is smoothed through them) and
         "line2" (two points, finishes itself)."""
-        return self._tool in ("polyline", "curve", "line2")
+        return self._tool in ("polyline", "curve", "line2", "straighten")
 
     def _finish_polyline(self) -> None:
         stroke, self._stroke = self._stroke, []
@@ -454,6 +505,10 @@ class _ImageLabel(QLabel):
         return img_x, img_y, (r, g, b)
 
     def mousePressEvent(self, event: QMouseEvent) -> None:
+        if event.button() == Qt.MouseButton.LeftButton and self._split is not None and self._tool is None and self._near_divider(event.position().x()):
+            self._split_drag = True  # grab the divider
+            event.accept()
+            return
         if event.button() == Qt.MouseButton.LeftButton and self._crop_mode and self._pixels is not None:
             pos = event.position()
             handle = self._crop_handle_at(pos)
@@ -481,7 +536,7 @@ class _ImageLabel(QLabel):
                 self._stroke = [pt]
             elif self._tool == "smart":
                 self.tool_clicked.emit(*pt)
-            elif self._tool == "line2":  # two clicks: the second one finishes it
+            elif self._tool in ("line2", "straighten"):  # two clicks: the second one finishes it
                 self._stroke.append(pt)
                 if len(self._stroke) >= 2:
                     self._finish_polyline()
@@ -513,6 +568,16 @@ class _ImageLabel(QLabel):
         super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event: QMouseEvent) -> None:
+        if self._split_drag:
+            self._split_pos = min(1.0, max(0.0, event.position().x() / max(1, self.width())))
+            self.update()
+            event.accept()
+            return
+        if self._split is not None and self._tool is None and not self._dragging:
+            if self._near_divider(event.position().x()):
+                self.setCursor(Qt.CursorShape.SplitHCursor)
+            else:
+                self.unsetCursor()
         if self._cropping:
             pos = event.position()
             self._update_crop_drag(pos.x(), pos.y())
@@ -543,6 +608,10 @@ class _ImageLabel(QLabel):
         self.pixel_hovered.emit(*picked)
 
     def mouseReleaseEvent(self, event: QMouseEvent) -> None:
+        if self._split_drag:
+            self._split_drag = False
+            event.accept()
+            return
         if event.button() == Qt.MouseButton.LeftButton and self._cropping:
             self._cropping = False
             self._crop_handle = None
@@ -662,6 +731,11 @@ class _ImageLabel(QLabel):
         if self._peak is not None and not self._crop_mode:
             painter = QPainter(self)
             painter.drawImage(QRectF(self.rect()), self._peak)
+            painter.end()
+        if self._split is not None and not self._crop_mode:
+            painter = QPainter(self)
+            painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+            self._paint_split(painter)
             painter.end()
         if self._tool is not None and not self._crop_mode:
             painter = QPainter(self)
@@ -848,6 +922,12 @@ class ImageView(QWidget):
 
     def set_tool(self, mode: str | None, radius_provider=None) -> None:
         self._label.set_tool(mode, radius_provider)
+
+    def set_split(self, pixels: np.ndarray | None) -> None:
+        self._label.set_split(pixels)
+
+    def split_active(self) -> bool:
+        return self._label.split_active()
 
     def set_crop_guide(self, guide: str, orientation: int = 0) -> None:
         self._label.set_crop_guide(guide, orientation)

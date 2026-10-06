@@ -56,6 +56,11 @@ class HistoryEntry:
     wm_lens: str
     local_contrast: float = 0.0
     metering: Metering = field(default_factory=Metering)
+    vignette: float = 0.0
+    vignette_size: float = 0.5
+    border: float = 0.0
+    border_color: str = "white"
+    carrier: bool = False
     clone_strokes: list = field(default_factory=list)
     ai_dust: bool = False
     ai_threshold: float = 0.3
@@ -113,6 +118,11 @@ class AppState:
     contrast: float = 0.0
     chroma_denoise: float = 0.0  # smoothing of color noise only, 0..5
     local_contrast: float = 0.0  # CLAHE on lightness, 0..1
+    vignette: float = 0.0  # finishing (features/finishing/logic.py): + darkens the corners, - lightens them
+    vignette_size: float = 0.5
+    border: float = 0.0  # a frame round the picture, as a share of its shorter side
+    border_color: str = "white"
+    carrier: bool = False  # the black, ragged film-carrier frame
     metering: Metering = field(default_factory=Metering)  # how the negative is read when inverted
     distortion: float = 0.0  # radial lens distortion correction (k1): + corrects barrel, - pincushion
     fine_rotation: float = 0.0  # degrees, clockwise, applied to the raw frame before the quarter turns

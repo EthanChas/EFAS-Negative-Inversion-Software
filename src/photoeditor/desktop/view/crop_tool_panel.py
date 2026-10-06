@@ -48,6 +48,7 @@ class CropToolPanel(CollapsiblePanel):
     crop_cleared = pyqtSignal()
     auto_crop_requested = pyqtSignal()
     gradient_crop_requested = pyqtSignal()
+    straighten_tool_toggled = pyqtSignal(bool)  # the draw-a-line straighten tool armed / disarmed
     auto_adjust_changed = pyqtSignal(float, float)  # crop margin (% of the crop, positive = tighter), extra rotation (degrees)
     guide_changed = pyqtSignal(str, int)  # guide name, orientation
     ratio_changed = pyqtSignal(object)  # None | "original" | landscape w/h
@@ -187,6 +188,14 @@ class CropToolPanel(CollapsiblePanel):
         straighten = QLabel("STRAIGHTEN")
         straighten.setProperty("role", "subtitle")
         body.addWidget(straighten)
+        self._straighten_btn = QPushButton("Straighten Tool")
+        self._straighten_btn.setCheckable(True)
+        self._straighten_btn.setToolTip(
+            "Click two points along something that should be level (a horizon, the film's edge) or upright (a wall, a door frame): the "
+            "picture is turned to make that line level or plumb. Esc cancels the first point."
+        )
+        self._straighten_btn.toggled.connect(self.straighten_tool_toggled)
+        body.addWidget(self._straighten_btn)
         self._fine = SliderRow(
             "Angle", min_value=-FINE_ROTATION_LIMIT, max_value=FINE_ROTATION_LIMIT, reset_value=0.0, decimals=1, step=0.1
         )
@@ -293,6 +302,15 @@ class CropToolPanel(CollapsiblePanel):
         """Sync the slider without emitting anything."""
         self._fine.set_value(degrees)
 
+    def straighten_active(self) -> bool:
+        return self._straighten_btn.isChecked()
+
+    def set_straighten_active(self, active: bool) -> None:
+        """Sync the Straighten Tool button without emitting anything (the tool finished, or another tool took over)."""
+        self._straighten_btn.blockSignals(True)
+        self._straighten_btn.setChecked(active)
+        self._straighten_btn.blockSignals(False)
+
     def is_crop_active(self) -> bool:
         return self._crop_btn.isChecked()
 
@@ -314,6 +332,7 @@ class CropToolPanel(CollapsiblePanel):
         self._flip_v_btn.setChecked(False)
         self._flip_v_btn.blockSignals(False)
         self.set_crop_mode(False)
+        self.set_straighten_active(False)
         self._fine_settle_timer.stop()
         self._pending_fine = None
         self.set_fine_rotation(0.0)

@@ -7,6 +7,7 @@ from typing import Any
 
 from ..denoise.logic import CHROMA_DENOISE_MAX
 from ..exposure.logic import EV_RANGE
+from ..finishing.logic import BORDER_COLORS, BORDER_MAX, DEFAULT_BORDER_COLOR, DEFAULT_VIGNETTE_SIZE
 from ..negative.logic import FILM_TYPE_LABELS, FILM_TYPES
 from ..sharpening.logic import DEFAULT_METHOD, METHOD_LABELS, SharpenMethod
 from ..tonecurve.logic import DEFAULT_POINTS
@@ -56,6 +57,13 @@ MODULES: tuple[ModuleSpec, ...] = (
         FieldSpec("sharpen_masking", "Masking", "float", 0.0, 0.0, 1.0),
     )),
     ModuleSpec("denoise", "Chroma denoise", (FieldSpec("chroma_denoise", "Amount", "float", 0.0, 0.0, CHROMA_DENOISE_MAX),)),
+    ModuleSpec("finishing", "Finishing", (
+        FieldSpec("vignette", "Vignette", "float", 0.0, -1.0, 1.0),
+        FieldSpec("vignette_size", "Vignette size", "float", DEFAULT_VIGNETTE_SIZE, 0.0, 1.0),
+        FieldSpec("border", "Border", "float", 0.0, 0.0, BORDER_MAX),
+        FieldSpec("border_color", "Border color", "choice", DEFAULT_BORDER_COLOR, choices=tuple((k, k.title()) for k in BORDER_COLORS)),
+        FieldSpec("carrier", "Film carrier look", "bool", False),
+    )),
     ModuleSpec("watermark", "Watermark", (
         FieldSpec("wm_film", "Canister", "choice", WATERMARK_OFF, choices=((WATERMARK_OFF, "Off"),) + tuple(FILMS.items())),
         FieldSpec("wm_texture", "Texture", "choice", DEFAULT_TEXTURE, choices=tuple(TEXTURES.items())),
@@ -81,6 +89,7 @@ PANEL_MODULES: dict[str, tuple[str, tuple[str, ...]]] = {
     "denoise": ("Chroma Denoise", ("denoise",)),
     "negative": ("Negative", ("negative",)),
     "watermark": ("Watermark", ("watermark",)),
+    "finishing": ("Finishing", ("finishing",)),
 }
 
 

@@ -43,7 +43,7 @@ class ContactSheetWorker(QThread):
                 try:
                     image = render_edited_thumbnail(path, conn, _THUMB_DIM)
                     flag = flags.get(path)
-                    frames.append(SheetFrame(image=_to_pil(image), number=number, rating=int(ratings.get(path, 0)), flag=flag))
+                    frames.append(SheetFrame(image=_to_pil(image), number=number, rating=int(ratings.get(path, 0)), flag=flag, name=os.path.splitext(os.path.basename(path))[0]))
                 except Exception as exc:  # one unreadable photo leaves a gap in the sheet, not a failed sheet
                     summary["failed"].append((path, f"{type(exc).__name__}: {exc}"))
                 self.progress.emit(done + 1, len(wanted), os.path.basename(path))

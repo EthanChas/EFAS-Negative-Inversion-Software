@@ -1,4 +1,5 @@
 import atexit
+import dataclasses
 import os
 import weakref
 
@@ -30,6 +31,8 @@ from .local_contrast_panel import LocalContrastToolPanel
 from ...features.metadata.source_exif import read_exif_from_file
 from .contact_sheet_dialog import ContactSheetDialog
 from .credits_dialog import CreditsDialog
+from .finishing_panel import FinishingPanel
+from .proof_dialog import ProofDialog
 from ..keybinds import KeyMap
 from .settings_dialog import SettingsDialog
 from .snapshots_panel import SnapshotsPanel
@@ -39,6 +42,7 @@ from ..contactsheet_worker import ContactSheetWorker
 from ..peaking_worker import PeakingWorker
 from ..library_worker import LibraryIndexWorker
 from ...features.library import query as library_query
+from ...features.export import logic as export_logic
 from ...features.keybinds import logic as key_logic
 from ...features.settings import logic as app_settings
 from ...features.library.index import LibraryIndex
@@ -215,6 +219,9 @@ class _HotkeyFilter(QObject):
             return False
         if _typing_in_field():  # in a field every key is just a key (Tab still moves focus as usual)
             return False
+        if event.key() == Qt.Key.Key_Escape and window.split_active() and not window.lighttable_active():
+            window.set_split(False)  # Esc closes the Before / After split
+            return True
         action = window.keys().action_for(event)
         if action is None:
             return False
@@ -231,6 +238,14 @@ class _HotkeyFilter(QObject):
         if action == "compare":
             if not repeat:
                 window.set_compare(True)
+            return True
+        if action == "split_view":
+            if not repeat:
+                window.set_split(not window.split_active())
+            return True
+        if action in ("test_strip", "ring_around"):
+            if not repeat:
+                window.show_proof("strip" if action == "test_strip" else "ring")
             return True
         if action == "toggle_panels":
             window.toggle_panels()
@@ -296,6 +311,7 @@ class AppWindow(QMainWindow):
         self._peaking_timer.setInterval(150)  # an edit, a drag, a new photo: wait for it to settle before analysing
         self._peaking_timer.timeout.connect(self._run_peaking)
         self._comparing = False  # holding \ (or the Before button): showing the original scan instead of the edit
+        self._split = False  # the Before / After split is up
         self._keys = KeyMap()  # which key does what (Settings > Keybinds)
         self._base_pick_image = None  # the raw scan on screen while the film-base eyedropper is armed
         self._region_drawing = False  # the metering Draw Region tool is armed (it borrows the crop overlay)
@@ -354,7 +370,7 @@ class AppWindow(QMainWindow):
             ("exposure", self._exposure_tool), ("contrast", self._contrast_tool), ("tonecurve", self._curve_tool),
             ("shadows_highlights", self._shadows_highlights_tool), ("color", self._color_tool), ("sharpening", self._sharpening_tool),
             ("localcontrast", self._local_contrast_tool), ("denoise", self._denoise_tool), ("negative", self._negative_tool),
-            ("watermark", self._watermark_tool),
+            ("watermark", self._watermark_tool), ("finishing", self._finishing_tool),
         ):
             self._module_menus.attach(panel, key)
         for signal in (
@@ -448,6 +464,14 @@ class AppWindow(QMainWindow):
         self._gradient_crop_action.setToolTip("Find the picture by the gradient where the border turns into it, level it and crop to it")
         self._gradient_crop_action.triggered.connect(self._on_gradient_crop)
         edit_menu.addAction(self._gradient_crop_action)
+        self._test_strip_action = QAction("Test Strip...", self)
+        self._test_strip_action.setToolTip("Print this photo at 25 exposure and contrast steps side by side and pick the one that looks right")
+        self._test_strip_action.triggered.connect(lambda: self.show_proof("strip"))
+        edit_menu.addAction(self._test_strip_action)
+        self._ring_around_action = QAction("Ring-Around...", self)
+        self._ring_around_action.setToolTip("Step the colour balance round this photo in a 5 x 5 mosaic: the tile where a cast disappears shows which way to move")
+        self._ring_around_action.triggered.connect(lambda: self.show_proof("ring"))
+        edit_menu.addAction(self._ring_around_action)
         self._reset_action = QAction("Reset All Edits...", self)
         self._reset_action.setToolTip("Put this photo back to how it was when first opened (one undoable step)")
         self._reset_action.triggered.connect(self._on_reset_edits)
@@ -502,6 +526,11 @@ class AppWindow(QMainWindow):
         info_menu.addAction(credits_action)
 
         view_menu_anchor = menubar.addMenu("View")
+        self._split_action = QAction("Before / After Split", self)
+        self._split_action.setCheckable(True)
+        self._split_action.setToolTip("Show the picture before the edit left of a draggable divider and the edit right of it")
+        self._split_action.toggled.connect(self.set_split)
+        view_menu_anchor.addAction(self._split_action)
         self._lighttable_action = QAction("Workbench", self)
         self._lighttable_action.setToolTip("The whole library as a grid: search, filter, sort, rate and flag")
         self._lighttable_action.triggered.connect(lambda: self.set_view("lighttable"))
@@ -670,6 +699,14 @@ class AppWindow(QMainWindow):
         )
         self._compare_btn.toggled.connect(self.set_compare)
         bottom_row.addWidget(self._compare_btn, 0)
+        self._split_btn = QPushButton("Split")
+        self._split_btn.setCheckable(True)
+        self._split_btn.setToolTip(
+            "Before / After: the picture as it is right after inversion on the left of a draggable divider, your edit on the right. The split "
+            "stays up while you work, so you can judge a slider against a fixed reference. Press B or Esc to close it."
+        )
+        self._split_btn.toggled.connect(self.set_split)
+        bottom_row.addWidget(self._split_btn, 0)
 
         left_col.addLayout(bottom_row, 0)
 
@@ -887,6 +924,7 @@ class AppWindow(QMainWindow):
         self._crop_tool.flip_h_toggled.connect(self.controller.set_flip_h)
         self._crop_tool.flip_v_toggled.connect(self.controller.set_flip_v)
         self._crop_tool.crop_mode_toggled.connect(self._on_crop_mode_toggled)
+        self._crop_tool.straighten_tool_toggled.connect(self._on_straighten_tool_toggled)
         self._crop_tool.crop_cleared.connect(self._on_crop_cleared)
         self._crop_tool.auto_crop_requested.connect(self._on_auto_crop)
         self._crop_tool.gradient_crop_requested.connect(self._on_gradient_crop)
@@ -979,6 +1017,9 @@ class AppWindow(QMainWindow):
         tool_row.addWidget(self._correction_panel, 0)
 
         # A fourth tab: the Canister Watermark (features/watermark/logic.py).
+        self._finishing_tool = FinishingPanel()
+        self._finishing_tool.changed.connect(self.controller.set_finishing)
+        self._finishing_tool.preview_requested.connect(self.controller.preview_finishing)
         self._watermark_tool = CanisterWatermarkPanel()
         self._watermark_tool.changed.connect(self.controller.set_watermark)
         self._watermark_tool.marks_changed.connect(self.controller.set_marks)
@@ -987,6 +1028,7 @@ class AppWindow(QMainWindow):
         watermark_col.setContentsMargins(0, 0, 0, 0)
         watermark_col.setSpacing(THEME.space_sm)
         watermark_col.addWidget(self._watermark_tool)
+        watermark_col.addWidget(self._finishing_tool)
         watermark_col.addStretch(1)
 
         watermark_scroll = _ToolListScroll()
@@ -1091,7 +1133,7 @@ class AppWindow(QMainWindow):
         session_store.save(sess)
         roll_name = RollCard.from_dict(edit_store.get_folder_roll(self.controller._db, edit_store.folder_key(folder, is_file=False))).name.strip()
         stem = (roll_name or os.path.basename(folder.rstrip("\\/")) or "roll") + " contact sheet.pdf"
-        out, _filter = QFileDialog.getSaveFileName(self, "Save Contact Sheet", os.path.join(folder, stem), "PDF (*.pdf)")
+        out, _filter = QFileDialog.getSaveFileName(self, "Save Contact Sheet", os.path.join(self._contact_sheet_folder(paths[0], folder), stem), "PDF (*.pdf)")
         if not out:
             return
         if not out.lower().endswith(".pdf"):
@@ -1108,6 +1150,22 @@ class AppWindow(QMainWindow):
         worker.finished_all.connect(lambda summary: self._on_contact_sheet_finished(summary, progress))
         self._sheet_worker = worker
         worker.start()
+
+    def _contact_sheet_folder(self, first_photo: str, fallback: str) -> str:
+        """Where the contact sheet is offered to be saved: the Export panel's destination (the custom folder, or beside the originals), not the
+        folder the photos were imported from. Falls back to that folder when the Export panel has no destination yet."""
+        try:
+            opts = dataclasses.replace(self._export_panel.options(), date_folders=False, preset_folders=False)
+            where = export_logic.resolve_directory(first_photo, opts)
+        except Exception:
+            return fallback
+        if not where or not os.path.isabs(where):
+            return fallback
+        try:
+            os.makedirs(where, exist_ok=True)
+        except OSError:
+            return fallback
+        return where
 
     def _on_contact_sheet_finished(self, summary: dict, progress) -> None:
         progress.close()
@@ -1451,6 +1509,10 @@ class AppWindow(QMainWindow):
         self._image_view.set_peaking_overlay(None)
         self._queue_peaking()
         self._comparing = False  # a newly opened photo shows its edit
+        if self._split:
+            self._split = False  # ... and no split
+            self._sync_split_widgets(False)
+            self._image_view.set_split(None)
         self._region_drawing = False  # a region being drawn belonged to the photo that was open
         if self._base_pick_image is not None:  # a pick in progress belonged to the photo that was open
             self._base_pick_image = None
@@ -1485,6 +1547,7 @@ class AppWindow(QMainWindow):
             state.wm_film, state.wm_texture, state.wm_size, state.wm_position, state.wm_info, state.wm_camera, state.wm_lens
         )
         self._watermark_tool.set_marks(state.marks)
+        self._finishing_tool.set_values(state.vignette, state.vignette_size, state.border, state.border_color, state.carrier)
         self._sync_roll_card()
         self._sharpening_tool.reset()
         self._sharpening_tool.set_values(
@@ -1582,6 +1645,7 @@ class AppWindow(QMainWindow):
             self._image_view.update_pixels(state.pre_crop_rgb)
         elif not (self._comparing or self._base_pick_image is not None):
             self._image_view.update_pixels(state.image_rgb)
+        self._refresh_split()
         self._refresh_overlay()
         self._refresh_export_hints()
         self._refresh_size_label()
@@ -1718,6 +1782,60 @@ class AppWindow(QMainWindow):
     def is_comparing(self) -> bool:
         return self._comparing
 
+    def split_active(self) -> bool:
+        return self._split
+
+    def show_proof(self, kind: str) -> None:
+        """Test Strip / Ring-Around (Edit menu, Shift+T / Shift+F): a 5 x 5 mosaic of the open photo; the tile you click becomes the edit."""
+        c = self.controller
+        if c.state.preview_rgb is None or self.lighttable_active():
+            self._coord_label.setText("Test strip / ring-around: open a photo in the editor first.")
+            return
+        if self._crop_tool.is_crop_active():
+            self._crop_tool.set_crop_mode(False)
+            self._on_crop_mode_toggled(False)
+        QApplication.setOverrideCursor(QCursor(Qt.CursorShape.WaitCursor))
+        try:
+            tiles = c.render_proof(kind)
+        finally:
+            QApplication.restoreOverrideCursor()
+        if not tiles:
+            return
+        dialog = ProofDialog(kind, tiles, self)
+        dialog.exec()
+        choice = dialog.choice()
+        if choice is not None:
+            c.apply_proof_cell(kind, *choice)
+
+    def set_split(self, on: bool) -> None:
+        """The Before / After split view: the picture before the edit left of a draggable divider, the edit right of it."""
+        state = self.controller.state
+        on = bool(on)
+        if on == self._split:
+            return
+        if on and (state.preview_rgb is None or self._crop_tool.is_crop_active() or self.lighttable_active()):
+            self._sync_split_widgets(False)
+            return
+        if on and self._comparing:
+            self.set_compare(False)
+        self._split = on
+        self._sync_split_widgets(on)
+        self._refresh_split()
+
+    def _sync_split_widgets(self, on: bool) -> None:
+        for widget in (self._split_btn, self._split_action):
+            widget.blockSignals(True)
+            widget.setChecked(on)
+            widget.blockSignals(False)
+
+    def _refresh_split(self) -> None:
+        """Draw the split's before side again (the edit changed, or the framing did)."""
+        if not self._split:
+            self._image_view.set_split(None)
+            return
+        before = self.controller.render_split_before()
+        self._image_view.set_split(before)
+
     def set_compare(self, on: bool) -> None:
         """Show the photo as it is right after inversion (same framing) in place of the finished edit - held with
         the backslash key, or latched with the Before button."""
@@ -1730,6 +1848,8 @@ class AppWindow(QMainWindow):
             self._compare_btn.setChecked(False)
             self._compare_btn.blockSignals(False)
             return
+        if on and self._split:
+            self.set_split(False)
         self._comparing = on
         self._compare_btn.blockSignals(True)
         self._compare_btn.setChecked(on)
@@ -1761,6 +1881,7 @@ class AppWindow(QMainWindow):
             state.wm_film, state.wm_texture, state.wm_size, state.wm_position, state.wm_info, state.wm_camera, state.wm_lens
         )
         self._watermark_tool.set_marks(state.marks)
+        self._finishing_tool.set_values(state.vignette, state.vignette_size, state.border, state.border_color, state.carrier)
         self._sharpening_tool.set_values(
             state.sharpen_amount, state.sharpen_radius, state.sharpen_masking, state.sharpen_method
         )
@@ -1859,6 +1980,8 @@ class AppWindow(QMainWindow):
 
     def _on_dust_tool_changed(self, tool) -> None:
         iv = self._image_view
+        if tool is not None:
+            self._crop_tool.set_straighten_active(False)
         iv.set_tool(None)
         iv.set_pick_mode(False)
         if tool is None:
@@ -1882,6 +2005,12 @@ class AppWindow(QMainWindow):
         return size / 2 * self.controller.brush_scale()
 
     def _on_stroke_completed(self, points: list) -> None:
+        if self._crop_tool.straighten_active():  # the Straighten Tool's two clicks: turn the picture, and the tool is done
+            if len(points) >= 2:
+                self.controller.straighten_by_line(points[0], points[1])
+            self._crop_tool.set_straighten_active(False)
+            self._image_view.set_tool(None)
+            return
         tool = self._dust_tool.active_tool()
         if tool == "manualline" and len(points) >= 2:
             self.controller.add_manual_line(points[0], points[1], self._dust_tool.brush_size(), self._dust_tool.repair_method())
@@ -2141,9 +2270,25 @@ class AppWindow(QMainWindow):
         self._negative_tool.set_region_draw_active(False)
         self._image_view.exit_crop_mode(self.controller.state.image_rgb)
 
+    def _on_straighten_tool_toggled(self, enabled: bool) -> None:
+        iv = self._image_view
+        if not enabled:
+            iv.set_tool(None)
+            return
+        if self._crop_tool.is_crop_active():  # the line is drawn on the finished picture, not the crop frame
+            self._crop_tool.set_crop_mode(False)
+            self._on_crop_mode_toggled(False)
+        self._end_region_draw()
+        self._dust_tool.deactivate_tools()
+        self._curve_tool.deactivate_eyedropper()
+        iv.set_pick_mode(False)
+        iv.set_tool("straighten", None)
+
     def _on_crop_mode_toggled(self, enabled: bool) -> None:
         state = self.controller.state
         if enabled:
+            self.set_split(False)
+            self._crop_tool.set_straighten_active(False)
             self._end_region_draw()
             self._dust_tool.deactivate_tools()
             self._image_view.set_tool(None)

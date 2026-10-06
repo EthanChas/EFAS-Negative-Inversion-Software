@@ -1,5 +1,6 @@
 import copy
 import dataclasses
+import math
 import os
 
 import numpy as np
@@ -34,6 +35,7 @@ from ..features.watermark.marks import Marks
 from ..features.open_image.processor import load_image_rgb, make_preview_rgb, to_uint8
 from ..features.persistence import edit_store
 from ..features.persistence import export as data_export
+from ..features.proofs import logic as proof_logic
 from ..features.tags import logic as tag_logic
 from ..features.persistence.backup import backup_database
 from ..features.settings import logic as app_settings
@@ -69,7 +71,7 @@ BW_SATURATION = -1.0  # a detected black & white negative starts fully desaturat
 
 LOOK_FIELDS = (
     "exposure_ev", "tone_curve_points", "negative_inverted", "saturation", "temperature", "tint", "shadows", "highlights",
-    "contrast", "local_contrast", "sharpen_amount", "sharpen_radius", "sharpen_masking", "sharpen_method", "film_type", "invert_r", "invert_g",
+    "contrast", "local_contrast", "vignette", "vignette_size", "border", "border_color", "carrier", "sharpen_amount", "sharpen_radius", "sharpen_masking", "sharpen_method", "film_type", "invert_r", "invert_g",
     "invert_b", "chroma_denoise", "wm_film", "wm_texture", "wm_size", "wm_position", "wm_info", "wm_camera", "wm_lens",
 )
 
@@ -271,6 +273,11 @@ class AppController(QObject):
         self.state.distortion = saved["distortion"]
         self.state.chroma_denoise = saved["chroma_denoise"]
         self.state.local_contrast = saved.get("local_contrast", 0.0)
+        self.state.vignette = float(saved.get("vignette", 0.0))
+        self.state.vignette_size = float(saved.get("vignette_size", 0.5))
+        self.state.border = float(saved.get("border", 0.0))
+        self.state.border_color = str(saved.get("border_color", "white"))
+        self.state.carrier = bool(saved.get("carrier", False))
         self.state.metering = Metering.from_dict(saved.get("metering"))
         self.state.wm_film = saved["wm_film"]
         self.state.wm_texture = saved["wm_texture"]
@@ -396,6 +403,7 @@ class AppController(QObject):
         self._last_logged_distortion = self.state.distortion
         self._last_logged_denoise = self.state.chroma_denoise
         self._last_logged_local = self.state.local_contrast
+        self._last_logged_finish = self._finishing_values()
         self._clone_source_raw = self._clone_source_display = self._clone_offset_raw = None  # a source belongs to the photo it was picked on
         self._last_logged_ai = (self.state.ai_dust, round(self.state.ai_threshold, 4), self.state.ai_grow)
         if self._ai_worker is not None:  # an analysis of the photo that was open is no use now
@@ -606,6 +614,28 @@ class AppController(QObject):
         self.state.fine_rotation = degrees
         self._preview(LIVE_OTHER_METHODS)
 
+    def straighten_by_line(self, p1: tuple[float, float], p2: tuple[float, float]) -> float | None:
+        """The Straighten Tool: two points (displayed-image pixels) along something that should be level or upright. The picture is turned so that
+        line is level - or plumb, when it runs closer to vertical. Returns the correction in degrees (clockwise positive), or None when the points
+        are too close to tell a direction."""
+        s = self.state
+        if s.preview_rgb is None:
+            return None
+        dx, dy = p2[0] - p1[0], p2[1] - p1[1]
+        if math.hypot(dx, dy) < 8:
+            self.notice.emit("Straighten: click two points further apart along the line")
+            return None
+        tilt = (math.degrees(math.atan2(dy, dx)) + 45.0) % 90.0 - 45.0  # how far the line is from the nearest of level / upright: -45..45, clockwise positive
+        correction = -tilt
+        new = round(max(-FINE_ROTATION_LIMIT, min(FINE_ROTATION_LIMIT, s.fine_rotation + correction)), 2)
+        if abs(new - s.fine_rotation) < 0.005:
+            self.notice.emit("Straighten: that line is already level")
+            return 0.0
+        self.set_fine_rotation(new)
+        self.reverted.emit()  # the Straighten slider follows
+        self.notice.emit(f"Straightened {correction:+.1f}\u00b0")
+        return correction
+
     def set_fine_rotation(self, degrees: float) -> None:
         """Straighten by a small angle (positive = clockwise)."""
         if self.state.preview_rgb is None:
@@ -684,6 +714,36 @@ class AppController(QObject):
 
     def reset_metering(self) -> None:
         self.set_metering(Metering())
+
+    def _finishing_values(self) -> tuple:
+        s = self.state
+        return (round(s.vignette, 4), round(s.vignette_size, 4), round(s.border, 4), s.border_color, s.carrier)
+
+    def preview_finishing(self, vignette: float, size: float, border: float, color: str, carrier: bool) -> None:
+        if self.state.preview_rgb is None:
+            return
+        s = self.state
+        s.vignette, s.vignette_size, s.border, s.border_color, s.carrier = vignette, size, border, color, bool(carrier)
+        self._preview(LIVE_OTHER_METHODS)
+
+    def set_finishing(self, vignette: float, size: float, border: float, color: str, carrier: bool) -> None:
+        """Vignette, border and the film-carrier look (the Finishing panel). Cheap, so each change is one render."""
+        if self.state.preview_rgb is None:
+            return
+        s = self.state
+        s.vignette, s.vignette_size, s.border, s.border_color, s.carrier = vignette, size, border, color, bool(carrier)
+        self._settle()
+        now = self._finishing_values()
+        if now != self._last_logged_finish:
+            self._last_logged_finish = now
+            parts = []
+            if s.vignette:
+                parts.append(f"vignette {s.vignette:+.2f}")
+            if s.border > 0:
+                parts.append(f"{s.border_color} border {s.border * 100:.1f}%")
+            if s.carrier:
+                parts.append("film carrier")
+            self._log("Finishing: " + (", ".join(parts) or "off"))
 
     def preview_local_contrast(self, amount: float) -> None:
         if self.state.preview_rgb is None:
@@ -1630,6 +1690,11 @@ class AppController(QObject):
             wm_lens=s.wm_lens,
             local_contrast=s.local_contrast,
             metering=s.metering,
+            vignette=s.vignette,
+            vignette_size=s.vignette_size,
+            border=s.border,
+            border_color=s.border_color,
+            carrier=s.carrier,
         )
         self.state.history.append(entry)
         self.history_changed.emit()
@@ -1690,6 +1755,11 @@ class AppController(QObject):
             "distortion": s.distortion,
             "chroma_denoise": s.chroma_denoise,
             "local_contrast": s.local_contrast,
+            "vignette": s.vignette,
+            "vignette_size": s.vignette_size,
+            "border": s.border,
+            "border_color": s.border_color,
+            "carrier": s.carrier,
             "metering": s.metering.to_dict(),
             "wm_film": s.wm_film,
             "wm_texture": s.wm_texture,
@@ -1737,6 +1807,7 @@ class AppController(QObject):
         self.state.distortion = 0.0
         self.state.chroma_denoise = 0.0
         self.state.local_contrast = 0.0
+        self.state.vignette, self.state.vignette_size, self.state.border, self.state.border_color, self.state.carrier = 0.0, 0.5, 0.0, "white", False
         self.state.metering = Metering()
         self.state.wm_film = "off"
         self.state.wm_texture = wm.DEFAULT_TEXTURE
@@ -1925,6 +1996,8 @@ class AppController(QObject):
         self._last_logged_denoise = entry.chroma_denoise
         s.local_contrast = entry.local_contrast
         self._last_logged_local = entry.local_contrast
+        s.vignette, s.vignette_size, s.border, s.border_color, s.carrier = entry.vignette, entry.vignette_size, entry.border, entry.border_color, entry.carrier
+        self._last_logged_finish = self._finishing_values()
         s.metering = entry.metering
         self._last_logged_metering = entry.metering
         s.wm_film, s.wm_texture, s.wm_size, s.wm_position = entry.wm_film, entry.wm_texture, entry.wm_size, entry.wm_position
@@ -2295,6 +2368,46 @@ class AppController(QObject):
         film-base eyedropper is picked on, so the rebate is on screen. None with no photo open."""
         return self._render_neutral(keep_inversion=False)
 
+    def render_proof(self, kind: str, tile_dim: int = 300) -> list | None:
+        """The 25 tiles of a Test Strip or Ring-Around, row by row: the photo as it is, stepped across and down the two things that proof varies.
+        Small renders on a renderer of their own, without the dust repair, watermark or finishing, so it takes a moment, not a wait. None with no
+        photo open."""
+        s = self.state
+        base = self._render_base()
+        if base is None or s.preview_rgb is None:
+            return None
+        small = make_preview_rgb(base, tile_dim)
+        current = {f: getattr(s, f) for f in ("exposure_ev", "contrast", "temperature", "tint")}
+        params0 = dataclasses.replace(
+            EditParams.from_state(s),
+            dust_auto=False, scratch_lines=(), heal_strokes=(), clone_strokes=(), ai_dust=False,
+            vignette=0.0, border=0.0, carrier=False, wm_film="off", wm_info=False, marks=Marks(),
+        )
+        renderer = Renderer()
+        tiles = []
+        for row in range(proof_logic.GRID):
+            for col in range(proof_logic.GRID):
+                values = proof_logic.cell_values(kind, current, row, col)
+                image, _pre, _stats, _ov = renderer.render(
+                    small, dataclasses.replace(params0, **values), ("proof", self._token()), base.shape[1], None, want_stats=False, overlay=False, flatfield=self._ff
+                )
+                tiles.append(image)
+        return tiles
+
+    def apply_proof_cell(self, kind: str, row: int, col: int) -> bool:
+        """Make a proof tile's values the photo's: one undoable step."""
+        s = self.state
+        if s.preview_rgb is None:
+            return False
+        current = {f: getattr(s, f) for f in ("exposure_ev", "contrast", "temperature", "tint")}
+        values = proof_logic.cell_values(kind, current, row, col)
+        return self.apply_look(values, f"{proof_logic.KINDS[kind].title}: {proof_logic.describe(kind, values)}")
+
+    def render_split_before(self):
+        """The 'before' of the Before / After split: render_original, but keeping the frame (border, film carrier) so it is the same size as the
+        edit and the two line up under the divider."""
+        return self._render_neutral(keep_inversion=True, keep_frame=True)
+
     def render_original(self):
         """The photo right after the negative is inverted - the Negative tab's own settings (invert, film type, RGB
         trim) kept, every edit after it (exposure, white balance, contrast, tone curve, shadows/highlights, color,
@@ -2302,7 +2415,7 @@ class AppController(QObject):
         two lines up. None with no photo open."""
         return self._render_neutral(keep_inversion=True)
 
-    def _render_neutral(self, keep_inversion: bool):
+    def _render_neutral(self, keep_inversion: bool, keep_frame: bool = False):
         base = self._render_base()
         if base is None:
             return None
@@ -2311,12 +2424,14 @@ class AppController(QObject):
             exposure_ev=0.0, tone_curve_points=tuple(tuple(p) for p in DEFAULT_POINTS),
             saturation=0.0, temperature=0.0, tint=0.0, shadows=0.0, highlights=0.0, sharpen_amount=0.0,
             dust_auto=False, scratch_lines=(), heal_strokes=(), clone_strokes=(), ai_dust=False, contrast=0.0, chroma_denoise=0.0, local_contrast=0.0,
+            vignette=0.0, border=0.0 if not keep_frame else EditParams.from_state(self.state).border,
+            carrier=False if not keep_frame else self.state.carrier,
             wm_film="off", wm_info=False,
         )
         if not keep_inversion:
             params = dataclasses.replace(params, negative_inverted=False, film_type="auto", invert_r=0.0, invert_g=0.0, invert_b=0.0, crop_rect=None, distortion=0.0)
         image, _pre, _stats, _overlay = self._renderer.render(
-            base, params, ("original" if keep_inversion else "raw", self._token()), base.shape[1], None, want_stats=False, overlay=False, flatfield=None
+            base, params, ("original" if keep_inversion else "raw", keep_frame, self._token()), base.shape[1], None, want_stats=False, overlay=False, flatfield=None
         )
         return image
 
