@@ -104,9 +104,8 @@ class _ImageLabel(QLabel):
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self._proof: QImage | None = None  # the test strip / ring-around mosaic, drawn over the whole picture
         self._proof_buf = None
-        self._proof_geometry = (1, 1, 0, 1, 1)  # tile width, tile height, gap, rows, columns - in mosaic pixels
-        self._proof_labels: list[str] = []
-        self._proof_banner = ""
+        self._proof_top: list[str] = []
+        self._proof_left: list[str] = []
         self._proof_hover: tuple[int, int] | None = None
         self._split: QImage | None = None  # the "before" picture, drawn over the left of the divider
         self._split_buf = None
@@ -135,9 +134,9 @@ class _ImageLabel(QLabel):
     def split_active(self) -> bool:
         return self._split is not None
 
-    def set_proof(self, mosaic: np.ndarray | None, tile: tuple[int, int] = (1, 1), gap: int = 0, grid: int = 5, labels: list[str] | None = None, banner: str = "") -> None:
-        """A test strip / ring-around: `mosaic` is the grid x grid tiles (each tile[0] x tile[1] pixels, `gap` apart) already laid out; it covers the
-        whole picture on screen like a contact sheet, each tile named by `labels` (row by row). None puts the picture back."""
+    def set_proof(self, mosaic: np.ndarray | None, top: list[str] | None = None, left: list[str] | None = None) -> None:
+        """A test strip / ring-around: `mosaic` is one picture, the same shape as the one on screen, already cut into 5 x 5 patches each printed at its
+        own settings; it replaces the picture. `top` / `left` label the columns and rows. None puts the picture back."""
         if mosaic is None:
             self._proof = self._proof_buf = None
             self._proof_hover = None
@@ -145,61 +144,60 @@ class _ImageLabel(QLabel):
             self._proof_buf = np.ascontiguousarray(mosaic)
             h, w = self._proof_buf.shape[:2]
             self._proof = QImage(self._proof_buf.data, w, h, w * 3, QImage.Format.Format_RGB888)
-            self._proof_geometry = (tile[0], tile[1], gap, grid, grid)
-            self._proof_labels = list(labels or [])
-            self._proof_banner = banner
-        self.setCursor(Qt.CursorShape.PointingHandCursor) if mosaic is not None else self.unsetCursor()
+            self._proof_top, self._proof_left = list(top or []), list(left or [])
+        if mosaic is not None:
+            self.setCursor(Qt.CursorShape.PointingHandCursor)
+        else:
+            self.unsetCursor()
         self.update()
 
     def proof_active(self) -> bool:
         return self._proof is not None
 
     def _proof_cell_rect(self, row: int, col: int) -> QRectF:
-        tw, th, gap, rows, cols = self._proof_geometry
-        mw, mh = cols * tw + (cols - 1) * gap, rows * th + (rows - 1) * gap
-        sx, sy = self.width() / mw, self.height() / mh
-        return QRectF(col * (tw + gap) * sx, row * (th + gap) * sy, tw * sx, th * sy)
+        n = 5
+        x0, x1 = round(self.width() * col / n), round(self.width() * (col + 1) / n)
+        y0, y1 = round(self.height() * row / n), round(self.height() * (row + 1) / n)
+        return QRectF(x0, y0, x1 - x0, y1 - y0)
 
     def _proof_cell_at(self, pos) -> tuple[int, int] | None:
-        rows, cols = self._proof_geometry[3:]
-        for row in range(rows):
-            for col in range(cols):
+        for row in range(5):
+            for col in range(5):
                 if self._proof_cell_rect(row, col).contains(pos):
                     return row, col
         return None
 
     def _paint_proof(self, painter: QPainter) -> None:
-        painter.fillRect(self.rect(), QColor(0, 0, 0))
+        """The mosaic over the picture, like a print: no grid lines, so the patches read as one picture. Only the patch under the cursor is outlined.
+        The columns are named along the top edge and the rows down the left; the rung that is the photo as it is shows in yellow."""
         painter.drawImage(QRectF(self.rect()), self._proof)
-        rows, cols = self._proof_geometry[3:]
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        if self._proof_hover is not None:
+            rect = self._proof_cell_rect(*self._proof_hover).adjusted(1, 1, -1, -1)
+            painter.setPen(QPen(QColor(0, 0, 0, 170), 3.5))
+            painter.drawRect(rect)
+            painter.setPen(QPen(QColor(255, 255, 255, 235), 1.5))
+            painter.drawRect(rect)
+        if min(self.width(), self.height()) / 5 < 34:
+            return  # too small for the labels not to overlap
         font = painter.font()
         font.setBold(True)
         painter.setFont(font)
-        for row in range(rows):
-            for col in range(cols):
-                rect = self._proof_cell_rect(row, col)
-                centre = (row, col) == (rows // 2, cols // 2)
-                text = self._proof_labels[row * cols + col] if row * cols + col < len(self._proof_labels) else ""
-                if text:
-                    width = min(rect.width() - 8, painter.fontMetrics().horizontalAdvance(text) + 12)
-                    badge = QRectF(rect.left() + 4, rect.bottom() - 24, width, 20)
-                    painter.setPen(Qt.PenStyle.NoPen)
-                    painter.setBrush(QColor(0, 0, 0, 170))
-                    painter.drawRoundedRect(badge, 3, 3)
-                    painter.setPen(QColor(255, 255, 255) if not centre else QColor(255, 210, 90))
-                    painter.drawText(badge, Qt.AlignmentFlag.AlignCenter, text)
-                if centre or (row, col) == self._proof_hover:
-                    painter.setBrush(Qt.BrushStyle.NoBrush)
-                    painter.setPen(QPen(QColor(255, 210, 90) if centre else QColor(255, 255, 255, 235), 2))
-                    painter.drawRect(rect.adjusted(1, 1, -1, -1))
-        if self._proof_banner:
-            width = painter.fontMetrics().horizontalAdvance(self._proof_banner) + 24
-            banner = QRectF((self.width() - width) / 2, 8, width, 24)
-            painter.setPen(Qt.PenStyle.NoPen)
-            painter.setBrush(QColor(0, 0, 0, 190))
-            painter.drawRoundedRect(banner, 4, 4)
-            painter.setPen(QColor(255, 255, 255))
-            painter.drawText(banner, Qt.AlignmentFlag.AlignCenter, self._proof_banner)
+        centre = 2
+        for index in range(5):
+            for text, box, flags, current in (
+                (self._proof_top[index] if index < len(self._proof_top) else "", self._proof_cell_rect(0, index),
+                 Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignHCenter, index == centre),
+                (self._proof_left[index] if index < len(self._proof_left) else "", self._proof_cell_rect(index, 0),
+                 Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft, index == centre),
+            ):
+                if not text:
+                    continue
+                box = box.adjusted(6, 6, -6, -6)
+                painter.setPen(QColor(0, 0, 0, 190))
+                painter.drawText(box.translated(1.0, 1.0), flags, text)
+                painter.setPen(QColor(255, 210, 90) if current else QColor(255, 255, 255, 235))
+                painter.drawText(box, flags, text)
 
     def _near_divider(self, x: float) -> bool:
         return self._split is not None and abs(x - self._split_pos * self.width()) <= 10
@@ -829,7 +827,7 @@ class _ImageLabel(QLabel):
             painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
             self._paint_proof(painter)
             painter.end()
-            return
+            return  # the mosaic is the picture: nothing else is drawn over it
         if self._tool is not None and not self._crop_mode:
             painter = QPainter(self)
             self._paint_tool(painter)
@@ -1021,8 +1019,8 @@ class ImageView(QWidget):
     def set_split(self, pixels: np.ndarray | None) -> None:
         self._label.set_split(pixels)
 
-    def set_proof(self, mosaic, tile=(1, 1), gap: int = 0, grid: int = 5, labels=None, banner: str = "") -> None:
-        self._label.set_proof(mosaic, tile, gap, grid, labels, banner)
+    def set_proof(self, mosaic, top=None, left=None) -> None:
+        self._label.set_proof(mosaic, top, left)
 
     def proof_active(self) -> bool:
         return self._label.proof_active()

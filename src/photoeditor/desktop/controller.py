@@ -2368,31 +2368,29 @@ class AppController(QObject):
         film-base eyedropper is picked on, so the rebate is on screen. None with no photo open."""
         return self._render_neutral(keep_inversion=False)
 
-    def render_proof(self, kind: str, tile_dim: int = 300) -> list | None:
-        """The 25 tiles of a Test Strip or Ring-Around, row by row: the photo as it is, stepped across and down the two things that proof varies.
-        Small renders on a renderer of their own, without the dust repair, watermark or finishing, so it takes a moment, not a wait. None with no
-        photo open."""
+    def render_proof(self, kind: str, max_dim: int = 1000) -> list | None:
+        """The 25 renders of a Test Strip or Ring-Around, row-major over the unrotated ladder: the photo as it is, stepped across and down the two
+        things that proof varies. Each is the whole picture, exactly as the canvas shows it (crop, rotation, finishing) but without the dust repair,
+        at up to max_dim on the long side; features/proofs/logic.mosaic cuts them into one picture. None with no photo open."""
         s = self.state
         base = self._render_base()
         if base is None or s.preview_rgb is None:
             return None
-        small = make_preview_rgb(base, tile_dim)
+        small = make_preview_rgb(base, max_dim)
         current = {f: getattr(s, f) for f in ("exposure_ev", "contrast", "temperature", "tint")}
         params0 = dataclasses.replace(
-            EditParams.from_state(s),
-            dust_auto=False, scratch_lines=(), heal_strokes=(), clone_strokes=(), ai_dust=False,
-            vignette=0.0, border=0.0, carrier=False, wm_film="off", wm_info=False, marks=Marks(),
+            EditParams.from_state(s), dust_auto=False, scratch_lines=(), heal_strokes=(), clone_strokes=(), ai_dust=False,
         )
         renderer = Renderer()
-        tiles = []
+        renders = []
         for row in range(proof_logic.GRID):
             for col in range(proof_logic.GRID):
                 values = proof_logic.cell_values(kind, current, row, col)
                 image, _pre, _stats, _ov = renderer.render(
                     small, dataclasses.replace(params0, **values), ("proof", self._token()), base.shape[1], None, want_stats=False, overlay=False, flatfield=self._ff
                 )
-                tiles.append(image)
-        return tiles
+                renders.append(image)
+        return renders
 
     def apply_proof_cell(self, kind: str, row: int, col: int) -> bool:
         """Make a proof tile's values the photo's: one undoable step."""

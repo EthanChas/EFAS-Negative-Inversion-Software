@@ -267,9 +267,15 @@ class _HotkeyFilter(QObject):
                 return False
             window.step_roll(_ROLL_KEYS[action])
         elif action == "rotate_left":
-            window.controller.rotate(-1)
+            if window.proof_active():
+                window.rotate_proof(1)  # the ladder turns, not the picture
+            else:
+                window.controller.rotate(-1)
         elif action == "rotate_right":
-            window.controller.rotate(1)
+            if window.proof_active():
+                window.rotate_proof(-1)
+            else:
+                window.controller.rotate(1)
         else:
             return False
         return True
@@ -314,6 +320,8 @@ class AppWindow(QMainWindow):
         self._comparing = False  # holding \ (or the Before button): showing the original scan instead of the edit
         self._split = False  # the Before / After split is up
         self._proof_kind: str | None = None  # "strip" / "ring" while that mosaic is on the picture
+        self._proof_renders: list = []  # its 25 renders (the unrotated ladder), kept so turning the ladder re-cuts them instead of re-rendering
+        self._proof_rotation = 0
         self._keys = KeyMap()  # which key does what (Settings > Keybinds)
         self._base_pick_image = None  # the raw scan on screen while the film-base eyedropper is armed
         self._region_drawing = False  # the metering Draw Region tool is armed (it borrows the crop overlay)
@@ -921,8 +929,8 @@ class AppWindow(QMainWindow):
         negative_tools_col.addWidget(self._flatfield_tool)
 
         self._crop_tool = CropToolPanel()
-        self._crop_tool.rotate_left_requested.connect(lambda: self.controller.rotate(-1))
-        self._crop_tool.rotate_right_requested.connect(lambda: self.controller.rotate(1))
+        self._crop_tool.rotate_left_requested.connect(lambda: self.rotate_proof(1) if self.proof_active() else self.controller.rotate(-1))
+        self._crop_tool.rotate_right_requested.connect(lambda: self.rotate_proof(-1) if self.proof_active() else self.controller.rotate(1))
         self._crop_tool.flip_h_toggled.connect(self.controller.set_flip_h)
         self._crop_tool.flip_v_toggled.connect(self.controller.set_flip_v)
         self._crop_tool.crop_mode_toggled.connect(self._on_crop_mode_toggled)
@@ -1801,8 +1809,9 @@ class AppWindow(QMainWindow):
             self.show_proof(kind)
 
     def show_proof(self, kind: str) -> None:
-        """Put a 5 x 5 mosaic of the open photo on the picture - exposure and contrast, or colour balance, stepped across and down - and let a
-        click on a tile make its values the photo's (one undoable step). Esc, or the same button, closes it."""
+        """Print a test strip or ring-around on the picture: the photo is rendered 25 ways and each way contributes only its own patch of a 5 x 5 grid,
+        so the patches read as one picture (like a darkroom test strip). Click a patch to take its settings (one undoable step); [ and ] turn the
+        ladder; Esc, or the same button, closes it."""
         c = self.controller
         if c.state.preview_rgb is None or self.lighttable_active():
             self._coord_label.setText("Test strip / ring-around: open a photo in the editor first.")
@@ -1815,41 +1824,40 @@ class AppWindow(QMainWindow):
             self.set_compare(False)
         QApplication.setOverrideCursor(QCursor(Qt.CursorShape.WaitCursor))
         try:
-            tiles = c.render_proof(kind, 420)
+            renders = c.render_proof(kind)
         finally:
             QApplication.restoreOverrideCursor()
-        if not tiles:
+        if not renders:
             return
-        n = proof_logic.GRID
-        th, tw = tiles[0].shape[:2]
-        gap = max(2, tw // 80)
-        mosaic = np.zeros((n * th + (n - 1) * gap, n * tw + (n - 1) * gap, 3), dtype=np.uint8)
-        k = proof_logic.KINDS[kind]
-        labels = []
-        for row in range(n):
-            for col in range(n):
-                tile = tiles[row * n + col]
-                mosaic[row * (th + gap): row * (th + gap) + th, col * (tw + gap): col * (tw + gap) + tw] = tile
-                if (row, col) == (n // 2, n // 2):
-                    labels.append("NOW")
-                else:
-                    labels.append(
-                        f"{k.columns.title[:4].lower()} {proof_logic.axis_label(k.columns, col)}   {k.rows.title[:4].lower()} {proof_logic.axis_label(k.rows, row)}"
-                    )
-        self._proof_kind = kind
-        self._image_view.set_proof(mosaic, (tw, th), gap, n, labels, f"{k.title}: {k.columns.title} across, {k.rows.title} down  -  click a tile, Esc closes")
+        self._proof_kind, self._proof_renders, self._proof_rotation = kind, renders, 0
+        self._show_proof_mosaic()
+        title = proof_logic.KINDS[kind].title
+        self._coord_label.setText(f"{title}: click a patch to keep it  -  [ ] turn the ladder  -  Esc closes")
+
+    def _show_proof_mosaic(self) -> None:
+        top, left = proof_logic.labels(self._proof_kind, self._proof_rotation)
+        self._image_view.set_proof(proof_logic.mosaic(self._proof_renders, self._proof_rotation), top, left)
+
+    def rotate_proof(self, direction: int) -> None:
+        """[ and ] while a proof is up turn the ladder (the far ends move onto other edges of the picture), not the image."""
+        if self._proof_kind is not None:
+            self._proof_rotation = (self._proof_rotation + direction) % 4
+            self._show_proof_mosaic()
 
     def close_proof(self) -> None:
         if self._proof_kind is None:
             return
-        self._proof_kind = None
+        self._proof_kind, self._proof_renders = None, []
         self._image_view.set_proof(None)
 
     def _on_proof_picked(self, row: int, col: int) -> None:
-        kind = self._proof_kind
+        kind, rotation = self._proof_kind, self._proof_rotation
         self.close_proof()
-        if kind is not None and (row, col) != (proof_logic.GRID // 2, proof_logic.GRID // 2):
-            self.controller.apply_proof_cell(kind, row, col)
+        if kind is None:
+            return
+        base = proof_logic.base_cell(rotation, row, col)
+        if base != (proof_logic.GRID // 2, proof_logic.GRID // 2):  # the middle patch is the photo as it is
+            self.controller.apply_proof_cell(kind, *base)
 
     def set_split(self, on: bool) -> None:
         """The Before / After split view: the picture before the edit left of a draggable divider, the edit right of it."""

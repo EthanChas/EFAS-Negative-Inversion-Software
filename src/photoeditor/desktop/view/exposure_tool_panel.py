@@ -107,14 +107,14 @@ class ExposureToolPanel(CollapsiblePanel):
         proof_row.setSpacing(THEME.space_sm)
         self._strip_btn = QPushButton("Test Strip")
         self._strip_btn.setToolTip(
-            "Print this photo 25 ways on the picture itself: exposure steps across, contrast steps down, like a darkroom test strip. Click a tile "
-            "to take its values; Esc or the button again closes it. (Shift+T)"
+            "Print this photo 25 ways on the picture itself, like a darkroom test strip: each patch shows its own part of the picture at a different "
+            "exposure (across) and contrast (down). Click a patch to keep it; [ and ] turn the ladder; Esc or the button again closes it. (Shift+T)"
         )
         self._strip_btn.clicked.connect(lambda: self.proof_requested.emit("strip"))
         self._ring_btn = QPushButton("Ring-Around")
         self._ring_btn.setToolTip(
-            "Step the colour balance round this photo in a 5 x 5 mosaic on the picture: tint across, temperature down. The tile where a cast "
-            "disappears shows which way to move. Click a tile to take it. (Shift+F)"
+            "Step the colour balance round this photo in a 5 x 5 mosaic on the picture: tint across, temperature down. The patch where a cast "
+            "disappears shows which way to move. Click a patch to keep it; [ and ] turn the ladder; Esc closes it. (Shift+F)"
         )
         self._ring_btn.clicked.connect(lambda: self.proof_requested.emit("ring"))
         proof_row.addWidget(self._strip_btn)
