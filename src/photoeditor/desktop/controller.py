@@ -2402,16 +2402,9 @@ class AppController(QObject):
         return self.apply_look(values, f"{proof_logic.KINDS[kind].title}: {proof_logic.describe(kind, values)}")
 
     def render_split_before(self):
-        """The 'before' of the Before / After split: render_original, but keeping the frame (border, film carrier) so it is the same size as the
-        edit and the two line up under the divider."""
+        """The 'before' of Before & After: the photo right after the negative is inverted (the Negative tab's own settings kept, every edit after it
+        left out), framed exactly like the edit - crop, rotation, border, film carrier - so the two line up under the divider."""
         return self._render_neutral(keep_inversion=True, keep_frame=True)
-
-    def render_original(self):
-        """The photo right after the negative is inverted - the Negative tab's own settings (invert, film type, RGB
-        trim) kept, every edit after it (exposure, white balance, contrast, tone curve, shadows/highlights, color,
-        sharpening, denoise, retouching, watermark) left out - framed exactly like the edit, so flicking between the
-        two lines up. None with no photo open."""
-        return self._render_neutral(keep_inversion=True)
 
     def _render_neutral(self, keep_inversion: bool, keep_frame: bool = False):
         base = self._render_base()

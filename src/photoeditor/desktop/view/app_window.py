@@ -211,9 +211,6 @@ class _HotkeyFilter(QObject):
     def eventFilter(self, watched, event) -> bool:
         window = self._window
         if event.type() == QEvent.Type.KeyRelease:
-            if not event.isAutoRepeat() and window.is_comparing() and window.keys().action_for(event) == "compare":
-                window.set_compare(False)  # let go of the compare key and the edit comes back
-                return True
             return False
         if event.type() != QEvent.Type.KeyPress or not window.isActiveWindow():
             return False
@@ -236,10 +233,6 @@ class _HotkeyFilter(QObject):
                 window.show_shortcuts()
                 return True
             return window.lighttable_action(action)
-        if action == "compare":
-            if not repeat:
-                window.set_compare(True)
-            return True
         if action == "split_view":
             if not repeat:
                 window.set_split(not window.split_active())
@@ -317,7 +310,6 @@ class AppWindow(QMainWindow):
         self._peaking_timer.setSingleShot(True)
         self._peaking_timer.setInterval(150)  # an edit, a drag, a new photo: wait for it to settle before analysing
         self._peaking_timer.timeout.connect(self._run_peaking)
-        self._comparing = False  # holding \ (or the Before button): showing the original scan instead of the edit
         self._split = False  # the Before / After split is up
         self._proof_kind: str | None = None  # "strip" / "ring" while that mosaic is on the picture
         self._proof_renders: list = []  # its 25 renders (the unrotated ladder), kept so turning the ladder re-cuts them instead of re-rendering
@@ -536,7 +528,7 @@ class AppWindow(QMainWindow):
         info_menu.addAction(credits_action)
 
         view_menu_anchor = menubar.addMenu("View")
-        self._split_action = QAction("Before / After Split", self)
+        self._split_action = QAction("Before && After", self)
         self._split_action.setCheckable(True)
         self._split_action.setToolTip("Show the picture before the edit left of a draggable divider and the edit right of it")
         self._split_action.toggled.connect(self.set_split)
@@ -701,19 +693,12 @@ class AppWindow(QMainWindow):
         self._hq_btn.toggled.connect(self._on_hq_toggled)
         bottom_row.addWidget(self._hq_btn, 0)
 
-        self._compare_btn = QPushButton("Before")
-        self._compare_btn.setCheckable(True)
-        self._compare_btn.setToolTip(
-            "Show the photo as it is right after the negative is inverted, without any of the edits after it "
-            "(hold \\ to peek). Same framing, so the two line up."
-        )
-        self._compare_btn.toggled.connect(self.set_compare)
-        bottom_row.addWidget(self._compare_btn, 0)
-        self._split_btn = QPushButton("Split")
+        self._split_btn = QPushButton("Before && After")
         self._split_btn.setCheckable(True)
         self._split_btn.setToolTip(
-            "Before / After: the picture as it is right after inversion on the left of a draggable divider, your edit on the right. The split "
-            "stays up while you work, so you can judge a slider against a fixed reference. Press B or Esc to close it."
+            "Before & After: the picture as it is right after inversion on the left of a draggable divider, your edit on the right, framed the "
+            "same so the two line up. It stays up while you work, so you can judge a slider against a fixed reference. Press \\ (backslash) or Esc "
+            "to close it."
         )
         self._split_btn.toggled.connect(self.set_split)
         bottom_row.addWidget(self._split_btn, 0)
@@ -1521,7 +1506,6 @@ class AppWindow(QMainWindow):
         self._peaking_levels = None  # the marks belong to the photo that was open; the new picture is analysed when it lands
         self._image_view.set_peaking_overlay(None)
         self._queue_peaking()
-        self._comparing = False  # a newly opened photo shows its edit
         self.close_proof()  # ... and no mosaic
         if self._split:
             self._split = False  # ... and no split
@@ -1533,9 +1517,6 @@ class AppWindow(QMainWindow):
             self._negative_tool.set_pick_active(False)
             self._image_view.set_pick_mode(False)
         self._sync_film_base()
-        self._compare_btn.blockSignals(True)
-        self._compare_btn.setChecked(False)
-        self._compare_btn.blockSignals(False)
         self._refresh_edit_actions()
         # reset() first (stops each panel's own settle/preview timers - see
         # e.g. ExposureToolPanel.reset()), then sync every widget to
@@ -1657,7 +1638,7 @@ class AppWindow(QMainWindow):
         # image out from under an in-progress drag.
         if self._showing_pre_crop():
             self._image_view.update_pixels(state.pre_crop_rgb)
-        elif not (self._comparing or self._base_pick_image is not None):
+        elif self._base_pick_image is None:
             self._image_view.update_pixels(state.image_rgb)
         self._refresh_split()
         self._refresh_overlay()
@@ -1675,7 +1656,7 @@ class AppWindow(QMainWindow):
         state = self.controller.state
         if self._showing_pre_crop():
             self._image_view.update_pixels(state.pre_crop_rgb)
-        elif not (self._comparing or self._base_pick_image is not None):
+        elif self._base_pick_image is None:
             self._image_view.update_pixels(state.image_rgb)
         if self._histogram_panel.selection() is not None:
             self._refresh_range()  # the green grid follows a drag; the graph itself catches up when the edit settles
@@ -1793,8 +1774,6 @@ class AppWindow(QMainWindow):
         QDesktopServices.openUrl(QUrl.fromLocalFile(os.path.dirname(self.controller.db_path)))
 
     # ---- before / after ----
-    def is_comparing(self) -> bool:
-        return self._comparing
 
     def split_active(self) -> bool:
         return self._split
@@ -1821,8 +1800,6 @@ class AppWindow(QMainWindow):
             self._crop_tool.set_crop_mode(False)
             self._on_crop_mode_toggled(False)
         self.set_split(False)
-        if self._comparing:
-            self.set_compare(False)
         QApplication.setOverrideCursor(QCursor(Qt.CursorShape.WaitCursor))
         try:
             renders = c.render_proof(kind)
@@ -1869,8 +1846,6 @@ class AppWindow(QMainWindow):
         if on and (state.preview_rgb is None or self._crop_tool.is_crop_active() or self.lighttable_active()):
             self._sync_split_widgets(False)
             return
-        if on and self._comparing:
-            self.set_compare(False)
         if on:
             self.close_proof()
         self._split = on
@@ -1890,31 +1865,6 @@ class AppWindow(QMainWindow):
             return
         before = self.controller.render_split_before()
         self._image_view.set_split(before)
-
-    def set_compare(self, on: bool) -> None:
-        """Show the photo as it is right after inversion (same framing) in place of the finished edit - held with
-        the backslash key, or latched with the Before button."""
-        state = self.controller.state
-        on = bool(on)
-        if on == self._comparing:
-            return
-        if on and (state.preview_rgb is None or self._crop_tool.is_crop_active()):
-            self._compare_btn.blockSignals(True)
-            self._compare_btn.setChecked(False)
-            self._compare_btn.blockSignals(False)
-            return
-        if on and self._split:
-            self.set_split(False)
-        self._comparing = on
-        self._compare_btn.blockSignals(True)
-        self._compare_btn.setChecked(on)
-        self._compare_btn.blockSignals(False)
-        if on:
-            before = self.controller.render_original()
-            if before is not None:
-                self._image_view.update_pixels(before)
-        elif state.image_rgb is not None:
-            self._image_view.update_pixels(state.image_rgb)
 
     def _on_reverted(self) -> None:
         # image_adjusted (connected to _on_image_adjusted) already refreshes
@@ -1980,7 +1930,7 @@ class AppWindow(QMainWindow):
         self._dust_tool.deactivate_tools()
         self._curve_tool.deactivate_eyedropper()
         self._image_view.set_tool(None)
-        self.set_compare(False)
+        self.set_split(False)  # the picture on screen is the raw scan now
         self._base_pick_image = raw
         self._image_view.update_pixels(raw)
         self._image_view.set_pick_mode(True, eyedropper_cursor())
@@ -2308,7 +2258,7 @@ class AppWindow(QMainWindow):
             self._image_view.exit_crop_mode(state.image_rgb)
         self._dust_tool.deactivate_tools()
         self._image_view.set_tool(None)
-        self.set_compare(False)
+        self.set_split(False)
         self._region_drawing = True
         pre_crop = state.pre_crop_rgb if state.pre_crop_rgb is not None else state.image_rgb
         self._image_view.enter_crop_mode(pre_crop, state.metering.rect, QCursor(Qt.CursorShape.CrossCursor))
