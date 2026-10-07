@@ -8,9 +8,7 @@ _LIST_HEIGHT = 110
 
 
 class SnapshotsPanel(CollapsiblePanel):
-    """Named versions of the open photo's edits: take one, try something else, come back to it. A snapshot keeps everything about the edit (tone,
-    color, crop, rotation, dust repairs, watermark...), unlike a preset, which is a look to share between photos. It only asks
-    (the *_requested signals); the controller does the work."""
+    """Named versions of the open photo's edits: take one, try something else, come back to it."""
 
     take_requested = pyqtSignal(str)
     apply_requested = pyqtSignal(str)

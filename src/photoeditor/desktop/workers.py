@@ -9,7 +9,7 @@ class ThumbnailLoader(QThread):
     Reads/writes the on-disk cache (cache_dir) first, so re-opening the same
     folder later is instant instead of re-decoding every RAW file again."""
 
-    thumb_ready = pyqtSignal(str, object)   # path, JPEG bytes or None
+    thumb_ready = pyqtSignal(str, object)
 
     def __init__(self, paths: list[str], cache_dir: str | None = None):
         super().__init__()
@@ -31,7 +31,7 @@ class _CallWorker(QThread):
     def run(self) -> None:
         try:
             self.result = self._fn()
-        except BaseException as exc:  # re-raised on the calling thread by run_blocking
+        except BaseException as exc:
             self.error = exc
 
 
@@ -56,8 +56,8 @@ class FlatFieldWorker(QThread):
     """Builds a flat-field gain map from every frame of a folder ("Auto (Roll)")
     off the UI thread - decoding a roll's worth of frames takes a while."""
 
-    progress = pyqtSignal(int, int, str)  # done, total, file
-    done = pyqtSignal(object)  # the gain map, or None if cancelled
+    progress = pyqtSignal(int, int, str)
+    done = pyqtSignal(object)
     failed = pyqtSignal(str)
 
     def __init__(self, paths: list[str]):

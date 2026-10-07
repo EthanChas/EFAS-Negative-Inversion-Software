@@ -1,11 +1,4 @@
-"""Export options and file writing - Pillow + numpy only, no Qt/UI imports.
-
-Covers what the export panel offers: JPEG/PNG/TIFF/WebP encoders with their
-own settings, resizing (original / long edge / percent / fit box), DPI,
-sRGB profile embedding, grayscale, EXIF copy, and the destination rules
-(custom folder or beside the original, optional subfolder and date folders,
-filename pattern, conflict handling). The pipeline is 8-bit throughout, so
-there is no 16-bit option."""
+"""Export options and file writing - Pillow + numpy only, no Qt/UI imports."""
 
 import os
 import re
@@ -85,19 +78,18 @@ class ExportOptions:
     folder: str = ""
     subfolder: str = "Export"
     date_folders: bool = False
-    pattern: str = "{name}"  # the original file's name, unchanged
+    pattern: str = "{name}"
     on_conflict: str = "rename"
-    preset_folders: bool = False  # one subfolder per export preset
-    suffix: str = ""  # per preset: appended to the name, e.g. "_web"
-    prefix: str = ""  # per preset: put in front of the name, e.g. "SOCIAL_"
+    preset_folders: bool = False
+    suffix: str = ""
+    prefix: str = ""
 
     def to_dict(self) -> dict:
         return asdict(self)
 
     @classmethod
     def from_dict(cls, data: dict) -> "ExportOptions":
-        """Tolerant of missing/unknown keys, so saved settings from an older
-        or newer version still load."""
+        """Tolerant of missing/unknown keys, so saved settings from an older or newer version still load."""
         known = {f.name for f in fields(cls)}
         return cls(**{k: v for k, v in (data or {}).items() if k in known})
 
@@ -150,8 +142,6 @@ def render_filename(
     return text or name
 
 
-# Fields that describe where/how files are named, shared by every preset in a run;
-# everything else on ExportOptions belongs to one preset.
 GLOBAL_FIELDS = ("dest_mode", "folder", "subfolder", "date_folders", "pattern", "on_conflict", "preset_folders")
 
 
@@ -191,10 +181,7 @@ def resolve_output_path(
     source_path: str, index: int, size: tuple[int, int], opts: ExportOptions, preset_name: str | None = None,
     roll: str = "", frame: int | None = None,
 ) -> str | None:
-    """Full output path for a source, or None if it should be skipped
-    (file exists and on_conflict is 'skip'). With the default pattern the
-    name is the original file's own name. An export never overwrites the
-    source file itself, whatever on_conflict says."""
+    """Full output path for a source, or None if it should be skipped (file exists and on_conflict is 'skip')."""
     name = os.path.splitext(os.path.basename(source_path))[0]
     stem = (
         _BAD_FILENAME_CHARS.sub("_", opts.prefix)
@@ -248,9 +235,7 @@ def prepare_pixels(pixels: np.ndarray, opts: ExportOptions) -> Image.Image:
 
 
 def save_image(pixels: np.ndarray, dest_path: str, opts: ExportOptions, exif: bytes | None = None) -> tuple[int, int]:
-    """Writes pixels (uint8 RGB) to dest_path with opts; returns the (w, h)
-    written. Creates the destination folder. Written to a temp name and
-    renamed, so a crash never leaves a truncated file under the final name."""
+    """Writes pixels (uint8 RGB) to dest_path with opts; returns the (w, h) written."""
     img = prepare_pixels(pixels, opts)
     os.makedirs(os.path.dirname(dest_path) or ".", exist_ok=True)
 
@@ -282,8 +267,6 @@ def save_image(pixels: np.ndarray, dest_path: str, opts: ExportOptions, exif: by
         params.update(quality=int(opts.webp_quality), lossless=bool(opts.webp_lossless), method=int(opts.webp_method))
         pil_format = "WEBP"
 
-    # Pillow's JPEG optimize/progressive modes encode in one pass and fail with
-    # "broken data stream" when the image outgrows its write buffer.
     ImageFile.MAXBLOCK = max(ImageFile.MAXBLOCK, img.size[0] * img.size[1] * 4)
     tmp = dest_path + ".part"
     try:

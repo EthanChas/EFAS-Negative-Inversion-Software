@@ -32,7 +32,7 @@ class CreditsDialog(QDialog):
         label = QLabel(_CREDITS)
         label.setWordWrap(True)
         label.setTextFormat(Qt.TextFormat.RichText)
-        label.setOpenExternalLinks(True)  # the links open in the browser
+        label.setOpenExternalLinks(True)
         label.setStyleSheet(f"a {{ color: {THEME.accent_hover}; }}")
         outer.addWidget(label)
         row = QHBoxLayout()

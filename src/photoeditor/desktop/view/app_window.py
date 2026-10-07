@@ -89,7 +89,7 @@ from .window_frame import CursorSyncFilter, WindowFrame
 _SIDEBAR_WIDTH = 300
 _LEFT_WIDTH = 300
 _ZOOM_PRESETS = (25, 50, 85, 100, 150)
-_TOOL_LIST_MIN_HEIGHT = 240  # a tool tab's dropdown fills the sidebar down to the bottom; this is its floor in a short window
+_TOOL_LIST_MIN_HEIGHT = 240
 _TOOL_LIST_MIN_WIDTH = 260
 
 _live_windows: "weakref.WeakSet[AppWindow]" = weakref.WeakSet()
@@ -97,26 +97,15 @@ _live_windows: "weakref.WeakSet[AppWindow]" = weakref.WeakSet()
 
 @atexit.register
 def _destroy_live_windows() -> None:
-    """Tear down any AppWindow still alive when the interpreter exits.
-
-    PyQt registers its own exit cleanup (_qtcore_cleanup, then _sip_exit) with
-    atexit when it is imported. Those run before the module globals are torn
-    down, so a window still alive then (a script that never closes it, or
-    __main__'s frame kept alive by the SystemExit traceback) is destroyed
-    *after* PyQt's slot bookkeeping is gone, and reads freed memory: an
-    "access violation" with no Python frame, about one exit in three, whatever
-    the window's size or whether it was ever shown. This module is imported
-    after PyQt, so atexit runs this hook first, while everything is intact."""
+    """Tear down any AppWindow still alive when the interpreter exits."""
     for window in list(_live_windows):
         try:
-            controller = getattr(window, "controller", None)  # absent if __init__ raised part-way
+            controller = getattr(window, "controller", None)
             if controller is not None:
-                controller.shutdown()  # normally done by aboutToQuit, which never fires without an event loop
+                controller.shutdown()
             sip.delete(window)
         except RuntimeError:
-            pass  # already deleted
-
-
+            pass
 
 
 class _ToolListScroll(QScrollArea):
@@ -154,8 +143,7 @@ class _ToolListScroll(QScrollArea):
 
 
 class _ClickableLabel(QLabel):
-    """A QLabel that also acts as a button - used for the zoom readout, which
-    opens a preset menu on click."""
+    """A QLabel that also acts as a button - used for the zoom readout, which opens a preset menu on click."""
 
     clicked = pyqtSignal()
 
@@ -171,13 +159,13 @@ _TEXT_ENTRY = (QLineEdit, QTextEdit, QPlainTextEdit, QAbstractSpinBox)
 def _typing_in_field() -> bool:
     """True while the keyboard focus is in something you type into - a line, a multi-line note, a number box or an editable dropdown
     (whose editor is a line edit inside it). Single keys like R must be letters there, not commands."""
-    if QApplication.activePopupWidget() is not None:  # a menu or a suggestion list is open: keys belong to it
+    if QApplication.activePopupWidget() is not None:
         return True
     widget = QApplication.focusWidget()
     for _ in range(3):
         if widget is None:
             return False
-        if isinstance(widget, _TEXT_ENTRY) or (isinstance(widget, QComboBox) and widget.isEditable()):  # focus can sit on the combo itself
+        if isinstance(widget, _TEXT_ENTRY) or (isinstance(widget, QComboBox) and widget.isEditable()):
             return True
         widget = widget.parentWidget()
     return False
@@ -217,10 +205,10 @@ class _HotkeyFilter(QObject):
             return False
         if event.type() != QEvent.Type.KeyPress or not window.isActiveWindow():
             return False
-        if _typing_in_field():  # in a field every key is just a key (Tab still moves focus as usual)
+        if _typing_in_field():
             return False
         if event.key() == Qt.Key.Key_Escape and not window.lighttable_active() and (window.split_active() or window.proof_active()):
-            window.set_split(False)  # Esc closes the Before / After split, or the test strip / ring-around
+            window.set_split(False)
             window.close_proof()
             return True
         action = window.keys().action_for(event)
@@ -231,7 +219,7 @@ class _HotkeyFilter(QObject):
             if not repeat:
                 window.set_view("lighttable" if action == "workbench" else "editor")
             return True
-        if window.lighttable_active():  # in the Workbench the editor's own keys stay out of the way; ratings and flags act on its selection
+        if window.lighttable_active():
             if action == "shortcuts_help":
                 window.show_shortcuts()
                 return True
@@ -264,7 +252,7 @@ class _HotkeyFilter(QObject):
             window.step_roll(_ROLL_KEYS[action])
         elif action == "rotate_left":
             if window.proof_active():
-                window.rotate_proof(1)  # the ladder turns, not the picture
+                window.rotate_proof(1)
             else:
                 window.controller.rotate(-1)
         elif action == "rotate_right":
@@ -278,22 +266,12 @@ class _HotkeyFilter(QObject):
 
 
 class AppWindow(QMainWindow):
-    """The app's root window - runs full screen (showMaximized, see __main__.py)
-    with a Win98 menu bar at the top. File > Open Image... loads a single raw
-    or standard image file, shown centered on the left above a coordinate/
-    pixel readout, with the white balance graph in a sidebar at the top
-    right. The Exposure/Color buttons sit on top of the graph and swap what
-    it plots - per-channel R/G/B (Color) or a single luminance curve with
-    shadow/midtone/highlight zones (Exposure). File > Import Images still
-    opens the separate folder/tile-grid browser."""
+    """The app's root window - runs full screen (showMaximized, see __main__.py) with a Win98 menu bar at the top."""
 
     def __init__(self):
-        ensure_data_ready()  # the session and settings read below must come from the one data folder, with other launches' copies merged in
+        ensure_data_ready()
         super().__init__()
         _live_windows.add(self)
-        # No native title bar to theme - Win98 chrome is hand-painted instead
-        # (see title_bar.py / window_frame.py) on a frameless window, same as
-        # EthanDailyClocker's utility app.
         self.setWindowFlag(Qt.WindowType.FramelessWindowHint)
         self.setWindowTitle("Ethan's Fuckass Editing App")
         self.setMinimumSize(480, 360)
@@ -305,26 +283,26 @@ class AppWindow(QMainWindow):
         self._export_worker = None
         self._sheet_worker = None
         self._quick_export = False
-        self._index_worker = None  # the Lighttable's library indexing, while it runs
-        self._export_paths_override: list[str] = []  # the photos 'Export Selected' (Lighttable) is exporting
-        self._peaking_request = 0  # which focus-peaking analysis is the latest asked for
-        self._peaking_levels = None  # the latest sharpness level map of the picture on screen (colors are picked from it)
-        self._peaking_workers: list = []  # the analysis threads still alive (at most one is ever running)
+        self._index_worker = None
+        self._export_paths_override: list[str] = []
+        self._peaking_request = 0
+        self._peaking_levels = None
+        self._peaking_workers: list = []
         self._peaking_timer = QTimer(self)
         self._peaking_timer.setSingleShot(True)
-        self._peaking_timer.setInterval(150)  # an edit, a drag, a new photo: wait for it to settle before analysing
+        self._peaking_timer.setInterval(150)
         self._peaking_timer.timeout.connect(self._run_peaking)
-        self._split = False  # the Before / After split is up
-        self._proof_kind: str | None = None  # "strip" / "ring" while that mosaic is on the picture
-        self._proof_renders: list = []  # its 25 renders (the unrotated ladder), kept so turning the ladder re-cuts them instead of re-rendering
+        self._split = False
+        self._proof_kind: str | None = None
+        self._proof_renders: list = []
         self._proof_rotation = 0
-        self._keys = KeyMap()  # which key does what (Settings > Keybinds)
-        self._base_pick_image = None  # the raw scan on screen while the film-base eyedropper is armed
-        self._region_drawing = False  # the metering Draw Region tool is armed (it borrows the crop overlay)
-        self._session = session_store.load()  # what was open last time, recent folders... (see features/session.py)
+        self._keys = KeyMap()
+        self._base_pick_image = None
+        self._region_drawing = False
+        self._session = session_store.load()
         self._open_tab = ""
-        self._filmstrip_folder = ""  # the folder the filmstrip is showing
-        self.setAcceptDrops(True)  # drop a folder or photos onto the window to open them
+        self._filmstrip_folder = ""
+        self.setAcceptDrops(True)
 
         self.controller = AppController()
         self.controller.file_changed.connect(self._on_file_changed)
@@ -345,11 +323,6 @@ class AppWindow(QMainWindow):
 
         frame.layout().addWidget(self._build_menu(), 0)
         self._build_ui()
-        # QSplitter's default vertical size policy is Preferred, not
-        # Expanding - without an explicit stretch factor here it was sized
-        # to its children's sizeHint instead of filling the rest of the
-        # frame, leaving a big blank gap above it (everything pushed down).
-        # Two views over the same window, like darktable's darkroom and lighttable: the editor, and the Lighttable (the whole library as a grid)
         self._lighttable = LighttableView(thumbnail_cache_dir())
         self._lighttable.set_key_resolver(self._keys.action_for)
         self._view_stack = QStackedWidget()
@@ -370,7 +343,6 @@ class AppWindow(QMainWindow):
         self.controller.flag_changed.connect(lambda path, flag: self._lighttable.update_item(library_query.norm(path), flag=flag))
         self.controller.history_changed.connect(self._mark_lighttable_edited)
 
-        # Reset and Presets in the header of every module that has a look (darktable-style)
         self._module_menus = ModuleMenus(self.controller, self)
         for key, panel in (
             ("exposure", self._exposure_tool), ("contrast", self._contrast_tool), ("tonecurve", self._curve_tool),
@@ -385,10 +357,6 @@ class AppWindow(QMainWindow):
         ):
             signal.connect(self._module_menus.refresh)
 
-        # Full window width, below everything - the same darktable-style
-        # filmstrip layout as its own bottom strip, not confined to the
-        # image column. Hidden until a folder is actually loaded into it
-        # (see Filmstrip.load_folder / _on_library_folder_double_clicked).
         self._filmstrip = Filmstrip()
         self._filmstrip.image_selected.connect(self.controller.open_file)
         self.controller.flag_changed.connect(self._filmstrip.set_flag)
@@ -404,13 +372,12 @@ class AppWindow(QMainWindow):
 
         self._hotkey_filter = _HotkeyFilter(self)
         QApplication.instance().installEventFilter(self._hotkey_filter)
-        self.apply_keybinds()  # the menu shortcuts, tooltips and cheat sheet follow the saved keys
+        self.apply_keybinds()
 
         self._debug_controller = DebugController(self)
         QApplication.instance().installEventFilter(self._debug_controller)
         self._debug_action.toggled.connect(self._debug_controller.set_enabled)
 
-    # ---- menu ----
     def _build_menu(self) -> QMenuBar:
         menubar = QMenuBar()
 
@@ -545,7 +512,6 @@ class AppWindow(QMainWindow):
         self._editor_action.triggered.connect(lambda: self.set_view("editor"))
         view_menu_anchor.addAction(self._editor_action)
 
-        # darktable's "lighttable | darkroom" switch, in the corner of the menu bar
         corner = QWidget()
         corner_row = QHBoxLayout(corner)
         corner_row.setContentsMargins(0, 0, THEME.space_sm, 0)
@@ -565,24 +531,16 @@ class AppWindow(QMainWindow):
 
         return menubar
 
-    # ---- layout ----
     def _build_ui(self) -> None:
         self._splitter = QSplitter(Qt.Orientation.Horizontal)
         self._splitter.setHandleWidth(4)
-        # Collapsible (the default) is what lets both a user drag past the
-        # sidebar's minimum width, and toggle_sidebar()'s setSizes([..., 0])
-        # below, actually reach zero instead of snapping back to the minimum.
         self._splitter.setChildrenCollapsible(True)
-        # The widths the user drags the sidebars to are saved as they are set (a moment after the drag stops), not only when the window closes - a
-        # crash, a kill or Exit from the tray would otherwise lose them - and they are what the next start opens with.
         self._layout_save_timer = QTimer(self)
         self._layout_save_timer.setSingleShot(True)
         self._layout_save_timer.setInterval(400)
         self._layout_save_timer.timeout.connect(self._save_session_layout)
         self._splitter.splitterMoved.connect(lambda _pos, _index: self._layout_save_timer.start())
 
-        # --- left: constant Masking/History sections, the image, and the
-        # hover coordinate/pixel readout underneath everything ---
         left_widget = QWidget()
         left_col = QVBoxLayout(left_widget)
         left_col.setContentsMargins(THEME.space_md, THEME.space_md, THEME.space_md, THEME.space_md)
@@ -592,11 +550,6 @@ class AppWindow(QMainWindow):
         main_row.setContentsMargins(0, 0, 0, 0)
         main_row.setSpacing(THEME.space_sm)
 
-        # Dedicated, always-shown sections - the same convention as the
-        # right sidebar's White Balance panel, not tabs you have to open.
-        # Masking is just the shell for now (see MaskingToolPanel) - no
-        # masking engine yet. History logs edits as they're committed (see
-        # AppController._log) - a record, not an undo/redo stack.
         left_tools_col_widget = QWidget()
         left_tools_col = QVBoxLayout(left_tools_col_widget)
         left_tools_col.setContentsMargins(0, 0, 0, 0)
@@ -640,7 +593,6 @@ class AppWindow(QMainWindow):
 
         left_tools_col.addStretch(1)
 
-        # Resizable like the right sidebar: its own scroll area, a splitter pane.
         left_scroll = QScrollArea()
         left_scroll.setWidgetResizable(True)
         left_scroll.setFrameShape(QScrollArea.Shape.NoFrame)
@@ -721,23 +673,14 @@ class AppWindow(QMainWindow):
         self._splitter.addWidget(left_scroll)
         self._splitter.addWidget(left_widget)
 
-        # --- right: the whole white balance section, collapsible, in a
-        # scrollable, user-resizable (drag the splitter handle) sidebar ---
         sidebar_content = QWidget()
         sidebar = QVBoxLayout(sidebar_content)
-        # Left margin trimmed to the bare minimum (not THEME.space_md like
-        # the other three sides) - the tool rail's buttons sit flush against
-        # it; a QLayout silently clamps a negative margin to 0 rather than
-        # actually pulling content past its parent's edge, so this is the
-        # margin that has to be small, not a negative one on the row below.
         sidebar.setContentsMargins(2, THEME.space_md, THEME.space_md, THEME.space_md)
         sidebar.setSpacing(THEME.space_md)
 
         sidebar_scroll = QScrollArea()
         sidebar_scroll.setWidgetResizable(True)
         sidebar_scroll.setFrameShape(QScrollArea.Shape.NoFrame)
-        # AsNeeded: the sidebar widens itself to fit an opened tab (_fit_sidebar_to_tab), but if the user drags it
-        # narrower than a tab can shrink, the rest must stay reachable instead of being clipped off the right edge.
         sidebar_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         sidebar_scroll.setMinimumWidth(0)
         self._sidebar_scroll = sidebar_scroll
@@ -753,7 +696,7 @@ class AppWindow(QMainWindow):
                 "Hover the image to mark that pixel's brightness on the "
                 "graph; hover the graph itself for a value/count reading."
             ),
-            collapsible=False,  # a dedicated, always-showing section
+            collapsible=False,
         )
         body = self._wb_panel.body()
         body.setSpacing(THEME.space_sm)
@@ -779,8 +722,6 @@ class AppWindow(QMainWindow):
         button_frame.layout().addLayout(button_row)
         body.addWidget(button_frame)
 
-        # Exposure mode only: mark clipped tones on the image - shadows blue,
-        # highlights red, each through a checker pattern.
         self._clip_row = QWidget()
         clip_layout = QHBoxLayout(self._clip_row)
         clip_layout.setContentsMargins(0, 0, 0, 0)
@@ -794,7 +735,7 @@ class AppWindow(QMainWindow):
         for button in (self._shadow_clip_btn, self._highlight_clip_btn):
             button.toggled.connect(self._on_clipping_toggled)
             clip_layout.addWidget(button)
-        self._clip_row.setVisible(False)  # the graph starts in Color mode
+        self._clip_row.setVisible(False)
         body.addWidget(self._clip_row)
 
         self._histogram_panel = HistogramPanel()
@@ -815,9 +756,6 @@ class AppWindow(QMainWindow):
 
         sidebar.addWidget(self._wb_panel)
 
-        # --- tool rail: vertical icon tabs, each opening a dropdown of
-        # controls beside it. The rail widens on hover to show tab names,
-        # and is built to grow to more tabs later. ---
         tool_row_host = QWidget()
         tool_row = QHBoxLayout(tool_row_host)
         tool_row.setContentsMargins(0, 0, 0, 0)
@@ -830,20 +768,8 @@ class AppWindow(QMainWindow):
         self._tool_rail.add_tab("watermark", watermark_icon(18), "Watermark")
         self._tool_rail.add_tab("metadata", metadata_icon(18), "Roll Card")
         self._tool_rail.tab_toggled.connect(self._on_tool_tab_toggled)
-        # AlignTop: without it, QHBoxLayout stretches the shorter item to
-        # match the taller one's height (the rail, being a stacked tab
-        # button, is taller than the panel once its own arrow collapses a
-        # tool's body) - and since nothing inside the panel can claim that
-        # extra space, Qt centers its header+body block in it instead of
-        # pinning the header to the top, so the header visibly drifts
-        # downward as the body shrinks.
         tool_row.addWidget(self._tool_rail, 0, Qt.AlignmentFlag.AlignTop)
 
-        # The WB Correction tab's dropdown is a vertical list of tools -
-        # Exposure, then Tone Curve underneath it - each still independently
-        # collapsible via its own arrow. A QScrollArea caps how tall this
-        # can grow (more tools will land here later) so it scrolls instead
-        # of pushing the rest of the sidebar down indefinitely.
         tools_content = QWidget()
         tools_col = QVBoxLayout(tools_content)
         tools_col.setContentsMargins(0, 0, 0, 0)
@@ -880,17 +806,9 @@ class AppWindow(QMainWindow):
         tools_scroll.setMinimumWidth(_TOOL_LIST_MIN_WIDTH)
         tools_scroll.setWidget(tools_content)
 
-        # stretch=0 plus the trailing addStretch(1) below is what keeps the
-        # rail pinned to the left when this is closed (0 width) - it's
-        # SlideOutPanel's own sizeHint(), not a stretch factor here, that
-        # makes it fill the row when open (see tool_rail.py).
         self._wb_tools_panel = SlideOutPanel(tools_scroll)
         tool_row.addWidget(self._wb_tools_panel, 0)
 
-        # A second, independent tab/dropdown beside the first - a stacked
-        # list, the same structure as WB Correction's: Negative (detecting
-        # and inverting a film negative scan, ported from NegPy - see
-        # NegativeToolPanel) above Crop & Rotate (features/geometry/logic.py).
         negative_tools_content = QWidget()
         negative_tools_col = QVBoxLayout(negative_tools_content)
         negative_tools_col.setContentsMargins(0, 0, 0, 0)
@@ -949,7 +867,7 @@ class AppWindow(QMainWindow):
         self._color_tool = ColorToolPanel()
         self._color_tool.color_changed.connect(self.controller.set_color)
         self._color_tool.preview_requested.connect(self.controller.preview_color)
-        correction_widgets = [self._crop_tool, self._color_tool]  # these live in the Correction tab: crop and rotate first
+        correction_widgets = [self._crop_tool, self._color_tool]
 
         self._sharpening_tool = SharpeningToolPanel()
         self._sharpening_tool.changed.connect(self.controller.set_sharpen)
@@ -1003,8 +921,6 @@ class AppWindow(QMainWindow):
         self._negative_panel = SlideOutPanel(negative_tools_scroll)
         tool_row.addWidget(self._negative_panel, 0)
 
-        # A third tab/dropdown, the same structure again: Crop & Rotate, Color, Sharpening, Local Contrast
-        # and Chroma Denoise - the corrections applied to the finished picture.
         correction_content = QWidget()
         correction_col = QVBoxLayout(correction_content)
         correction_col.setContentsMargins(0, 0, 0, 0)
@@ -1024,7 +940,6 @@ class AppWindow(QMainWindow):
         self._correction_panel = SlideOutPanel(correction_scroll)
         tool_row.addWidget(self._correction_panel, 0)
 
-        # A fourth tab: the Canister Watermark (features/watermark/logic.py).
         self._finishing_tool = FinishingPanel()
         self._finishing_tool.changed.connect(self.controller.set_finishing)
         self._finishing_tool.preview_requested.connect(self.controller.preview_finishing)
@@ -1050,7 +965,6 @@ class AppWindow(QMainWindow):
         self._watermark_panel = SlideOutPanel(watermark_scroll)
         tool_row.addWidget(self._watermark_panel, 0)
 
-        # A fifth tab: the Roll Card - what a roll of film has in common, and each frame's own details, written into exported files.
         self._metadata_tab = RollCardTab(
             effective=self.controller.effective_metadata, source_exif=self._source_exif_for_metadata, other_rolls=self.controller.other_rolls
         )
@@ -1082,16 +996,8 @@ class AppWindow(QMainWindow):
 
         tool_row.addStretch(1)
 
-        sidebar.addWidget(tool_row_host, 1)  # the tab dropdowns run down to the bottom of the sidebar
+        sidebar.addWidget(tool_row_host, 1)
 
-        # Without an explicit floor here, QSplitter (childrenCollapsible=True,
-        # needed for the Tab-to-hide gesture) lets a drag pass through a dead
-        # zone below sidebar_content's own true minimum before it snaps to
-        # fully collapsed - in that zone the content can't actually shrink
-        # any further, so the scroll area (no horizontal scrollbar) just
-        # clips it silently instead of resizing anything. Pinning the
-        # minimum here means a drag either holds at a fully-rendered width
-        # or jumps straight to hidden, never lingers in between.
         sidebar_content.adjustSize()
         sidebar_scroll.setMinimumWidth(sidebar_content.minimumSizeHint().width())
 
@@ -1099,16 +1005,11 @@ class AppWindow(QMainWindow):
         self._splitter.setStretchFactor(0, 0)
         self._splitter.setStretchFactor(1, 1)
         self._splitter.setStretchFactor(2, 0)
-        # Ignored (not the scroll areas' default Preferred): otherwise any change to
-        # a panel's content - a new history line, a longer label, a re-zoomed image - changes
-        # a pane's size hint, and the splitter answers by snapping the side
-        # panes back to their minimum widths, undoing the user's own resizing.
         for pane in (left_scroll, left_widget, sidebar_scroll):
             pane.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Expanding)
         self._left_last_width = max(_LEFT_WIDTH, left_scroll.minimumWidth())
         self._splitter.setSizes([self._left_last_width, 1000, _SIDEBAR_WIDTH])
 
-    # ---- actions ----
     def _open_file(self) -> None:
         path, _ = QFileDialog.getOpenFileName(
             self, "Open Image", "", file_dialog_filter()
@@ -1116,7 +1017,6 @@ class AppWindow(QMainWindow):
         if path:
             self.controller.open_file(path)
 
-    # ---- contact sheet ----
     def _on_contact_sheet(self) -> None:
         """File > Contact Sheet: ask for the layout and a file name, then build the PDF in the background with a progress box."""
         folder = self._filmstrip_folder
@@ -1194,7 +1094,6 @@ class AppWindow(QMainWindow):
         if box.clickedButton() is open_btn:
             QDesktopServices.openUrl(QUrl.fromLocalFile(summary["path"]))
 
-    # ---- lighttable ----
     def lighttable_active(self) -> bool:
         return self._view_stack.currentIndex() == 1
 
@@ -1210,7 +1109,7 @@ class AppWindow(QMainWindow):
         if want_lighttable:
             self._metadata_tab.flush()
             if c.state.image_path is not None:
-                c._save_edit_state()  # what the editor shows is what the library should know
+                c._save_edit_state()
                 self._lighttable.thumbnail_changed(c.state.image_path)
             self._peaking_timer.stop()
             self._view_stack.setCurrentIndex(1)
@@ -1285,7 +1184,7 @@ class AppWindow(QMainWindow):
             self._tags_panel.editor.set_tags([])
         self._tags_panel.editor.set_suggestions(self.controller.all_tags())
         if self.lighttable_active():
-            self._lighttable_reload_rows()  # (switching to the Workbench reloads the rows anyway, so nothing is kept for later)
+            self._lighttable_reload_rows()
 
     def _on_lighttable_rate(self, paths: list, stars: int) -> None:
         for path in paths:
@@ -1346,7 +1245,7 @@ class AppWindow(QMainWindow):
         e = current.get("editor", "")
         self._editor_action.setText(f"Editor   ({e})" if e else "Editor")
         self._lighttable.set_key_labels(current)
-        self._shortcuts_dialog = None  # drawn again, with the new keys, the next time it is opened
+        self._shortcuts_dialog = None
 
     def show_settings(self) -> None:
         dialog = SettingsDialog(self, self.controller)
@@ -1356,7 +1255,7 @@ class AppWindow(QMainWindow):
         app_settings.save(dialog.values())
         self.apply_keybinds()
         path = self.controller.state.image_path
-        if changed and path:  # the open photo was decoded the old way
+        if changed and path:
             self.controller.open_file(path)
 
     def show_credits(self) -> None:
@@ -1369,7 +1268,6 @@ class AppWindow(QMainWindow):
         self._shortcuts_dialog.raise_()
         self._shortcuts_dialog.activateWindow()
 
-    # ---- remembering, recents, folders, drag and drop ----
     def _remember_photo(self, path: str) -> None:
         """Called whenever a photo opens: it becomes the one to come back to, and its folder is shown in the filmstrip (so the arrow keys
         walk its roll) when something other than the Library panel opened it."""
@@ -1434,10 +1332,10 @@ class AppWindow(QMainWindow):
 
     def restore_session(self) -> None:
         """At startup: bring back the sidebar widths, the open tab, the filmstrip filter and the photo that was open - in its folder."""
-        QApplication.processEvents()  # let a window that was just maximized actually take its size: widths set against its old, small one scale up with it
+        QApplication.processEvents()
         sess = self._session
         if "auto_advance" in sess and not sess["auto_advance"] and not app_settings.has("auto_advance"):
-            app_settings.save({"auto_advance": False})  # the old Edit-menu choice moves to Settings
+            app_settings.save({"auto_advance": False})
         self._image_view.peaking_slider.set_level(sess["peaking_level"])
         left, center, right = self._splitter.sizes()
         want_left, want_right = sess["left_width"] or left, sess["right_width"] or right
@@ -1451,7 +1349,7 @@ class AppWindow(QMainWindow):
         tab = sess["tab"]
         if tab in self._tool_rail._buttons:
             self._tool_rail._buttons[tab].click()
-        QTimer.singleShot(1500, self._check_data_health)  # after the window is up: is the saved data all there?
+        QTimer.singleShot(1500, self._check_data_health)
 
     def _check_data_health(self) -> None:
         """If the database holds far less than a backup does, say so and offer the backup (it is put in place the next time the app starts)."""
@@ -1500,11 +1398,6 @@ class AppWindow(QMainWindow):
         return self._import_window
 
     def _on_library_folder_selected(self, folder: str) -> None:
-        # Clicking a folder in the Library panel (above Masking) loads it
-        # straight into the bottom filmstrip - no separate Import window
-        # popup, which just got in the way once the filmstrip existed.
-        # File > Import Images... still opens that window manually for
-        # anyone who wants its multi-select/batch tools.
         paths = list_images_in_folder(folder)
         db = self.controller._db
         self._filmstrip_folder = folder
@@ -1540,27 +1433,21 @@ class AppWindow(QMainWindow):
         state = self.controller.state
         self._presets_panel.set_has_photo(state.image_path is not None)
         self._snapshots_panel.set_has_photo(state.image_path is not None)
-        self._peaking_levels = None  # the marks belong to the photo that was open; the new picture is analysed when it lands
+        self._peaking_levels = None
         self._image_view.set_peaking_overlay(None)
         self._queue_peaking()
-        self.close_proof()  # ... and no mosaic
+        self.close_proof()
         if self._split:
-            self._split = False  # ... and no split
+            self._split = False
             self._sync_split_widgets(False)
             self._image_view.set_split(None)
-        self._region_drawing = False  # a region being drawn belonged to the photo that was open
-        if self._base_pick_image is not None:  # a pick in progress belonged to the photo that was open
+        self._region_drawing = False
+        if self._base_pick_image is not None:
             self._base_pick_image = None
             self._negative_tool.set_pick_active(False)
             self._image_view.set_pick_mode(False)
         self._sync_film_base()
         self._refresh_edit_actions()
-        # reset() first (stops each panel's own settle/preview timers - see
-        # e.g. ExposureToolPanel.reset()), then sync every widget to
-        # state's *actual* values rather than leaving them zeroed - a
-        # previously-edited file can come back from open_file() with a
-        # restored exposure/curve/crop/etc (see edit_store), and the
-        # widgets need to show that, not a blank slate.
         self._exposure_tool.reset()
         self._exposure_tool.set_value(state.exposure_ev)
         self._contrast_tool.reset()
@@ -1592,7 +1479,7 @@ class AppWindow(QMainWindow):
         self._image_view.set_pick_mode(False)
         self._image_view.set_tool(None)
         self._hq_btn.blockSignals(True)
-        self._hq_btn.setChecked(False)  # HQ is per image - a newly opened file starts at preview resolution
+        self._hq_btn.setChecked(False)
         self._hq_btn.blockSignals(False)
         self._hq_action.setChecked(False)
         self._image_view.set_hq_state("off")
@@ -1608,12 +1495,12 @@ class AppWindow(QMainWindow):
         if state.image_path is not None:
             self._remember_photo(state.image_path)
         self._filmstrip.set_active_path(state.image_path)
-        self._filmstrip.update_active_thumbnail(state.image_rgb)  # restored edits show on the tile too
+        self._filmstrip.update_active_thumbnail(state.image_rgb)
         self._image_view.set_image(state.image_rgb)
         self._refresh_overlay()
         self._refresh_export_hints()
         self._refresh_size_label()
-        self._histogram_panel.clear_selection()  # a selection belongs to the photo it was dragged on
+        self._histogram_panel.clear_selection()
         self._image_view.set_range_overlay(None)
         self._histogram_panel.set_data(state.histogram, state.luminance_histogram)
         self._stats_panel.set_stats(state.channel_stats, state.exposure_label, state.luminance["avg"])
@@ -1643,7 +1530,7 @@ class AppWindow(QMainWindow):
         w, h = size
         full_h, full_w = state.original_rgb.shape[:2]
         rotated = state.rotation_quarter_turns % 2
-        uncropped = (full_h, full_w) if rotated else (full_w, full_h)  # (w, h) of the uncropped, oriented frame
+        uncropped = (full_h, full_w) if rotated else (full_w, full_h)
         text = f"Size: {w} \u00d7 {h}  (~{(w * h) / 1_000_000:.1f} MP)"
         if state.crop_rect is not None:
             text += f"  cropped from {uncropped[0]} \u00d7 {uncropped[1]}"
@@ -1664,15 +1551,7 @@ class AppWindow(QMainWindow):
             self._highlight_clip_btn.setToolTip(f"Mark blown highlights in red ({state.clip_fractions[1] * 100:.1f}% of the image).")
 
     def _on_image_adjusted(self) -> None:
-        # Same data refresh as _on_file_changed, but update_pixels() keeps
-        # the current zoom/pan instead of resetting it - this fires once
-        # exposure dragging settles (see _on_image_preview_changed for the
-        # cheaper, much more frequent path used while actively dragging).
         state = self.controller.state
-        # While crop mode is active, the view is deliberately showing the
-        # full pre-crop frame (so the overlay's coordinates stay valid) -
-        # keep it that way rather than snapping back to the real (cropped)
-        # image out from under an in-progress drag.
         if self._showing_pre_crop():
             self._image_view.update_pixels(state.pre_crop_rgb)
         elif self._base_pick_image is None:
@@ -1687,16 +1566,13 @@ class AppWindow(QMainWindow):
         self._refresh_range()
 
     def _on_image_preview_changed(self) -> None:
-        # Image only - histogram/stats panels intentionally don't refresh
-        # here, since recomputing those on every tick was the actual source
-        # of the lag (see AppController.preview_exposure_ev).
         state = self.controller.state
         if self._showing_pre_crop():
             self._image_view.update_pixels(state.pre_crop_rgb)
         elif self._base_pick_image is None:
             self._image_view.update_pixels(state.image_rgb)
         if self._histogram_panel.selection() is not None:
-            self._refresh_range()  # the green grid follows a drag; the graph itself catches up when the edit settles
+            self._refresh_range()
 
     def _on_history_changed(self) -> None:
         descriptions = [entry.description for entry in self.controller.state.history]
@@ -1718,10 +1594,10 @@ class AppWindow(QMainWindow):
         self._paste_folder_action.setEnabled(opened and c.has_copied_settings())
 
     def _on_auto_crop(self, method: str = "color") -> None:
-        if self._crop_tool.is_crop_active():  # the crop overlay shows the uncropped frame; let that finish first
+        if self._crop_tool.is_crop_active():
             self._crop_tool.set_crop_mode(False)
             self._on_crop_mode_toggled(False)
-        self.controller.auto_crop(method=method if isinstance(method, str) else "color")  # a menu item passes its 'checked' flag instead
+        self.controller.auto_crop(method=method if isinstance(method, str) else "color")
 
     def _on_gradient_crop(self) -> None:
         self._on_auto_crop("gradient")
@@ -1737,7 +1613,6 @@ class AppWindow(QMainWindow):
         if answer == QMessageBox.StandardButton.Yes:
             self.controller.reset_edits()
 
-    # ---- roll navigation (the arrow keys, K / R auto-advance, Z) ----
     def filmstrip_list(self):
         return self._filmstrip.list_widget()
 
@@ -1774,7 +1649,7 @@ class AppWindow(QMainWindow):
         dialog = AdvancedPresetDialog(name, look, others, self)
         if dialog.exec() == dialog.DialogCode.Accepted:
             new_look = dialog.look()
-            if "marks" in look and any(k.startswith("wm_") for k in new_look):  # the dialog edits the canister's fields; the text/logo marks ride along
+            if "marks" in look and any(k.startswith("wm_") for k in new_look):
                 new_look["marks"] = look["marks"]
             self.controller.replace_look_preset(name, dialog.name(), new_look)
 
@@ -1810,7 +1685,6 @@ class AppWindow(QMainWindow):
     def _open_data_folder(self) -> None:
         QDesktopServices.openUrl(QUrl.fromLocalFile(os.path.dirname(self.controller.db_path)))
 
-    # ---- before / after ----
 
     def split_active(self) -> bool:
         return self._split
@@ -1871,7 +1745,7 @@ class AppWindow(QMainWindow):
         if kind is None:
             return
         base = proof_logic.base_cell(rotation, row, col)
-        if base != (proof_logic.GRID // 2, proof_logic.GRID // 2):  # the middle patch is the photo as it is
+        if base != (proof_logic.GRID // 2, proof_logic.GRID // 2):
             self.controller.apply_proof_cell(kind, *base)
 
     def set_split(self, on: bool) -> None:
@@ -1904,9 +1778,6 @@ class AppWindow(QMainWindow):
         self._image_view.set_split(before)
 
     def _on_reverted(self) -> None:
-        # image_adjusted (connected to _on_image_adjusted) already refreshes
-        # the image/histogram/stats - this just resyncs the tool widgets'
-        # own displayed values (slider, curve points) to match.
         state = self.controller.state
         self._exposure_tool.set_value(state.exposure_ev)
         self._contrast_tool.set_value(state.contrast)
@@ -1939,8 +1810,6 @@ class AppWindow(QMainWindow):
     def _on_pixel_hovered(self, x: int, y: int, rgb: tuple[int, int, int]) -> None:
         r, g, b = rgb
         self._coord_label.setText(f"X: {x}   Y: {y}       RGB: ({r}, {g}, {b})")
-        # Mirror the hovered pixel's brightness as a marker line on the
-        # white balance graph, so you can see where it falls in the histogram.
         self._histogram_panel.set_marker(luminance_of(rgb))
 
     def _on_hover_cleared(self) -> None:
@@ -1948,7 +1817,6 @@ class AppWindow(QMainWindow):
             self._coord_label.setText("Move the mouse over the image to inspect a pixel.")
         self._histogram_panel.set_marker(None)
 
-    # ---- film base (roll-wide calibration from the rebate) ----
     def _on_base_pick_toggled(self, on: bool) -> None:
         """Armed: the raw scan - uncropped and uninverted, so the clear film border is on screen - replaces the view, and the next click on
         it measures the film base for the whole roll. Disarmed: the edit comes back."""
@@ -1967,7 +1835,7 @@ class AppWindow(QMainWindow):
         self._dust_tool.deactivate_tools()
         self._curve_tool.deactivate_eyedropper()
         self._image_view.set_tool(None)
-        self.set_split(False)  # the picture on screen is the raw scan now
+        self.set_split(False)
         self._base_pick_image = raw
         self._image_view.update_pixels(raw)
         self._image_view.set_pick_mode(True, eyedropper_cursor())
@@ -2008,9 +1876,6 @@ class AppWindow(QMainWindow):
         if tool == "delete":
             self.controller.delete_manual_repair_at(x, y)
             return
-        # The tone curve's eyedropper - a click while it's active, not a
-        # hover - marks that pixel's brightness on the curve, and it stays
-        # until the eyedropper is toggled off (see _on_eyedropper_toggled).
         self._curve_tool.set_marker(luminance_of(rgb))
 
     def _on_eyedropper_toggled(self, active: bool) -> None:
@@ -2030,9 +1895,9 @@ class AppWindow(QMainWindow):
             return
         self._curve_tool.deactivate_eyedropper()
         if self._crop_tool.is_crop_active():
-            self._crop_tool.set_crop_mode(False)  # the brushes act on the finished image, not the crop frame
+            self._crop_tool.set_crop_mode(False)
         if tool == "delete":
-            self._dust_tool.show_detections()  # the repairs have to be visible to be picked
+            self._dust_tool.show_detections()
         if tool in ("line", "delete"):
             iv.set_pick_mode(True, QCursor(Qt.CursorShape.CrossCursor))
         else:
@@ -2047,7 +1912,7 @@ class AppWindow(QMainWindow):
         return size / 2 * self.controller.brush_scale()
 
     def _on_stroke_completed(self, points: list) -> None:
-        if self._crop_tool.straighten_active():  # the Straighten Tool's two clicks: turn the picture, and the tool is done
+        if self._crop_tool.straighten_active():
             if len(points) >= 2:
                 self.controller.straighten_by_line(points[0], points[1])
             self._crop_tool.set_straighten_active(False)
@@ -2058,7 +1923,7 @@ class AppWindow(QMainWindow):
             self.controller.add_manual_line(points[0], points[1], self._dust_tool.brush_size(), self._dust_tool.repair_method())
             return
         if tool == "clone":
-            if self._dust_tool.clone_source_armed():  # Set Source: this click is the source, not a stroke
+            if self._dust_tool.clone_source_armed():
                 self._dust_tool.set_clone_source_armed(False)
                 self.controller.set_clone_source(*points[0])
                 return
@@ -2070,8 +1935,8 @@ class AppWindow(QMainWindow):
         self.controller.add_heal_stroke(
             points,
             self._dust_tool.brush_size(),
-            DEFAULT_MANUAL_SENSITIVITY,  # unused: a forced stroke skips detection entirely
-            True,  # the Heal Tool and Scratch Tool repair everything under the brush - no sensitivity gate
+            DEFAULT_MANUAL_SENSITIVITY,
+            True,
             self._dust_tool.repair_method(),
             {"heal": "Healed", "scratch": "Healed scratch", "curve": "Healed curved scratch"}[tool],
         )
@@ -2080,7 +1945,7 @@ class AppWindow(QMainWindow):
         self._ai_dust_tool.set_info(self.controller.ai_dust_info())
 
     def _refresh_clone_marker(self) -> None:
-        """The dashed circle of the clone tool: where it copies from. Only drawn while the clone tool is the active one."""
+        """The dashed circle of the clone tool: where it copies from."""
         c = self.controller
         active = self._dust_tool.active_tool() == "clone"
         self._image_view.set_clone_marker(c.clone_source_display() if active else None, c.clone_offset_display() if active else None)
@@ -2093,10 +1958,9 @@ class AppWindow(QMainWindow):
     def _on_clipping_toggled(self, _checked: bool = False) -> None:
         self.controller.set_clipping(self._shadow_clip_btn.isChecked(), self._highlight_clip_btn.isChecked())
 
-    # ---- focus peaking ----
     def _on_peaking_toggled(self, on: bool) -> None:
         self._peaking_action.setChecked(on)
-        self._peaking_request += 1  # whatever was being analysed no longer matters
+        self._peaking_request += 1
         self._image_view.set_peaking_slider_visible(on, self._peaking_anchor_x)
         if on:
             self._peaking_timer.start(0)
@@ -2120,7 +1984,7 @@ class AppWindow(QMainWindow):
         self._image_view.set_peaking_overlay(overlay_from_levels(self._peaking_levels, self._image_view.peaking_slider.level()))
 
     def _queue_peaking(self, *_args) -> None:
-        """The picture on screen changed: analyse it again once the changes stop. The old marks stay until the new ones arrive."""
+        """The picture on screen changed: analyse it again once the changes stop."""
         if self._peaking_btn.isChecked():
             self._peaking_timer.start()
 
@@ -2130,17 +1994,17 @@ class AppWindow(QMainWindow):
             return
         self._peaking_workers = [w for w in self._peaking_workers if w.isRunning()]
         if self._peaking_workers:
-            self._peaking_timer.start()  # one analysis at a time; ask again once it has finished
+            self._peaking_timer.start()
             return
         self._peaking_request += 1
         worker = PeakingWorker(self._peaking_request, pixels)
         worker.done.connect(self._on_peaking_done)
-        self._peaking_workers.append(worker)  # held here: a QThread must not be dropped while it is still running
+        self._peaking_workers.append(worker)
         worker.start()
 
     def _on_peaking_done(self, request: int, levels) -> None:
         if request != self._peaking_request or not self._peaking_btn.isChecked():
-            return  # superseded, or switched off meanwhile
+            return
         self._peaking_levels = levels
         self._apply_peaking()
 
@@ -2188,9 +2052,8 @@ class AppWindow(QMainWindow):
     def _on_graph_hover_cleared(self) -> None:
         self._graph_reading_label.setText(self._range_summary() or "Hover the graph for a reading.")
 
-    # ---- brightness range selected on the Exposure graph ----
     def _range_summary(self) -> str:
-        """\"Selected 96-160: 23.4% of the picture (123,456 pixels)\" - or "" with no selection."""
+        """"Selected 96-160: 23.4% of the picture (123,456 pixels)" - or "" with no selection."""
         sel = self._histogram_panel.selection()
         hist = self.controller.state.luminance_histogram
         if sel is None or not hist:
@@ -2221,18 +2084,16 @@ class AppWindow(QMainWindow):
 
     def _on_mode_button_clicked(self, button: QPushButton) -> None:
         mode = "exposure" if button is self._exposure_btn else "color"
-        self._histogram_panel.set_mode(mode)  # leaving Exposure drops the selection with it
+        self._histogram_panel.set_mode(mode)
         if mode != "exposure":
             self._image_view.set_range_overlay(None)
         self._clip_row.setVisible(mode == "exposure")
-        if mode != "exposure":  # the marks belong to the Exposure view - leaving it switches them off
+        if mode != "exposure":
             self._shadow_clip_btn.setChecked(False)
             self._highlight_clip_btn.setChecked(False)
         self._on_graph_hover_cleared()
 
     def _on_tool_tab_toggled(self, tab_id: str, checked: bool) -> None:
-        # One tab open at a time: opening either closes the other (and
-        # un-checks its rail button).
         panels = {
             "exposure": self._wb_tools_panel,
             "negative": self._negative_panel,
@@ -2245,7 +2106,7 @@ class AppWindow(QMainWindow):
         panels[tab_id].set_open(checked)
         self._open_tab = tab_id if checked else (self._open_tab if self._open_tab != tab_id else "")
         if checked:
-            QTimer.singleShot(260, lambda p=panels[tab_id]: self._fit_sidebar_to_tab(p))  # after the 180 ms slide-open
+            QTimer.singleShot(260, lambda p=panels[tab_id]: self._fit_sidebar_to_tab(p))
             for other_id, other_panel in panels.items():
                 if other_id != tab_id:
                     other_panel.set_open(False)
@@ -2255,17 +2116,17 @@ class AppWindow(QMainWindow):
         """Widen the right sidebar, at the image's expense, when the opened tab needs more room than the sidebar has - otherwise the
         tab's controls run past the window's right edge. A tab's real minimum is its content's own, or the scroll area's floor if larger."""
         left, center, right = self._splitter.sizes()
-        if right <= 0:  # panels hidden with Tab
+        if right <= 0:
             return
         scroll = panel._content
         inner = scroll.widget().minimumSizeHint().width() if scroll.widget() is not None else 0
         scrollbar = self.style().pixelMetric(self.style().PixelMetric.PM_ScrollBarExtent)
         needed = (
             self._tool_rail.width() + THEME.space_sm + max(inner, scroll.minimumWidth(), scroll.minimumSizeHint().width())
-            + scrollbar + 2 + THEME.space_md + 4  # the tab's own scrollbar, the sidebar's margins, and a little slack
+            + scrollbar + 2 + THEME.space_md + 4
         )
         if needed > right:
-            grow = min(needed - right, max(center - 200, 0))  # never squeeze the image below a usable size
+            grow = min(needed - right, max(center - 200, 0))
             self._splitter.setSizes([left, center - grow, right + grow])
             self._sidebar_last_width = right + grow
 
@@ -2274,7 +2135,6 @@ class AppWindow(QMainWindow):
         if mode is not None:
             self._negative_tool.show_detection(mode)
 
-    # ---- metering region ----
     def _on_metering_reset(self) -> None:
         self.controller.reset_metering()
         self._negative_tool.set_metering(self.controller.state.metering)
@@ -2317,7 +2177,7 @@ class AppWindow(QMainWindow):
         if not enabled:
             iv.set_tool(None)
             return
-        if self._crop_tool.is_crop_active():  # the line is drawn on the finished picture, not the crop frame
+        if self._crop_tool.is_crop_active():
             self._crop_tool.set_crop_mode(False)
             self._on_crop_mode_toggled(False)
         self._end_region_draw()
@@ -2335,18 +2195,12 @@ class AppWindow(QMainWindow):
             self._end_region_draw()
             self._dust_tool.deactivate_tools()
             self._image_view.set_tool(None)
-            # Fully zoomed out, on the pre-crop frame, with any existing
-            # crop already shown as the active selection - like NegPy,
-            # re-entering Crop picks up where the last crop left off
-            # instead of forcing a redraw from scratch.
             pre_crop = state.pre_crop_rgb if state.pre_crop_rgb is not None else state.image_rgb
             self._image_view.enter_crop_mode(pre_crop, state.crop_rect, QCursor(Qt.CursorShape.CrossCursor))
         else:
             self._image_view.exit_crop_mode(state.image_rgb)
 
     def _on_crop_requested(self, x1: int, y1: int, x2: int, y2: int) -> None:
-        # Still in crop mode afterward - the overlay just reflects the
-        # drag's result, so further moves/resizes keep working.
         if self._region_drawing:
             self.controller.set_metering_rect((x1, y1, x2, y2))
             return
@@ -2375,9 +2229,8 @@ class AppWindow(QMainWindow):
             self._panels_hidden = False
         self._filmstrip.set_panels_hidden(self._panels_hidden)
 
-    # ---- export ----
     def _on_export_requested(self, scope: str, jobs: list) -> None:
-        self._metadata_tab.flush()  # an export reads the saved Roll Card, so what was just typed must be in it
+        self._metadata_tab.flush()
         panel = self._export_panel
         shared = jobs[0][1]
         if shared.dest_mode == "folder" and not shared.folder:
@@ -2388,16 +2241,15 @@ class AppWindow(QMainWindow):
             if state.image_path is None:
                 panel.show_message("Open an image first.")
                 return
-            self.controller._save_edit_state()  # make sure the stored edits match what's on screen
+            self.controller._save_edit_state()
             paths = [state.image_path]
-        elif scope == "paths":  # chosen in the Lighttable
+        elif scope == "paths":
             paths = list(self._export_paths_override)
             if state.image_path in paths:
                 self.controller._save_edit_state()
         else:
             paths = self._filmstrip.paths()
             if not paths and state.image_path is not None:
-                # No folder loaded into the strip - use the open image's own folder.
                 paths = list_images_in_folder(os.path.dirname(state.image_path))
             if not paths:
                 panel.show_message("Load a folder into the filmstrip first (click a folder in the Library).")
@@ -2423,7 +2275,7 @@ class AppWindow(QMainWindow):
                     return
         worker = ExportWorker(paths, jobs, self.controller.db_path)
         worker.progress.connect(panel.set_progress)
-        steps_per_photo = 1 + len(jobs)  # the worker counts one step per render and one per file written
+        steps_per_photo = 1 + len(jobs)
         worker.progress.connect(
             lambda done, total, _name, n=len(paths), k=steps_per_photo: self._image_view.set_export_progress(min(n, done // k), n, done / max(1, total))
         )
@@ -2447,7 +2299,7 @@ class AppWindow(QMainWindow):
             return
         self._quick_export = True
         self._on_export_requested("current", self._export_panel.current_job())
-        if self._export_worker is None:  # refused (e.g. no export folder chosen)
+        if self._export_worker is None:
             self._quick_export = False
             self._coord_label.setText("Quick export: " + self._export_panel._status.text())
         else:

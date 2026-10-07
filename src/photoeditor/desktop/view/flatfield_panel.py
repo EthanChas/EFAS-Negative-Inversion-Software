@@ -81,14 +81,13 @@ class FlatFieldPanel(CollapsiblePanel):
 
     def _on_pick(self) -> None:
         path, _ = QFileDialog.getOpenFileName(
-            self, "Flat-field reference for this folder", self._folder_path, file_dialog_filter()  # opens in the photo's own folder
+            self, "Flat-field reference for this folder", self._folder_path, file_dialog_filter()
         )
         if path:
             self.reference_picked.emit(path)
 
     def refresh(self, info: dict) -> None:
-        """Syncs the panel to the open photo's folder: info is
-        AppController.flatfield_info()."""
+        """Syncs the panel to the open photo's folder: info is AppController.flatfield_info()."""
         has, busy, opened = info["has"], info["busy"], info["open"]
         self._folder_path = info.get("folder_path", "")
         folder = info["folder"] or "this folder"

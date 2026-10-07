@@ -1,5 +1,4 @@
-"""The Qt side of the rebindable keys: turning a key event into the action it is bound to. The list of actions and their defaults is
-features/keybinds/logic.py; the user's own choices live in settings.json."""
+"""The Qt side of the rebindable keys: turning a key event into the action it is bound to."""
 
 from PyQt6.QtCore import QKeyCombination, Qt
 from PyQt6.QtGui import QKeyEvent, QKeySequence
@@ -17,8 +16,7 @@ def normalize(seq: str) -> str:
 
 
 def event_sequences(event: QKeyEvent) -> list[str]:
-    """The key sequences this event could be bound as, most specific first. A symbol typed with Shift (the ? of Shift+/) is also tried without
-    it, so a binding written "?" matches; a letter or digit with Shift is only ever itself."""
+    """The key sequences this event could be bound as, most specific first."""
     try:
         key = Qt.Key(event.key())
     except ValueError:
@@ -34,7 +32,7 @@ def event_sequences(event: QKeyEvent) -> list[str]:
 
 
 class KeyMap:
-    """Which action each key press means. Reload after the settings change."""
+    """Which action each key press means."""
 
     def __init__(self) -> None:
         self._seq: dict[str, str] = {}

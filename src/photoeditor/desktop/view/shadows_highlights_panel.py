@@ -5,7 +5,7 @@ from ...theme.tokens import THEME
 from .collapsible_panel import CollapsiblePanel
 from .slider_row import SliderRow
 
-_PREVIEW_THROTTLE_MS = 33  # ~30fps cap for the cheap image-only preview, same as Exposure
+_PREVIEW_THROTTLE_MS = 33
 _SETTLE_DEBOUNCE_MS = 200
 
 
@@ -16,7 +16,7 @@ class ShadowsHighlightsToolPanel(CollapsiblePanel):
     full-recompute split as Exposure/Tone Curve/Color, carrying both
     values in one signal pair the same way Color carries three."""
 
-    changed = pyqtSignal(float, float)  # shadows, highlights
+    changed = pyqtSignal(float, float)
     preview_requested = pyqtSignal(float, float)
 
     def __init__(self, parent: QWidget | None = None):
@@ -71,8 +71,7 @@ class ShadowsHighlightsToolPanel(CollapsiblePanel):
         self.set_values(0.0, 0.0)
 
     def set_values(self, shadows: float, highlights: float) -> None:
-        """Sync both sliders without emitting anything - used by reset()
-        and after a history revert."""
+        """Sync both sliders without emitting anything - used by reset() and after a history revert."""
         self._shadows.set_value(shadows)
         self._highlights.set_value(highlights)
 

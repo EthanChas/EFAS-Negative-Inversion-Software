@@ -22,7 +22,7 @@ _checked: set[str] = set()
 
 
 def _native() -> QSettings:
-    return QSettings("PhotoEditor", "PhotoEditor")  # the registry
+    return QSettings("PhotoEditor", "PhotoEditor")
 
 
 def _import_registry(ini: QSettings) -> None:
@@ -48,6 +48,6 @@ def qsettings() -> QSettings:
     ini = QSettings(path, QSettings.Format.IniFormat)
     if path not in _checked:
         _checked.add(path)
-        if not os.environ.get("PHOTOEDITOR_DATA_DIR"):  # a test's throwaway folder must not pick up the real registry
+        if not os.environ.get("PHOTOEDITOR_DATA_DIR"):
             _import_registry(ini)
     return ini

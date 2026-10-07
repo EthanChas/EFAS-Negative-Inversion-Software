@@ -46,9 +46,9 @@ class HistogramPanel(BevelPanel):
       bin_hovered(value, reading) with a live reading at that point
     """
 
-    bin_hovered = pyqtSignal(int, dict)   # value 0-255, {"r":n,"g":n,"b":n} or {"luminance":n}
+    bin_hovered = pyqtSignal(int, dict)
     hover_cleared = pyqtSignal()
-    range_selected = pyqtSignal(int, int)  # Exposure view: a span of brightness dragged out on the graph, low and high (0-255)
+    range_selected = pyqtSignal(int, int)
     range_cleared = pyqtSignal()
 
     def __init__(self, parent: QWidget | None = None):
@@ -61,9 +61,9 @@ class HistogramPanel(BevelPanel):
         self._marker_value: float | None = None
         self._cursor_value: int | None = None
         self._zoom_min, self._zoom_max = _FULL_RANGE
-        self._selection: tuple[int, int] | None = None  # the dragged-out brightness span (Exposure view only)
-        self._drag_anchor: tuple[int, int] | None = None  # (value, x) where the drag began
-        self._share_text = ""  # "23.4% of pixels", drawn on the selection
+        self._selection: tuple[int, int] | None = None
+        self._drag_anchor: tuple[int, int] | None = None
+        self._share_text = ""
 
     def set_data(self, rgb_histogram: dict[str, list[int]], luminance_histogram: list[int]) -> None:
         self._rgb_histogram = rgb_histogram
@@ -76,7 +76,6 @@ class HistogramPanel(BevelPanel):
             self.clear_selection()
         self.update()
 
-    # ---- the selected span ----
     def selection(self) -> tuple[int, int] | None:
         return self._selection
 
@@ -113,7 +112,7 @@ class HistogramPanel(BevelPanel):
             moved = self._selection is not None and self._drag_anchor is not None and getattr(self, "_drag_moved", False)
             self._drag_anchor = None
             self._drag_moved = False
-            if not moved:  # a plain click: let go of the selection
+            if not moved:
                 self.clear_selection(emit=True)
             event.accept()
             return
@@ -141,7 +140,6 @@ class HistogramPanel(BevelPanel):
             return self._luminance_histogram
         return self._rgb_histogram["r"] if self._rgb_histogram else None
 
-    # ---- geometry ----
     def _plot_rect(self) -> QRect:
         margin_side = THEME.border_width + THEME.space_sm + _AXIS_LABEL_WIDTH // 2
         margin_top = THEME.border_width + THEME.space_sm + _LEGEND_HEIGHT
@@ -161,7 +159,6 @@ class HistogramPanel(BevelPanel):
         value = self._zoom_min + fraction * (self._zoom_max - self._zoom_min)
         return min(max(int(round(value)), 0), 255)
 
-    # ---- mouse ----
     def mouseMoveEvent(self, event: QMouseEvent) -> None:
         super().mouseMoveEvent(event)
         if not self._active_series():
@@ -169,7 +166,7 @@ class HistogramPanel(BevelPanel):
         pos = event.position()
         if self._drag_anchor is not None and event.buttons() & Qt.MouseButton.LeftButton:
             anchor_value, anchor_x = self._drag_anchor
-            if abs(pos.x() - anchor_x) >= 3 or self._selection is not None:  # a few pixels of travel make it a drag, not a click
+            if abs(pos.x() - anchor_x) >= 3 or self._selection is not None:
                 self._drag_moved = True
                 now = self._clamped_value_at(pos.x())
                 span = (min(anchor_value, now), max(anchor_value, now))
@@ -177,7 +174,7 @@ class HistogramPanel(BevelPanel):
                     self._selection = span
                     self.update()
                     self.range_selected.emit(*span)
-                return  # while dragging, the readout is about the selection, not the bin under the cursor
+                return
         value = self._value_at_x(int(pos.x()), int(pos.y()))
         if value is None:
             if self._cursor_value is not None:
@@ -226,7 +223,6 @@ class HistogramPanel(BevelPanel):
         self._zoom_min, self._zoom_max = _FULL_RANGE
         self.update()
 
-    # ---- paint ----
     def paintEvent(self, event: QPaintEvent) -> None:
         super().paintEvent(event)
         rect = self._plot_rect()
@@ -252,11 +248,6 @@ class HistogramPanel(BevelPanel):
                 name: self._series_points(rect, counts, peak)
                 for name, counts in self._rgb_histogram.items()
             }
-            # Additive (Screen) blending, not stacked alpha - where two
-            # channels overlap this produces yellow/magenta/cyan and white
-            # where all three do, matching how Lightroom/Photoshop render
-            # their RGB histogram overlay so overlaps read as real colors
-            # instead of a muddy gray.
             painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_Screen)
             for name, points in series.items():
                 self._fill_series(painter, rect, points, _CHANNEL_COLORS[name])
@@ -343,10 +334,6 @@ class HistogramPanel(BevelPanel):
             y = rect.top() + fraction * rect.height()
             painter.drawLine(rect.left(), int(y), rect.right(), int(y))
 
-        # Each label's rect is anchored so it never extends past the plot
-        # area's own left/right edge - anchoring by an offset from the tick
-        # position (as before) let the "0" and "255" labels' rects run off
-        # the widget entirely at the two ends, clipping them off invisible.
         font = painter.font()
         font.setPointSize(THEME.font_size_small)
         painter.setFont(font)

@@ -10,13 +10,10 @@ from .slider_row import SliderRow
 
 _PREVIEW_THROTTLE_MS = 33
 _SETTLE_DEBOUNCE_MS = 200
-AUTO_MARGIN_LIMIT = 10.0  # percent of the crop
-AUTO_ROTATE_LIMIT = 3.0   # degrees
+AUTO_MARGIN_LIMIT = 10.0
+AUTO_ROTATE_LIMIT = 3.0
 _GUIDE_KEY = "crop/guide"
 
-# (label, value): value is None (free), "original", or a landscape w/h. The
-# picker lists each shape once - the crop auto-orients to landscape or portrait
-# from the drag.
 _RATIOS = (
     ("Free", None),
     ("Original", "original"),
@@ -49,14 +46,14 @@ class CropToolPanel(CollapsiblePanel):
     crop_cleared = pyqtSignal()
     auto_crop_requested = pyqtSignal()
     gradient_crop_requested = pyqtSignal()
-    straighten_tool_toggled = pyqtSignal(bool)  # the draw-a-line straighten tool armed / disarmed
-    auto_adjust_changed = pyqtSignal(float, float)  # crop margin (% of the crop, positive = tighter), extra rotation (degrees)
-    guide_changed = pyqtSignal(str, int)  # guide name, orientation
-    ratio_changed = pyqtSignal(object)  # None | "original" | landscape w/h
-    fine_rotation_changed = pyqtSignal(float)  # settled
-    fine_rotation_preview = pyqtSignal(float)  # while dragging
-    distortion_changed = pyqtSignal(float)  # settled
-    distortion_preview = pyqtSignal(float)  # while dragging
+    straighten_tool_toggled = pyqtSignal(bool)
+    auto_adjust_changed = pyqtSignal(float, float)
+    guide_changed = pyqtSignal(str, int)
+    ratio_changed = pyqtSignal(object)
+    fine_rotation_changed = pyqtSignal(float)
+    fine_rotation_preview = pyqtSignal(float)
+    distortion_changed = pyqtSignal(float)
+    distortion_preview = pyqtSignal(float)
 
     def __init__(self, parent: QWidget | None = None):
         super().__init__(
@@ -234,7 +231,6 @@ class CropToolPanel(CollapsiblePanel):
         self._distortion_settle_timer.setInterval(_SETTLE_DEBOUNCE_MS)
         self._distortion_settle_timer.timeout.connect(lambda: self.distortion_changed.emit(self._distortion.value()))
 
-    # ---- auto crop adjusters ----
     def set_auto_adjust_enabled(self, enabled: bool) -> None:
         """The two adjusters work on the last auto crop: off (and back at 0) until one has been run, and again once the crop or rotation is changed
         some other way. Never emits."""
@@ -245,7 +241,6 @@ class CropToolPanel(CollapsiblePanel):
         for row, tip in zip((self._auto_margin, self._auto_rotate), self._auto_tips):
             row.setToolTip(tip if enabled else "Run Auto Crop or Gradient Border Crop first, then nudge its result here.")
 
-    # ---- distortion ----
     def _on_distortion_changed(self, value: float) -> None:
         if self._distortion_preview_timer.isActive():
             self._pending_distortion = value
@@ -264,7 +259,6 @@ class CropToolPanel(CollapsiblePanel):
         """Sync the slider without emitting anything."""
         self._distortion.set_value(k1)
 
-    # ---- guide ----
     def current_guide(self) -> tuple[str, int]:
         return self._guide_combo.currentData(), self._guide_orientation
 
@@ -284,7 +278,6 @@ class CropToolPanel(CollapsiblePanel):
         self._guide_orientation = (self._guide_orientation + 1) % count
         self.guide_changed.emit(*self.current_guide())
 
-    # ---- fine rotation ----
     def _on_fine_changed(self, value: float) -> None:
         if self._fine_preview_timer.isActive():
             self._pending_fine = value
@@ -343,8 +336,7 @@ class CropToolPanel(CollapsiblePanel):
         self.set_auto_adjust_enabled(False)
 
     def set_flips(self, flip_h: bool, flip_v: bool) -> None:
-        """Sync the flip buttons without emitting anything - used after a
-        history revert."""
+        """Sync the flip buttons without emitting anything - used after a history revert."""
         self._flip_h_btn.blockSignals(True)
         self._flip_h_btn.setChecked(flip_h)
         self._flip_h_btn.blockSignals(False)

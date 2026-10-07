@@ -1,15 +1,4 @@
-"""Searching, filtering and sorting the library - the logic behind the Lighttable's search box and filter panel. No Qt imports.
-
-A row is a photo's index record (index.py) with what the editor keeps about it joined in: rating, flag, whether it has been edited, its
-folder's Roll Card (film, camera, lens, roll name) and its own note and place. A Query holds the search text and the filters; the search
-text is plain words (every word must appear somewhere - file name, folder, camera, lens, film, roll, note, place, date...) and may also
-carry field terms, darktable-style but typed:
-
-    camera:canon  lens:100  film:delta  roll:tokyo  folder:hotstack  name:7077  note:"light leak"  place:shibuya  ext:cr2
-    iso:400  iso:>=800  iso:100-400  focal:50..135  aperture:<2.8      (a number, a comparison, or a range)
-    date:2026  date:2026-10  date:2026-10-05  date:2026-09..2026-10  date:>=2026-10-01
-    rating:>=3  flag:keeper|rejected|none  edited:yes|no  tag:holiday
-    -word  -camera:canon                                               (a leading minus leaves matches out)"""
+"""Searching, filtering and sorting the library - the logic behind the Lighttable's search box and filter panel."""
 
 import os
 import re
@@ -31,13 +20,13 @@ def norm(path: str) -> str:
 
 @dataclass
 class Meta:
-    ratings: dict[str, int] = field(default_factory=dict)       # norm(path) -> stars
+    ratings: dict[str, int] = field(default_factory=dict)
     flags: dict[str, str] = field(default_factory=dict)
     edited: set[str] = field(default_factory=set)
-    rolls: dict[str, dict] = field(default_factory=dict)        # norm(folder) -> the Roll Card as a dict
-    notes: dict[str, tuple[str, str]] = field(default_factory=dict)  # norm(path) -> (note, place)
-    tags: dict[str, list[str]] = field(default_factory=dict)    # norm(path) -> its tags
-    film_iso: dict[str, int] = field(default_factory=dict)      # norm(path) -> the ISO of the film, as saved in the photo's own metadata
+    rolls: dict[str, dict] = field(default_factory=dict)
+    notes: dict[str, tuple[str, str]] = field(default_factory=dict)
+    tags: dict[str, list[str]] = field(default_factory=dict)
+    film_iso: dict[str, int] = field(default_factory=dict)
 
 
 def load_meta(conn, records: list[dict]) -> Meta:
@@ -86,9 +75,6 @@ def build_rows(records: list[dict], meta: Meta) -> list[dict]:
         card = meta.rolls.get(norm(rec["folder"]), {})
         note, place = meta.notes.get(key, ("", ""))
         tags = meta.tags.get(key, [])
-        # The ISO is the film's, never the camera's: a scanned negative's EXIF ISO is whatever the digitising camera was set to. So only an ISO
-        # that was set counts - the Roll Card's (or its known film's) first, then the one saved in the photo's own metadata - and a photo with
-        # neither has no ISO (exif_iso keeps the file's value, but nothing searches or shows it).
         film_iso = int(card.get("iso") or 0) or KNOWN_FILMS.get(str(card.get("film", "")).strip(), (0,))[0] or meta.film_iso.get(key, 0)
         row.update(
             exif_iso=rec["iso"], iso=film_iso, iso_from_film=bool(film_iso),
@@ -106,7 +92,6 @@ def build_rows(records: list[dict], meta: Meta) -> list[dict]:
     return rows
 
 
-# ---- the search text ----
 _TOKEN = re.compile(r'(-?)(?:([a-zA-Z]+):)?(?:"([^"]*)"|(\S+))')
 _DATE_KEYS = ("date", "taken", "shot")
 _NUM_KEYS = {"iso": "iso", "focal": "focal", "aperture": "aperture", "fnumber": "aperture", "f": "aperture", "rating": "rating", "stars": "rating"}
@@ -124,7 +109,7 @@ def parse_terms(text: str) -> list[tuple[bool, Optional[str], str]]:
         value = quoted if quoted else bare
         key = key.lower() if key else None
         if key and key not in _NUM_KEYS and key not in _TEXT_KEYS and key not in (*_DATE_KEYS, "flag", "edited"):
-            value, key = f"{key}:{value}", None  # an unknown "word:" is just text
+            value, key = f"{key}:{value}", None
         if value:
             terms.append((bool(neg), key, value))
     return terms
@@ -186,12 +171,11 @@ def _term_match(row: dict, key: Optional[str], value: str) -> bool:
         return _num_match(float(row.get(_NUM_KEYS[key], 0) or 0), value)
     if key in ("date", "taken"):
         return _date_match(row["day"], value)
-    if key == "shot":  # the days the roll was shot, from its Roll Card: any day in that span counts
+    if key == "shot":
         lo, hi = _date_bounds(row["shot_from"]) if row.get("shot_from") else None, _date_bounds(row["shot_to"] or row["shot_from"]) if row.get("shot_from") else None
         if not lo or not hi:
             return False
         first, last = lo[0], hi[1]
-        # the roll's span against the asked-for span: they match when the two overlap
         spec = value.strip()
         probe = _date_bounds(spec.split("..")[0].lstrip("<>=")) if spec else None
         probe_end = _date_bounds(spec.split("..")[1]) if ".." in spec else probe
@@ -214,15 +198,15 @@ def _term_match(row: dict, key: Optional[str], value: str) -> bool:
 class Query:
     text: str = ""
     rating_min: int = 0
-    flags: tuple[str, ...] = ()        # a subset of "keeper", "rejected", "none"; empty = any
+    flags: tuple[str, ...] = ()
     edited: Optional[bool] = None
-    camera: str = ""                    # the facet picks: "" = any
+    camera: str = ""
     lens: str = ""
     film: str = ""
     folder: str = ""
     tag: str = ""
     iso: int = 0
-    date_from: str = ""                 # 'YYYY-MM-DD', inclusive
+    date_from: str = ""
     date_to: str = ""
     sort: str = "taken"
     descending: bool = False

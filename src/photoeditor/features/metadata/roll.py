@@ -1,8 +1,4 @@
-"""The Roll Card - what one roll of film has in common - and how it combines with each frame's own details. No Qt imports.
-
-A roll card belongs to a folder: film, camera, lens, the dates it was shot, how it was developed and scanned. Every photo in
-the folder inherits it; a photo only stores what is its own (frame number, date, place, exposure, note). compose() puts the two
-together into the MetadataConfig the export writer takes, so the roll card never has to be copied onto each photo."""
+"""The Roll Card - what one roll of film has in common - and how it combines with each frame's own details."""
 
 import dataclasses
 import datetime as dt
@@ -12,29 +8,27 @@ from typing import Any, Optional
 from .capture import parse_capture_date
 from .models import FORMAT_OPTIONS, MetadataConfig
 
-# Films the app has canister art for (the Canister Watermark's): label -> (ISO, format, color type). Picking one fills the ISO.
 KNOWN_FILMS: dict[str, tuple[int, str, str]] = {
     "Fomapan 200": (200, "35mm", "B&W Negative"),
     "Kodak Gold 200": (200, "35mm", "ColorNegative"),
     "Ilford Delta 400": (400, "35mm", "B&W Negative"),
 }
-# the canister art asset key for a film label (features/watermark/logic.py FILMS)
 CANISTER_KEYS = {"Fomapan 200": "fomapan_200", "Kodak Gold 200": "kodak_gold_200", "Ilford Delta 400": "ilford_delta_400"}
 
 
 @dataclass(frozen=True)
 class RollCard:
-    name: str = ""            # "Roll 07", "Tokyo 2026" - free text
+    name: str = ""
     film: str = ""
     iso: Optional[int] = None
-    format: str = ""          # one of FORMAT_OPTIONS ("" = unset)
+    format: str = ""
     camera: str = ""
     lens: str = ""
-    shot_from: str = ""       # first day shot (YYYY, YYYY-MM or YYYY-MM-DD)
-    shot_to: str = ""         # last day shot; with both dates, frames are dated evenly across them
-    developed: str = ""       # lab or developer, in the user's own words
+    shot_from: str = ""
+    shot_to: str = ""
+    developed: str = ""
     scanned_with: str = ""
-    keep_original_exif: bool = False   # export copies the source file's EXIF untouched and writes nothing of the card
+    keep_original_exif: bool = False
 
     def is_blank(self) -> bool:
         return self == RollCard()
@@ -113,7 +107,7 @@ def compose(frame: MetadataConfig, roll: RollCard, index: Optional[int] = None, 
     if roll.name.strip():
         changes["capture_roll"] = roll.name.strip()
     if frame.capture_frame is None and index is not None:
-        changes["capture_frame"] = index                    # the frame's own number wins; otherwise its place on the roll
+        changes["capture_frame"] = index
     if not frame.capture_date:
         date = frame_date(roll, index, total)
         if date:

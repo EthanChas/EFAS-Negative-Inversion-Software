@@ -35,13 +35,13 @@ class NegativeToolPanel(CollapsiblePanel):
     detect_requested = pyqtSignal()
     inverted_toggled = pyqtSignal(bool)
     film_type_changed = pyqtSignal(str)
-    rgb_changed = pyqtSignal(float, float, float)  # settled
-    rgb_preview_requested = pyqtSignal(float, float, float)  # while dragging
-    base_pick_toggled = pyqtSignal(bool)  # the film-base eyedropper armed / disarmed
+    rgb_changed = pyqtSignal(float, float, float)
+    rgb_preview_requested = pyqtSignal(float, float, float)
+    base_pick_toggled = pyqtSignal(bool)
     base_cleared = pyqtSignal()
-    metering_preview = pyqtSignal(object)  # a Metering, while a slider is dragged
-    metering_changed = pyqtSignal(object)  # settled
-    region_draw_toggled = pyqtSignal(bool)  # the Draw Region tool armed / disarmed
+    metering_preview = pyqtSignal(object)
+    metering_changed = pyqtSignal(object)
+    region_draw_toggled = pyqtSignal(bool)
     region_cleared = pyqtSignal()
     metering_reset_requested = pyqtSignal()
 
@@ -207,7 +207,6 @@ class NegativeToolPanel(CollapsiblePanel):
         self._settle_timer.setInterval(_SETTLE_DEBOUNCE_MS)
         self._settle_timer.timeout.connect(self._on_settled)
 
-    # ---- film type / invert ----
     def show_detection(self, mode: ProcessMode) -> None:
         self._result_label.setText(f"Detected: {_MODE_LABELS[mode]}")
 
@@ -221,13 +220,11 @@ class NegativeToolPanel(CollapsiblePanel):
         self._type_combo.blockSignals(False)
 
     def set_inverted(self, inverted: bool) -> None:
-        """Sync the Invert button without emitting anything - used by
-        reset() and after a history revert."""
+        """Sync the Invert button without emitting anything - used by reset() and after a history revert."""
         self._invert_btn.blockSignals(True)
         self._invert_btn.setChecked(inverted)
         self._invert_btn.blockSignals(False)
 
-    # ---- film base ----
     def set_film_base(self, rgb: tuple[int, int, int] | None) -> None:
         """Show whether this roll has a measured film base - a swatch of its color, and a line saying so."""
         self._base_clear.setEnabled(rgb is not None)
@@ -244,7 +241,6 @@ class NegativeToolPanel(CollapsiblePanel):
         self._base_btn.setChecked(active)
         self._base_btn.blockSignals(False)
 
-    # ---- metering ----
     def set_metering(self, metering: Metering) -> None:
         """Show a Metering in the controls without emitting anything."""
         self._metering = metering
@@ -306,7 +302,6 @@ class NegativeToolPanel(CollapsiblePanel):
             self.metering_preview.emit(m)
             self._meter_preview_timer.start()
 
-    # ---- color trim ----
     def _current(self) -> tuple[float, float, float]:
         return (self._red.value(), self._green.value(), self._blue.value())
 

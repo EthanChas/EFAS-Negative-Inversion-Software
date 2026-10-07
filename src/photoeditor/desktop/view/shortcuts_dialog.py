@@ -33,7 +33,7 @@ def build_sections(current: dict[str, str]) -> list[tuple[str, list[tuple[str, s
 
 
 class ShortcutsDialog(QDialog):
-    """The keyboard cheat sheet: every shortcut in two columns. Non-modal, so it can stay open beside the photo while the keys are learned."""
+    """The keyboard cheat sheet: every shortcut in two columns."""
 
     def __init__(self, parent: QWidget | None = None, current: dict[str, str] | None = None):
         super().__init__(parent)

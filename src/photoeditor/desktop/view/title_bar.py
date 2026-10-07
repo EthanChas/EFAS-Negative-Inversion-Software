@@ -52,7 +52,6 @@ class TitleBar(QWidget):
         painter.fillRect(self.rect(), gradient)
         painter.end()
 
-    # ---- window controls ----
     def _minimize(self) -> None:
         self.window().showMinimized()
 
@@ -66,7 +65,6 @@ class TitleBar(QWidget):
     def _close(self) -> None:
         self.window().close()
 
-    # ---- drag to move ----
     def mousePressEvent(self, event: QMouseEvent) -> None:
         if event.button() == Qt.MouseButton.LeftButton:
             handle = self.window().windowHandle()

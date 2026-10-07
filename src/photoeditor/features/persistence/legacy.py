@@ -1,9 +1,4 @@
-"""One-time merge of the databases older versions wrote - no Qt imports.
-
-The database used to live in Qt's per-executable data folder, so launching as `python`, `pythonw` or the
-packaged EXE each wrote their own copy of the user's edits, flags and folder flat-fields. The app now keeps
-one database in a fixed folder; this copies those older ones into it. Old files are only read, never changed
-or deleted, and each is merged once (a flat-field the user removes later must not come back)."""
+"""One-time merge of the databases older versions wrote - no Qt imports."""
 
 import json
 import os
@@ -32,7 +27,7 @@ def merge_legacy_databases(conn: sqlite3.Connection, data_dir: str, legacy_dbs: 
     for path in todo:
         try:
             conn.commit()
-            conn.execute("ATTACH DATABASE ? AS legacy", (path,))  # only ever read from
+            conn.execute("ATTACH DATABASE ? AS legacy", (path,))
         except sqlite3.Error:
             continue
         try:
@@ -46,7 +41,7 @@ def merge_legacy_databases(conn: sqlite3.Connection, data_dir: str, legacy_dbs: 
             conn.commit()
             merged.append(os.path.abspath(path))
         except sqlite3.Error:
-            conn.rollback()  # an unreadable or half-written old file is skipped, not retried forever below
+            conn.rollback()
             merged.append(os.path.abspath(path))
         finally:
             conn.execute("DETACH DATABASE legacy")

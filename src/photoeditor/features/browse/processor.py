@@ -24,7 +24,7 @@ def _embedded_preview(path: str, max_dim: int):
         if thumb.format != rawpy.ThumbFormat.JPEG:
             return None
         img = Image.open(io.BytesIO(thumb.data))
-        img.draft("RGB", (max_dim * 2, max_dim * 2))  # the JPEG decoder can skip straight to a fraction of the size
+        img.draft("RGB", (max_dim * 2, max_dim * 2))
         return img.convert("RGB")
     except Exception:
         return None
@@ -41,9 +41,6 @@ def make_thumbnail_bytes(path: str, max_dim: int = 200) -> bytes | None:
             img = _embedded_preview(path, max_dim)
             if img is None:
                 with rawpy.imread(path) as raw:
-                    # half_size: a fast, low-detail decode is plenty for a
-                    # thumbnail - a full demosaic here would make browsing a
-                    # folder of RAWs noticeably slower for no visible benefit.
                     rgb = raw.postprocess(use_camera_wb=True, half_size=True, output_bps=8)
                 img = Image.fromarray(rgb)
         else:
@@ -80,7 +77,7 @@ def save_cached_thumbnail(cache_dir: str, path: str, data: bytes) -> None:
         with open(cache_path, "wb") as f:
             f.write(data)
     except OSError:
-        pass  # a thumbnail that fails to cache just regenerates next time
+        pass
 
 
 def _edited_cache_path(cache_dir: str, path: str) -> str:
@@ -99,7 +96,7 @@ def save_edited_thumbnail(cache_dir: str, path: str, pixels: np.ndarray, max_dim
         img.thumbnail((max_dim, max_dim), Image.Resampling.BILINEAR)
         img.save(_edited_cache_path(cache_dir, path), format="JPEG", quality=_THUMB_QUALITY)
     except Exception:
-        pass  # a thumbnail that fails to cache just shows the neutral one
+        pass
 
 
 def load_edited_thumbnail(cache_dir: str, path: str) -> bytes | None:

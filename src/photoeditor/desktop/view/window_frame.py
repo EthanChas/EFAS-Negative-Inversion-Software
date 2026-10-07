@@ -50,9 +50,6 @@ class WindowFrame(QWidget):
         outline = QColor(THEME.text_primary)
         w, h = rect.width(), rect.height()
 
-        # A one-pixel dark outline, then a raised bevel for the rest of the
-        # frame's thickness - the classic two-tier Win98 window border. Only
-        # the title bar itself carries the accent color, not the outer frame.
         painter.setPen(outline)
         painter.drawRect(0, 0, w - 1, h - 1)
 

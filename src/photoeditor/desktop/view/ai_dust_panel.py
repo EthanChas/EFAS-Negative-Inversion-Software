@@ -6,7 +6,7 @@ from ...theme.tokens import THEME
 from .collapsible_panel import CollapsiblePanel
 from .slider_row import SliderRow
 
-_SETTLE_DEBOUNCE_MS = 350  # the repair is slow, so a slider settles before it is applied
+_SETTLE_DEBOUNCE_MS = 350
 
 
 class AiDustPanel(CollapsiblePanel):
@@ -14,7 +14,7 @@ class AiDustPanel(CollapsiblePanel):
     the usual repair fills what it marks. The photo is analysed once at full resolution - seconds to a minute, in the background, with
     progress - and the result is kept on disk. Threshold and Grow then change what is repaired without a new analysis."""
 
-    changed = pyqtSignal(bool, float, int)  # on, threshold, grow - settled
+    changed = pyqtSignal(bool, float, int)
     cancel_requested = pyqtSignal()
 
     def __init__(self, parent: QWidget | None = None):

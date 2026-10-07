@@ -7,8 +7,8 @@ from PyQt6.QtWidgets import QTreeWidget, QTreeWidgetItem
 from ...features.browse.logic import folder_counts, list_subfolders
 from ...theme.tokens import THEME
 
-_PLACEHOLDER = "__loading__"  # UserRole marker for an unexpanded node's dummy child
-ROOTS_SETTINGS_KEY = "library/roots"  # shared between ImportWindow and the embedded LibraryPanel
+_PLACEHOLDER = "__loading__"
+ROOTS_SETTINGS_KEY = "library/roots"
 
 
 class FolderTree(QTreeWidget):
@@ -43,7 +43,7 @@ class FolderTree(QTreeWidget):
     def add_root(self, folder: str) -> None:
         for i in range(self.topLevelItemCount()):
             if self.topLevelItem(i).data(0, Qt.ItemDataRole.UserRole) == folder:
-                return  # already a root
+                return
         self.addTopLevelItem(self._make_item(folder))
         self._resize_columns()
 
@@ -73,7 +73,7 @@ class FolderTree(QTreeWidget):
         return item
 
     def reveal(self, folder: str) -> bool:
-        """Expand down to folder and highlight it, when it sits under one of the roots (nothing is emitted). False when it does not."""
+        """Expand down to folder and highlight it, when it sits under one of the roots (nothing is emitted)."""
         target = os.path.normcase(os.path.abspath(folder))
         for i in range(self.topLevelItemCount()):
             item = self.topLevelItem(i)
@@ -85,7 +85,7 @@ class FolderTree(QTreeWidget):
                     return True
                 if not target.startswith(here.rstrip(os.sep) + os.sep):
                     break
-                self.expandItem(item)  # reads the children on first expand
+                self.expandItem(item)
                 item = next((item.child(c) for c in range(item.childCount())
                              if item.child(c).data(0, Qt.ItemDataRole.UserRole) not in (None, _PLACEHOLDER)
                              and (target == os.path.normcase(os.path.abspath(item.child(c).data(0, Qt.ItemDataRole.UserRole)))
@@ -94,7 +94,7 @@ class FolderTree(QTreeWidget):
 
     def _on_expanded(self, item: QTreeWidgetItem) -> None:
         if item.childCount() != 1 or item.child(0).data(0, Qt.ItemDataRole.UserRole) != _PLACEHOLDER:
-            return  # already expanded once, or has no children at all
+            return
         item.takeChildren()
         folder = item.data(0, Qt.ItemDataRole.UserRole)
         for sub in list_subfolders(folder):
@@ -113,10 +113,6 @@ class FolderTree(QTreeWidget):
 
 
 def _count_label(images: int, subfolders: int) -> str:
-    # A folder of folders (a library root above the rolls themselves) shows
-    # how many folders it holds; a roll - any folder that actually contains
-    # images, even alongside subfolders - shows its photo count instead,
-    # "empty" at zero rather than "0 photos".
     if images == 0 and subfolders > 0:
         return f"{subfolders} folder" + ("" if subfolders == 1 else "s")
     if images == 0:

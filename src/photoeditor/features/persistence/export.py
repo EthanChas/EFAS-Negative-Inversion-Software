@@ -1,8 +1,4 @@
-"""Exporting all the app's own data to one zip, and getting it back - sqlite3 / zipfile only, no Qt imports.
-
-An export holds a consistent copy of the database (SQLite's backup API, safe while the app is writing), the preset and settings JSON files and the
-saved gear, plus manifest.json. Importing never touches the live files: the zip is unpacked into restore_pending/, and the next start swaps it in
-(apply_pending_restore) before the database is opened, keeping what it replaces in backups/before-restore-<time>/."""
+"""Exporting all the app's own data to one zip, and getting it back - sqlite3 / zipfile only, no Qt imports."""
 
 import datetime as dt
 import json
@@ -12,7 +8,6 @@ import sqlite3
 import zipfile
 
 DB_NAME = "photoeditor.db"
-# the files worth carrying to another machine (caches, the library index, the session and recent lists are rebuilt on their own)
 DATA_FILES = ("settings.json", "presets.json", "look_presets.json", "module_presets.json", "metadata_sticky.json")
 GEAR_DIR = "gear"
 MANIFEST = "manifest.json"
@@ -72,7 +67,7 @@ def _safe(name: str) -> bool:
 
 
 def check_source(path: str) -> str:
-    """"" when `path` is something Import can use: an export zip, or a database backup (.db). Otherwise a sentence saying why not."""
+    """"" when `path` is something Import can use: an export zip, or a database backup (.db)."""
     if not os.path.isfile(path):
         return "That file does not exist."
     if path.lower().endswith(".db"):
@@ -98,7 +93,7 @@ def check_source(path: str) -> str:
 
 
 def stage_import(path: str, data_dir: str) -> list[str]:
-    """Unpack an export (or copy a .db backup) into data_dir/restore_pending/ for the next start. Returns what was staged."""
+    """Unpack an export (or copy a .db backup) into data_dir/restore_pending/ for the next start."""
     problem = check_source(path)
     if problem:
         raise ValueError(problem)
@@ -130,7 +125,7 @@ def cancel_pending(data_dir: str) -> None:
 
 
 def apply_pending_restore(data_dir: str, now: dt.datetime | None = None) -> list[str]:
-    """At start, before the database is opened: swap in what stage_import unpacked. What it replaces is kept first. Returns the files restored."""
+    """At start, before the database is opened: swap in what stage_import unpacked."""
     pending = os.path.join(data_dir, PENDING)
     if not os.path.isdir(pending):
         return []
@@ -147,7 +142,7 @@ def apply_pending_restore(data_dir: str, now: dt.datetime | None = None) -> list
                     os.makedirs(os.path.dirname(os.path.join(keep, rel)), exist_ok=True)
                     shutil.copy2(live, os.path.join(keep, rel))
                 os.makedirs(os.path.dirname(live), exist_ok=True)
-                if rel == DB_NAME:  # the old write-ahead files belong to the old database
+                if rel == DB_NAME:
                     for ext in ("-wal", "-shm"):
                         try:
                             os.remove(live + ext)

@@ -4,7 +4,7 @@ from PyQt6.QtWidgets import QDoubleSpinBox, QHBoxLayout, QLabel, QSlider, QWidge
 
 from ...theme.tokens import THEME
 
-_SLIDER_STEPS = 100  # slider units per 1.0 of range
+_SLIDER_STEPS = 100
 
 
 class ResettableSlider(QSlider):

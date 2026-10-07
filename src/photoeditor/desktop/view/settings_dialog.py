@@ -52,8 +52,7 @@ def _seq_text(edit: QKeySequenceEdit) -> str:
 
 
 class SettingsDialog(QDialog):
-    """Settings > Preferences: the app's own options, in categories on the left. The caller saves values() (features/settings) when it is accepted;
-    the buttons that act at once (back up now, export, clear a cache) do so as they are pressed."""
+    """Settings > Preferences: the app's own options, in categories on the left."""
 
     def __init__(self, parent: QWidget | None = None, controller=None):
         super().__init__(parent)
@@ -94,7 +93,6 @@ class SettingsDialog(QDialog):
         outer.addLayout(row)
         self._check_keys()
 
-    # ---- General ----
     def _general_page(self) -> QWidget:
         page = QWidget()
         col = QVBoxLayout(page)
@@ -108,7 +106,6 @@ class SettingsDialog(QDialog):
         col.addStretch(1)
         return page
 
-    # ---- Image decoding ----
     def _decoding_page(self) -> QWidget:
         page = QWidget()
         col = QVBoxLayout(page)
@@ -140,7 +137,6 @@ class SettingsDialog(QDialog):
     def _show_demosaic_hint(self) -> None:
         self._demosaic_hint.setText(settings.DEMOSAIC_CHOICES[self._demosaic.currentData()][2])
 
-    # ---- Keybinds ----
     def _keybinds_page(self) -> QWidget:
         page = QWidget()
         col = QVBoxLayout(page)
@@ -226,7 +222,6 @@ class SettingsDialog(QDialog):
         self._key_problem.setText("\n".join(problems))
         self._save.setEnabled(not problems)
 
-    # ---- Data & backup ----
     def _data_page(self) -> QWidget:
         page = QWidget()
         col = QVBoxLayout(page)
@@ -398,7 +393,6 @@ class SettingsDialog(QDialog):
     def _refresh_pending(self) -> None:
         self._pending_cancel.setVisible(data_export.pending_restore(app_data_dir()))
 
-    # ---- Storage ----
     def _storage_page(self) -> QWidget:
         page = QWidget()
         col = QVBoxLayout(page)
@@ -429,7 +423,6 @@ class SettingsDialog(QDialog):
         shutil.rmtree(path, ignore_errors=True)
         self._refresh_size(key, path)
 
-    # ---- result ----
     def values(self) -> dict:
         return {
             "raw_demosaic": self._demosaic.currentData(), "raw_auto_bright": self._auto_bright.isChecked(), "auto_advance": self._auto_advance.isChecked(),

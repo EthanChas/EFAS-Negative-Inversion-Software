@@ -4,17 +4,11 @@ import numpy as np
 
 HistogramData = dict[str, list[int]]
 
-# Standard luma weights (ITU-R BT.601) - used for the single "how bright is
-# this pixel/image overall" reading, distinct from the three raw R/G/B channels.
 _LUMA_WEIGHTS = (0.299, 0.587, 0.114)
 
 
 def rgb_histogram(pixels: np.ndarray) -> HistogramData:
-    """Per-channel pixel-value histogram (0-255) for an HxWx3 uint8 array.
-    bincount, not np.histogram - histogram's float bin-edge machinery is
-    markedly slower for this exact 0-255-integer case (measured ~5x), and
-    with this running on every interactive exposure-slider tick, that gap
-    was the difference between smooth and visibly stuttering."""
+    """Per-channel pixel-value histogram (0-255) for an HxWx3 uint8 array."""
     channels = {}
     for index, name in enumerate(("r", "g", "b")):
         counts = np.bincount(pixels[:, :, index].reshape(-1), minlength=256)
@@ -99,10 +93,10 @@ def exposure_label(avg_luminance: float) -> str:
     return "Well exposed"
 
 
-CLIP_SHADOW_MAX = 3  # luminance at or below this counts as crushed to black
-CLIP_HIGHLIGHT_MIN = 252  # at or above this counts as blown out
-_CLIP_SHADOW_RGB = (50, 110, 255)  # blue
-_CLIP_HIGHLIGHT_RGB = (255, 40, 40)  # red
+CLIP_SHADOW_MAX = 3
+CLIP_HIGHLIGHT_MIN = 252
+_CLIP_SHADOW_RGB = (50, 110, 255)
+_CLIP_HIGHLIGHT_RGB = (255, 40, 40)
 
 
 def clipping_overlay(pixels: np.ndarray, shadows: bool, highlights: bool):

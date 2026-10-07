@@ -1,7 +1,7 @@
 [project]
 name = "photoeditor"
-version = "0.2.0"
-description = "A photo editing desktop app."
+version = "0.3.0"
+description = "EFAS Negative Inversion Software: a film-negative photo editor built with PyQt6."
 requires-python = ">=3.10"
 dependencies = [
     "PyQt6>=6.6",

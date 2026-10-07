@@ -7,9 +7,9 @@ from ..features.aidust import logic as ai
 
 
 class AiDustWorker(QThread):
-    progress = pyqtSignal(int, int)  # tiles done, tiles in all
-    finished_ok = pyqtSignal(object)  # the worker itself, so its key and result can be read: .path, .inverted, .mono, .prob
-    failed = pyqtSignal(object, str)  # the worker, a message
+    progress = pyqtSignal(int, int)
+    finished_ok = pyqtSignal(object)
+    failed = pyqtSignal(object, str)
 
     def __init__(self, path: str, raw, inverted: bool, mono: bool):
         super().__init__()
@@ -25,7 +25,7 @@ class AiDustWorker(QThread):
             self.prob = ai.probability(
                 self.path, self.raw, self.inverted, self.mono, progress=lambda done, total: self.progress.emit(done, total), cancelled=lambda: self._cancel
             )
-        except Exception as exc:  # a missing runtime or a corrupt model must not take the editor down
+        except Exception as exc:
             self.failed.emit(self, f"{type(exc).__name__}: {exc}")
             return
         if self.prob is not None and not self._cancel:

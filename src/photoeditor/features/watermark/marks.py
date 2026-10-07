@@ -1,8 +1,4 @@
-"""Simple watermarks - a line of text and/or a logo image laid over the finished picture. numpy + PIL, no Qt imports.
-
-Alongside the canister watermark (logic.py), these are the plain kind: type a copyright line and pick where it goes, how big it is, how
-see-through, white or black with a faint shadow for legibility; and/or put a logo (a PNG with a transparent background works best) in a
-corner. Sizes are fractions of the picture's shorter side, so a mark looks the same on a small export and a full-size one."""
+"""Simple watermarks - a line of text and/or a logo image laid over the finished picture."""
 
 import dataclasses
 import os
@@ -16,8 +12,8 @@ from .logic import MARGIN, POSITIONS, _FONT_FILES, _blend
 
 DEFAULT_TEXT_POSITION = "bottom_right"
 DEFAULT_LOGO_POSITION = "bottom_left"
-TEXT_SIZE_RANGE = (0.01, 0.15)   # font height / the picture's shorter side
-LOGO_SIZE_RANGE = (0.03, 0.80)   # the logo's longer side / the picture's shorter side
+TEXT_SIZE_RANGE = (0.01, 0.15)
+LOGO_SIZE_RANGE = (0.03, 0.80)
 COLORS = {"white": "White", "black": "Black"}
 
 
@@ -41,7 +37,7 @@ class Marks:
     text_color: str = "white"
     text_position: str = DEFAULT_TEXT_POSITION
     text_shadow: bool = True
-    logo: str = ""                    # path of an image file; "" for none
+    logo: str = ""
     logo_size: float = 0.18
     logo_opacity: float = 0.9
     logo_position: str = DEFAULT_LOGO_POSITION
@@ -95,8 +91,7 @@ def _font(size: int):
 
 @lru_cache(maxsize=16)
 def _text_sprite(text: str, height_px: int, color: str, opacity: float, shadow: bool, align: str) -> tuple[np.ndarray, np.ndarray]:
-    """The text as a (premultiplied RGB float32 0-255, alpha float32 0-1) sprite. Several lines are kept as typed, aligned left, centre or
-    right to match the side of the picture they sit on."""
+    """The text as a (premultiplied RGB float32 0-255, alpha float32 0-1) sprite."""
     from PIL import Image, ImageDraw
 
     lines = text.split("\n")
@@ -137,7 +132,7 @@ def _logo_sprite(path: str, mtime: float, long_side: int, opacity: float) -> tup
         rgba = np.asarray(im.convert("RGBA"), dtype=np.float32)
     h, w = rgba.shape[:2]
     k = long_side / max(h, w)
-    rgba[:, :, :3] *= rgba[:, :, 3:4] / 255.0  # premultiply before resizing, so the edges do not pick up the transparent pixels' color
+    rgba[:, :, :3] *= rgba[:, :, 3:4] / 255.0
     size = (max(1, round(w * k)), max(1, round(h * k)))
     rgba = cv2.resize(rgba, size, interpolation=cv2.INTER_AREA if k < 1 else cv2.INTER_LINEAR)
     alpha = rgba[:, :, 3] / 255.0 * float(opacity)
@@ -153,7 +148,7 @@ def _place(position: str, iw: int, ih: int, sw: int, sh: int, margin: int) -> tu
 
 
 def apply_marks(image: np.ndarray, marks: Marks) -> np.ndarray:
-    """uint8 RGB in, uint8 RGB out (the input is never modified): the logo, then the text over it. Nothing to draw returns the input."""
+    """uint8 RGB in, uint8 RGB out (the input is never modified): the logo, then the text over it."""
     if not marks.active():
         return image
     ih, iw = image.shape[:2]
@@ -163,7 +158,7 @@ def apply_marks(image: np.ndarray, marks: Marks) -> np.ndarray:
     if marks.has_logo():
         try:
             rgb, alpha = _logo_sprite(marks.logo, os.path.getmtime(marks.logo), max(4, round(short * marks.logo_size)), marks.logo_opacity)
-        except Exception:  # an unreadable file is skipped; it must not stop the export
+        except Exception:
             rgb = alpha = None
         if alpha is not None:
             x, y = _place(marks.logo_position, iw, ih, alpha.shape[1], alpha.shape[0], margin)

@@ -1,12 +1,4 @@
-"""Canister watermark - numpy + OpenCV, no Qt/UI imports.
-
-Composites a pre-rendered 3D film canister (assets/canisters/<film>__<texture>.png,
-RGBA, transparent background, rendered from Blender with soft matte shading and
-no cast shadows or specular highlights) over the finished picture. Film picks the
-label, Texture the canister's body material, Size how big it is relative to the
-picture, Position which corner/edge it sits in. Optionally the camera and lens are
-written beside it in white, with a tiny credit line underneath. OpenCV and PIL are
-imported lazily."""
+"""Canister watermark - numpy + OpenCV, no Qt/UI imports."""
 
 from functools import lru_cache
 from pathlib import Path
@@ -18,7 +10,6 @@ ASSET_DIR = Path(__file__).resolve().parents[2] / "assets" / "canisters"
 
 FILMS = {"fomapan_200": "Fomapan 200", "kodak_gold_200": "Kodak Gold 200", "ilford_delta_400": "Ilford Delta 400"}
 TEXTURES = {"plastic": "Plastic", "aluminium": "Aluminium", "scuffed": "Scuffed plastic"}
-# The canister's longer side as a fraction of the picture's shorter side.
 SIZES = {"small": ("Small", 0.16), "medium": ("Medium", 0.26), "large": ("Large", 0.38), "huge": ("Extra large", 0.55)}
 POSITIONS = {
     "top_left": "Top left", "top_center": "Top center", "top_right": "Top right",
@@ -28,7 +19,7 @@ POSITIONS = {
 DEFAULT_TEXTURE = "plastic"
 DEFAULT_SIZE = "medium"
 DEFAULT_POSITION = "bottom_right"
-MARGIN = 0.03  # gap to the picture's edge, as a fraction of its shorter side
+MARGIN = 0.03
 CREDIT = "Edited with Ethans Negative Inversion App"
 _FONT_FILES = ("segoeui.ttf", "arial.ttf", "DejaVuSans.ttf")
 
@@ -59,7 +50,7 @@ def _sprite(film: str, texture: str, long_side: int) -> tuple[np.ndarray, np.nda
     k = long_side / max(h, w)
     size = (max(1, round(w * k)), max(1, round(h * k)))
     f = rgba.astype(np.float32)
-    f[:, :, :3] *= f[:, :, 3:4] / 255.0  # premultiply first, so edges don't pick up the transparent pixels' color
+    f[:, :, :3] *= f[:, :, 3:4] / 255.0
     f = cv2.resize(f, size, interpolation=cv2.INTER_AREA if k < 1 else cv2.INTER_LINEAR)
     return np.ascontiguousarray(f[:, :, :3]), np.ascontiguousarray(f[:, :, 3] / 255.0)
 
@@ -77,14 +68,13 @@ def _font(size: int):
 
 @lru_cache(maxsize=16)
 def _text_block(camera: str, lens: str, sprite_h: int, max_w: int, align_right: bool) -> tuple[np.ndarray, np.ndarray]:
-    """White camera/lens lines with the tiny credit underneath, as (premultiplied RGB, alpha) like _sprite.
-    Sized from the canister's height; shrunk if the widest line would not fit in max_w."""
+    """White camera/lens lines with the tiny credit underneath, as (premultiplied RGB, alpha) like _sprite."""
     from PIL import Image, ImageDraw
 
     lines = [t.strip() for t in (camera, lens) if t.strip()]
     probe = ImageDraw.Draw(Image.new("L", (8, 8)))
     scale = 1.0
-    for _ in range(3):  # shrink until the widest line fits (font sizes are integers, so it may take a pass or two)
+    for _ in range(3):
         big, small = max(8, round(sprite_h * 0.075 * scale)), max(6, round(sprite_h * 0.040 * scale))
         rows = [(t, _font(big)) for t in lines] + [(CREDIT, _font(small))]
         widths = [probe.textlength(t, font=f) for t, f in rows]
@@ -103,7 +93,7 @@ def _text_block(camera: str, lens: str, sprite_h: int, max_w: int, align_right: 
     for (t, f), tw, th in zip(rows, widths, heights):
         x = (w - shadow - 2 - tw) if align_right else 0
         top = y - f.getbbox("Hgy")[1]
-        ds.text((x + shadow, top + shadow), t, font=f, fill=(0, 0, 0, 120))   # faint drop shadow, for legibility on bright pictures
+        ds.text((x + shadow, top + shadow), t, font=f, fill=(0, 0, 0, 120))
         d.text((x, top), t, font=f, fill=(255, 255, 255, 255))
         y += th + gap
     shade.alpha_composite(layer)
@@ -129,9 +119,7 @@ def apply_watermark(
     image: np.ndarray, film: str, texture: str, size: str, position: str,
     info: bool = False, camera: str = "", lens: str = "",
 ) -> np.ndarray:
-    """uint8 RGB in, uint8 RGB out; the input is never modified. Unknown or 'off'
-    settings return it untouched. With info on, the camera/lens text and the credit
-    sit beside the canister: left of it when it is on the right, otherwise to its right."""
+    """uint8 RGB in, uint8 RGB out; the input is never modified."""
     if not is_active(film) or texture not in TEXTURES or size not in SIZES or position not in POSITIONS:
         return image
     if not asset_path(film, texture).exists():
@@ -153,7 +141,7 @@ def apply_watermark(
     group_w = sw + (gap + tw if text else 0)
     gx = margin if horiz == "left" else iw - group_w - margin if horiz == "right" else (iw - group_w) // 2
     y = margin if vert == "top" else ih - sh - margin if vert == "bottom" else (ih - sh) // 2
-    if text and horiz == "right":                       # text on the canister's left
+    if text and horiz == "right":
         text_x, x = gx, gx + tw + gap
     else:
         x, text_x = gx, gx + sw + gap

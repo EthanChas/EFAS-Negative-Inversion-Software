@@ -7,7 +7,7 @@ from ..features.focuspeaking.logic import level_map
 
 
 class PeakingWorker(QThread):
-    done = pyqtSignal(int, object)  # the request number it was started for, the level map (None when nothing stands out)
+    done = pyqtSignal(int, object)
 
     def __init__(self, request: int, pixels):
         super().__init__()

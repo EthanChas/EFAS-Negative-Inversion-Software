@@ -80,7 +80,6 @@ def compute_exif_write_flags(config: MetadataConfig, payload: "MetadataPayload")
 class MetadataPayload:
     """Resolved metadata that will be written to exported files."""
 
-    # Original analog capture (standard EXIF when exif_flags permit; negpy:Capture* in XMP)
     camera_make: str = ""
     camera_model: str = ""
     lens_make: str = ""
@@ -102,7 +101,6 @@ class MetadataPayload:
     location_state: str = ""
     location_country: str = ""
 
-    # Digitization rig (negpy:Scan* XMP only; source EXIF when capture gear not set)
     scan_camera_make: str = ""
     scan_camera_model: str = ""
     scan_lens_make: str = ""

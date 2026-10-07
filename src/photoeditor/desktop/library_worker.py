@@ -12,8 +12,8 @@ from ..features.library.index import LibraryIndex
 class LibraryIndexWorker(QThread):
     """Scans the library folders and reads the EXIF of new and changed files into the index (features/library/index.py)."""
 
-    progress = pyqtSignal(int, int)          # files read, files to read
-    finished_ok = pyqtSignal(int, int, int)  # added, changed, removed
+    progress = pyqtSignal(int, int)
+    finished_ok = pyqtSignal(int, int, int)
 
     def __init__(self, roots: list[str], db_path: str | None = None):
         super().__init__()
@@ -25,7 +25,7 @@ class LibraryIndexWorker(QThread):
         self._cancel = True
 
     def run(self) -> None:
-        index = LibraryIndex(self._db_path)  # sqlite connections belong to the thread that made them
+        index = LibraryIndex(self._db_path)
         try:
             added, changed, removed = index.refresh(
                 self._roots, progress=lambda done, total, _path: self.progress.emit(done, total), cancelled=lambda: self._cancel
@@ -36,7 +36,7 @@ class LibraryIndexWorker(QThread):
 
 
 class _ThumbSignals(QObject):
-    ready = pyqtSignal(str, object)  # path, QImage (null when the file could not be read)
+    ready = pyqtSignal(str, object)
 
 
 class _ThumbTask(QRunnable):
@@ -46,13 +46,12 @@ class _ThumbTask(QRunnable):
 
     def run(self) -> None:
         data = get_or_make_thumbnail_bytes(self._cache_dir, self._path)
-        image = QImage.fromData(data) if data else QImage()  # decoded here, off the window's thread
+        image = QImage.fromData(data) if data else QImage()
         self._signals.ready.emit(self._path, image)
 
 
 class ThumbPool(QObject):
-    """Thumbnails for the grid, made a few at a time in the background. The newest request runs first, so what scrolls into view is made
-    before what scrolled past. Finished ones are kept (the newest few hundred) as pixmaps."""
+    """Thumbnails for the grid, made a few at a time in the background."""
 
     thumb_ready = pyqtSignal(str)
 
@@ -86,7 +85,7 @@ class ThumbPool(QObject):
         self._pixmaps.pop(path, None)
 
     def clear_pending(self) -> None:
-        self._pool.clear()  # queued tasks that have not started; running ones finish
+        self._pool.clear()
         self._pending.clear()
 
     def _on_ready(self, path: str, image: QImage) -> None:

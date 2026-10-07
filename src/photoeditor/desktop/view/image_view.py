@@ -13,11 +13,11 @@ from .loading_overlay import ExportIndicator, HqIndicator
 from .peaking_slider import PeakingSlider
 
 _PLACEHOLDER_TEXT = "No image open.\nUse File → Open Image... to get started."
-_NO_MAX = 16777215  # Qt's own QWIDGETSIZE_MAX
+_NO_MAX = 16777215
 _MIN_ZOOM = 0.05
 _MAX_ZOOM = 8.0
 _ZOOM_STEP = 0.9
-_CROP_HANDLE_RADIUS = 8  # widget pixels - how close a click needs to be to grab a handle
+_CROP_HANDLE_RADIUS = 8
 
 
 def _checker_pixmap(cell: int = 4) -> QPixmap:
@@ -46,7 +46,7 @@ def _rgb_to_pixmap(pixels: np.ndarray) -> QPixmap:
     pixels = np.ascontiguousarray(pixels)
     h, w, _ = pixels.shape
     image = QImage(pixels.data, w, h, w * 3, QImage.Format.Format_RGB888)
-    return QPixmap.fromImage(image.copy())  # copy() detaches from `pixels`' own buffer
+    return QPixmap.fromImage(image.copy())
 
 
 class _ImageLabel(QLabel):
@@ -55,15 +55,15 @@ class _ImageLabel(QLabel):
     mapping a mouse position to a source-image pixel is a plain division by
     the current scale, no centering-offset math needed."""
 
-    pixel_hovered = pyqtSignal(int, int, object)  # image x, image y, (r, g, b)
+    pixel_hovered = pyqtSignal(int, int, object)
     hover_cleared = pyqtSignal()
-    pixel_picked = pyqtSignal(int, int, object)  # a click while in pick mode
-    crop_requested = pyqtSignal(int, int, int, int)  # x1, y1, x2, y2, a drag while in crop mode
-    drag_moved = pyqtSignal(int, int)  # dx, dy since the last drag_moved (screen pixels)
-    proof_picked = pyqtSignal(int, int)  # a tile of the test strip / ring-around was clicked: row, column
-    stroke_completed = pyqtSignal(object)  # list of (x, y) image-pixel points - a painted stroke or a finished polyline
-    tool_clicked = pyqtSignal(float, float)  # a click while the single-click heal tool is active
-    source_picked = pyqtSignal(float, float)  # an Alt-click while the clone tool is active: where to copy from, in image pixels
+    pixel_picked = pyqtSignal(int, int, object)
+    crop_requested = pyqtSignal(int, int, int, int)
+    drag_moved = pyqtSignal(int, int)
+    proof_picked = pyqtSignal(int, int)
+    stroke_completed = pyqtSignal(object)
+    tool_clicked = pyqtSignal(float, float)
+    source_picked = pyqtSignal(float, float)
 
     def __init__(self):
         super().__init__()
@@ -76,9 +76,9 @@ class _ImageLabel(QLabel):
         self._pick_cursor: QCursor | None = None
         self._crop_mode = False
         self._cropping = False
-        self._crop_rect_image: tuple[int, int, int, int] | None = None  # (x1,y1,x2,y2), image coords
-        self._crop_handle: str | None = None  # "move", a compass code ("nw".."se"), or None
-        self._crop_drag_anchor: tuple[float, float] | None = None  # widget-space press position
+        self._crop_rect_image: tuple[int, int, int, int] | None = None
+        self._crop_handle: str | None = None
+        self._crop_drag_anchor: tuple[float, float] | None = None
         self._crop_drag_start_rect: tuple[int, int, int, int] | None = None
         self._overlay: QImage | None = None
         self._overlay_buf: np.ndarray | None = None
@@ -88,28 +88,28 @@ class _ImageLabel(QLabel):
         self._range_buf: np.ndarray | None = None
         self._range_grid = QBrush(_grid_pixmap())
         self._peak: QImage | None = None
-        self._clone_source: tuple[float, float] | None = None  # the clone tool's source and offset (image pixels), for the dashed marker
+        self._clone_source: tuple[float, float] | None = None
         self._clone_offset: tuple[float, float] | None = None
         self._peak_buf: np.ndarray | None = None
         self._checker = QBrush(_checker_pixmap())
-        self._crop_ratio = None  # None = free, "original" = the frame's own shape, or a landscape w/h number
+        self._crop_ratio = None
         self._guide = CropGuide.THIRDS
         self._guide_orientation = 0
-        self._tool: str | None = None  # "heal" (drag), "smart" (click) or "polyline" (click points)
-        self._tool_radius = None  # () -> brush radius in image pixels, for the cursor
+        self._tool: str | None = None
+        self._tool_radius = None
         self._stroke: list[tuple[float, float]] = []
         self._painting = False
         self._hover: QPointF | None = None
         self._drag_button = Qt.MouseButton.LeftButton
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
-        self._proof: QImage | None = None  # the test strip / ring-around mosaic, drawn over the whole picture
+        self._proof: QImage | None = None
         self._proof_buf = None
         self._proof_top: list[str] = []
         self._proof_left: list[str] = []
         self._proof_hover: tuple[int, int] | None = None
-        self._split: QImage | None = None  # the "before" picture, drawn over the left of the divider
+        self._split: QImage | None = None
         self._split_buf = None
-        self._split_pos = 0.5              # the divider, as a share of the picture's width
+        self._split_pos = 0.5
         self._split_drag = False
         self.setMouseTracking(True)
 
@@ -168,8 +168,7 @@ class _ImageLabel(QLabel):
         return None
 
     def _paint_proof(self, painter: QPainter) -> None:
-        """The mosaic over the picture, like a print: no grid lines, so the patches read as one picture. Only the patch under the cursor is outlined.
-        The columns are named along the top edge and the rows down the left; the rung that is the photo as it is shows in yellow."""
+        """The mosaic over the picture, like a print: no grid lines, so the patches read as one picture."""
         painter.drawImage(QRectF(self.rect()), self._proof)
         painter.setBrush(Qt.BrushStyle.NoBrush)
         if self._proof_hover is not None:
@@ -179,7 +178,7 @@ class _ImageLabel(QLabel):
             painter.setPen(QPen(QColor(255, 255, 255, 235), 1.5))
             painter.drawRect(rect)
         if min(self.width(), self.height()) / 5 < 34:
-            return  # too small for the labels not to overlap
+            return
         font = painter.font()
         font.setBold(True)
         painter.setFont(font)
@@ -268,8 +267,6 @@ class _ImageLabel(QLabel):
         self.update()
 
     def _paint_range(self, painter: QPainter, region: QRect) -> None:
-        # Off-screen for just the exposed region, like the clipping marks: a faint green wash over the selected pixels, then the same
-        # mask again kept only along the lines of a grid, so the area reads as a green lattice with the picture still visible through it.
         img = QImage(region.size(), QImage.Format.Format_ARGB32_Premultiplied)
         img.fill(Qt.GlobalColor.transparent)
         p = QPainter(img)
@@ -301,9 +298,6 @@ class _ImageLabel(QLabel):
         self.update()
 
     def _paint_clip(self, painter: QPainter, region: QRect) -> None:
-        # Composited off-screen for just the exposed region (a zoomed-in
-        # label can be thousands of pixels wide): the marks, then a checker
-        # fill keeps only every other square of them.
         img = QImage(region.size(), QImage.Format.Format_ARGB32_Premultiplied)
         img.fill(Qt.GlobalColor.transparent)
         p = QPainter(img)
@@ -315,14 +309,13 @@ class _ImageLabel(QLabel):
         painter.drawImage(region.topLeft(), img)
 
     def set_tool(self, mode: str | None, radius_provider=None) -> None:
-        """Heal-brush tools: mode None turns them off. radius_provider() is
-        the cursor's brush radius in image pixels."""
+        """Heal-brush tools: mode None turns them off."""
         self._tool = mode
         self._tool_radius = radius_provider
         self._stroke = []
         self._painting = False
         if mode is not None:
-            self.setCursor(Qt.CursorShape.BlankCursor)  # the brush circle is the cursor
+            self.setCursor(Qt.CursorShape.BlankCursor)
         else:
             self.unsetCursor()
         self.update()
@@ -340,7 +333,7 @@ class _ImageLabel(QLabel):
         stroke, self._stroke = self._stroke, []
         self.update()
         if len(stroke) >= 2:
-            if self._tool == "curve":  # the smooth curve through the clicked points, as a dense polyline
+            if self._tool == "curve":
                 stroke = smooth_path(stroke, 2.0)
             self.stroke_completed.emit(stroke)
 
@@ -371,8 +364,7 @@ class _ImageLabel(QLabel):
         super().mouseDoubleClickEvent(event)
 
     def set_pick_mode(self, enabled: bool, cursor: QCursor | None = None) -> None:
-        """While enabled, a left-click picks a pixel (pixel_picked) instead
-        of starting the usual click-and-drag pan."""
+        """While enabled, a left-click picks a pixel (pixel_picked) instead of starting the usual click-and-drag pan."""
         self._pick_mode = enabled
         self._pick_cursor = cursor
         if enabled and cursor is not None:
@@ -437,13 +429,10 @@ class _ImageLabel(QLabel):
         return r if landscape else 1.0 / r
 
     def _constrain_to_ratio(self, rect, start_rect, handle: str):
-        """rect is the dragged rectangle; returns it held to the ratio. A
-        corner handle keeps the opposite corner fixed and fits the ratio
-        inside the dragged box; an edge handle drives that dimension and
-        resizes the other about its center."""
+        """rect is the dragged rectangle; returns it held to the ratio."""
         h_img, w_img = self._pixels.shape[:2]
         sx1, sy1, sx2, sy2 = start_rect
-        fresh = (sx2 - sx1) == 0 or (sy2 - sy1) == 0  # just started drawing: the drag picks the orientation
+        fresh = (sx2 - sx1) == 0 or (sy2 - sy1) == 0
         x1, y1, x2, y2 = rect
         if handle in ("nw", "ne", "sw", "se"):
             ax, ay = (sx2 if "w" in handle else sx1), (sy2 if "n" in handle else sy1)
@@ -476,7 +465,7 @@ class _ImageLabel(QLabel):
             if handle == "e":
                 return (round(x1), round(cy - bh / 2), round(x1 + bw), round(cy + bh / 2))
             return (round(x2 - bw), round(cy - bh / 2), round(x2), round(cy + bh / 2))
-        bh = y2 - y1  # "n" / "s"
+        bh = y2 - y1
         bw = bh * r
         cx = (sx1 + sx2) / 2
         limit = 2 * min(cx, w_img - cx)
@@ -503,8 +492,7 @@ class _ImageLabel(QLabel):
         painter.restore()
 
     def set_crop_selection(self, rect) -> None:
-        """Replace the crop overlay's rect directly (e.g. Clear Crop),
-        without going through a drag."""
+        """Replace the crop overlay's rect directly (e.g. Clear Crop), without going through a drag."""
         self._crop_rect_image = rect
         self.update()
 
@@ -584,16 +572,13 @@ class _ImageLabel(QLabel):
             event.accept()
             return
         if event.button() == Qt.MouseButton.LeftButton and self._split is not None and self._tool is None and self._near_divider(event.position().x()):
-            self._split_drag = True  # grab the divider
+            self._split_drag = True
             event.accept()
             return
         if event.button() == Qt.MouseButton.LeftButton and self._crop_mode and self._pixels is not None:
             pos = event.position()
             handle = self._crop_handle_at(pos)
             if handle is None:
-                # No existing rect, or clicked outside it - start a brand
-                # new one, anchored at this point (dragging its own
-                # bottom-right corner from here).
                 img_pt = self._to_image_coords(pos.x(), pos.y())
                 self._crop_rect_image = (img_pt[0], img_pt[1], img_pt[0], img_pt[1])
                 handle = "se"
@@ -614,17 +599,16 @@ class _ImageLabel(QLabel):
                 self._stroke = [pt]
             elif self._tool == "smart":
                 self.tool_clicked.emit(*pt)
-            elif self._tool in ("line2", "straighten"):  # two clicks: the second one finishes it
+            elif self._tool in ("line2", "straighten"):
                 self._stroke.append(pt)
                 if len(self._stroke) >= 2:
                     self._finish_polyline()
-            else:  # polyline: each click adds a point; double-click or Enter finishes
+            else:
                 self._stroke.append(pt)
             self.update()
             event.accept()
             return
         if event.button() == Qt.MouseButton.MiddleButton and self._pixels is not None and self._tool is not None:
-            # With a brush tool active the left button paints, so pan with the middle one.
             self._dragging = True
             self._drag_button = Qt.MouseButton.MiddleButton
             self._drag_last_pos = event.globalPosition()
@@ -682,7 +666,7 @@ class _ImageLabel(QLabel):
             if self._painting:
                 pt = self._img_pt(event.position())
                 last = self._stroke[-1]
-                if (pt[0] - last[0]) ** 2 + (pt[1] - last[1]) ** 2 >= 4.0:  # ~2 image px between samples
+                if (pt[0] - last[0]) ** 2 + (pt[1] - last[1]) ** 2 >= 4.0:
                     self._stroke.append(pt)
             self.update()
         super().mouseMoveEvent(event)
@@ -709,7 +693,7 @@ class _ImageLabel(QLabel):
                 if abs(x2 - x1) >= 1 and abs(y2 - y1) >= 1:
                     self.crop_requested.emit(x1, y1, x2, y2)
                 else:
-                    self._crop_rect_image = None  # degenerate (a plain click) - discard
+                    self._crop_rect_image = None
             event.accept()
             return
         if event.button() == Qt.MouseButton.LeftButton and self._painting:
@@ -746,7 +730,7 @@ class _ImageLabel(QLabel):
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         if self._stroke:
             pts = [QPointF(x * scale, y * scale) for x, y in self._stroke]
-            if self._tool in ("heal", "clone"):  # the capsule the brush has painted so far
+            if self._tool in ("heal", "clone"):
                 band = QPen(QColor(255, 200, 0, 90), 2 * radius)
                 band.setCapStyle(Qt.PenCapStyle.RoundCap)
                 band.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
@@ -755,15 +739,14 @@ class _ImageLabel(QLabel):
                     painter.drawPoint(pts[0])
                 else:
                     painter.drawPolyline(pts)
-            else:  # polyline: the clicked points, plus a rubber band to the cursor
+            else:
                 painter.setPen(QPen(QColor(255, 200, 0, 220), 1.5))
                 path = pts + ([self._hover] if self._hover is not None else [])
-                if self._tool == "curve" and len(path) > 1:  # the curve as it will be repaired, with the cursor as its next point
+                if self._tool == "curve" and len(path) > 1:
                     path = [QPointF(x, y) for x, y in smooth_path([(p.x(), p.y()) for p in path], 3.0)]
                 if len(path) > 1:
                     painter.drawPolyline(path)
                 if self._tool == "line2" and len(pts) == 1 and self._hover is not None and abs(self._hover.x() - pts[0].x()) > 4:
-                    # the line as it will be repaired: carried on past both points to the edges of the picture
                     slope = (self._hover.y() - pts[0].y()) / (self._hover.x() - pts[0].x())
                     right = float(self.width())
                     painter.setPen(QPen(QColor(255, 200, 0, 120), 1, Qt.PenStyle.DashLine))
@@ -772,7 +755,6 @@ class _ImageLabel(QLabel):
                 for p in pts:
                     painter.drawEllipse(p, 3, 3)
         if self._tool == "clone" and self._clone_source is not None:
-            # where the brush copies from: the picked source until the first stroke, then following the brush at the same offset
             if self._clone_offset is not None and self._hover is not None:
                 at = QPointF(self._hover.x() + self._clone_offset[0] * scale, self._hover.y() + self._clone_offset[1] * scale)
             elif self._clone_offset is None:
@@ -827,7 +809,7 @@ class _ImageLabel(QLabel):
             painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
             self._paint_proof(painter)
             painter.end()
-            return  # the mosaic is the picture: nothing else is drawn over it
+            return
         if self._tool is not None and not self._crop_mode:
             painter = QPainter(self)
             self._paint_tool(painter)
@@ -871,7 +853,7 @@ class _ZoomScrollArea(QScrollArea):
     scroll - panning (once zoomed past the viewport) still works via the
     scrollbars/drag, that's just not what the wheel does here."""
 
-    wheel_zoomed = pyqtSignal(int)  # angleDelta().y()
+    wheel_zoomed = pyqtSignal(int)
 
     def wheelEvent(self, event: QWheelEvent) -> None:
         self.wheel_zoomed.emit(event.angleDelta().y())
@@ -907,7 +889,7 @@ class ImageView(QWidget):
         self._scroll = _ZoomScrollArea()
         self._scroll.setFrameShape(QScrollArea.Shape.NoFrame)
         self._scroll.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._scroll.setWidgetResizable(True)  # until an image is loaded - see clear()
+        self._scroll.setWidgetResizable(True)
         self._scroll.wheel_zoomed.connect(self._on_wheel_zoom)
         self._viewport.layout().addWidget(self._scroll)
 
@@ -929,7 +911,7 @@ class ImageView(QWidget):
         self._hq_indicator = HqIndicator(self)
         self._export_indicator = ExportIndicator(self)
         self.peaking_slider = PeakingSlider(self)
-        self._peaking_anchor = None  # () -> x in this view's coordinates that the slider is centred over (the Peaking button)
+        self._peaking_anchor = None
         self._pixmap: QPixmap | None = None
         self._fit_scale = 1.0
         self._zoom = 1.0
@@ -937,7 +919,7 @@ class ImageView(QWidget):
     def set_image(self, pixels: np.ndarray) -> None:
         self._pixmap = _rgb_to_pixmap(pixels)
         self._label.set_source(pixels)
-        self._scroll.setWidgetResizable(False)  # the label now sizes itself, for zoom/pan
+        self._scroll.setWidgetResizable(False)
         self._recompute_fit_scale()
         self._zoom = 1.0
         self._apply_zoom()
@@ -950,10 +932,6 @@ class ImageView(QWidget):
             return
         old_w = self._pixmap.width()
         self._pixmap = _rgb_to_pixmap(pixels)
-        # The same picture at a different pixel size (the HQ toggle, or a
-        # low-res drag preview giving way to the full-res render): keep it
-        # the same size on screen instead of jumping, and let the reported
-        # zoom percent track the true pixel size.
         if old_w > 0 and self._pixmap.width() != old_w:
             self._fit_scale *= old_w / self._pixmap.width()
         self._label.set_source(pixels)
@@ -985,7 +963,7 @@ class ImageView(QWidget):
         self._place_badge()
 
     def set_export_progress(self, photos_done: int, photos_total: int, fraction: float) -> None:
-        """The export tag in the top-left corner: the spinner, bar and "3/12 \u00b7 9 left"."""
+        """The export tag in the top-left corner: the spinner, bar and "3/12 · 9 left"."""
         self._export_indicator.set_progress(photos_done, photos_total, fraction)
         self._place_badge()
 
@@ -1054,8 +1032,7 @@ class ImageView(QWidget):
         self._label.set_crop_mode(True, cursor, initial_rect)
 
     def exit_crop_mode(self, pixels: np.ndarray) -> None:
-        """Back to showing the real (post-crop) image - whatever crop was
-        last applied is already baked into pixels."""
+        """Back to showing the real (post-crop) image - whatever crop was last applied is already baked into pixels."""
         self._label.set_crop_mode(False)
         self.update_pixels(pixels)
 
@@ -1104,10 +1081,6 @@ class ImageView(QWidget):
         self._zoom = min(_MAX_ZOOM, max(_MIN_ZOOM, (percent / 100) / self._fit_scale))
         self._apply_zoom()
 
-    # No resizeEvent override: the zoom level stays stable across an
-    # ordinary window resize (recomputing fit on every resize would
-    # silently change what "100%" means underfoot) - only Reset recomputes
-    # the fit baseline.
 
     def _on_wheel_zoom(self, angle_delta_y: int) -> None:
         if self._pixmap is None:
@@ -1117,9 +1090,6 @@ class ImageView(QWidget):
         if new_zoom == self._zoom:
             return
 
-        # Zoom around the viewport's current center rather than the cursor -
-        # simpler and robust regardless of whether the content is currently
-        # smaller than the viewport (and thus centered, not scrolled).
         hbar, vbar = self._scroll.horizontalScrollBar(), self._scroll.verticalScrollBar()
         viewport_size = self._scroll.viewport().size()
         center_x = hbar.value() + viewport_size.width() / 2

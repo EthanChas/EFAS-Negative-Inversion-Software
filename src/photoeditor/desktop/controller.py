@@ -66,8 +66,7 @@ from .session import AppState, HistoryEntry
 from .workers import FlatFieldWorker, run_blocking
 
 
-# The edits "Copy Settings" carries from one photo to others on the roll: the look, not the framing or the dust.
-BW_SATURATION = -1.0  # a detected black & white negative starts fully desaturated
+BW_SATURATION = -1.0
 
 LOOK_FIELDS = (
     "exposure_ev", "tone_curve_points", "negative_inverted", "saturation", "temperature", "tint", "shadows", "highlights",
@@ -88,50 +87,39 @@ def _same_value(a, b) -> bool:
 
 
 class AppController(QObject):
-    """Single entry point for every UI interaction. Views call into this and
-    connect to its signals; they never touch AppState directly.
-
-    Rendering: slider drags and settles are rendered on a worker thread
-    (render.py) and applied when they arrive, so the UI never blocks on the
-    edit pipeline. Discrete actions (rotate, flip, crop, invert, revert, open)
-    render synchronously at preview resolution, then - if HQ is on - queue
-    the full-resolution render behind them."""
+    """Single entry point for every UI interaction."""
 
     folder_changed = pyqtSignal()
     file_changed = pyqtSignal()
     file_load_failed = pyqtSignal(str)
-    image_adjusted = pyqtSignal()  # full recompute - image + histogram + stats
-    image_preview_changed = pyqtSignal()  # image only, for smooth interactive dragging
+    image_adjusted = pyqtSignal()
+    image_preview_changed = pyqtSignal()
     history_changed = pyqtSignal()
-    reverted = pyqtSignal()  # state restored from history - views resync their own widgets
-    auto_adjust_available = pyqtSignal(bool)  # an auto crop's result can (True) / can no longer (False) be nudged with the crop and rotate adjusters
-    loading_started = pyqtSignal()  # about to do slow synchronous work (open_file) - show a veil
+    reverted = pyqtSignal()
+    auto_adjust_available = pyqtSignal(bool)
+    loading_started = pyqtSignal()
     loading_finished = pyqtSignal()
-    notice = pyqtSignal(str)  # a short message for the user (e.g. "no scratch found there")
-    scratches_changed = pyqtSignal(int)  # how many traced scratch lines there are now
-    ai_dust_status = pyqtSignal()  # the AI analysis started, advanced, finished or failed - the panel asks ai_dust_info()
-    clone_source_changed = pyqtSignal()  # the clone source was picked, or the offset it implies was fixed
-    negative_state_changed = pyqtSignal()  # film type / inversion changed by a controller action - views resync
-    film_base_changed = pyqtSignal()  # the open photo's roll got a film base, or lost it
-    roll_changed = pyqtSignal()  # the open photo's Roll Card was loaded, edited or replaced
-    flatfield_changed = pyqtSignal()  # this folder's flat-field was loaded, set, cleared or toggled
-    flatfield_progress = pyqtSignal(int, int, str)  # Auto (Roll): done, total, file
+    notice = pyqtSignal(str)
+    scratches_changed = pyqtSignal(int)
+    ai_dust_status = pyqtSignal()
+    clone_source_changed = pyqtSignal()
+    negative_state_changed = pyqtSignal()
+    film_base_changed = pyqtSignal()
+    roll_changed = pyqtSignal()
+    flatfield_changed = pyqtSignal()
+    flatfield_progress = pyqtSignal(int, int, str)
     flatfield_busy_changed = pyqtSignal(bool)
-    hq_busy_changed = pyqtSignal(bool)  # an HQ on/off switch is still rendering
-    flag_changed = pyqtSignal(str, object)  # path, "keeper" | "rejected" | None
-    module_presets_changed = pyqtSignal(str)  # the saved presets of one module (its panel key) changed
-    look_presets_changed = pyqtSignal(str)  # the saved presets changed; the name to highlight ("" for none)
-    rating_changed = pyqtSignal(str, int)  # path, 0-5 stars
-    snapshots_changed = pyqtSignal(str)  # a snapshot was taken (its name) or deleted (empty) - the panel lists them again
-    tags_changed = pyqtSignal(list)  # the paths whose tags changed (or were just read in, on opening a photo)
+    hq_busy_changed = pyqtSignal(bool)
+    flag_changed = pyqtSignal(str, object)
+    module_presets_changed = pyqtSignal(str)
+    look_presets_changed = pyqtSignal(str)
+    rating_changed = pyqtSignal(str, int)
+    snapshots_changed = pyqtSignal(str)
+    tags_changed = pyqtSignal(list)
 
     def __init__(self):
         super().__init__()
         self.state = AppState()
-        # The last value actually logged, separate from state.exposure_ev/
-        # tone_curve_points - those are already updated by the cheap preview
-        # path on every drag tick, so comparing against them inside
-        # set_exposure_ev/set_tone_curve would never see a difference.
         self._last_logged_ev = 0.0
         self._last_logged_curve = list(DEFAULT_POINTS)
         self._last_logged_inverted = False
@@ -147,26 +135,26 @@ class AppController(QObject):
         self._last_logged_denoise = 0.0
         self._last_logged_local = 0.0
         self._last_logged_ai = (False, 0.3, 1)
-        self._clone_source_raw: tuple[float, float] | None = None  # where the clone tool copies from (0-1 raw frame); this session only
+        self._clone_source_raw: tuple[float, float] | None = None
         self._clone_source_display: tuple[float, float] | None = None
-        self._clone_offset_raw: tuple[float, float] | None = None  # source minus brush, fixed by the first stroke after the source is picked
-        self._retouch_order: list[str] = []  # which kind of manual repair was made when, so Undo Last takes the newest
+        self._clone_offset_raw: tuple[float, float] | None = None
+        self._retouch_order: list[str] = []
         self._last_logged_metering = Metering()
-        self._ff = None  # (token, gain) while this photo's folder has an enabled flat-field
-        self._redo: list[HistoryEntry] = []  # entries Undo stepped back over; any new edit clears them
-        self._copied_look: dict | None = None  # Copy Settings' clipboard
-        self._module_preset_in_use: dict[tuple[str, str], str] = {}  # (photo path, module key) -> the module preset last loaded or stored there
-        self._folder_images: tuple[str, list[str], float] | None = None  # (folder, its photos, folder mtime) - for the frame counter
+        self._ff = None
+        self._redo: list[HistoryEntry] = []
+        self._copied_look: dict | None = None
+        self._module_preset_in_use: dict[tuple[str, str], str] = {}
+        self._folder_images: tuple[str, list[str], float] | None = None
         self._ff_info = {"has": False, "enabled": False, "source": ""}
         self._ff_worker = None
 
         self._renderer = Renderer()
         self._renderer.ai_prob_lookup = self._ai_prob_for
-        self._ai_probs: dict[tuple, object] = {}  # (path, inverted, mono) -> the model's probability map, the last few photos
+        self._ai_probs: dict[tuple, object] = {}
         self._ai_worker = None
         self._ai_progress = (0, 0)
         self._ai_error = ""
-        self._gen = 0  # bumped by every render request; a result from an older one is dropped
+        self._gen = 0
         self._thread = RenderThread(self._renderer, lambda gen: gen == self._gen)
         self._thread.rendered.connect(self._on_rendered)
         self._thread.failed.connect(self._on_render_failed)
@@ -175,15 +163,11 @@ class AppController(QObject):
         if app is not None:
             app.aboutToQuit.connect(self.shutdown)
 
-        # Shared across every AppController instance in the process (the
-        # main window's and the Import window's each open their own
-        # connection to the same file) - sqlite handles that fine at this
-        # write frequency (one row per committed edit, not per drag tick).
         data_dir = app_data_dir()
         os.makedirs(data_dir, exist_ok=True)
-        ensure_data_ready()  # copies of the data from other launches (packaged / per-executable) are merged in first
+        ensure_data_ready()
         try:
-            data_export.apply_pending_restore(data_dir)  # an Import chosen in Settings takes effect now, before the database is opened
+            data_export.apply_pending_restore(data_dir)
         except Exception:
             pass
         self.db_path = os.path.join(data_dir, "photoeditor.db")
@@ -204,7 +188,7 @@ class AppController(QObject):
         scale = s.original_rgb.shape[1] / s.preview_rgb.shape[1]
         x1, y1, x2, y2 = _scale_rect(s.crop_rect, scale, ow, oh)
         w, h = abs(x2 - x1), abs(y2 - y1)
-        return (w, h) if w >= 1 and h >= 1 else (ow, oh)  # a degenerate crop is ignored by the renderer
+        return (w, h) if w >= 1 and h >= 1 else (ow, oh)
 
     def shutdown(self) -> None:
         if self._ff_worker is not None:
@@ -222,10 +206,6 @@ class AppController(QObject):
 
     def open_file(self, path: str) -> None:
         self.loading_started.emit()
-        # Lets the loading overlay this just triggered actually paint before
-        # the blocking decode/calibration work below runs - PyQt has no
-        # other way to get a frame on screen without yielding to the event
-        # loop, and this whole method is deliberately synchronous.
         QCoreApplication.processEvents()
         try:
             self._open_file_impl(path)
@@ -233,7 +213,7 @@ class AppController(QObject):
             self.loading_finished.emit()
 
     def _apply_saved_state(self, saved: dict, path: str) -> None:
-        """Put a saved edit state (the database row, a sidecar, a snapshot) into the editor's state. Does not touch the frame details (metadata)."""
+        """Put a saved edit state (the database row, a sidecar, a snapshot) into the editor's state."""
         self.state.exposure_ev = saved["exposure_ev"]
         self.state.tone_curve_points = saved["tone_curve_points"]
         self.state.negative_inverted = saved["negative_inverted"]
@@ -261,7 +241,7 @@ class AppController(QObject):
         self.state.ai_threshold = float(saved.get("ai_threshold", 0.3))
         self.state.ai_grow = int(saved.get("ai_grow", 1))
         self.state.marks = Marks.from_dict(saved.get("marks"))
-        for module_key, preset_name in (saved.get("module_presets") or {}).items():  # the module presets this photo had loaded when it was last open
+        for module_key, preset_name in (saved.get("module_presets") or {}).items():
             if isinstance(module_key, str) and isinstance(preset_name, str):
                 self._module_preset_in_use[(path, module_key)] = preset_name
         self.state.film_type = saved["film_type"]
@@ -287,13 +267,12 @@ class AppController(QObject):
         self.state.wm_camera = saved["wm_camera"]
         self.state.wm_lens = saved["wm_lens"]
 
-    # ---- snapshots ----
     def snapshot_list(self) -> list[tuple[str, str]]:
         path = self.state.image_path
         return edit_store.list_snapshots(self._db, path) if path is not None else []
 
     def take_snapshot(self, name: str = "") -> str | None:
-        """Save the open photo's whole edit under a name (an empty name is numbered). A name already used is overwritten. Returns the name."""
+        """Save the open photo's whole edit under a name (an empty name is numbered)."""
         path = self.state.image_path
         if path is None or self.state.preview_rgb is None:
             return None
@@ -305,7 +284,7 @@ class AppController(QObject):
                 n += 1
             name = f"Snapshot {n}"
         state = self._edit_state_dict()
-        state.pop("metadata", None)  # frame details are not part of an edit
+        state.pop("metadata", None)
         edit_store.save_snapshot(self._db, path, name, state)
         self.snapshots_changed.emit(name)
         self.notice.emit(f"Snapshot '{name}' saved")
@@ -315,12 +294,12 @@ class AppController(QObject):
         return self.take_snapshot(name) is not None
 
     def apply_snapshot(self, name: str) -> bool:
-        """Go back to a snapshot: the photo's edit becomes exactly what it was saved as. One undoable step."""
+        """Go back to a snapshot: the photo's edit becomes exactly what it was saved as."""
         path, s = self.state.image_path, self.state
         saved = edit_store.get_snapshot(self._db, path, name) if path is not None else None
         if saved is None or s.preview_rgb is None:
             return False
-        merged = {**self._edit_state_dict(), **saved}  # a field the snapshot predates keeps the photo's own value
+        merged = {**self._edit_state_dict(), **saved}
         merged.pop("metadata", None)
         for key in [k for (p, k) in self._module_preset_in_use if p == path]:
             del self._module_preset_in_use[(path, key)]
@@ -342,7 +321,7 @@ class AppController(QObject):
 
     def _open_file_impl(self, path: str) -> None:
         def decode():
-            full = load_image_rgb(path)  # 16-bit for a RAW or 16-bit scan, 8-bit otherwise
+            full = load_image_rgb(path)
             preview = make_preview_rgb(full)
             preview8 = to_uint8(preview)
             return full, preview, preview8, detect_process_mode(preview8)
@@ -364,24 +343,13 @@ class AppController(QObject):
 
         saved = edit_store.load_edit_state(self._db, path)
         if saved is None:
-            # No database row (a fresh database, or the folder was copied from
-            # another machine) - fall back to the XMP sidecar next to the file.
             saved = self._load_sidecar_state(path)
         if saved is not None:
-            # A previous session already edited this exact file (same path,
-            # same mtime/size - see thumbnail_cache_key's identity model) -
-            # restore it instead of re-running auto-detect, since the
-            # user's own prior choice (e.g. manually un-inverting a
-            # false-positive C41 read) should win over the heuristic.
             self._apply_saved_state(saved, path)
             self.state.metadata = metadata_store.from_dict(saved["metadata"])
         else:
             self._apply_default_edits()
             self.state.metadata = MetadataConfig()
-            # This app is built around scanned negatives - auto-detect and
-            # invert right away, so a freshly opened file already looks
-            # like a normal photo (and the white balance histogram reads a
-            # positive's data) instead of a raw orange-cast scan by default.
             self._apply_detected_defaults()
 
         self._last_logged_ev = self.state.exposure_ev
@@ -404,9 +372,9 @@ class AppController(QObject):
         self._last_logged_denoise = self.state.chroma_denoise
         self._last_logged_local = self.state.local_contrast
         self._last_logged_finish = self._finishing_values()
-        self._clone_source_raw = self._clone_source_display = self._clone_offset_raw = None  # a source belongs to the photo it was picked on
+        self._clone_source_raw = self._clone_source_display = self._clone_offset_raw = None
         self._last_logged_ai = (self.state.ai_dust, round(self.state.ai_threshold, 4), self.state.ai_grow)
-        if self._ai_worker is not None:  # an analysis of the photo that was open is no use now
+        if self._ai_worker is not None:
             self._ai_worker.cancel()
             self._ai_worker = None
         self._ai_error = ""
@@ -419,17 +387,17 @@ class AppController(QObject):
         self.state.history = []
         flag = edit_store.get_flag(self._db, path)
         if flag is None:
-            flag = xmp.read_flag(path)  # a sidecar carried over from another machine
+            flag = xmp.read_flag(path)
             if flag is not None:
                 edit_store.set_flag(self._db, path, flag)
         self.state.flag = flag
         rating = edit_store.get_rating(self._db, path)
         if not rating:
-            rating = xmp.read_rating(path)  # a sidecar carried over from another machine
+            rating = xmp.read_rating(path)
             if rating:
                 edit_store.set_rating(self._db, path, rating)
         self.state.rating = rating
-        if not edit_store.get_tags(self._db, [path]):  # keywords in a sidecar carried over from another machine or program
+        if not edit_store.get_tags(self._db, [path]):
             carried = tag_logic.unique(xmp.read_tags(path))
             if carried:
                 edit_store.set_tags(self._db, path, carried)
@@ -438,11 +406,6 @@ class AppController(QObject):
         self.snapshots_changed.emit("")
         self._log(f"Opened {os.path.basename(path)}")
         if saved is not None:
-            # Only one entry (not the original session's full history,
-            # which isn't persisted - just its final values) - but a
-            # visible record that this isn't a blank slate, since the UI
-            # widgets now reflect the restored state too (see AppWindow.
-            # _on_file_changed) rather than quietly loading it unannounced.
             self._log(f"Restored saved edits: {self._describe_edit_state()}")
         elif self.state.negative_inverted:
             bw = self.state.detected_mode == ProcessMode.BW
@@ -450,7 +413,6 @@ class AppController(QObject):
         self.file_changed.emit()
         self.scratches_changed.emit(self._manual_repair_count())
 
-    # ---- rendering ----
     def _token(self):
         return self.state.image_path
 
@@ -460,9 +422,8 @@ class AppController(QObject):
         return s.preview_rgb16 if s.preview_rgb16 is not None else s.preview_rgb
 
     def _submit(self, *, full: bool, live=None, hq: bool = False, hq_only: bool = False) -> None:
-        """Queues a render on the worker thread (never blocks). hq adds the
-        full-resolution pass after the preview one."""
-        self._ai_check()  # AI dust on, and this photo not analysed yet: start it (the picture re-renders when it is done)
+        """Queues a render on the worker thread (never blocks)."""
+        self._ai_check()
         self._gen += 1
         job = RenderJob(
             gen=self._gen,
@@ -483,7 +444,7 @@ class AppController(QObject):
         """A cheap in-progress drag tick: image only, no histogram/stats."""
         if self.state.preview_rgb is not None:
             if self.state.hq_enabled:
-                self._set_hq_busy(True)  # the picture on screen is back at preview size until the HQ pass for this edit lands
+                self._set_hq_busy(True)
             self._submit(full=False, live=live)
 
     def _settle(self) -> None:
@@ -495,7 +456,7 @@ class AppController(QObject):
 
     def _on_rendered(self, out: RenderOutput) -> None:
         if out.gen != self._gen:
-            return  # a newer request superseded this one while it was rendering
+            return
         s = self.state
         s.image_rgb = out.image
         if out.kind == "base":
@@ -537,7 +498,7 @@ class AppController(QObject):
         histogram/stats - used by discrete actions that need state.image_rgb
         and state.pre_crop_rgb right away. If HQ is on, the full-resolution
         pass is queued behind it."""
-        self._ai_check()  # a cached analysis is picked up here, before the picture is made
+        self._ai_check()
         self._gen += 1
         gen = self._gen
         params = EditParams.from_state(self.state)
@@ -577,19 +538,17 @@ class AppController(QObject):
         if self.state.preview_rgb is None or enabled == self.state.hq_enabled:
             return
         self.state.hq_enabled = enabled
-        self._set_hq_busy(True)  # cleared when the matching render arrives
+        self._set_hq_busy(True)
         self._submit(full=True, hq=enabled)
 
     def set_clipping(self, shadows: bool, highlights: bool) -> None:
-        """Shadow (blue) / highlight (red) clipping overlays - view only,
-        nothing is logged or saved."""
+        """Shadow (blue) / highlight (red) clipping overlays - view only, nothing is logged or saved."""
         s = self.state
         if s.preview_rgb is None or (shadows, highlights) == (s.show_shadow_clip, s.show_highlight_clip):
             return
         s.show_shadow_clip, s.show_highlight_clip = shadows, highlights
         self._submit(full=True)
 
-    # ---- tool entry points ----
     def preview_exposure_ev(self, ev: float) -> None:
         """Image only, no histogram/stats recompute - the fast path used
         while actively dragging the slider (see set_exposure_ev for the
@@ -615,9 +574,7 @@ class AppController(QObject):
         self._preview(LIVE_OTHER_METHODS)
 
     def straighten_by_line(self, p1: tuple[float, float], p2: tuple[float, float]) -> float | None:
-        """The Straighten Tool: two points (displayed-image pixels) along something that should be level or upright. The picture is turned so that
-        line is level - or plumb, when it runs closer to vertical. Returns the correction in degrees (clockwise positive), or None when the points
-        are too close to tell a direction."""
+        """The Straighten Tool: two points (displayed-image pixels) along something that should be level or upright."""
         s = self.state
         if s.preview_rgb is None:
             return None
@@ -625,14 +582,14 @@ class AppController(QObject):
         if math.hypot(dx, dy) < 8:
             self.notice.emit("Straighten: click two points further apart along the line")
             return None
-        tilt = (math.degrees(math.atan2(dy, dx)) + 45.0) % 90.0 - 45.0  # how far the line is from the nearest of level / upright: -45..45, clockwise positive
+        tilt = (math.degrees(math.atan2(dy, dx)) + 45.0) % 90.0 - 45.0
         correction = -tilt
         new = round(max(-FINE_ROTATION_LIMIT, min(FINE_ROTATION_LIMIT, s.fine_rotation + correction)), 2)
         if abs(new - s.fine_rotation) < 0.005:
             self.notice.emit("Straighten: that line is already level")
             return 0.0
         self.set_fine_rotation(new)
-        self.reverted.emit()  # the Straighten slider follows
+        self.reverted.emit()
         self.notice.emit(f"Straightened {correction:+.1f}\u00b0")
         return correction
 
@@ -655,8 +612,7 @@ class AppController(QObject):
         self._preview(LIVE_OTHER_METHODS)
 
     def set_distortion(self, k1: float) -> None:
-        """Radial lens distortion correction: positive corrects barrel,
-        negative pincushion."""
+        """Radial lens distortion correction: positive corrects barrel, negative pincushion."""
         if self.state.preview_rgb is None:
             return
         self.state.distortion = k1
@@ -669,7 +625,7 @@ class AppController(QObject):
         if self.state.preview_rgb is None:
             return
         self.state.chroma_denoise = amount
-        self._preview(LIVE_OWN_METHODS | {"denoise"})  # the slider being dragged is allowed to run it live
+        self._preview(LIVE_OWN_METHODS | {"denoise"})
 
     def set_chroma_denoise(self, amount: float) -> None:
         if self.state.preview_rgb is None:
@@ -680,7 +636,6 @@ class AppController(QObject):
             self._last_logged_denoise = amount
             self._log(f"Chroma denoise set to {amount:.2f}")
 
-    # ---- metering: how the negative is read when it is inverted ----
     def preview_metering(self, metering: Metering) -> None:
         if self.state.preview_rgb is None:
             return
@@ -727,7 +682,7 @@ class AppController(QObject):
         self._preview(LIVE_OTHER_METHODS)
 
     def set_finishing(self, vignette: float, size: float, border: float, color: str, carrier: bool) -> None:
-        """Vignette, border and the film-carrier look (the Finishing panel). Cheap, so each change is one render."""
+        """Vignette, border and the film-carrier look (the Finishing panel)."""
         if self.state.preview_rgb is None:
             return
         s = self.state
@@ -763,9 +718,7 @@ class AppController(QObject):
     def set_watermark(
         self, film: str, texture: str, size: str, position: str, info: bool = False, camera: str = "", lens: str = ""
     ) -> None:
-        """The canister watermark: film "off" removes it; info adds the camera/lens text (and a
-        credit line) beside it. Discrete choices (dropdowns, a checkbox, two text boxes that
-        commit on Enter/focus-out), so there is no live-preview tier - each change is one full render."""
+        """The canister watermark: film "off" removes it; info adds the camera/lens text (and a credit line) beside it."""
         s = self.state
         camera, lens = camera.strip(), lens.strip()
         new = (film, texture, size, position, info, camera, lens)
@@ -780,7 +733,7 @@ class AppController(QObject):
             self._log(f"Canister watermark: {wm.FILMS[film]}, {wm.TEXTURES[texture].lower()}, {wm.SIZES[size][0].lower()}, {wm.POSITIONS[position].lower()}{extra}")
 
     def set_marks(self, marks: Marks) -> None:
-        """The plain text and logo watermarks (the Watermark tab, below the canister). Each change is one full render."""
+        """The plain text and logo watermarks (the Watermark tab, below the canister)."""
         s = self.state
         if s.preview_rgb is None or marks == s.marks:
             return
@@ -798,14 +751,12 @@ class AppController(QObject):
         self._log("Watermark: " + (", ".join(parts) or "settings changed") if marks != base or before != base else "Watermark cleared")
 
     def set_metadata(self, config: MetadataConfig) -> None:
-        """This frame's own details (date, place, note...), written into its exports. Not an edit of the picture, so there is
-        no render and no history entry - it is only saved."""
+        """This frame's own details (date, place, note...), written into its exports."""
         if self.state.image_path is None or config == self.state.metadata:
             return
         self.state.metadata = config
         self._save_edit_state()
 
-    # ---- roll card ----
     def _load_roll(self, path: str) -> None:
         row = edit_store.get_folder_roll(self._db, edit_store.folder_key(path))
         self._apply_roll(RollCard.from_dict(row))
@@ -816,8 +767,7 @@ class AppController(QObject):
         self.roll_changed.emit()
 
     def set_roll(self, card: RollCard) -> None:
-        """Save the Roll Card for the open photo's folder: every photo in it inherits it, now and at export. The watermark's
-        camera/lens text follows it, so that is re-rendered when it changes."""
+        """Save the Roll Card for the open photo's folder: every photo in it inherits it, now and at export."""
         path = self.state.image_path
         if path is None or card == self.state.roll:
             return
@@ -890,18 +840,13 @@ class AppController(QObject):
             self._log(f"Tone curve adjusted ({len(points)} points)")
 
     def detect_negative_mode(self):
-        """A plain read - classifies the current preview, no state change.
-        Reads pre_crop_rgb (not preview_rgb) since that's already in the
-        same rotated/flipped coordinate space as crop_rect."""
+        """A plain read - classifies the current preview, no state change."""
         if self.state.pre_crop_rgb is None:
             return None
         return detect_process_mode(self.state.pre_crop_rgb, self.state.crop_rect)
 
     def set_film_type(self, film_type: str) -> None:
-        """Pick the film by hand - color negative, black & white negative or
-        slide - instead of trusting detection. Negatives are inverted, a
-        slide isn't, and a B&W negative is also treated as monochrome. "auto"
-        goes back to what detection decided when the photo was opened."""
+        """Pick the film by hand - color negative, black & white negative or slide - instead of trusting detection."""
         s = self.state
         if s.preview_rgb is None or film_type == s.film_type:
             return
@@ -932,7 +877,6 @@ class AppController(QObject):
             self._last_logged_invert_rgb = (r, g, b)
             self._log(f"Negative color trimmed (R {r:+.2f}, G {g:+.2f}, B {b:+.2f})")
 
-    # ---- flat field (per folder) ----
     def _load_flatfield(self, path: str) -> None:
         row = edit_store.get_folder_flatfield(self._db, edit_store.folder_key(path))
         if row is None:
@@ -1105,8 +1049,7 @@ class AppController(QObject):
         return (s.dust_auto, s.dust_threshold, s.dust_size, s.scratch_sensitivity)
 
     def set_dust(self, auto: bool, threshold: float, size: int, sensitivity: float) -> None:
-        """Auto dust removal and the scratch repair settings. Settle-only (no
-        live preview): detection and repair take hundreds of milliseconds."""
+        """Auto dust removal and the scratch repair settings."""
         if self.state.preview_rgb is None:
             return
         self.state.dust_auto = auto
@@ -1124,8 +1067,7 @@ class AppController(QObject):
         return len(self.state.scratch_lines) + len(self.state.heal_strokes) + len(self.state.clone_strokes)
 
     def _display_to_raw(self, x: float, y: float) -> tuple[float, float]:
-        """A point in the displayed image (pixels of state.image_rgb) -> 0..1
-        coordinates in the untouched raw scan."""
+        """A point in the displayed image (pixels of state.image_rgb) -> 0..1 coordinates in the untouched raw scan."""
         s = self.state
         h_img, w_img = s.image_rgb.shape[:2]
         return map_display_to_raw(
@@ -1151,8 +1093,7 @@ class AppController(QObject):
         self._add_raw_heal_stroke(raw_points, size, mult, force, method, label)
 
     def add_manual_line(self, p1: tuple[float, float], p2: tuple[float, float], size: float, method: str) -> bool:
-        """Manual Transport Line: two clicks on a scratch (displayed-image pixels). The straight line through them is carried on to the
-        frame's edges and everything under it, size wide, is repaired - no detection, so it goes exactly where it was put."""
+        """Manual Transport Line: two clicks on a scratch (displayed-image pixels)."""
         if self.state.preview_rgb is None or self.state.image_rgb is None:
             return False
         line = extend_line_to_frame(self._display_to_raw(*p1), self._display_to_raw(*p2))
@@ -1162,7 +1103,6 @@ class AppController(QObject):
         self._add_raw_heal_stroke([list(line[0]), list(line[1])], size, 1.0, True, method, "Healed transport line")
         return True
 
-    # ---- AI dust ----
     def ai_available(self) -> bool:
         return aidust.available()
 
@@ -1171,7 +1111,7 @@ class AppController(QObject):
         return None if s.image_path is None else (s.image_path, bool(s.negative_inverted), s.film_type == "bw")
 
     def _ai_prob_for(self, token, inverted: bool, mono: bool):
-        """What the renderer asks: the probability map of the photo, or None while there is none yet. Called from the render thread."""
+        """What the renderer asks: the probability map of the photo, or None while there is none yet."""
         return self._ai_probs.get((token, bool(inverted), bool(mono)))
 
     def _ai_check(self) -> None:
@@ -1183,7 +1123,7 @@ class AppController(QObject):
         if self._ai_worker is not None and self._ai_worker.isRunning():
             if (self._ai_worker.path, self._ai_worker.inverted, self._ai_worker.mono) == key:
                 return
-            self._ai_worker.cancel()  # a different photo, or the same one shown another way: what it was making is no longer wanted
+            self._ai_worker.cancel()
         cached = aidust.load_cached(*key)
         if cached is not None and cached.shape == s.original_rgb.shape[:2]:
             self._ai_store(key, cached)
@@ -1200,7 +1140,7 @@ class AppController(QObject):
 
     def _ai_store(self, key: tuple, prob) -> None:
         self._ai_probs[key] = prob
-        while len(self._ai_probs) > 2:  # a full-resolution map is tens of megabytes
+        while len(self._ai_probs) > 2:
             self._ai_probs.pop(next(iter(self._ai_probs)))
 
     def _on_ai_progress(self, done: int, total: int) -> None:
@@ -1214,7 +1154,7 @@ class AppController(QObject):
             self._ai_worker = None
         self._ai_progress = (0, 0)
         if key == self._ai_key() and self.state.ai_dust:
-            self._settle()  # now the repair can use it
+            self._settle()
             self.notice.emit("AI dust analysis done")
         self.ai_dust_status.emit()
 
@@ -1251,7 +1191,7 @@ class AppController(QObject):
         return info
 
     def set_ai_dust(self, on: bool, threshold: float, grow: int) -> None:
-        """AI Dust Removal on/off, and how readily and how widely it marks. Switching it on analyses the photo (once; kept on disk)."""
+        """AI Dust Removal on/off, and how readily and how widely it marks."""
         s = self.state
         if s.preview_rgb is None:
             return
@@ -1259,15 +1199,14 @@ class AppController(QObject):
         s.ai_dust, s.ai_threshold, s.ai_grow = bool(on), float(threshold), int(grow)
         if not on:
             self.cancel_ai_dust()
-        self._settle()  # also starts the analysis when it is needed
+        self._settle()
         self.ai_dust_status.emit()
         if changed and (bool(on) != self._last_logged_ai[0] or (on and (round(threshold, 4), int(grow)) != self._last_logged_ai[1:])):
             self._last_logged_ai = (bool(on), round(threshold, 4), int(grow))
             self._log(f"AI dust removal {'on' if on else 'off'}" + (f" (threshold {threshold:.2f}, grow {int(grow)})" if on else ""))
 
-    # ---- clone ----
     def set_clone_source(self, x: float, y: float) -> None:
-        """The clone tool's source: a point in the displayed image (pixels). The next stroke fixes the offset from its own start."""
+        """The clone tool's source: a point in the displayed image (pixels)."""
         if self.state.preview_rgb is None or self.state.image_rgb is None:
             return
         self._clone_source_display = (float(x), float(y))
@@ -1298,7 +1237,7 @@ class AppController(QObject):
         return float(d[0]), float(d[1])
 
     def add_clone_stroke(self, points: list, size: float, strength: float, feather: float, match_tone: bool) -> bool:
-        """A painted clone stroke (points in displayed-image pixels). Without a source yet, the click picks it instead."""
+        """A painted clone stroke (points in displayed-image pixels)."""
         if self.state.preview_rgb is None or self.state.image_rgb is None or not points:
             return False
         if self._clone_source_raw is None:
@@ -1369,14 +1308,14 @@ class AppController(QObject):
         h0, w0 = s.preview_rgb.shape[:2]
         px, py = nx * w0, ny * h0
         ref = max(w0, h0) / HEAL_SIZE_REF
-        slack = 6.0  # forgiveness beyond a repair's own footprint, in preview pixels
+        slack = 6.0
 
         def seg_dist(ax, ay, bx, by):
             dx, dy = bx - ax, by - ay
             t = 0.0 if dx == 0 and dy == 0 else max(0.0, min(1.0, ((px - ax) * dx + (py - ay) * dy) / (dx * dx + dy * dy)))
             return math.hypot(px - (ax + t * dx), py - (ay + t * dy))
 
-        best = None  # (distance beyond footprint, kind, index)
+        best = None
         for i, stroke in enumerate(s.heal_strokes):
             pts = [(p[0] * w0, p[1] * h0) for p in stroke[0]]
             radius = float(stroke[1]) * ref * 0.5
@@ -1409,8 +1348,7 @@ class AppController(QObject):
         self._log(f"Deleted a manual repair ({self._manual_repair_count()} left)")
 
     def set_flag(self, flag: str | None) -> None:
-        """Marks the open photo as a keeper, rejected, or (None) neither -
-        saved in the database and the XMP sidecar."""
+        """Marks the open photo as a keeper, rejected, or (None) neither - saved in the database and the XMP sidecar."""
         path = self.state.image_path
         if path is None:
             return
@@ -1444,7 +1382,6 @@ class AppController(QObject):
         """Pressing the star count the open photo already has takes it off again (0 always clears)."""
         self.set_rating(0 if stars and self.state.rating == stars else stars)
 
-    # ---- tags (keywords) ----
     def photo_tags(self, path: str) -> list[str]:
         return edit_store.get_tags(self._db, [path]).get(path, [])
 
@@ -1489,19 +1426,18 @@ class AppController(QObject):
         self.flag_changed.emit(path, flag)
 
     def undo_last_retouch(self) -> None:
-        """Removes the most recent manual repair (traced lines first, then
-        painted strokes). Auto-detected dust is unaffected."""
+        """Removes the most recent manual repair (traced lines first, then painted strokes)."""
         s = self.state
         if s.preview_rgb is None:
             return
         fields = {"line": "scratch_lines", "heal": "heal_strokes", "clone": "clone_strokes"}
         target = None
-        while self._retouch_order:  # the newest repair made in this session, if it is still there
+        while self._retouch_order:
             candidate = fields[self._retouch_order.pop()]
             if getattr(s, candidate):
                 target = candidate
                 break
-        if target is None:  # repairs restored from a saved edit: traced lines first, then heals, then clones
+        if target is None:
             target = next((f for f in ("scratch_lines", "heal_strokes", "clone_strokes") if getattr(s, f)), None)
         if target is None:
             return
@@ -1523,8 +1459,7 @@ class AppController(QObject):
         self._log("Cleared all manual repairs")
 
     def set_show_detections(self, enabled: bool) -> None:
-        """Toggles the overlay marking what dust detection finds (view-only,
-        not an edit). Render-only: nothing is logged or saved."""
+        """Toggles the overlay marking what dust detection finds (view-only, not an edit)."""
         if self.state.preview_rgb is None or enabled == self.state.show_detections:
             return
         self.state.show_detections = enabled
@@ -1583,10 +1518,7 @@ class AppController(QObject):
         return (w0, h0) if self.state.rotation_quarter_turns % 2 else (h0, w0)
 
     def rotate(self, delta_quarter_turns: int) -> None:
-        """delta_quarter_turns: +1 rotates right (clockwise), -1 rotates
-        left - the [ and ] hotkeys. Any existing crop rect is carried
-        through the same rotation, rather than cleared, so it keeps
-        selecting the same part of the picture."""
+        """delta_quarter_turns: +1 rotates right (clockwise), -1 rotates left - the [ and ] hotkeys."""
         if self.state.preview_rgb is None:
             return
         if self.state.crop_rect is not None:
@@ -1712,7 +1644,6 @@ class AppController(QObject):
     def _save_edit_state(self) -> None:
         edit_state = self._edit_state_dict()
         edit_store.save_edit_state(self._db, self.state.image_path, edit_state)
-        # Same state, written beside the photo too - see features/xmp/logic.py.
         xmp.write_sidecar(self.state.image_path, edit_state, self._current_frame_size())
 
     def _edit_state_dict(self) -> dict:
@@ -1817,8 +1748,8 @@ class AppController(QObject):
         self.state.wm_camera = ""
         self.state.wm_lens = ""
 
-    _auto_run: dict | None = None  # the last auto crop: its method, the rotation it set and the crop it found (what the adjusters work from)
-    _auto_busy = False             # True while an auto crop is setting the crop and rotation itself
+    _auto_run: dict | None = None
+    _auto_busy = False
 
     def _drop_auto_run(self) -> None:
         """The crop or rotation changed some other way (by hand, undo, a new photo): the adjusters no longer have an auto result to work from."""
@@ -1827,9 +1758,7 @@ class AppController(QObject):
             self.auto_adjust_available.emit(False)
 
     def adjust_auto_crop(self, margin_pct: float, rotate_deg: float) -> bool:
-        """Nudge the last auto crop. margin_pct crops that much of the crop's width and height in from every side (negative: lets that much more
-        of the picture in); rotate_deg turns the picture that many degrees (clockwise positive) beyond what the auto crop straightened it by.
-        The border is found again on the turned picture, so the crop follows the rotation."""
+        """Nudge the last auto crop."""
         run, s = self._auto_run, self.state
         if run is None or s.preview_rgb is None or s.pre_crop_rgb is None:
             return False
@@ -1844,7 +1773,7 @@ class AppController(QObject):
                 self._last_logged_fine_rotation = new_rot
                 self._last_logged_crop = None
                 self._log(f"Auto rotate adjusted to {new_rot:+.1f}\u00b0")
-                if abs(new_rot - run["rotation"]) > 1e-6:  # a different angle: the frame has moved, so look for it again
+                if abs(new_rot - run["rotation"]) > 1e-6:
                     found = self._detect_for(run["method"], s.pre_crop_rgb)
                     if found is not None:
                         fh, fw = self._current_frame_size()
@@ -1858,7 +1787,7 @@ class AppController(QObject):
             nx1, ny1, nx2, ny2 = max(0, round(x1 + mx)), max(0, round(y1 + my)), min(fw, round(x2 - mx)), min(fh, round(y2 - my))
             if nx2 - nx1 >= 8 and ny2 - ny1 >= 8:
                 self.set_crop_rect((nx1, ny1, nx2, ny2))
-            self.reverted.emit()  # the Straighten slider follows
+            self.reverted.emit()
         finally:
             self._auto_busy = False
         return True
@@ -1871,10 +1800,7 @@ class AppController(QObject):
         return detect_frame(img)
 
     def auto_crop(self, straighten: bool = True, method: str = "color") -> bool:
-        """Find the picture inside the scan - the film border, sprocket holes and holder around it - and crop to it. With straighten, a
-        frame that sits a little crooked is levelled first (the Straighten slider), then the crop is taken from the levelled picture.
-        method "color" finds the frame by how it differs from the border colour; "gradient" by the gradient where the border turns into
-        the picture (features/geometry/gradientcrop.py). False, with a notice, when there is no clear border to find."""
+        """Find the picture inside the scan - the film border, sprocket holes and holder around it - and crop to it."""
         s = self.state
         if s.preview_rgb is None or s.pre_crop_rgb is None:
             return False
@@ -1895,7 +1821,7 @@ class AppController(QObject):
             new = round(max(-FINE_ROTATION_LIMIT, min(FINE_ROTATION_LIMIT, s.fine_rotation - det.skew_deg)), 2)
             s.fine_rotation = new
             s.crop_rect = None
-            self._recompute_image()  # a new pre-crop picture, which the crop is measured on
+            self._recompute_image()
             self._last_logged_fine_rotation = new
             self._last_logged_crop = None
             self._log(f"Auto-straightened to {new:+.1f}\u00b0")
@@ -1905,7 +1831,7 @@ class AppController(QObject):
                 det = again
         fh, fw = self._current_frame_size()
         ih, iw = s.pre_crop_rgb.shape[:2]
-        kx, ky = fw / iw, fh / ih  # the pre-crop picture can be bigger than the preview frame the crop rectangle is kept in (HQ)
+        kx, ky = fw / iw, fh / ih
         x1, y1, x2, y2 = det.rect
         rect = (round(x1 * kx), round(y1 * ky), round(x2 * kx), round(y2 * ky))
         self._auto_busy = True
@@ -1915,7 +1841,7 @@ class AppController(QObject):
             self._auto_busy = False
         self._auto_run = {"method": method, "rotation": s.fine_rotation, "rect": rect}
         self.auto_adjust_available.emit(True)
-        self.reverted.emit()  # the Straighten slider follows
+        self.reverted.emit()
         self.notice.emit(("Gradient-cropped" if gradient else "Auto-cropped") + (f" and straightened {straightened:+.1f}\u00b0" if straightened is not None else ""))
         return True
 
@@ -1934,7 +1860,7 @@ class AppController(QObject):
             return False
         self._apply_default_edits()
         self._apply_detected_defaults()
-        for key in [k for (p, k) in self._module_preset_in_use if p == self.state.image_path]:  # nothing is loaded on any module any more
+        for key in [k for (p, k) in self._module_preset_in_use if p == self.state.image_path]:
             del self._module_preset_in_use[(self.state.image_path, key)]
         self._log("Reset all edits")
         self._restore_entry(self.state.history[-1])
@@ -2026,9 +1952,8 @@ class AppController(QObject):
         self.negative_state_changed.emit()
         self.reverted.emit()
 
-    # ---- undo / redo ----
     def can_undo(self) -> bool:
-        return len(self.state.history) > 1  # entry 0 is the photo as opened
+        return len(self.state.history) > 1
 
     def can_redo(self) -> bool:
         return bool(self._redo)
@@ -2052,15 +1977,13 @@ class AppController(QObject):
         self._finish_restore()
         self.notice.emit(f"Redid: {entry.description}")
 
-    # ---- copy / paste settings ----
     def copy_settings(self) -> bool:
-        """Remember this photo's look (tone, color, film type, sharpening, watermark) so it can be pasted onto others.
-        Crop, rotation and retouching stay behind: they belong to one frame."""
+        """Remember this photo's look (tone, color, film type, sharpening, watermark) so it can be pasted onto others."""
         if self.state.image_path is None:
             return False
         state = self._edit_state_dict()
         self._copied_look = copy.deepcopy({k: state[k] for k in LOOK_FIELDS})
-        self._copied_look["marks"] = copy.deepcopy(state["marks"])  # the text/logo watermarks travel with the look
+        self._copied_look["marks"] = copy.deepcopy(state["marks"])
         self.notice.emit(f"Copied settings from {os.path.basename(self.state.image_path)}")
         return True
 
@@ -2074,8 +1997,7 @@ class AppController(QObject):
         return self.apply_look(self._copied_look, "Pasted settings")
 
     def apply_look(self, look: dict, label: str) -> bool:
-        """Put a look on the open photo as one undoable step. Only look fields are taken, each coerced to the type it has on the photo, so a
-        hand-edited or older preset can never put a wrong kind of value into the edit."""
+        """Put a look on the open photo as one undoable step."""
         if self.state.preview_rgb is None:
             return False
         clean = self._clean_look(look)
@@ -2087,7 +2009,7 @@ class AppController(QObject):
             setattr(self.state, key, value)
         if marks is not None:
             self.state.marks = Marks.from_dict(marks)
-        if meter is not None:  # a drawn metering region belongs to the photo, so the one on it stays
+        if meter is not None:
             self.state.metering = dataclasses.replace(meter, rect=self.state.metering.rect)
         self._log(label)
         self._restore_entry(self.state.history[-1])
@@ -2120,7 +2042,6 @@ class AppController(QObject):
             clean["marks"] = Marks.from_dict(look["marks"]).to_dict()
         return clean
 
-    # ---- one module: reset, and its own presets (the menu in a panel's header) ----
     def module_title(self, key: str) -> str:
         return PANEL_MODULES[key][0]
 
@@ -2132,15 +2053,14 @@ class AppController(QObject):
         out = {f.key: copy.deepcopy(state[f.key]) for f in panel_fields(key)}
         if "tone_curve_points" in out:
             out["tone_curve_points"] = [list(p) for p in out["tone_curve_points"]]
-        if key == "negative":  # how it is metered travels with it, except the region drawn on this one photo
+        if key == "negative":
             out["metering"] = dataclasses.replace(self.state.metering, rect=None).to_dict()
-        if key == "watermark":  # the text and logo marks are part of the Watermark module
+        if key == "watermark":
             out["marks"] = self.state.marks.to_dict()
         return out
 
     def reset_module(self, key: str) -> bool:
-        """Put one module back to its defaults, as one undoable step. Negative goes back to what the photo started as: inverted unless it
-        was found to be a slide, film type automatic, no trim, default metering (the drawn region too)."""
+        """Put one module back to its defaults, as one undoable step."""
         if self.state.preview_rgb is None:
             return False
         values = panel_defaults(key)
@@ -2150,7 +2070,7 @@ class AppController(QObject):
         if key == "watermark":
             values["marks"] = {}
         if self.apply_look(values, f"Reset {self.module_title(key)}"):
-            self._module_preset_in_use.pop((self.state.image_path, key), None)  # a reset module has no preset loaded any more
+            self._module_preset_in_use.pop((self.state.image_path, key), None)
             self._save_edit_state()
             self.module_presets_changed.emit(key)
             self.notice.emit(f"{self.module_title(key)} reset")
@@ -2192,7 +2112,7 @@ class AppController(QObject):
         if stored is None:
             return False
         self._module_preset_in_use[(self.state.image_path, key)] = stored
-        self._save_edit_state()  # which preset is on the module is remembered with the photo
+        self._save_edit_state()
         self.module_presets_changed.emit(key)
         self.notice.emit(f"Stored {self.module_title(key)} preset '{stored}'")
         return True
@@ -2205,8 +2125,8 @@ class AppController(QObject):
         label = f"{self.module_title(key)} preset '{name}'"
         if self.apply_look(values, label):
             self._module_preset_in_use[(self.state.image_path, key)] = name
-            self._save_edit_state()  # which preset is on the module is remembered with the photo
-            self.module_presets_changed.emit(key)  # the panel's Update Preset button follows what is loaded
+            self._save_edit_state()
+            self.module_presets_changed.emit(key)
             self.notice.emit(f"Applied {label}")
             return True
         return False
@@ -2218,7 +2138,6 @@ class AppController(QObject):
         self.notice.emit(f"Deleted {self.module_title(key)} preset '{name}'")
         return True
 
-    # ---- saved looks (presets) ----
     def look_presets(self) -> list[str]:
         return look_store.names()
 
@@ -2335,14 +2254,13 @@ class AppController(QObject):
                 saved["metadata"] = {}
             state = {**saved, **copy.deepcopy(look)}
             edit_store.save_edit_state(self._db, path, state)
-            if state["crop_rect"] is None:  # a cropped photo's sidecar needs its frame size, which isn't known without opening it
+            if state["crop_rect"] is None:
                 xmp.write_sidecar(path, state, (1, 1))
             done += 1
         folder = os.path.basename(os.path.dirname(current))
         self.notice.emit(f"{label} on {done} photo{'s' if done != 1 else ''} in {folder}")
         return done
 
-    # ---- before / after ----
     def set_film_base(self, rgb: tuple[int, int, int] | None) -> None:
         """Calibrate the roll to the film base measured on its rebate: every photo in the open photo's folder inverts against it instead
         of estimating its own, so their colors agree. None goes back to estimating."""
@@ -2426,7 +2344,6 @@ class AppController(QObject):
         )
         return image
 
-    # ---- backups ----
     def backup_dir(self) -> str:
         """Where the daily copies go: the folder chosen in Settings, or backups/ inside the data folder."""
         chosen = app_settings.get("backup_dir")
@@ -2438,7 +2355,7 @@ class AppController(QObject):
             return None
         try:
             return backup_database(self._db, self.backup_dir(), keep=app_settings.get("backup_keep"))
-        except Exception:  # a backup problem must never stop the app from starting
+        except Exception:
             return None
 
     def database(self):

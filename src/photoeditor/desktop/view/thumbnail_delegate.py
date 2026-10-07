@@ -6,11 +6,11 @@ from PyQt6.QtWidgets import QStyle, QStyledItemDelegate
 
 from ...theme.tokens import THEME
 
-FLAG_ROLE = Qt.ItemDataRole.UserRole + 1  # "keeper" | "rejected" | None
-RATING_ROLE = Qt.ItemDataRole.UserRole + 2  # 0-5 stars
+FLAG_ROLE = Qt.ItemDataRole.UserRole + 1
+RATING_ROLE = Qt.ItemDataRole.UserRole + 2
 _FLAG_TINTS = {
-    "rejected": QColor(220, 40, 40, 115),  # toned red
-    "keeper": QColor(70, 200, 100, 60),  # lightly toned green
+    "rejected": QColor(220, 40, 40, 115),
+    "keeper": QColor(70, 200, 100, 60),
 }
 _BORDER_WIDTH_SELECTED = 3
 _BORDER_WIDTH_HOVER = 1

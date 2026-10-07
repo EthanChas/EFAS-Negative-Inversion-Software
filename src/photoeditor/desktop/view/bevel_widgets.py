@@ -8,11 +8,7 @@ from ...theme.tokens import THEME
 
 
 class BevelPanel(QWidget):
-    """A hand-painted 3D bevel panel - raised or sunken. QSS `border:` on a
-    bare QFrame/QWidget proved unreliable in this style of app (background-
-    color renders, the border never does), so anything needing a real Win98
-    bevel that isn't a QPushButton/QGroupBox (which do support it natively)
-    goes through this instead. Add content via `.layout()`."""
+    """A hand-painted 3D bevel panel - raised or sunken."""
 
     def __init__(
         self,
@@ -100,7 +96,7 @@ class CaptionButton(QPushButton):
     def __init__(self, kind: str, parent: QWidget | None = None):
         super().__init__(parent)
         self._kind = kind
-        self._expanded = True  # only meaningful for kind == "collapse"
+        self._expanded = True
         self.setFixedSize(THEME.title_button_size, THEME.title_button_size - 2)
         self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
 
@@ -146,7 +142,7 @@ class CaptionButton(QPushButton):
         elif self._kind == "add":
             painter.drawLine(cx - 4, cy, cx + 4, cy)
             painter.drawLine(cx, cy - 4, cx, cy + 4)
-        elif self._kind == "menu":  # three lines: a presets menu
+        elif self._kind == "menu":
             for dy in (-3, 0, 3):
                 painter.drawLine(cx - 4, cy + dy, cx + 4, cy + dy)
         elif self._kind == "refresh":

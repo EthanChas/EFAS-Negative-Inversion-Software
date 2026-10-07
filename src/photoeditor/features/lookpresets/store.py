@@ -21,7 +21,7 @@ def clean_name(name: str) -> str:
 
 
 def load() -> list[dict[str, Any]]:
-    """[{"name": str, "look": dict}] in saved order. A missing or damaged file is an empty list, never an error."""
+    """[{"name": str, "look": dict}] in saved order."""
     try:
         with open(_path(), encoding="utf-8") as f:
             raw = json.load(f)
@@ -48,7 +48,7 @@ def _save(presets: list[dict[str, Any]]) -> None:
             json.dump({"presets": presets}, f, ensure_ascii=False, indent=1)
         os.replace(tmp, _path())
     except OSError:
-        pass  # a read-only data folder must not break editing
+        pass
 
 
 def names() -> list[str]:
@@ -61,7 +61,7 @@ def get(name: str) -> dict[str, Any] | None:
 
 
 def save_preset(name: str, look: dict[str, Any]) -> str | None:
-    """Add a preset, or replace the one with that name (case-insensitive) keeping its place. Returns the stored name, None for a blank one."""
+    """Add a preset, or replace the one with that name (case-insensitive) keeping its place."""
     name = clean_name(name)
     if not name:
         return None
@@ -77,8 +77,7 @@ def save_preset(name: str, look: dict[str, Any]) -> str | None:
 
 
 def replace_preset(old_name: str, new_name: str, look: dict[str, Any]) -> str | None:
-    """Rewrite a preset - possibly under a new name - keeping its place in the list. Returns the stored name; None when the old one is
-    gone, the new name is blank, or the new name belongs to a different preset."""
+    """Rewrite a preset - possibly under a new name - keeping its place in the list."""
     old_key, new_name = clean_name(old_name).casefold(), clean_name(new_name)
     if not new_name:
         return None

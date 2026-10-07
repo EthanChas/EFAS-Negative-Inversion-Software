@@ -1,6 +1,4 @@
-"""A photo's own metadata (the frame half of what is written to its exports) as it is stored - no Qt imports.
-
-Saved as one JSON object with the photo's edits. What a whole roll shares lives in the Roll Card (roll.py) instead."""
+"""A photo's own metadata (the frame half of what is written to its exports) as it is stored - no Qt imports."""
 
 import dataclasses
 from typing import Any, Optional
@@ -29,7 +27,7 @@ def from_dict(data: Optional[dict]) -> MetadataConfig:
             continue
         if key == "description_fields":
             clean[key] = None if value is None else normalize_description_fields(value)
-        elif defaults[key] is None:  # the optional numbers: a count, a measurement, a coordinate
+        elif defaults[key] is None:
             if value is None or (isinstance(value, (int, float)) and not isinstance(value, bool)):
                 clean[key] = value
         elif isinstance(value, type(defaults[key])):

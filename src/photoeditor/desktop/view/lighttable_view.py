@@ -29,7 +29,7 @@ _PANEL_W = 270
 _RIGHT_W = 250
 _STAR_R = 4.5
 _GOLD = QColor(THEME.status_warning)
-_FLAG_FILTERS = {"any": (), "keeper": ("keeper",), "not_rejected": ("keeper", "none"), "rejected": ("rejected",), "none": ("none",)}  # the Flag combo's choices
+_FLAG_FILTERS = {"any": (), "keeper": ("keeper",), "not_rejected": ("keeper", "none"), "rejected": ("rejected",), "none": ("none",)}
 _FLAG_COLORS = {"keeper": QColor(76, 175, 80), "rejected": QColor(224, 96, 92)}
 
 
@@ -180,11 +180,11 @@ class LighttableDelegate(QStyledItemDelegate):
 
 
 class LighttableList(QListView):
-    """The thumbnail grid. Ctrl + wheel changes the thumbnail size; Enter or a double-click opens; the usual keys select."""
+    """The thumbnail grid."""
 
     open_requested = pyqtSignal(str)
     zoom_wheel = pyqtSignal(int)
-    key_for_selection = pyqtSignal(object)  # a QKeyEvent for the view to act on (ratings, flags)
+    key_for_selection = pyqtSignal(object)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -239,8 +239,8 @@ class LighttableList(QListView):
 class LighttableView(QWidget):
     open_requested = pyqtSignal(str)
     rate_requested = pyqtSignal(list, int)
-    tags_requested = pyqtSignal(list, list, list)  # paths, tags to add, tags to remove
-    flag_requested = pyqtSignal(list, object)  # paths, "keeper" | "rejected" | None
+    tags_requested = pyqtSignal(list, list, list)
+    flag_requested = pyqtSignal(list, object)
     export_requested = pyqtSignal(list)
     copy_settings_requested = pyqtSignal(str)
     paste_settings_requested = pyqtSignal(list)
@@ -249,9 +249,9 @@ class LighttableView(QWidget):
 
     def __init__(self, cache_dir: str | None, parent: QWidget | None = None):
         super().__init__(parent)
-        self._resolve_key = lambda _event: None  # AppWindow plugs in the real key map (set_key_resolver)
-        self._rows: list[dict] = []        # every photo in the library
-        self._shown: list[dict] = []       # the ones the filters leave
+        self._resolve_key = lambda _event: None
+        self._rows: list[dict] = []
+        self._shown: list[dict] = []
         self._loading = False
         self._pool = ThumbPool(cache_dir, parent=self)
         self._model = LighttableModel(self)
@@ -280,7 +280,6 @@ class LighttableView(QWidget):
         self._text_timer.timeout.connect(self.apply_filters)
         self._facets_for: list[dict] | None = None
 
-    # ---- building the three columns ----
     def _scroll(self, widget: QWidget, width: int) -> QScrollArea:
         area = QScrollArea()
         area.setWidgetResizable(True)
@@ -389,9 +388,7 @@ class LighttableView(QWidget):
         return self._scroll(host, _PANEL_W)
 
     def _build_quick_menu(self) -> QPushButton:
-        """A "Quick add" dropdown under the search box. A ready-made term (Keepers, 4+ stars...) is added to the search - and taken out again
-        when picked a second time - and is ticked while it is in the search. A field name ending in a colon (camera:) just starts the term and
-        leaves the cursor after it, ready for the value."""
+        """A "Quick add" dropdown under the search box."""
         today = date.today()
         groups = [
             ("Flag", [("Keepers", "flag:keeper"), ("Rejected", "flag:rejected"), ("Unflagged", "flag:none")]),
@@ -418,7 +415,7 @@ class LighttableView(QWidget):
 
     def _quick_term(self, term: str) -> None:
         words = self._search.text().split()
-        if term.endswith(":"):  # a field to fill in: add it and wait for the value
+        if term.endswith(":"):
             words.append(term)
             self._search.setText(" ".join(words))
         elif term in words:
@@ -541,7 +538,6 @@ class LighttableView(QWidget):
         self._on_selection()
         return self._scroll(host, _RIGHT_W)
 
-    # ---- data in ----
     def set_rows(self, rows: list[dict]) -> None:
         """All the photos of the library (see query.build_rows); the filters decide which are shown."""
         self._rows = rows
@@ -583,7 +579,6 @@ class LighttableView(QWidget):
         self._delegate.forget_scaled()
         self._pool.request(path)
 
-    # ---- filters ----
     def current_query(self) -> Q.Query:
         when = self._when.currentData()
         date_from = date_to = ""
@@ -663,7 +658,6 @@ class LighttableView(QWidget):
             self._empty.setText("No photo matches. Loosen the search or press Clear All Filters.")
         self._empty.setVisible(not self._shown)
         self._list.setVisible(bool(self._shown))
-        # keep the selection through a re-filter, for the photos that are still shown
         sel = self._list.selectionModel()
         for key in keep_keys:
             i = self._model.index_of(key)
@@ -675,14 +669,13 @@ class LighttableView(QWidget):
                 sel.setCurrentIndex(self._model.index(i), sel.SelectionFlag.NoUpdate)
         self._on_selection()
 
-    # ---- selection and information ----
     def _selected_rows(self) -> list[dict]:
         rows = (self._model.row_dict(ix.row()) for ix in self._list.selectionModel().selectedIndexes())
         return [r for r in rows if r is not None]
 
     def _current_row(self) -> dict | None:
         ix = self._list.currentIndex()
-        return self._model.row_dict(ix.row()) if ix.isValid() else None  # None for no current photo, or one past the end during a refill
+        return self._model.row_dict(ix.row()) if ix.isValid() else None
 
     def selected_paths(self) -> list[str]:
         rows = self._selected_rows() or ([self._current_row()] if self._current_row() else [])
@@ -780,7 +773,7 @@ class LighttableView(QWidget):
             event.accept()
 
     def handle_key(self, event: QKeyEvent) -> bool:
-        """The rating and flag keys act on the selection (whatever they are bound to). True when the key was one of those."""
+        """The rating and flag keys act on the selection (whatever they are bound to)."""
         return self.handle_action(self._resolve_key(event))
 
     def set_key_resolver(self, resolve) -> None:
@@ -806,7 +799,6 @@ class LighttableView(QWidget):
             seq = current.get(action_id, "")
             b.setToolTip(text + (f" ({seq})" if seq else ""))
 
-    # ---- zoom and thumbnails ----
     def _on_zoom(self, value: int) -> None:
         self._delegate.forget_scaled()
         self._list.set_cell(value)

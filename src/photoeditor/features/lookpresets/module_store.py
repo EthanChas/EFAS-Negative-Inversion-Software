@@ -44,7 +44,7 @@ def _save_all(data: dict[str, list[dict[str, Any]]]) -> None:
             json.dump(data, f, ensure_ascii=False, indent=1)
         os.replace(tmp, _path())
     except OSError:
-        pass  # a read-only data folder must not break editing
+        pass
 
 
 def names(module: str) -> list[str]:
@@ -57,7 +57,7 @@ def get(module: str, name: str) -> dict[str, Any] | None:
 
 
 def save_preset(module: str, name: str, values: dict[str, Any]) -> str | None:
-    """Add a preset to a module, or replace the one with that name (case-insensitive). Returns the stored name; None for a blank one."""
+    """Add a preset to a module, or replace the one with that name (case-insensitive)."""
     name = clean_name(name)
     if not name:
         return None

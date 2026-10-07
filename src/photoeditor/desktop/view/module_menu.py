@@ -6,9 +6,7 @@ from .collapsible_panel import CollapsiblePanel
 
 
 class ModuleMenus(QObject):
-    """The Reset and Presets buttons in a module's header, darktable-style. Reset puts the module back to its defaults; the Presets menu lists
-    the module's own saved presets (click one to apply it), stores the current settings as a new one, and deletes saved ones. Every
-    change is one undoable step in History. The presets live per module, in module_presets.json (features/lookpresets/module_store.py)."""
+    """The Reset and Presets buttons in a module's header, darktable-style."""
 
     def __init__(self, controller: AppController, parent: QWidget | None = None):
         super().__init__(parent)
@@ -38,7 +36,7 @@ class ModuleMenus(QObject):
             action = menu.addAction(name)
             action.setEnabled(has_photo)
             action.setCheckable(True)
-            action.setChecked(name == active)  # the one loaded on this module
+            action.setChecked(name == active)
             action.triggered.connect(lambda _c=False, n=name: c.apply_module_preset(key, n))
         if not names:
             menu.addAction("No presets yet").setEnabled(False)

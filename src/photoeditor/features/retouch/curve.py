@@ -7,9 +7,7 @@ import numpy as np
 
 
 def smooth_path(points: Sequence[tuple[float, float]], spacing: float = 2.0) -> list[tuple[float, float]]:
-    """A centripetal Catmull-Rom spline through `points`, as a polyline about `spacing` apart. It passes through every point, never loops or
-    overshoots on a sharp bend (that is what the centripetal form is for) and leaves the first and last points where they were. Two points
-    give a straight line, one point is returned as it is; points that repeat are dropped first."""
+    """A centripetal Catmull-Rom spline through `points`, as a polyline about `spacing` apart."""
     pts: list[tuple[float, float]] = []
     for p in points:
         p = (float(p[0]), float(p[1]))
@@ -20,7 +18,6 @@ def smooth_path(points: Sequence[tuple[float, float]], spacing: float = 2.0) -> 
             n = max(1, int(math.hypot(pts[1][0] - pts[0][0], pts[1][1] - pts[0][1]) / spacing))
             return [(pts[0][0] + (pts[1][0] - pts[0][0]) * i / n, pts[0][1] + (pts[1][1] - pts[0][1]) * i / n) for i in range(n + 1)]
         return pts
-    # phantom end points, mirrored, so the curve starts and ends heading the way the first and last segments do
     ext = [(2 * pts[0][0] - pts[1][0], 2 * pts[0][1] - pts[1][1]), *pts, (2 * pts[-1][0] - pts[-2][0], 2 * pts[-1][1] - pts[-2][1])]
     out: list[tuple[float, float]] = [pts[0]]
     for i in range(1, len(ext) - 2):

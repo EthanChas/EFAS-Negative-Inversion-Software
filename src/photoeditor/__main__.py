@@ -27,14 +27,10 @@ def main() -> None:
     app.setPalette(palette)
 
     window = AppWindow()
-    window.controller.daily_backup()  # once a day: a copy of the database, newest 14 kept
+    window.controller.daily_backup()
     window.showMaximized()
-    window.restore_session()  # the last photo and folder, sidebar widths and open tab
+    window.restore_session()
     exit_code = app.exec()
-    # Destroy the window, then the application, now rather than leaving them to interpreter
-    # finalization: sys.exit's traceback keeps both alive until then, they are torn down in an
-    # arbitrary order against PyQt's own exit cleanup, and with the app-wide stylesheet that
-    # usually ended in an access violation as the process exited.
     sip.delete(window)
     sip.delete(app)
     sys.exit(exit_code)

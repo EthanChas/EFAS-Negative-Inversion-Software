@@ -7,7 +7,7 @@ from ...theme.tokens import THEME
 from .bevel_widgets import BevelPanel
 
 _POINT_RADIUS = 4
-_HIT_RADIUS = 8  # a bit larger than the drawn point, so it's easy to grab
+_HIT_RADIUS = 8
 
 
 class CurveEditor(BevelPanel):
@@ -54,7 +54,6 @@ class CurveEditor(BevelPanel):
         self._dragging_index = None
         self.update()
 
-    # ---- geometry ----
     def _plot_rect(self) -> QRect:
         margin = THEME.border_width + THEME.space_sm
         return self.rect().adjusted(margin, margin, -margin, -margin)
@@ -80,7 +79,6 @@ class CurveEditor(BevelPanel):
                 best_index, best_dist = index, dist
         return best_index
 
-    # ---- mouse ----
     def mousePressEvent(self, event: QMouseEvent) -> None:
         if event.button() != Qt.MouseButton.LeftButton:
             return
@@ -93,7 +91,7 @@ class CurveEditor(BevelPanel):
 
         value = self._to_value(rect, pos)
         if value is None or any(x == value[0] for x, _ in self._points):
-            return  # outside the plot, or an x collision with an existing point
+            return
         self._points.append(value)
         self._points.sort()
         self._dragging_index = self._points.index(value)
@@ -110,9 +108,9 @@ class CurveEditor(BevelPanel):
         index = self._dragging_index
         x, y = value
         if index == 0:
-            x = 0  # the left anchor's x is locked - only y (black point) moves
+            x = 0
         elif index == len(self._points) - 1:
-            x = 255  # the right anchor's x is locked - only y (white point) moves
+            x = 255
         else:
             lo, hi = self._points[index - 1][0] + 1, self._points[index + 1][0] - 1
             x = max(lo, min(hi, x)) if lo <= hi else self._points[index][0]
@@ -137,7 +135,6 @@ class CurveEditor(BevelPanel):
             self.points_changed.emit(self.points())
             self.interaction_finished.emit()
 
-    # ---- paint ----
     def paintEvent(self, event: QPaintEvent) -> None:
         super().paintEvent(event)
         rect = self._plot_rect()

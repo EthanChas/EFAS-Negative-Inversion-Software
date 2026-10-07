@@ -1,7 +1,4 @@
-"""The user's own autofill presets for the Roll Card - cameras, lenses and films - no Qt imports.
-
-A preset is a name the Roll Card's fields suggest while you type. A camera preset can remember its usual lens (picking the camera fills
-the lens in), a film preset its ISO and format (picking the film fills those in). They live in presets.json under the app's data folder."""
+"""The user's own autofill presets for the Roll Card - cameras, lenses and films - no Qt imports."""
 
 import json
 import os
@@ -58,7 +55,7 @@ def _clean(kind: str, name: str, extra: dict[str, Any]) -> dict[str, Any]:
 
 
 def upsert(kind: str, name: str, **extra: Any) -> bool:
-    """Add a preset, or replace the one with the same name (case-insensitive). False for a blank name."""
+    """Add a preset, or replace the one with the same name (case-insensitive)."""
     if kind not in KINDS or not name.strip():
         return False
     data = load()

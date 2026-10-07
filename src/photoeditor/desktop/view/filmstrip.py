@@ -14,7 +14,6 @@ from .thumbnail_delegate import FLAG_ROLE, RATING_ROLE, ThumbnailDelegate
 _THUMB_SIZE = 90
 _STRIP_HEIGHT = 110
 
-# (mode key, label) - what the strip shows. "unedited" means nothing was changed on the photo (merely opening one doesn't count).
 FILTERS = (
     ("all", "All photos"),
     ("keepers", "Keepers"),
@@ -92,13 +91,13 @@ class Filmstrip(QWidget):
 
         self._loader: ThumbnailLoader | None = None
         self._active_path: str | None = None
-        self._active_icon: QIcon | None = None  # the latest edited look, re-applied if its tile loads in later
+        self._active_icon: QIcon | None = None
         self._paths: list[str] = []
         self._flags: dict[str, str] = {}
         self._ratings: dict[str, int] = {}
         self._edited: set[str] = set()
-        self._panels_hidden = False  # Tab hides the strip along with the side panels
-        self.setVisible(False)  # hidden until a folder is actually loaded
+        self._panels_hidden = False
+        self.setVisible(False)
 
     def paths(self) -> list[str]:
         """The folder currently loaded into the strip."""
@@ -113,9 +112,9 @@ class Filmstrip(QWidget):
     ) -> None:
         self._list.clear()
         self._paths = list(paths)
-        self._flags = dict(flags or {})  # keeper/rejected marks, tinted onto the tiles
-        self._ratings = dict(ratings or {})  # star ratings, drawn on the tiles
-        self._edited = set(edited or ())  # photos with changed edits, for the Unedited filter
+        self._flags = dict(flags or {})
+        self._ratings = dict(ratings or {})
+        self._edited = set(edited or ())
         self.setVisible(bool(paths) and not self._panels_hidden)
         if not paths:
             return
@@ -126,7 +125,7 @@ class Filmstrip(QWidget):
 
     def set_active_path(self, path: str | None) -> None:
         self._active_path = path
-        self._active_icon = None  # a newly-opened file starts from its own plain cached thumbnail
+        self._active_icon = None
         item = self._find_item(path)
         if self.filter_mode() != "all":
             self._apply_filter()
@@ -146,7 +145,7 @@ class Filmstrip(QWidget):
         silently dropped and overwritten by the plain cached one."""
         if self._active_path is None:
             return
-        step = max(1, max(pixels.shape[:2]) // 800)  # an HQ frame is far bigger than any tile needs
+        step = max(1, max(pixels.shape[:2]) // 800)
         pixels = pixels[::step, ::step]
         save_edited_thumbnail(thumbnail_cache_dir(), self._active_path, pixels)
         self._active_icon = QIcon(_make_thumbnail_pixmap(pixels, _THUMB_SIZE))
@@ -192,14 +191,13 @@ class Filmstrip(QWidget):
             item.setHidden(not self._passes(path))
         self._update_count()
 
-    # ---- filtering and stepping ----
     def filter_mode(self) -> str:
         return self._filter.currentData()
 
     def set_filter(self, mode: str) -> None:
         i = self._filter.findData(mode)
         if i >= 0 and i != self._filter.currentIndex():
-            self._filter.setCurrentIndex(i)  # _on_filter_picked does the rest
+            self._filter.setCurrentIndex(i)
 
     def _passes(self, path: str) -> bool:
         mode = self._filter.currentData()
@@ -220,7 +218,6 @@ class Filmstrip(QWidget):
         for i in range(self._list.count()):
             item = self._list.item(i)
             path = item.data(Qt.ItemDataRole.UserRole)
-            # the photo that is open stays visible, so the strip never loses its place under you
             item.setHidden(not (self._passes(path) or path == self._active_path))
         self._update_count()
 
@@ -256,7 +253,7 @@ class Filmstrip(QWidget):
         return (visible[-1] if last else visible[0]) if visible else None
 
     def step(self, delta: int) -> bool:
-        """Open the previous/next photo of the strip. False when there is none (an end, or no folder loaded)."""
+        """Open the previous/next photo of the strip."""
         path = self.neighbor(delta)
         if path is None:
             return False

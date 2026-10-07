@@ -5,18 +5,16 @@ from PyQt6.QtWidgets import QWidget
 from ...features.focuspeaking.logic import COLORS, NAMES
 from ...theme.tokens import THEME
 
-_PAD = 16          # from the box's edge to the first / last stop
-_TRACK_Y = 13      # of the box, top to the track
+_PAD = 16
+_TRACK_Y = 13
 _HEIGHT = 40
 _WIDTH = 214
 
 
 class PeakingSlider(QWidget):
-    """The focus-peaking level slider that floats over the image: four stops - blue, green, yellow, red. The stop picked is the weakest level
-    that is marked; the ones above it are marked too (red alone is the very sharpest). The stops below it are dimmed. Click or drag along
-    the track, or use the wheel."""
+    """The focus-peaking level slider that floats over the image: four stops - blue, green, yellow, red."""
 
-    level_changed = pyqtSignal(int)  # 0 blue ... 3 red
+    level_changed = pyqtSignal(int)
 
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
@@ -67,7 +65,7 @@ class PeakingSlider(QWidget):
         left, right = self._stop_x(0), self._stop_x(len(COLORS) - 1)
         painter.setPen(QPen(QColor(255, 255, 255, 60), 3, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
         painter.drawLine(QPointF(left, _TRACK_Y), QPointF(right, _TRACK_Y))
-        reach = self._stop_x(self._level)  # the part of the track that is marked: from the picked stop up
+        reach = self._stop_x(self._level)
         painter.setPen(QPen(QColor(*COLORS[self._level]), 3, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
         painter.drawLine(QPointF(reach, _TRACK_Y), QPointF(right, _TRACK_Y))
         for i, color in enumerate(COLORS):

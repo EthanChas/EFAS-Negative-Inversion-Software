@@ -29,7 +29,7 @@ def _load_16bit_file(path: str):
         data = np.repeat(data[:, :, None], 3, axis=2)
     elif data.shape[2] == 4:
         data = data[:, :, :3]
-    return np.ascontiguousarray(data[:, :, ::-1])  # OpenCV reads BGR
+    return np.ascontiguousarray(data[:, :, ::-1])
 
 
 def load_image_rgb(path: str) -> np.ndarray:

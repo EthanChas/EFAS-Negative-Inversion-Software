@@ -1,4 +1,4 @@
-"""Pure folder-scanning logic. No Qt/UI imports - unit-testable without a GUI."""
+"""Pure folder-scanning logic."""
 
 import hashlib
 import os

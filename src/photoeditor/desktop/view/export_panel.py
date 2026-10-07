@@ -29,7 +29,7 @@ from .slider_row import SliderRow
 _LABEL_WIDTH = 80
 _GLOBAL_KEY = "export/options"
 _PRESETS_KEY = "export/presets"
-_SELECTED_KEY = "export/selected"  # name of the preset the controls were last editing
+_SELECTED_KEY = "export/selected"
 _DEFAULT_CHECKED = "High quality JPEG (full size)"
 
 
@@ -58,19 +58,9 @@ def describe(o: X.ExportOptions) -> str:
 
 
 class ExportPanel(CollapsiblePanel):
-    """Export section under History, in the spirit of darktable's export
-    module and NegPy's export presets.
+    """Export section under History, in the spirit of darktable's export module and NegPy's export presets."""
 
-    Presets are named sets of format + encoder settings (a quality slider for
-    JPEG/WebP, TIFF compression...) + size. Tick any number of them and one
-    click exports every photo in the chosen scope once per ticked preset -
-    JPEG and TIFF together, say - so a batch of keepers can go out in several
-    formats at once. The controls below the list edit the highlighted preset
-    (saved as you change them); the destination and filename settings are
-    shared by every preset. With nothing ticked, Export uses the highlighted
-    preset's settings as they are. Everything persists between sessions."""
-
-    export_requested = pyqtSignal(str, object)  # scope, [(preset name, ExportOptions)]
+    export_requested = pyqtSignal(str, object)
     cancel_requested = pyqtSignal()
 
     def __init__(self, parent: QWidget | None = None):
@@ -97,7 +87,6 @@ class ExportPanel(CollapsiblePanel):
         self._presets: list[dict] = []
         self._current = -1
 
-        # ---- presets ----
         body.addWidget(self._section("PRESETS (tick to export)"))
         self._preset_list = QListWidget()
         self._preset_list.setMaximumHeight(150)
@@ -118,7 +107,6 @@ class ExportPanel(CollapsiblePanel):
             preset_buttons.addWidget(button)
         body.addLayout(preset_buttons)
 
-        # ---- format ----
         body.addWidget(self._section("FORMAT"))
         self._format = QComboBox()
         for fmt in X.FORMATS:
@@ -195,7 +183,6 @@ class ExportPanel(CollapsiblePanel):
         self._suffix.textChanged.connect(self._on_changed)
         body.addLayout(self._row("Suffix", self._suffix))
 
-        # ---- size ----
         body.addWidget(self._section("SIZE"))
         self._size_mode = QComboBox()
         for mode in X.SIZE_MODES:
@@ -250,7 +237,6 @@ class ExportPanel(CollapsiblePanel):
         self._size_hint.setProperty("role", "hint")
         body.addWidget(self._size_hint)
 
-        # ---- color / metadata ----
         body.addWidget(self._section("COLOR & METADATA"))
         self._srgb = QCheckBox("Embed sRGB profile")
         self._srgb.toggled.connect(self._on_changed)
@@ -263,7 +249,6 @@ class ExportPanel(CollapsiblePanel):
         self._exif.toggled.connect(self._on_changed)
         body.addWidget(self._exif)
 
-        # ---- destination (shared by every preset) ----
         body.addWidget(self._section("DESTINATION (all presets)"))
         self._dest_mode = QComboBox()
         for mode in X.DEST_MODES:
@@ -313,7 +298,6 @@ class ExportPanel(CollapsiblePanel):
         self._conflict.currentIndexChanged.connect(self._on_changed)
         body.addLayout(self._row("If exists", self._conflict))
 
-        # ---- run ----
         body.addWidget(self._section("EXPORT"))
         self._scope = QComboBox()
         for scope in X.SCOPES:
@@ -371,7 +355,6 @@ class ExportPanel(CollapsiblePanel):
         self._refresh_visibility()
         self._refresh_hints()
 
-    # ---- small builders ----
     @staticmethod
     def _section(text: str) -> QLabel:
         label = QLabel(text)
@@ -396,7 +379,6 @@ class ExportPanel(CollapsiblePanel):
             if item is not None:
                 item.setVisible(visible)
 
-    # ---- options <-> widgets ----
     def options(self) -> X.ExportOptions:
         """Everything the controls show right now: the highlighted preset's
         settings plus the shared destination/naming ones."""
@@ -476,7 +458,6 @@ class ExportPanel(CollapsiblePanel):
         self._preset_folders.setChecked(o.preset_folders)
         self._loading = False
 
-    # ---- presets ----
     def _default_presets(self) -> list[dict]:
         return [
             {"name": name, "checked": name == _DEFAULT_CHECKED, "options": X.ExportOptions.from_dict(values).to_dict()}
@@ -491,7 +472,7 @@ class ExportPanel(CollapsiblePanel):
             presets = None
         if not isinstance(presets, list) or not all(isinstance(p, dict) and "name" in p for p in presets):
             presets = self._default_presets()
-        for preset in presets:  # a preset saved before presets had a prefix gets the one the built-in preset of that name has now
+        for preset in presets:
             built_in = X.PRESETS.get(preset["name"], {})
             options = preset.get("options")
             if "prefix" in built_in and isinstance(options, dict) and "prefix" not in options:
@@ -502,8 +483,6 @@ class ExportPanel(CollapsiblePanel):
         except (TypeError, ValueError):
             shared = {}
         self._set_global_fields(X.ExportOptions.from_dict(shared))
-        # Reopen on the preset that was being edited, so the quality slider (and
-        # everything else) shows what the user left it at - not the first preset's.
         last = str(settings.value(_SELECTED_KEY, "") or "")
         names = [p["name"] for p in self._presets]
         self._rebuild_list(select=names.index(last) if last in names else names.index(_DEFAULT_CHECKED) if _DEFAULT_CHECKED in names else 0)
@@ -539,7 +518,7 @@ class ExportPanel(CollapsiblePanel):
         self._current = row
         if 0 <= row < len(self._presets):
             self._set_preset_fields(X.ExportOptions.from_dict(self._presets[row].get("options", {})))
-            self._save_settings()  # remembers which preset is being edited
+            self._save_settings()
         self._refresh_visibility()
         self._refresh_hints()
 
@@ -601,7 +580,6 @@ class ExportPanel(CollapsiblePanel):
             if p.get("checked")
         ]
 
-    # ---- behavior ----
     def _on_export_clicked(self) -> None:
         self.export_requested.emit(self._scope.currentData(), self.current_job())
 
@@ -627,7 +605,7 @@ class ExportPanel(CollapsiblePanel):
     def _on_changed(self, *_args) -> None:
         if self._loading:
             return
-        if 0 <= self._current < len(self._presets):  # the controls edit the highlighted preset
+        if 0 <= self._current < len(self._presets):
             self._presets[self._current]["options"] = self._preset_fields()
             item = self._preset_list.item(self._current)
             if item is not None:
@@ -669,7 +647,6 @@ class ExportPanel(CollapsiblePanel):
         names = [o.prefix + stem + o.suffix + X.EXTENSIONS[o.fmt]]
         self._name_preview.setText(f"e.g. {names[0]}")
 
-    # ---- driven by the window ----
     def set_source_info(self, name: str | None, size: tuple[int, int] | None) -> None:
         """The open image's file stem and full-resolution (cropped) size, for the hints."""
         self._example_name = name or "IMG_0001"

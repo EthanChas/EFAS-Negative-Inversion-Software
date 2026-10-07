@@ -5,7 +5,7 @@ from ...theme.tokens import THEME
 from .collapsible_panel import CollapsiblePanel
 from .slider_row import SliderRow
 
-_PREVIEW_THROTTLE_MS = 33  # ~30fps cap for the cheap image-only preview, same as Exposure
+_PREVIEW_THROTTLE_MS = 33
 _SETTLE_DEBOUNCE_MS = 200
 
 
@@ -57,8 +57,7 @@ class ContrastToolPanel(CollapsiblePanel):
         self.set_value(0.0)
 
     def set_value(self, value: float) -> None:
-        """Sync the slider without emitting anything - used by reset() and
-        after a history revert."""
+        """Sync the slider without emitting anything - used by reset() and after a history revert."""
         self._slider.set_value(value)
 
     def _on_value_changed(self, value: float) -> None:

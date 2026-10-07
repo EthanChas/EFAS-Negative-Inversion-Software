@@ -80,6 +80,5 @@ class LibraryPanel(CollapsiblePanel):
         self._tree.reveal(folder)
 
     def reload_roots(self) -> None:
-        """Picks up roots added from the other root-list editor (the
-        Import window) since this panel was built."""
+        """Picks up roots added from the other root-list editor (the Import window) since this panel was built."""
         self._tree.set_roots(self._settings.value(ROOTS_SETTINGS_KEY, [], type=list))

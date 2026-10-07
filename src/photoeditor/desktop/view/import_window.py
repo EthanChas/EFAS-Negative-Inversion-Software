@@ -17,22 +17,7 @@ from .thumbnail_delegate import ThumbnailDelegate
 
 
 class ImportWindow(QMainWindow):
-    """Opened from File -> Import Images. Its own top-level window, not modal,
-    so browsing photos doesn't block the rest of the app.
-
-    A folder tree on the left (see FolderTree), mirroring NegPy's own
-    LibraryTree of saved root folders - "Add Root Folder..." adds a new one
-    (persisted across sessions via QSettings), clicking any node loads that
-    folder's images into the grid on the right.
-
-    The grid itself is a darktable-style lighttable: click a thumbnail to
-    select it (ctrl/shift-click for a multi-selection), shown with a bright
-    accent border (see ThumbnailDelegate) rather than Qt's own easy-to-miss
-    flat highlight; double-click opens it in the main editor window.
-    Thumbnails are cached on disk by content/mtime (see
-    features/browse/processor.py), so re-opening a folder already browsed
-    this session - or in an earlier one - is instant instead of re-decoding
-    every RAW file again."""
+    """Opened from File -> Import Images."""
 
     def __init__(self, main_window, parent: QWidget | None = None):
         super().__init__(parent)
@@ -50,7 +35,6 @@ class ImportWindow(QMainWindow):
         self._build_ui()
         self._tree.set_roots(self._settings.value(ROOTS_SETTINGS_KEY, [], type=list))
 
-    # ---- layout ----
     def _build_ui(self) -> None:
         central = QWidget()
         self.setCentralWidget(central)
@@ -58,7 +42,6 @@ class ImportWindow(QMainWindow):
         outer.setContentsMargins(THEME.space_xl, THEME.space_xl, THEME.space_xl, THEME.space_xl)
         outer.setSpacing(THEME.space_lg)
 
-        # --- intro ---
         title = QLabel("Import Images")
         title.setProperty("role", "title")
         outer.addWidget(title)
@@ -70,7 +53,6 @@ class ImportWindow(QMainWindow):
         splitter = QSplitter(Qt.Orientation.Horizontal)
         outer.addWidget(splitter, 1)
 
-        # --- left: folder tree ---
         tree_panel = QWidget()
         tree_col = QVBoxLayout(tree_panel)
         tree_col.setContentsMargins(0, 0, 0, 0)
@@ -87,7 +69,6 @@ class ImportWindow(QMainWindow):
 
         splitter.addWidget(tree_panel)
 
-        # --- right: current folder + status + tile grid ---
         grid_panel = QWidget()
         grid_col = QVBoxLayout(grid_panel)
         grid_col.setContentsMargins(0, 0, 0, 0)
@@ -120,7 +101,6 @@ class ImportWindow(QMainWindow):
         splitter.setStretchFactor(1, 1)
         splitter.setSizes([240, 860])
 
-    # ---- actions ----
     def _add_root_folder(self) -> None:
         folder = QFileDialog.getExistingDirectory(self, "Add a root folder")
         if not folder:

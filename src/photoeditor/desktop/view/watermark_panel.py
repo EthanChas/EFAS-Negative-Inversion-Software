@@ -20,17 +20,14 @@ from ...theme.tokens import THEME
 from .collapsible_panel import CollapsiblePanel
 from .slider_row import SliderRow
 
-_MARKS_SETTLE_MS = 250  # every change is a full render, so a slider settles before it is applied
+_MARKS_SETTLE_MS = 250
 
 
 class CanisterWatermarkPanel(CollapsiblePanel):
-    """The Watermark tab. Three independent marks over the finished picture: a 3D film canister (pre-rendered, soft matte shading - no cast
-    shadows or highlights, so it sits on any photo) with Film / Texture / Size / Position dropdowns (Film "None" turns it off); a line of
-    text (a copyright, a name) with its size, opacity, color, position and shadow; and a logo image with its size, opacity and
-    position. One change = one full render, so there's no live-preview tier."""
+    """The Watermark tab."""
 
-    changed = pyqtSignal(str, str, str, str, bool, str, str)  # film, texture, size, position, info on, camera, lens
-    marks_changed = pyqtSignal(object)  # the text and logo marks, as a Marks
+    changed = pyqtSignal(str, str, str, str, bool, str, str)
+    marks_changed = pyqtSignal(object)
 
     def __init__(self, parent: QWidget | None = None):
         super().__init__(
@@ -200,14 +197,14 @@ class CanisterWatermarkPanel(CollapsiblePanel):
         row.addWidget(name)
         edit = QLineEdit()
         edit.setPlaceholderText(placeholder)
-        if kind:  # the same suggestions as the Roll Card: your gear presets first, then the built-in lists
+        if kind:
             model = QStringListModel(suggest.suggestions(kind), edit)
             completer = QCompleter(model, edit)
             completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
             completer.setFilterMode(Qt.MatchFlag.MatchContains)
             edit.setCompleter(completer)
             self._completers[kind] = model
-        edit.editingFinished.connect(self._on_text_finished)  # on Enter / focus-out, not per keystroke: each commit is a full render
+        edit.editingFinished.connect(self._on_text_finished)
         row.addWidget(edit, 1)
         body.addLayout(row)
         return edit
@@ -221,7 +218,7 @@ class CanisterWatermarkPanel(CollapsiblePanel):
         for text, key in items:
             combo.addItem(text, key)
         combo.setToolTip(tip)
-        combo.currentIndexChanged.connect(on_change or self._on_changed)  # the canister's rows run _on_changed; the marks' own rows pass theirs
+        combo.currentIndexChanged.connect(on_change or self._on_changed)
         row.addWidget(combo, 1)
         body.addLayout(row)
         return combo
@@ -276,6 +273,6 @@ class CanisterWatermarkPanel(CollapsiblePanel):
             model.setStringList(suggest.suggestions(kind))
 
     def _on_text_finished(self) -> None:
-        self._on_camera_picked()  # a typed camera that is a preset fills in its lens too, as in the Roll Card
-        if self._info.isChecked():  # the texts only matter while the box is ticked
+        self._on_camera_picked()
+        if self._info.isChecked():
             self.changed.emit(*self.values())

@@ -11,7 +11,7 @@ _BUTTON_SIZE = 40
 _BLANK_ICON_SIZE = 22
 _HOVER_DURATION_MS = 150
 _HOVER_EASING = QEasingCurve.Type.InOutQuad
-_NO_MAX = 16777215  # Qt's own QWIDGETSIZE_MAX - "no cap" for maximumWidth
+_NO_MAX = 16777215
 
 
 class ToolRail(QWidget):
@@ -20,7 +20,7 @@ class ToolRail(QWidget):
     name next to its icon. Clicking a tab toggles it on/off; the caller
     (AppWindow) decides what that means - here it's just a rail."""
 
-    tab_toggled = pyqtSignal(str, bool)  # tab id, now-checked
+    tab_toggled = pyqtSignal(str, bool)
 
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
@@ -30,18 +30,10 @@ class ToolRail(QWidget):
         self._layout = QVBoxLayout(self)
         self._layout.setContentsMargins(0, THEME.space_sm, 2, THEME.space_sm)
         self._layout.setSpacing(2)
-        self._layout.addStretch(1)  # tabs pinned to the top
+        self._layout.addStretch(1)
 
         self._buttons: dict[str, QToolButton] = {}
 
-        # minimumWidth and maximumWidth are animated together, in lockstep,
-        # rather than leaving minimumWidth fixed at _COLLAPSED_WIDTH: with
-        # only maximumWidth raised, this rail would compete for space with
-        # anything else in its row that also wants to grow, and Qt clips -
-        # doesn't elide - a tool button's text when it loses that fight,
-        # mangling the label ("WB Correction" became "WB Cltion"). Locking
-        # min=max at every frame makes the rail's width non-negotiable, so
-        # the rail's label is always shown in full.
         self._max_animation = QPropertyAnimation(self, b"maximumWidth", self)
         self._max_animation.setDuration(_HOVER_DURATION_MS)
         self._max_animation.setEasingCurve(_HOVER_EASING)
@@ -55,27 +47,16 @@ class ToolRail(QWidget):
         button = QToolButton()
         button.setCheckable(True)
         if icon is None:
-            # A genuinely blank icon, not just an unset one - Qt/Fusion draws
-            # a stray placeholder glyph for a null QIcon in icon-only mode,
-            # which is worse than a blank tab for a tab with no icon yet.
             icon = QPixmap(_BLANK_ICON_SIZE, _BLANK_ICON_SIZE)
             icon.fill(Qt.GlobalColor.transparent)
         button.setIcon(QIcon(icon))
         button.setText(label)
         button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
         button.setMinimumHeight(_BUTTON_SIZE)
-        # QToolButton's default horizontal size policy is Preferred, not
-        # Expanding - without this it just takes its own natural
-        # (icon-sized) width in this QVBoxLayout instead of filling the
-        # frame around it, leaving the frame's own padding looking uneven.
         button.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         button.clicked.connect(lambda checked, tid=tab_id: self.tab_toggled.emit(tid, checked))
         self._buttons[tab_id] = button
 
-        # Each tab gets its own snug sunken frame (not one frame around the
-        # whole rail) - it just inherits the rail's current width like any
-        # other child in this QVBoxLayout, so it widens/narrows in step with
-        # the rail's own hover animation without needing one of its own.
         frame = thin_sunken_panel(h_margin=1, v_margin=1)
         frame.layout().addWidget(button)
         self._layout.insertWidget(self._layout.count() - 1, frame)

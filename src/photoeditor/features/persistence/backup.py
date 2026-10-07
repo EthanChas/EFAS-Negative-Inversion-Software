@@ -50,7 +50,7 @@ def backup_database(conn: sqlite3.Connection, backup_dir: str, keep: int = 14, f
         except OSError:
             pass
     try:
-        update_best(conn, backup_dir)  # the fullest database ever seen is kept apart from the daily copies, which rotate
+        update_best(conn, backup_dir)
     except (sqlite3.Error, OSError):
         pass
     return path

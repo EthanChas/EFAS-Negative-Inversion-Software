@@ -111,7 +111,6 @@ class ScanExif:
         )
 
 
-# Tags that describe the digitization rig; strip when writing film capture to standard EXIF.
 _SCAN_RESIDUAL_EXIF_TAGS = frozenset(
     {
         piexif.ExifIFD.FocalLengthIn35mmFilm,

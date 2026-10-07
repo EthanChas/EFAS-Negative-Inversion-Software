@@ -1,12 +1,4 @@
-"""Pure sharpening - numpy + OpenCV only, no Qt/UI imports.
-
-Ported from NegPy's four sharpening methods (negpy/features/lab/logic.py):
-Unsharp Mask, Deconvolution (Richardson-Lucy), Surface Blur (bilateral) and
-Wavelet (multi-scale). All but Deconvolution work on the L* channel of
-CIELAB - OpenCV's sRGB<->Lab here, where NegPy has its own working-space
-conversion - with the same soft noise gate, shadow-gain rolloff, optional
-edge mask and local-range overshoot clamp as the original, so the constants
-carry over unchanged. OpenCV is imported lazily on first use."""
+"""Pure sharpening - numpy + OpenCV only, no Qt/UI imports."""
 
 import math
 from enum import Enum
@@ -44,10 +36,10 @@ WAVELET_SIGMA_RATIOS = (2.0, 8.0, 32.0)
 _WAVELET_MEDIUM_WEIGHT = 1.0
 _WAVELET_LARGE_WEIGHT = 0.6
 _GAUSSIAN_MAX_KERNEL_R = 32
-_BILATERAL_MAX_DIM = 1600  # same cap NegPy uses (its PREVIEW_SIZE_DEFAULT)
-_BILATERAL_MAX_SIGMA = 4.0  # working sigma_space ceiling after downscaling
+_BILATERAL_MAX_DIM = 1600
+_BILATERAL_MAX_SIGMA = 4.0
 RL_EPS = 1e-6
-_SRGB_GAMMA = 2.2  # decode/encode approximation for the Deconvolution ratio
+_SRGB_GAMMA = 2.2
 
 _cv2 = None
 
@@ -138,8 +130,6 @@ def _gated_usm(pixels, amount, masking, blur_fn, shadow_gain: bool):
 
 def _usm(pixels, amount, radius, masking):
     k = gaussian_kernel_1d(radius)
-    # Parallel strips overlapping by more than the blur + edge-mask + 3x3
-    # clamp reach, so seams match a single full-image pass.
     overlap = len(k) // 2 + 6
     return run_strips(
         lambda strip: _gated_usm(strip, amount, masking, lambda l: _blur(l, k), shadow_gain=True), pixels, overlap=overlap
@@ -149,10 +139,6 @@ def _usm(pixels, amount, radius, masking):
 def _bounded_bilateral(chan: np.ndarray, sigma_color: float, sigma_space: float) -> np.ndarray:
     cv2 = _cv()
     h, w = chan.shape[:2]
-    # Cost grows with the square of sigma_space, so the working size shrinks
-    # with it as well as being capped at _BILATERAL_MAX_DIM: the bilateral
-    # result is only a smooth reference to diff against, so a downscaled
-    # one (sigma scaled to match) is visually equivalent and far cheaper.
     scale = min(1.0, _BILATERAL_MAX_DIM / max(h, w), _BILATERAL_MAX_SIGMA / sigma_space)
     if scale >= 1.0:
         return cv2.bilateralFilter(chan, 0, np.float32(sigma_color), np.float32(sigma_space), borderType=cv2.BORDER_REFLECT_101)
@@ -199,10 +185,7 @@ def _wavelet(pixels, amount, radius, masking):
 
 
 def _deconvolution(pixels, amount, radius, masking):
-    """Richardson-Lucy on luminance with a Gaussian PSF, applied as an RGB
-    ratio so chroma is preserved. NegPy runs this on linear luminance; here
-    the sRGB pixels are linearized with a plain 2.2 gamma for the luminance
-    and the ratio is carried back through the inverse gamma."""
+    """Richardson-Lucy on luminance with a Gaussian PSF, applied as an RGB ratio so chroma is preserved."""
     rgb = pixels.astype(np.float32) * np.float32(1.0 / 255.0)
     lin = np.power(rgb, np.float32(_SRGB_GAMMA))
     obs = (lin[..., 0] * np.float32(0.2126) + lin[..., 1] * np.float32(0.7152) + lin[..., 2] * np.float32(0.0722)).astype(np.float32)
@@ -214,7 +197,6 @@ def _deconvolution(pixels, amount, radius, masking):
         est = est * _blur(obs / np.maximum(blurred, np.float32(RL_EPS)), k)
 
     ratio = est / np.maximum(obs, np.float32(RL_EPS))
-    # L* from linear Y, for the shadow-gain/mask inputs.
     l_obs = np.float32(116.0) * np.cbrt(np.maximum(obs, 0.0)) - np.float32(16.0)
     gain = np.float32(amount) * _shadow_gain(l_obs)
     if masking > 0.0:
@@ -251,11 +233,6 @@ def apply_sharpening(
     return _METHODS.get(method, _usm)(pixels, amount, radius, masking)
 
 
-# Which methods are cheap enough to render per interactive preview tick: while
-# dragging the Sharpening sliders themselves (OWN), and while dragging any other
-# tool with sharpening already set (OTHER). Slower ones (Richardson-Lucy takes
-# 400-600 ms) apply once the edit settles instead - see
-# Renderer.render.
 LIVE_OWN_METHODS = frozenset(
     {SharpenMethod.USM.value, SharpenMethod.WAVELET.value, SharpenMethod.SURFACE_BLUR.value}
 )

@@ -57,8 +57,8 @@ from ..features.whitebalance.logic import (
     rgb_histogram,
 )
 
-_STATS_MAX_PIXELS = 2_000_000  # histograms/stats subsample anything bigger than this
-_RETOUCH_CACHE_SIZE = 2  # base + HQ, so toggling between them doesn't redo detection
+_STATS_MAX_PIXELS = 2_000_000
+_RETOUCH_CACHE_SIZE = 2
 
 
 def _freeze(value):
@@ -107,24 +107,23 @@ class EditParams:
     wm_info: bool
     wm_camera: str
     wm_lens: str
-    film_base: tuple | None  # the roll's measured film base (r, g, b), or None to estimate it from each photo
-    local_contrast: float = 0.0  # CLAHE on lightness, 0-1
-    vignette: float = 0.0  # finishing: + darkens the corners, - lightens (features/finishing/logic.py)
+    film_base: tuple | None
+    local_contrast: float = 0.0
+    vignette: float = 0.0
     vignette_size: float = 0.5
     border: float = 0.0
     border_color: str = "white"
     carrier: bool = False
-    clone_strokes: tuple = ()  # copied-over repairs (features/retouch/clone.py)
-    ai_dust: bool = False  # repair what the FilmDefectNet model marks (features/aidust/logic.py)
+    clone_strokes: tuple = ()
+    ai_dust: bool = False
     ai_threshold: float = aidust.DEFAULT_THRESHOLD
     ai_grow: int = aidust.DEFAULT_GROW
-    marks: Marks = Marks()  # the text and logo watermarks (features/watermark/marks.py)
-    metering: Metering = Metering()  # how the negative is read when inverted (features/negative/metering.py)
+    marks: Marks = Marks()
+    metering: Metering = Metering()
 
     @classmethod
     def from_dict(cls, d: dict) -> "EditParams":
-        """From edit_store's saved-state dict shape (what a batch export has
-        for photos that aren't open)."""
+        """From edit_store's saved-state dict shape (what a batch export has for photos that aren't open)."""
         return cls.from_state(type("_Saved", (), d))
 
     @classmethod
@@ -187,28 +186,28 @@ class EditParams:
 class RenderJob:
     gen: int
     params: EditParams
-    base: np.ndarray  # the ~1600px preview - always rendered first (unless hq_only)
-    hq: np.ndarray | None  # full-resolution source, rendered after base when set
-    token: object  # identifies the source file, for the renderer's caches
-    full: bool  # also compute histogram/stats
-    live: frozenset | None  # sharpen methods cheap enough to run (None = all)
+    base: np.ndarray
+    hq: np.ndarray | None
+    token: object
+    full: bool
+    live: frozenset | None
     hq_only: bool = False
-    overlay: bool = False  # also build the detection overlay
-    clip: tuple = (False, False)  # (shadows, highlights) clipping overlays wanted
-    flatfield: tuple | None = None  # (token, gain map) for this photo's folder
+    overlay: bool = False
+    clip: tuple = (False, False)
+    flatfield: tuple | None = None
 
 
 @dataclass
 class RenderOutput:
     gen: int
-    kind: str  # "base" or "hq"
+    kind: str
     full: bool
     image: np.ndarray
     pre_crop: np.ndarray | None
     stats: dict | None
     overlay: np.ndarray | None = None
     clip: np.ndarray | None = None
-    clip_fractions: tuple | None = None  # (shadow share, highlight share) of pixels
+    clip_fractions: tuple | None = None
 
 
 def _subsample(image: np.ndarray, max_pixels: int) -> np.ndarray:
@@ -239,19 +238,17 @@ def _scale_rect(rect, scale: float, width: int, height: int):
 
 
 class Renderer:
-    """Runs the edit pipeline. Every call to render() holds one lock, because
-    the invert-LUT and dust-removal caches are shared between the worker
-    thread and the controller's own synchronous renders."""
+    """Runs the edit pipeline."""
 
     def __init__(self):
         self.lock = threading.RLock()
         self._invert_lut = None
         self._invert_key = None
         self._retouch: OrderedDict = OrderedDict()
-        self.ai_prob_lookup = None  # (token, inverted, mono) -> the model's probability map for that photo, or None while it has none yet
+        self.ai_prob_lookup = None
         self._flat: OrderedDict = OrderedDict()
-        self._eight: OrderedDict = OrderedDict()    # (token, shape) -> the 8-bit copy of a 16-bit source
-        self._patched: OrderedDict = OrderedDict()  # (token, shape, retouch key) -> the 16-bit source with the repairs laid into it
+        self._eight: OrderedDict = OrderedDict()
+        self._patched: OrderedDict = OrderedDict()
         self._dust_stats = DustStatsCache()
 
     def reset(self) -> None:
@@ -277,8 +274,7 @@ class Renderer:
         return eight
 
     def _retouched16(self, source16: np.ndarray, source8: np.ndarray, retouched: RetouchResult, token) -> np.ndarray:
-        """The 16-bit source with the dust/scratch/heal repairs laid in. The repair itself runs on the 8-bit copy; only the pixels it changed are
-        taken from it (spread back to 16 bits), so everything else keeps its full precision."""
+        """The 16-bit source with the dust/scratch/heal repairs laid in."""
         if retouched.pixels is source8:
             return source16
         key = (token, source16.shape, id(retouched))
@@ -288,7 +284,7 @@ class Renderer:
         changed = np.any(retouched.pixels != source8, axis=2)
         patched = source16.copy()
         patched[changed] = retouched.pixels[changed].astype(np.uint16) * np.uint16(257)
-        self._patched[key] = (retouched, patched)  # the result is kept too, so its id cannot be reused while this entry lives
+        self._patched[key] = (retouched, patched)
         while len(self._patched) > _RETOUCH_CACHE_SIZE:
             self._patched.popitem(last=False)
         return patched
@@ -311,7 +307,7 @@ class Renderer:
         key = (token, pixels.dtype.str, params.film_type == "bw", params.rotation_quarter_turns, params.flip_h, params.flip_v, params.crop_rect, params.film_base, params.metering)
         if self._invert_lut is None or self._invert_key != key:
             base = params.film_base
-            if base is not None and params.film_type == "bw":  # a B&W scan is made monochrome before inverting, so its base is a grey
+            if base is not None and params.film_type == "bw":
                 gray = round(0.299 * base[0] + 0.587 * base[1] + 0.114 * base[2])
                 base = (gray, gray, gray)
             self._invert_lut = compute_invert_lut(pixels, rect, base, params.metering)
@@ -376,7 +372,7 @@ class Renderer:
 
     @staticmethod
     def _geometry(arr: np.ndarray, params: EditParams):
-        arr = fine_rotate(arr, params.fine_rotation, nearest=True)  # masks: nearest-neighbor
+        arr = fine_rotate(arr, params.fine_rotation, nearest=True)
         arr = radial_distort(arr, params.distortion, nearest=True)
         if params.rotation_quarter_turns:
             arr = rotate_quarter_turns(arr, params.rotation_quarter_turns)
@@ -428,62 +424,46 @@ class Renderer:
         overlay: bool = False,
         flatfield: tuple | None = None,
     ):
-        """-> (image, pre_crop, stats, overlay). source is the raw scan at preview or
-        full resolution; crop_rect is always in preview-frame coordinates and
-        is scaled up here when source is bigger."""
+        """-> (image, pre_crop, stats, overlay)."""
         with self.lock:
             scale = source.shape[1] / base_width
             source16 = None
             if source.dtype == np.uint16:
-                # A 16-bit source rides along (pixels16) through the geometry and into the first tone stage, which maps it to the 8-bit picture
-                # in one go; repair and the analyses use its 8-bit copy. A flat-fielded scan is 8-bit only (the gain map is applied there).
                 if flatfield is None:
                     source16 = source
                 source = self._as_uint8(source, token)
             if flatfield is not None:
                 source = self._flatfielded(source, token, flatfield)
-                token = (token, flatfield[0])  # downstream caches must not mix flat-fielded and plain scans
+                token = (token, flatfield[0])
             retouched = self._retouched(source, params, token, overlay)
             pixels = retouched.pixels
             pixels16 = self._retouched16(source16, source, retouched, token) if source16 is not None else None
 
             def geometry(step, *args):
                 nonlocal pixels, pixels16
-                if pixels16 is not None:  # the tone stage replaces the 8-bit copy with its own output, so only the 16-bit one is turned
+                if pixels16 is not None:
                     pixels16 = step(pixels16, *args)
                 else:
                     pixels = step(pixels, *args)
 
             if params.film_type == "bw":
                 geometry(monochrome)
-            # Fine rotation first, on the raw frame: it keeps the frame's size, so
-            # quarter turns, flips and the crop rect all behave exactly as before.
             geometry(fine_rotate, params.fine_rotation)
             geometry(radial_distort, params.distortion)
 
-            # Orientation first (so everything downstream - invert's analysis
-            # crop, the user's own crop rect - works against the final
-            # frame), then invert, then white balance/exposure/shadows-
-            # highlights/saturation/tone curve, then sharpening, crop last.
             if params.rotation_quarter_turns:
                 geometry(rotate_quarter_turns, params.rotation_quarter_turns)
             if params.flip_h:
                 geometry(flip_horizontal)
             if params.flip_v:
                 geometry(flip_vertical)
-            frame = pixels16 if pixels16 is not None else pixels  # the picture as it is now oriented
+            frame = pixels16 if pixels16 is not None else pixels
             rect = _scale_rect(params.crop_rect, scale, frame.shape[1], frame.shape[0])
 
-            # Invert, white balance offsets, exposure and the tone curve are
-            # all pointwise per-channel maps: composed into one lookup table
-            # (built by running a 256-entry ramp through the same stage
-            # functions, so rounding matches exactly) they cost one fast pass
-            # over the image. Shadows/highlights and saturation mix channels,
-            # so when either is active the table is split around them.
             denoise = params.chroma_denoise > 0 and (live is None or "denoise" in live)
-            local = params.local_contrast > 0  # cheap enough at preview size to stay on while other sliders are dragged
+            local = params.local_contrast > 0
             mixing = bool(params.shadows or params.highlights or params.saturation or denoise or local)
-            wide = pixels16 is not None  # the stages up to the first 8-bit picture run on a 65536-entry float ramp (features/lut/logic.py)
+            wide = pixels16 is not None
             ramp = wide_ramp() if wide else identity_ramp()
             if params.negative_inverted:
                 meter_rect = rect if params.metering.rect is None else _scale_rect(params.metering.rect, scale, frame.shape[1], frame.shape[0])
@@ -503,7 +483,7 @@ class Renderer:
                     pre = ramp_to_lut(ramp)
                     if not is_identity(pre):
                         pixels = apply_channel_lut(pixels, pre)
-                if denoise:  # before saturation, which would amplify color noise
+                if denoise:
                     pixels = apply_chroma_denoise(pixels, params.chroma_denoise, scale)
                 if local:
                     pixels = apply_local_contrast(pixels, params.local_contrast)
@@ -530,32 +510,30 @@ class Renderer:
             if overlay:
                 base_hw = (round(image.shape[0] / scale), round(image.shape[1] / scale))
                 overlay_rgba = self._build_overlay(retouched, params, base_width, base_hw)
-            if params.vignette:  # the vignette goes under the watermark, so the marks are not darkened with the corners
+            if params.vignette:
                 image = apply_vignette(image, params.vignette, params.vignette_size)
-            if watermark_active(params.wm_film):  # last, over the finished crop: not part of the stats/histogram
+            if watermark_active(params.wm_film):
                 image = apply_watermark(
                     image, params.wm_film, params.wm_texture, params.wm_size, params.wm_position,
                     params.wm_info, params.wm_camera, params.wm_lens,
                 )
-            if params.marks.active():  # the plain text/logo marks go over the canister
+            if params.marks.active():
                 image = apply_marks(image, params.marks)
-            if params.border > 0 or params.carrier:  # the frame goes round everything, marks included
+            if params.border > 0 or params.carrier:
                 image = apply_border(image, params.border, params.border_color, params.carrier)
             return image, pixels, stats, overlay_rgba
 
 
 class RenderThread(QThread):
-    """One long-lived worker: waits for a job, renders it, emits the result,
-    repeats. submit() overwrites any job still waiting, so only the newest
-    request is ever rendered."""
+    """One long-lived worker: waits for a job, renders it, emits the result, repeats."""
 
-    rendered = pyqtSignal(object)  # RenderOutput
-    failed = pyqtSignal(int)  # gen of a job whose render raised
+    rendered = pyqtSignal(object)
+    failed = pyqtSignal(int)
 
     def __init__(self, renderer: Renderer, is_current):
         super().__init__()
         self._renderer = renderer
-        self._is_current = is_current  # gen -> bool
+        self._is_current = is_current
         self._cond = threading.Condition()
         self._slot: RenderJob | None = None
         self._busy = False

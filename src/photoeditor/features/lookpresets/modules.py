@@ -18,12 +18,12 @@ from ..watermark.logic import DEFAULT_POSITION, DEFAULT_SIZE, DEFAULT_TEXTURE, F
 class FieldSpec:
     key: str
     label: str
-    kind: str                      # "float", "bool", "choice", "text" or "curve"
+    kind: str
     default: Any
-    low: float = 0.0               # float only
+    low: float = 0.0
     high: float = 1.0
     step: float = 0.01
-    choices: tuple[tuple[str, str], ...] = ()  # choice only: (stored value, label)
+    choices: tuple[tuple[str, str], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -77,7 +77,6 @@ MODULES: tuple[ModuleSpec, ...] = (
 
 LOOK_KEYS = tuple(f.key for m in MODULES for f in m.fields)
 
-# The panels that carry a Reset and Presets button in their header, and the editing modules each one covers: key -> (title, module ids).
 PANEL_MODULES: dict[str, tuple[str, tuple[str, ...]]] = {
     "exposure": ("Exposure", ("exposure",)),
     "contrast": ("Contrast", ("contrast",)),

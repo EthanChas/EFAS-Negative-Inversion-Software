@@ -5,14 +5,14 @@ from PyQt6.QtWidgets import QWidget
 from ...theme.tokens import THEME
 
 _TICK_MS = 16
-_ROLL_R = 28  # radius of each film roll
-_GAP = 150  # how much film is on show between the two rolls
+_ROLL_R = 28
+_GAP = 150
 _STRIP_H = 34
-_FRAME_W, _FRAME_PITCH = 32, 36  # one frame every 36 px of film, four sprocket holes to a frame
+_FRAME_W, _FRAME_PITCH = 32, 36
 _HOLE_PITCH = _FRAME_PITCH / 4
 _PX_PER_TICK = 2.0
 _DEGREES_PER_TICK = 4.0
-_SCALE = 1.1  # the whole icon is drawn this much larger
+_SCALE = 1.1
 
 
 class LoadingOverlay(QWidget):
@@ -23,8 +23,8 @@ class LoadingOverlay(QWidget):
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
         self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, False)
-        self._shift = 0.0  # how far the film has travelled (px, wraps every frame pitch)
-        self._angle = 0.0  # how far the rolls have turned
+        self._shift = 0.0
+        self._angle = 0.0
         self._timer = QTimer(self)
         self._timer.setInterval(_TICK_MS)
         self._timer.timeout.connect(self._advance)
@@ -46,22 +46,19 @@ class LoadingOverlay(QWidget):
     def _draw_roll(self, painter: QPainter, center_x: float, center_y: float, facing: int) -> None:
         """One roll of film: facing=1 has its mouth (the slot the film passes through) on the right, facing=-1 is the mirror image."""
         r = _ROLL_R
-        accent = QColor("#d6d6d6")  # monotone: greys only
+        accent = QColor("#d6d6d6")
         painter.save()
         painter.translate(center_x, center_y)
         painter.scale(facing, 1)
-        # the mouth: a short lip the strip slides out of
         painter.setPen(QPen(accent, 2))
         painter.setBrush(QColor("#2a2a2a"))
         painter.drawRoundedRect(QRectF(r - 5, -_STRIP_H / 2 - 4, 13, _STRIP_H + 8), 3, 3)
-        # the wound film
         painter.setBrush(QColor("#1b1b1b"))
         painter.drawEllipse(QRectF(-r, -r, 2 * r, 2 * r))
         painter.setBrush(Qt.BrushStyle.NoBrush)
         painter.setPen(QPen(QColor(255, 255, 255, 38), 1.5))
         for k in (0.8, 0.62):
             painter.drawEllipse(QRectF(-r * k, -r * k, 2 * r * k, 2 * r * k))
-        # the hub, turning the same way on both rolls (the mirror flips a rotation, so undo that)
         painter.rotate(self._angle * facing)
         painter.setPen(Qt.PenStyle.NoPen)
         painter.setBrush(QColor("#9a9a9a"))
@@ -87,7 +84,7 @@ class LoadingOverlay(QWidget):
         painter.drawRect(QRectF(left, top, right - left, _STRIP_H))
         x = left - _FRAME_PITCH + self._shift
         while x < right:
-            painter.setBrush(QColor(150, 150, 150, 215))  # a frame
+            painter.setBrush(QColor(150, 150, 150, 215))
             painter.drawRoundedRect(QRectF(x + 2, top + 6, _FRAME_W, _STRIP_H - 12), 2, 2)
             x += _FRAME_PITCH
         painter.setBrush(QColor(225, 225, 225, 235))
@@ -136,9 +133,7 @@ class LoadingOverlay(QWidget):
 
 
 class HqIndicator(QWidget):
-    """The HQ status in the image's bottom-right corner. While the full-resolution picture is being made it shows a loading bar; once that
-    picture is on screen it turns into a yellow-bordered "HQ" tag with the resolution now shown; with HQ off it is hidden. Click-through,
-    so it never gets in the way of the image underneath."""
+    """The HQ status in the image's bottom-right corner."""
 
     _TICK_MS = 30
     _SWEEP_MS = 1100
@@ -147,7 +142,7 @@ class HqIndicator(QWidget):
 
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
-        self._mode = "off"  # "off", "loading" or "ready"
+        self._mode = "off"
         self._detail = ""
         self._phase = 0.0
         self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
@@ -222,7 +217,6 @@ class HqIndicator(QWidget):
             painter.drawRoundedRect(box, 4, 4)
             painter.setPen(QColor(THEME.text_primary))
             painter.drawText(QRectF(10, 0, self.width(), self.height()), left_mid, "HQ loading")
-            # an indeterminate bar: the renderer cannot say how far along it is, so a chunk sweeps along the track
             bar = QRectF(self.width() - self._BAR_W - 10, self.height() / 2 - 4, self._BAR_W, 8)
             painter.setPen(Qt.PenStyle.NoPen)
             painter.setBrush(QColor(255, 255, 255, 45))

@@ -14,8 +14,8 @@ class FinishingPanel(CollapsiblePanel):
     """Finishing, in the Watermark tab: a vignette, and a border or film-carrier frame round the picture (features/finishing/logic.py). They are
     looks of the print, applied over the finished crop, so they are not in the histogram."""
 
-    changed = pyqtSignal(float, float, float, str, bool)    # vignette, vignette size, border, border color, carrier - settled
-    preview_requested = pyqtSignal(float, float, float, str, bool)  # the same, while a slider is dragged
+    changed = pyqtSignal(float, float, float, str, bool)
+    preview_requested = pyqtSignal(float, float, float, str, bool)
 
     def __init__(self, parent: QWidget | None = None):
         super().__init__(

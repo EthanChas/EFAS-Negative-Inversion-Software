@@ -10,8 +10,7 @@ from .slider_row import SliderRow
 
 
 class _ModuleBox(QFrame):
-    """One editing module: a header with an Include checkbox and the module's own controls underneath. Touching any control includes the
-    module; unchecking it leaves the module out of the preset (applying the preset then leaves that module of the photo alone)."""
+    """One editing module: a header with an Include checkbox and the module's own controls underneath."""
 
     def __init__(self, spec: ModuleSpec, look: dict, parent: QWidget | None = None):
         super().__init__(parent)

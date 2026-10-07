@@ -1,9 +1,4 @@
-"""The library index - one searchable record per photo under the library folders, kept in a small SQLite file. No Qt imports.
-
-What the Lighttable view searches and sorts on - when a photo was taken, which camera and lens, ISO, size - is read from each file's own EXIF
-once and remembered, so opening the Lighttable on thousands of photos is instant instead of re-reading every file. Only new or changed
-files (by size and modification time) are read again. The things the editor itself keeps - ratings, flags, edits, Roll Cards - are not
-copied here; they are joined in when the Lighttable asks (see query.py)."""
+"""The library index - one searchable record per photo under the library folders, kept in a small SQLite file."""
 
 import os
 import sqlite3
@@ -54,9 +49,9 @@ def connect(db_path: str | None = None) -> sqlite3.Connection:
 
 
 def scan_files(roots: Iterable[str]) -> Iterator[tuple[str, int, int]]:
-    """Every photo under the roots, recursively: (path, size, mtime_ns). Each file is listed once even if roots overlap."""
+    """Every photo under the roots, recursively: (path, size, mtime_ns)."""
     seen: set[str] = set()
-    stack = [r for r in roots if r and os.path.isdir(r)]  # the roots as given: the editor's own tables key photos by these same spellings
+    stack = [r for r in roots if r and os.path.isdir(r)]
     while stack:
         folder = stack.pop()
         key = os.path.normcase(folder)
@@ -82,7 +77,7 @@ def scan_files(roots: Iterable[str]) -> Iterator[tuple[str, int, int]]:
 
 def _num(value, default=0.0) -> float:
     try:
-        if isinstance(value, tuple) and len(value) == 2:  # an EXIF rational
+        if isinstance(value, tuple) and len(value) == 2:
             return float(value[0]) / float(value[1]) if value[1] else default
         return float(value)
     except (TypeError, ValueError, ZeroDivisionError):
@@ -108,8 +103,7 @@ def _camera_name(make: str, model: str) -> str:
 
 
 def read_record(path: str, size: int | None = None, mtime_ns: int | None = None) -> dict:
-    """One photo's record. The EXIF is read from the file header only (a few milliseconds, RAW files included); a file without
-    readable EXIF still gets a record, dated by its modification time."""
+    """One photo's record."""
     if size is None or mtime_ns is None:
         st = os.stat(path)
         size, mtime_ns = st.st_size, st.st_mtime_ns
@@ -125,8 +119,8 @@ def read_record(path: str, size: int | None = None, mtime_ns: int | None = None)
         with Image.open(path) as img:
             rec["width"], rec["height"] = img.size
             exif = img.getexif()
-            sub = exif.get_ifd(0x8769)  # the Exif sub-directory: capture details live there
-            when = _text(sub.get(36867) or sub.get(36868) or exif.get(306))  # DateTimeOriginal, Digitized, DateTime
+            sub = exif.get_ifd(0x8769)
+            when = _text(sub.get(36867) or sub.get(36868) or exif.get(306))
             try:
                 rec["taken"] = datetime.strptime(when[:19], "%Y:%m:%d %H:%M:%S").strftime("%Y-%m-%d %H:%M:%S")
                 rec["taken_exif"] = 1
@@ -140,12 +134,12 @@ def read_record(path: str, size: int | None = None, mtime_ns: int | None = None)
             rec["aperture"] = round(_num(sub.get(33437)), 1)
             rec["shutter"] = _shutter(_num(sub.get(33434)))
     except Exception:
-        pass  # a file Pillow cannot open still goes in, with what is known
+        pass
     return rec
 
 
 class LibraryIndex:
-    """The SQLite index. One connection per thread: make one wherever it is used."""
+    """The SQLite index."""
 
     def __init__(self, db_path: str | None = None):
         self.conn = connect(db_path)
@@ -179,8 +173,7 @@ class LibraryIndex:
         return [r for r in self.all() if any(os.path.normcase(r["path"]).startswith(p) for p in prefixes)]
 
     def refresh(self, roots: Iterable[str], batch: int = 200, progress=None, cancelled=None) -> tuple[int, int, int]:
-        """Bring the index up to date with the folders: new and changed files are read, vanished ones dropped. -> (added, changed, removed).
-        progress(done, total, path) is called as files are read; cancelled() stops it early (what was read so far is kept)."""
+        """Bring the index up to date with the folders: new and changed files are read, vanished ones dropped."""
         roots = [r for r in roots if r and os.path.isdir(r)]
         known = self.known()
         on_disk = {p: (s, m) for p, s, m in scan_files(roots)}
@@ -201,7 +194,6 @@ class LibraryIndex:
                 progress(n + 1, len(todo), path)
         if buffer:
             self.upsert(buffer)
-        # vanished files: indexed, under a root being refreshed, but no longer on disk
         norm_roots = [os.path.normcase(os.path.abspath(r)).rstrip("\\/") + os.sep for r in roots]
         gone = [p for p in known if p not in on_disk and any(os.path.normcase(p).startswith(r) for r in norm_roots)]
         removed = self.remove(gone) if gone and not (cancelled is not None and cancelled()) else 0

@@ -1,7 +1,4 @@
-"""Names to offer while typing a camera, lens or film - no Qt imports.
-
-The user's presets come first, then the bundled lists (assets/gear/*.json). What is typed in the Roll Card's fields is never remembered or
-suggested back: the fields are plain text, so anything can be typed."""
+"""Names to offer while typing a camera, lens or film - no Qt imports."""
 
 import json
 from pathlib import Path
@@ -20,8 +17,7 @@ def _bundled_names(fname: str, make) -> list[str]:
 
 
 def suggestions(kind: str) -> list[str]:
-    """The user's presets first, then the built-in lists (unless switched off in the Presets section).
-    The films the app has canister art for are always offered."""
+    """The user's presets first, then the built-in lists (unless switched off in the Presets section)."""
     from . import presets
 
     seed: list[str] = []

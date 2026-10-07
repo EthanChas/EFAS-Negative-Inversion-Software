@@ -1,6 +1,4 @@
-"""Composition guide geometry for the crop tool overlay - ported from NegPy's
-crop_guides.py. No Qt/UI imports; every shape is a polyline in pixel space
-(0,0)-(w,h), so angles stay aspect-true."""
+"""Composition guide geometry for the crop tool overlay - ported from NegPy's crop_guides.py."""
 
 import math
 from enum import Enum
@@ -57,7 +55,7 @@ def _fraction_lines(w: float, h: float, fractions: List[float]) -> List[Polyline
 def _grid(w: float, h: float) -> List[Polyline]:
     step = min(w, h) / _GRID_CELLS
     lines: List[Polyline] = []
-    eps = step * 1e-6  # keep float-rounded edge lines off the border
+    eps = step * 1e-6
     xs = {w / 2.0}
     k = 1
     while w / 2.0 + k * step < w - eps:
@@ -97,7 +95,6 @@ def _triangles(w: float, h: float, orientation: int) -> List[Polyline]:
         f1 = _project_foot(w, 0.0, w, h)
         f2 = _project_foot(0.0, h, w, h)
         return [[(0.0, 0.0), (w, h)], [(w, 0.0), f1], [(0.0, h), f2]]
-    # orientation 1 mirrored across x
     fx1, fy1 = _project_foot(w, 0.0, w, h)
     fx2, fy2 = _project_foot(0.0, h, w, h)
     return [[(w, 0.0), (0.0, h)], [(0.0, 0.0), (w - fx1, fy1)], [(w, h), (w - fx2, fy2)]]
@@ -118,7 +115,6 @@ def _ray_to_boundary(px: float, py: float, dx: float, dy: float, w: float, h: fl
 
 
 def _armature(w: float, h: float) -> List[Polyline]:
-    # Bouleau's 14 lines: diagonals, corner reciprocals, corner-to-far-midpoint lines.
     lines: List[Polyline] = [
         [(0.0, 0.0), (w, h)],
         [(w, 0.0), (0.0, h)],
@@ -163,19 +159,19 @@ def _spiral_unit_points() -> List[Point]:
     angle = math.pi
     for i in range(_SPIRAL_ARCS):
         phase = i % 4
-        if phase == 0:  # left
+        if phase == 0:
             s = h
             cx, cy = x + s, y + s
             x, w = x + s, w - s
-        elif phase == 1:  # top
+        elif phase == 1:
             s = w
             cx, cy = x, y + s
             y, h = y + s, h - s
-        elif phase == 2:  # right
+        elif phase == 2:
             s = h
             cx, cy = x + w - s, y
             w = w - s
-        else:  # bottom
+        else:
             s = w
             cx, cy = x + s, y + h - s
             h = h - s
@@ -201,7 +197,7 @@ def _orient_unit(pts: List[Point], orientation: int) -> List[Point]:
 
 
 def _spiral(w: float, h: float, orientation: int) -> List[Polyline]:
-    unit = [(px, py * PHI) for px, py in _spiral_unit_points()]  # golden rect -> unit square
+    unit = [(px, py * PHI) for px, py in _spiral_unit_points()]
     oriented = _orient_unit(unit, orientation)
     return [[(px * w, py * h) for px, py in oriented]]
 

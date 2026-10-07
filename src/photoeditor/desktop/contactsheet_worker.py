@@ -9,16 +9,16 @@ from ..features.contactsheet.logic import SheetFrame, SheetOptions, draw_pages, 
 from ..features.persistence import edit_store
 from .export_worker import load_roll, render_edited_thumbnail
 
-_THUMB_DIM = 900  # long side of each frame's picture; a 10-column page is still sharper than this at print size
+_THUMB_DIM = 900
 
 
 class ContactSheetWorker(QThread):
-    progress = pyqtSignal(int, int, str)  # photos done, total, the one just finished
-    finished_all = pyqtSignal(object)  # {"path": pdf path or None, "frames": n, "failed": [(path, message)], "cancelled": bool, "error": str}
+    progress = pyqtSignal(int, int, str)
+    finished_all = pyqtSignal(object)
 
     def __init__(self, paths: list[str], options: SheetOptions, out_path: str, db_path: str):
         super().__init__()
-        self._paths = list(paths)  # the whole roll, in order: a frame keeps its number even when others are left out
+        self._paths = list(paths)
         self._options = options
         self._out_path = out_path
         self._db_path = db_path
@@ -29,7 +29,7 @@ class ContactSheetWorker(QThread):
 
     def run(self) -> None:
         summary = {"path": None, "frames": 0, "failed": [], "cancelled": False, "error": ""}
-        conn = edit_store.connect(self._db_path)  # sqlite connections are per-thread
+        conn = edit_store.connect(self._db_path)
         try:
             flags = edit_store.get_flags(conn, self._paths)
             ratings = edit_store.get_ratings(conn, self._paths)
@@ -44,7 +44,7 @@ class ContactSheetWorker(QThread):
                     image = render_edited_thumbnail(path, conn, _THUMB_DIM)
                     flag = flags.get(path)
                     frames.append(SheetFrame(image=_to_pil(image), number=number, rating=int(ratings.get(path, 0)), flag=flag, name=os.path.splitext(os.path.basename(path))[0]))
-                except Exception as exc:  # one unreadable photo leaves a gap in the sheet, not a failed sheet
+                except Exception as exc:
                     summary["failed"].append((path, f"{type(exc).__name__}: {exc}"))
                 self.progress.emit(done + 1, len(wanted), os.path.basename(path))
             if not summary["cancelled"] and frames:

@@ -18,11 +18,10 @@ from ...theme.tokens import THEME
 from .collapsible_panel import CollapsiblePanel
 from .slider_row import SliderRow
 
-_SETTLE_DEBOUNCE_MS = 350  # detection and repair are slow, so no live preview - just a settle
+_SETTLE_DEBOUNCE_MS = 350
 
 _REPAIR_LABELS = {REPAIR_AUTO: "Auto", REPAIR_SMOOTH: "Smooth fill", REPAIR_STRUCTURE: "Structure inpaint"}
 
-# tool id -> (button text, tooltip)
 _TOOLS = {
     "heal": (
         "Heal Tool",
@@ -67,25 +66,18 @@ _TOOLS = {
         "goes exactly where you click. Esc cancels the first point, Backspace removes it.",
     ),
 }
-_FULL_ROW_TOOLS = ("line", "manualline")  # their names are long: each takes a whole row of the tool grid
+_FULL_ROW_TOOLS = ("line", "manualline")
 
 
 class DustToolPanel(CollapsiblePanel):
-    """Dust and scratch removal ported from NegPy (features/retouch/logic.py).
+    """Dust and scratch removal ported from NegPy (features/retouch/logic.py)."""
 
-    Automatic: Auto Dust Removal finds specks and hairs statistically. Manual:
-    a Heal brush, one-click Smart Heal, a polyline Scratch Tool, the one-click
-    Smart Transport Line Selection and the two-click Manual Transport Line. Show Detections overlays what's found.
-    Everything repairs the raw scan before anything else touches it; the
-    automatic settings apply once the sliders settle, since detection takes
-    hundreds of milliseconds."""
-
-    changed = pyqtSignal(bool, float, float, float)  # auto, threshold, size, line sensitivity
-    tool_changed = pyqtSignal(object)  # "heal" | "smart" | "scratch" | "curve" | "line" | "manualline" | "delete" | None
+    changed = pyqtSignal(bool, float, float, float)
+    tool_changed = pyqtSignal(object)
     overlay_toggled = pyqtSignal(bool)
     undo_requested = pyqtSignal()
     clear_requested = pyqtSignal()
-    clone_tool_shown = pyqtSignal(bool)  # the clone tool was switched on or off (its source marker follows)
+    clone_tool_shown = pyqtSignal(bool)
 
     def __init__(self, parent: QWidget | None = None):
         super().__init__(
@@ -143,7 +135,7 @@ class DustToolPanel(CollapsiblePanel):
             button.toggled.connect(lambda checked, t=tool: self._on_tool_toggled(t, checked))
             self._tool_buttons[tool] = button
             if tool in _FULL_ROW_TOOLS:
-                continue  # placed below the short ones
+                continue
             grid.addWidget(button, short_row, short_col)
             short_row, short_col = (short_row + 1, 0) if short_col else (short_row, 1)
         next_row = short_row + (1 if short_col else 0)
@@ -152,7 +144,6 @@ class DustToolPanel(CollapsiblePanel):
             next_row += 1
         body.addLayout(grid)
 
-        # The clone tool's own controls: only shown while the clone tool is the active one
         self._clone_group = QWidget()
         clone_col = QVBoxLayout(self._clone_group)
         clone_col.setContentsMargins(0, 0, 0, 0)
@@ -241,7 +232,6 @@ class DustToolPanel(CollapsiblePanel):
         self._settle_timer.setInterval(_SETTLE_DEBOUNCE_MS)
         self._settle_timer.timeout.connect(self._on_settled)
 
-    # ---- current tool settings ----
     def brush_size(self) -> float:
         return self._brush.value()
 
@@ -287,8 +277,7 @@ class DustToolPanel(CollapsiblePanel):
         self.set_manual_count(0)
 
     def set_values(self, auto: bool, threshold: float, size: float, line_sensitivity: float) -> None:
-        """Sync the automatic controls without emitting anything - used by
-        reset() and after a history revert."""
+        """Sync the automatic controls without emitting anything - used by reset() and after a history revert."""
         self._auto.blockSignals(True)
         self._auto.setChecked(auto)
         self._auto.blockSignals(False)
@@ -314,7 +303,7 @@ class DustToolPanel(CollapsiblePanel):
         self._show_clone_group(False)
 
     def _on_tool_toggled(self, tool: str, checked: bool) -> None:
-        if checked:  # tools are mutually exclusive
+        if checked:
             for other, button in self._tool_buttons.items():
                 if other != tool and button.isChecked():
                     button.blockSignals(True)

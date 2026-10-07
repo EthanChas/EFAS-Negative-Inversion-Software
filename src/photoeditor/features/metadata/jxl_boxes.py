@@ -1,8 +1,4 @@
-"""ISOBMFF box access for JPEG XL files: the container that holds Exif and XMP.
-
-Kept apart from jxl_loader so both the loaders and the metadata writer can use it
-without an import cycle.
-"""
+"""ISOBMFF box access for JPEG XL files: the container that holds Exif and XMP."""
 
 from typing import Optional
 
@@ -17,8 +13,7 @@ def is_jxl(data: bytes) -> bool:
 
 
 def jxl_boxes(data: bytes) -> list[tuple[bytes, int, int]]:
-    """Split a JPEG XL container into (type, start, end) boxes. Raises unless the
-    boxes tile the file exactly, so a malformed input cannot be silently truncated."""
+    """Split a JPEG XL container into (type, start, end) boxes."""
     boxes: list[tuple[bytes, int, int]] = []
     pos = 0
     n = len(data)
@@ -63,8 +58,7 @@ def _box_payload(data: bytes, wanted: bytes) -> Optional[bytes]:
 
 
 def read_jxl_exif(data: bytes) -> Optional[bytes]:
-    """EXIF payload of a JPEG XL file, from the TIFF header on. The box prefixes it
-    with a 4-byte offset to that header."""
+    """EXIF payload of a JPEG XL file, from the TIFF header on."""
     payload = _box_payload(data, JXL_EXIF_BOX)
     if payload is None or len(payload) < 8:
         return None

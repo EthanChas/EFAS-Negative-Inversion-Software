@@ -10,16 +10,16 @@ from .datadir import app_data_dir
 MAX_RECENT = 10
 _MAX_LAST_BY_FOLDER = 60
 _DEFAULTS: dict[str, Any] = {
-    "recent_folders": [],      # newest first
+    "recent_folders": [],
     "last_image": "",
-    "last_by_folder": {},      # folder -> the photo that was open in it
-    "tab": "",                 # the open tool tab's id, or ""
-    "left_width": 0,           # the side panels' widths (0 = never set)
+    "last_by_folder": {},
+    "tab": "",
+    "left_width": 0,
     "right_width": 0,
     "filter": "all",
     "auto_advance": True,
-    "peaking_level": 0,        # the focus-peaking slider: 0 blue ... 3 red
-    "sheet_columns": 5,        # the contact sheet dialog's last choices
+    "peaking_level": 0,
+    "sheet_columns": 5,
     "sheet_page": "Letter",
     "sheet_landscape": True,
     "sheet_rejected": False,
@@ -63,7 +63,7 @@ def save(data: dict[str, Any]) -> None:
             json.dump(data, f, ensure_ascii=False)
         os.replace(tmp, _path())
     except OSError:
-        pass  # remembering is a convenience; a read-only data folder must not break editing
+        pass
 
 
 def remember_photo(data: dict[str, Any], image_path: str) -> None:

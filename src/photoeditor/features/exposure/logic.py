@@ -2,7 +2,7 @@
 
 import numpy as np
 
-EV_RANGE = 2.0  # slider/spinbox range: +-2.00 EV stops
+EV_RANGE = 2.0
 
 
 def apply_exposure(pixels: np.ndarray, ev: float) -> np.ndarray:
@@ -13,6 +13,6 @@ def apply_exposure(pixels: np.ndarray, ev: float) -> np.ndarray:
     if ev == 0.0:
         return pixels
     adjusted = pixels.astype(np.float32) * (2.0**ev)
-    if pixels.dtype == np.float32:  # a wide ramp (features/lut/logic.py): keep every fraction
+    if pixels.dtype == np.float32:
         return np.clip(adjusted, 0, 255)
     return np.clip(adjusted, 0, 255).astype(np.uint8)

@@ -20,7 +20,7 @@ def photo_icon(size: int = 14) -> QPixmap:
 
     painter.setPen(Qt.PenStyle.NoPen)
     painter.setBrush(QColor(THEME.channel_luminance))
-    painter.drawEllipse(size - 6, 1, 3, 3)  # sun
+    painter.drawEllipse(size - 6, 1, 3, 3)
 
     painter.setBrush(QColor(THEME.text_primary))
     mountain = QPolygon([
@@ -121,8 +121,7 @@ def negative_icon(size: int = 16) -> QPixmap:
 
 
 def correction_icon(size: int = 16) -> QPixmap:
-    """A tiny hand-painted icon - two slider tracks with knobs - for the
-    Correction tool tab."""
+    """A tiny hand-painted icon - two slider tracks with knobs - for the Correction tool tab."""
     pix = QPixmap(size, size)
     pix.fill(Qt.GlobalColor.transparent)
     painter = QPainter(pix)
@@ -142,8 +141,7 @@ def correction_icon(size: int = 16) -> QPixmap:
 
 
 def watermark_icon(size: int = 16) -> QPixmap:
-    """A tiny hand-painted film canister - body, cap and a strip of film - for the
-    Canister Watermark tool tab."""
+    """A tiny hand-painted film canister - body, cap and a strip of film - for the Canister Watermark tool tab."""
     pix = QPixmap(size, size)
     pix.fill(Qt.GlobalColor.transparent)
     painter = QPainter(pix)
@@ -152,11 +150,11 @@ def watermark_icon(size: int = 16) -> QPixmap:
     body_w, body_h = round(size * 0.5), round(size * 0.66)
     x0, y0 = round(size * 0.12), round(size * 0.24)
     painter.setBrush(QColor(THEME.channel_luminance))
-    painter.drawRect(x0, y0, body_w, body_h)                      # canister body
+    painter.drawRect(x0, y0, body_w, body_h)
     painter.setBrush(QColor(THEME.text_muted))
-    painter.drawRect(x0, y0 - 2, body_w, 2)                       # cap
-    painter.drawRect(x0 + body_w // 2 - 1, max(0, y0 - 4), 2, 2)  # spout
-    painter.drawRect(x0 + body_w, y0 + body_h - 5, size - (x0 + body_w) - 1, 4)  # film strip
+    painter.drawRect(x0, y0 - 2, body_w, 2)
+    painter.drawRect(x0 + body_w // 2 - 1, max(0, y0 - 4), 2, 2)
+    painter.drawRect(x0 + body_w, y0 + body_h - 5, size - (x0 + body_w) - 1, 4)
     painter.end()
     return pix
 
@@ -171,12 +169,12 @@ def metadata_icon(size: int = 16) -> QPixmap:
     painter.setBrush(QColor(THEME.channel_luminance))
     x0, y0, w, h = round(size * 0.22), round(size * 0.30), round(size * 0.56), round(size * 0.62)
     painter.drawRect(x0, y0 + 2, w, h - 2)
-    painter.drawRect(x0 + 2, y0, w - 4, 2)               # clipped top corners
+    painter.drawRect(x0 + 2, y0, w - 4, 2)
     painter.setBrush(QColor(THEME.bg_app))
-    painter.drawRect(x0 + w // 2 - 1, y0 + 3, 3, 3)      # the punched hole
+    painter.drawRect(x0 + w // 2 - 1, y0 + 3, 3, 3)
     painter.setBrush(QColor(THEME.text_muted))
-    painter.drawRect(x0 + w // 2, 0, 1, y0 + 3)          # the cord
-    for line in range(3):                                # written lines
+    painter.drawRect(x0 + w // 2, 0, 1, y0 + 3)
+    for line in range(3):
         painter.drawRect(x0 + 2, y0 + 8 + line * 3, w - 4, 1)
     painter.end()
     return pix

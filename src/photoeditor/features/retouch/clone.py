@@ -1,15 +1,4 @@
-"""Clone strokes - copy film from one place over a defect. numpy + OpenCV, no Qt imports. After NegPy's clone tool.
-
-A stroke is (points, size, dx, dy, strength, feather, match_tone):
-- points: the brush path as 0-1 [x, y] pairs of the raw frame; size: the brush diameter at HEAL_SIZE_REF (like a heal brush, so it means the
-  same on a preview and on a full-size export);
-- dx, dy: where the source lies relative to the brush, as a fraction of the frame - fixed by the first stroke after the source is picked,
-  and the same for the strokes after it;
-- strength 0-1 scales the blend; feather 0-1 fades the brush edge inward as a share of its radius (0 is a hard edge);
-- match_tone: the patch keeps the source's texture but takes the brightness and color of the surroundings of the place it lands, read
-  only from outside the brush so the defect never tints its own patch.
-
-Strokes are applied in order on the linear scan, so a later stroke can copy from an earlier one."""
+"""Clone strokes - copy film from one place over a defect."""
 
 from typing import Iterable, Tuple
 
@@ -18,7 +7,7 @@ import numpy as np
 
 from .logic import HEAL_SIZE_REF, smooth_polyline
 
-_MATCH_GAIN_MIN = 1.0 / 64.0  # tone match: six stops either way
+_MATCH_GAIN_MIN = 1.0 / 64.0
 _MATCH_GAIN_MAX = 64.0
 _EPS = 1e-6
 
@@ -68,12 +57,12 @@ def apply_clone_stroke(out: np.ndarray, stroke) -> None:
         return
     yy = np.arange(y0, y1) + sy
     xx = np.arange(x0, x1) + sx
-    valid = ((yy >= 0) & (yy < h))[:, None] & ((xx >= 0) & (xx < w))[None, :]  # source off the frame clamps to the edge and counts for nothing
+    valid = ((yy >= 0) & (yy < h))[:, None] & ((xx >= 0) & (xx < w))[None, :]
     src = out[np.clip(yy, 0, h - 1)[:, None], np.clip(xx, 0, w - 1)[None, :]].astype(np.float32)
     dst = out[y0:y1, x0:x1].astype(np.float32)
 
     if feather > 0.0:
-        depth = cv2.distanceTransform(cover, cv2.DIST_L2, 3)  # distance in from the brush edge
+        depth = cv2.distanceTransform(cover, cv2.DIST_L2, 3)
         alpha = np.clip(depth / max(float(feather) * min(radius, float(depth.max())), _EPS), 0.0, 1.0)
     else:
         alpha = cover.astype(np.float32)
@@ -81,7 +70,7 @@ def apply_clone_stroke(out: np.ndarray, stroke) -> None:
 
     patch = src
     if match_tone:
-        ring = ((cover == 0) & valid).astype(np.float32)  # the surroundings of both places, never the brush itself
+        ring = ((cover == 0) & valid).astype(np.float32)
         if ring.any():
             gain = _local_mean(dst, ring, sigma) / np.maximum(_local_mean(src, ring, sigma), _EPS)
             patch = src * np.clip(gain, _MATCH_GAIN_MIN, _MATCH_GAIN_MAX)

@@ -1,30 +1,19 @@
-"""Focus peaking - numpy + OpenCV, no Qt imports. Follows darktable's method (src/common/focus_peaking.h):
-
-1. luminance from the picture's pixels, sqrt(R^2.2 + G^2.2 + B^2.2) with the channels in 0-1;
-2. an edge-preserving blur, so grain and noise do not read as detail (darktable's "surface blur"; here OpenCV's bilateral filter);
-3. a sharpness measure per pixel: the gradient magnitude at distance 1 minus 0.67 x the one at distance 2 (less 1/256) - a fine edge scores
-   high, a soft transition, which has the same gradient at both distances, scores low. Each gradient is the mean of the principal and the
-   diagonal hypot(dx, dy);
-4. thresholds from the picture itself, not fixed numbers: the mean of that measure plus 2.5, 5 and 10 times its mean absolute deviation;
-5. the levels marked blue, green and yellow, each grown a little so scattered hits join into regions; a fourth level, red, is added for the
-   very sharpest (20 deviations, twice darktable's top one). The caller picks the weakest level to show, so sliding up leaves only the
-   sharper points.
-"""
+"""Focus peaking - numpy + OpenCV, no Qt imports."""
 
 from typing import Optional
 
 import cv2
 import numpy as np
 
-WORK_MAX = 2000                 # the longest side the analysis runs at; the result is stretched over the picture
-SIGMA_LEVELS = (2.5, 5.0, 10.0, 20.0)  # darktable's three (mean + k x deviation), and red above them
+WORK_MAX = 2000
+SIGMA_LEVELS = (2.5, 5.0, 10.0, 20.0)
 FAR_WEIGHT = 0.67
-FAR_OFFSET = 0.00390625          # 1/256
+FAR_OFFSET = 0.00390625
 LUMA_EXPONENT = 2.2
-COLORS = ((40, 120, 255), (60, 225, 90), (255, 225, 0), (255, 50, 50))  # blue (some detail), green (sharp), yellow (very sharp), red (the sharpest)
+COLORS = ((40, 120, 255), (60, 225, 90), (255, 225, 0), (255, 50, 50))
 NAMES = ("Blue", "Green", "Yellow", "Red")
 ALPHA = 235
-_BORDER = 2                       # the measure needs two pixels on every side
+_BORDER = 2
 
 
 def luma(rgb: np.ndarray) -> np.ndarray:
@@ -34,7 +23,7 @@ def luma(rgb: np.ndarray) -> np.ndarray:
 
 def _smooth(img: np.ndarray, passes: int = 2) -> np.ndarray:
     for _ in range(passes):
-        img = cv2.bilateralFilter(img, 5, 0.03, 3.0)  # the colour sigma is in luma units (0 - 1.73)
+        img = cv2.bilateralFilter(img, 5, 0.03, 3.0)
     return img
 
 
@@ -59,14 +48,13 @@ def sharpness_map(rgb: np.ndarray) -> np.ndarray:
 def thresholds(measure: np.ndarray) -> Optional[tuple[float, ...]]:
     mean = float(measure.mean())
     deviation = float(np.abs(measure - mean).mean())
-    if deviation < 1e-7:  # a flat picture has nothing in focus to find
+    if deviation < 1e-7:
         return None
     return tuple(mean + k * deviation for k in SIGMA_LEVELS)
 
 
 def level_map(rgb: np.ndarray) -> Optional[np.ndarray]:
-    """How sharp each spot is, as a uint8 map: 0 nothing, 1 blue, 2 green, 3 yellow, 4 red. At most WORK_MAX on its longer side (meant to be
-    stretched over the picture). None when nothing stands out. The slow part - the colors are chosen from it cheaply by overlay_from_levels."""
+    """How sharp each spot is, as a uint8 map: 0 nothing, 1 blue, 2 green, 3 yellow, 4 red."""
     h, w = rgb.shape[:2]
     if min(h, w) < 16:
         return None
@@ -80,7 +68,7 @@ def level_map(rgb: np.ndarray) -> Optional[np.ndarray]:
     out = np.zeros((sh, sw), dtype=np.uint8)
     grow = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
     inner = out[_BORDER:sh - _BORDER, _BORDER:sw - _BORDER]
-    for number, threshold in enumerate(levels, start=1):  # weakest first, so a sharper level paints over it
+    for number, threshold in enumerate(levels, start=1):
         mask = cv2.dilate((measure > threshold).astype(np.uint8), grow).astype(bool)
         inner[mask] = number
     return out if out.any() else None
@@ -90,7 +78,7 @@ def overlay_from_levels(levels: Optional[np.ndarray], weakest: int = 0) -> Optio
     """An RGBA overlay of the spots at level weakest (0 blue ... 3 red) or sharper, each in its own color; None when none remain."""
     if levels is None:
         return None
-    keep = levels > max(0, min(len(COLORS) - 1, weakest))  # level numbers start at 1 for blue
+    keep = levels > max(0, min(len(COLORS) - 1, weakest))
     if not keep.any():
         return None
     out = np.zeros((*levels.shape, 4), dtype=np.uint8)

@@ -12,8 +12,8 @@ class TagsEditor(QWidget):
     """Type tags (comma separated) and press Enter to add them; select tags in the list and press Remove to take them off. Used for the open
     photo (TagsPanel) and for the Workbench's selection. It only asks (add_requested / remove_requested); whoever owns it changes the photos."""
 
-    add_requested = pyqtSignal(list)     # tags typed
-    remove_requested = pyqtSignal(list)  # tags selected in the list
+    add_requested = pyqtSignal(list)
+    remove_requested = pyqtSignal(list)
 
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
@@ -57,7 +57,7 @@ class TagsEditor(QWidget):
         self._model.setStringList(list(tags))
 
     def set_tags(self, tags: list[str], labels: dict[str, str] | None = None) -> None:
-        """The tags to list. labels gives the text shown for a tag (the Workbench adds how many of the selected photos have it)."""
+        """The tags to list."""
         self._list.clear()
         for tag in tags:
             item = QListWidgetItem((labels or {}).get(tag, tag))

@@ -57,8 +57,6 @@ CREATE TABLE IF NOT EXISTS edits (
 )
 """
 
-# Keeper/rejected marks, kept apart from the edits table: a mark is about the
-# photo, not an edit, so it doesn't belong in the edit history or its schema.
 _FLAGS_SCHEMA = """
 CREATE TABLE IF NOT EXISTS flags (
     path TEXT PRIMARY KEY,
@@ -66,8 +64,6 @@ CREATE TABLE IF NOT EXISTS flags (
 )
 """
 
-# One flat-field gain map per folder (applies to every photo in it), also not
-# an edit: it belongs to the scanning session, not to any one photo.
 _FLATFIELD_SCHEMA = """
 CREATE TABLE IF NOT EXISTS folder_flatfield (
     folder TEXT PRIMARY KEY,
@@ -79,7 +75,6 @@ CREATE TABLE IF NOT EXISTS folder_flatfield (
 )
 """
 
-# One Roll Card per folder (the film, camera and dates a roll shares), also not an edit: it belongs to the roll.
 _ROLL_SCHEMA = """
 CREATE TABLE IF NOT EXISTS folder_roll (
     folder TEXT PRIMARY KEY,
@@ -88,7 +83,6 @@ CREATE TABLE IF NOT EXISTS folder_roll (
 )
 """
 
-# Star ratings (1-5), kept apart from the edits table for the same reason as the flags: a mark on the photo, not an edit.
 _RATINGS_SCHEMA = """
 CREATE TABLE IF NOT EXISTS ratings (
     path TEXT PRIMARY KEY,
@@ -96,7 +90,6 @@ CREATE TABLE IF NOT EXISTS ratings (
 )
 """
 
-# Keywords on photos: one row per (photo, tag). Case-insensitive, so "Holiday" and "holiday" are one tag.
 _TAGS_SCHEMA = """
 CREATE TABLE IF NOT EXISTS tags (
     path TEXT NOT NULL,
@@ -106,7 +99,6 @@ CREATE TABLE IF NOT EXISTS tags (
 """
 _TAGS_INDEX = "CREATE INDEX IF NOT EXISTS idx_tags_tag ON tags (tag)"
 
-# Snapshots: a photo's whole edit state saved under a name (state is the JSON of state_to_json).
 _SNAPSHOTS_SCHEMA = """
 CREATE TABLE IF NOT EXISTS snapshots (
     path TEXT NOT NULL,
@@ -117,7 +109,6 @@ CREATE TABLE IF NOT EXISTS snapshots (
 )
 """
 
-# The film base (the unexposed rebate's color) measured for a roll: one per folder, like its flat-field.
 _BASE_SCHEMA = """
 CREATE TABLE IF NOT EXISTS folder_base (
     folder TEXT PRIMARY KEY,
@@ -130,10 +121,6 @@ CREATE TABLE IF NOT EXISTS folder_base (
 FLAG_KEEPER = "keeper"
 FLAG_REJECTED = "rejected"
 
-# (column, sqlite type, default) - anything here missing from an existing
-# edits table (one saved by a version of this app before that column
-# existed) gets added via ALTER TABLE, so real databases from past
-# sessions keep working instead of raising "no such column".
 _MIGRATIONS = (
     ("shadows", "REAL", "0.0"),
     ("highlights", "REAL", "0.0"),
@@ -175,12 +162,9 @@ _MIGRATIONS = (
     ("wm_camera", "TEXT", "''"),
     ("wm_lens", "TEXT", "''"),
     ("metadata", "TEXT", "'{}'"),
-    ("module_presets", "TEXT", "'{}'"),  # {module key: the preset name last loaded or stored on that module of this photo}
+    ("module_presets", "TEXT", "'{}'"),
 )
 
-# (field, kind) in column order. kind says how a value is stored: plain
-# (REAL/TEXT/INTEGER as-is), "bool" (0/1), "json" (a JSON string), or
-# "json_null" (JSON, or NULL for None).
 _FIELDS = (
     ("exposure_ev", "plain"),
     ("tone_curve_points", "json"),
@@ -286,7 +270,7 @@ def _decode(value, kind: str, field: str):
 
 def save_edit_state(conn: sqlite3.Connection, path: str, state: dict) -> None:
     names = [name for name, _ in _FIELDS]
-    state = {"module_presets": {}, **state}  # callers that build a state by hand need not know about it
+    state = {"module_presets": {}, **state}
     values = [_encode(state[name], kind) for name, kind in _FIELDS]
     marks = ", ".join("?" * (len(names) + 1))
     updates = ", ".join(f"{name}=excluded.{name}" for name in names)
@@ -310,8 +294,7 @@ def load_edit_state(conn: sqlite3.Connection, path: str) -> dict | None:
 
 
 def edited_paths(conn: sqlite3.Connection, paths: list[str]) -> set[str]:
-    """Which of paths have a saved edit row (queried in chunks to stay under
-    SQLite's variable limit)."""
+    """Which of paths have a saved edit row (queried in chunks to stay under SQLite's variable limit)."""
     found: set[str] = set()
     for i in range(0, len(paths), 500):
         chunk = paths[i : i + 500]
@@ -378,7 +361,7 @@ def get_folder_flatfield(conn: sqlite3.Connection, folder: str) -> dict | None:
     try:
         gain = np.frombuffer(blob, dtype=np.float32).reshape(h, w, 3).copy()
     except ValueError:
-        return None  # unreadable - treated as no flat-field rather than crashing a render
+        return None
     return {"gain": gain, "enabled": bool(enabled), "source": source}
 
 
@@ -534,7 +517,6 @@ def tag_counts(conn: sqlite3.Connection) -> list[tuple[str, int]]:
     return [(t, n) for t, n in conn.execute("SELECT tag, COUNT(*) FROM tags GROUP BY tag COLLATE NOCASE ORDER BY COUNT(*) DESC, tag COLLATE NOCASE")]
 
 
-# What an unedited photo's row holds (negative_inverted is left out: it depends on what the scan turned out to be).
 _UNTOUCHED = {
     "exposure_ev": 0.0, "rotation_quarter_turns": 0, "flip_h": False, "flip_v": False, "crop_rect": None, "saturation": 0.0,
     "temperature": 0.0, "tint": 0.0, "shadows": 0.0, "highlights": 0.0, "sharpen_amount": 0.0, "dust_auto": False,

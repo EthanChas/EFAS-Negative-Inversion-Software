@@ -4,9 +4,9 @@ import numpy as np
 
 from ..lut.strips import run_strips
 
-_LUMA_WEIGHTS = (0.299, 0.587, 0.114)  # same ITU-R BT.601 weights as whitebalance/logic.py
+_LUMA_WEIGHTS = (0.299, 0.587, 0.114)
 _LUMA_VEC = np.array(_LUMA_WEIGHTS, dtype=np.float32)
-_STRENGTH = 120.0  # max brightness shift at a slider's full +-1 extreme, full mask weight
+_STRENGTH = 120.0
 _EPS = 1e-6
 
 
@@ -20,9 +20,6 @@ def adjust_shadows_highlights(pixels: np.ndarray, shadows: float, highlights: fl
     tonal range and leaves midtones close to untouched."""
     if shadows == 0.0 and highlights == 0.0:
         return pixels
-    # The adjustment depends only on each pixel's luminance, so it's built
-    # once as a 256-entry table and looked up per pixel instead of running
-    # the mask math over every pixel.
     x = np.arange(256, dtype=np.float32) / 255.0
     shadow_weight = np.clip(1.0 - x * 2.0, 0.0, 1.0)
     highlight_weight = np.clip(x * 2.0 - 1.0, 0.0, 1.0)

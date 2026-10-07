@@ -6,22 +6,14 @@ from ...theme.tokens import THEME
 from .collapsible_panel import CollapsiblePanel
 from .slider_row import SliderRow
 
-_PREVIEW_THROTTLE_MS = 33  # ~30fps cap for the cheap image-only preview, same as Exposure
+_PREVIEW_THROTTLE_MS = 33
 _SETTLE_DEBOUNCE_MS = 200
 
 
 class SharpeningToolPanel(CollapsiblePanel):
-    """Sharpening under the Negative tab, ported from NegPy's four methods
-    (features/sharpening/logic.py). Same two-tier preview/full-recompute
-    split as the other tools, carrying every value in one signal pair.
+    """Sharpening under the Negative tab, ported from NegPy's four methods (features/sharpening/logic.py)."""
 
-    Amount/Radius/Masking aren't centered on 0 like the other tools' -1..+1
-    sliders, so each SliderRow here is built with its own min/max/reset -
-    this is what the value_range/min_value/max_value/reset_value
-    generalization of SliderRow (previously just a symmetric -range..+range)
-    was added for."""
-
-    changed = pyqtSignal(float, float, float, str)  # amount, radius, masking, method
+    changed = pyqtSignal(float, float, float, str)
     preview_requested = pyqtSignal(float, float, float, str)
 
     def __init__(self, parent: QWidget | None = None):
@@ -49,9 +41,6 @@ class SharpeningToolPanel(CollapsiblePanel):
         rows = QVBoxLayout()
         rows.setSpacing(THEME.space_sm)
 
-        # Default amount is 0 (off), unlike NegPy's own 0.25 default - every
-        # other tool in this app starts at a true no-op until the user
-        # opts in, and Sharpening follows the same convention.
         method_row = QHBoxLayout()
         method_row.setSpacing(THEME.space_sm)
         method_label = QLabel("Method")
@@ -101,8 +90,7 @@ class SharpeningToolPanel(CollapsiblePanel):
         self.set_values(0.0, 1.0, 0.0, DEFAULT_METHOD)
 
     def set_values(self, amount: float, radius: float, masking: float, method: str) -> None:
-        """Sync every control without emitting anything - used by reset()
-        and after a history revert."""
+        """Sync every control without emitting anything - used by reset() and after a history revert."""
         self._method.blockSignals(True)
         self._method.setCurrentIndex(max(0, self._method.findData(method)))
         self._method.blockSignals(False)

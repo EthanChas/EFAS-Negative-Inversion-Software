@@ -16,7 +16,7 @@ class HistoryPanel(CollapsiblePanel):
     session - select an entry and click Revert (after a confirmation) to
     restore the image to that point; later entries are then discarded."""
 
-    revert_requested = pyqtSignal(int)  # history index, already confirmed
+    revert_requested = pyqtSignal(int)
 
     def __init__(self, parent: QWidget | None = None):
         super().__init__(
@@ -36,8 +36,6 @@ class HistoryPanel(CollapsiblePanel):
         self._has_entries = False
 
         list_row = QHBoxLayout()
-        # Indented under the panel title, not flush with it - this is a
-        # nested log, not another header-level line.
         list_row.setContentsMargins(THEME.space_lg, 0, 0, 0)
         self._list = QListWidget()
         self._list.setMaximumHeight(_LIST_MAX_HEIGHT)

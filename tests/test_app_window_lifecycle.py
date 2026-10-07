@@ -1,10 +1,4 @@
-"""AppWindow must survive being shown at any size AND being left alive at interpreter exit.
-
-Both run in a subprocess: the failure these guard against is a native access violation (no Python
-frame) that kills the interpreter, and it happens *after* the script's last line - during
-finalization - so only the child's exit code can see it. It was intermittent (~half of runs), hence
-several concurrent children per check.
-"""
+"""AppWindow must survive being shown at any size AND being left alive at interpreter exit."""
 import os
 import subprocess
 import sys
@@ -16,7 +10,6 @@ import pytest
 
 SRC = str(Path(__file__).resolve().parents[1] / "src")
 
-# Isolated data dir + QSettings ini so the child never touches the user's real database or registry.
 _PRELUDE = textwrap.dedent("""
     import os, sys, tempfile
     os.environ["QT_QPA_PLATFORM"] = "offscreen"
@@ -51,8 +44,6 @@ def _run_many(body: str, n: int, **kwargs) -> list[subprocess.CompletedProcess]:
 
 
 def test_exit_hook_destroys_windows_before_pyqt_cleanup():
-    # Deterministic form of the crash check below. PyQt's own atexit cleanup deletes the windows too,
-    # but too late (that is the crash), so the hook has to be the one that does it: spy on its delete.
     r = _run("""
         import atexit
         from photoeditor.desktop.view import app_window
@@ -71,15 +62,13 @@ def test_exit_hook_destroys_windows_before_pyqt_cleanup():
 @pytest.mark.parametrize(
     "setup, n",
     [
-        ("w = AppWindow()", 12),  # never shown: the most sensitive shape (crashed ~1 run in 3 before the fix)
+        ("w = AppWindow()", 12),
         ("w = AppWindow(); w.show(); app.processEvents()", 6),
         ("w = AppWindow(); w.resize(1500, 950); w.show(); app.processEvents()", 6),
     ],
     ids=["unshown", "shown-default-size", "shown-1500x950"],
 )
 def test_window_left_alive_at_interpreter_exit_does_not_crash(setup, n):
-    # Deliberately never closes/deletes the window: module globals stay alive into finalization, which
-    # used to end in an access violation (rc != 0) after the script's last line - at any size.
     results = _run_many(setup + '\nprint("done", flush=True)', n)
     for r in results:
         assert "done" in r.stdout, r.stderr
@@ -105,8 +94,6 @@ def test_window_shows_and_resizes_at_any_size():
 
 
 def test_real_entry_point_exits_cleanly():
-    # photoeditor.__main__.main() end to end (app-wide stylesheet, maximized window, event loop, then
-    # sys.exit). Its exit used to crash most of the time; the loop is told to quit shortly after start.
     results = _run_many("""
         from PyQt6.QtCore import QTimer
         import photoeditor.__main__ as entry

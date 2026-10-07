@@ -29,7 +29,7 @@ DEFAULT_THRESHOLD = 0.3
 DEFAULT_GROW = 1
 THRESHOLD_RANGE = (0.05, 0.95)
 GROW_RANGE = (0, 4)
-_CACHE_KEEP = 400  # analyses kept on disk; the oldest go first
+_CACHE_KEEP = 400
 
 _session = None
 _session_lock = threading.Lock()
@@ -59,7 +59,7 @@ def _get_session():
 def positive_view(raw: np.ndarray, inverted: bool, mono: bool = False) -> np.ndarray:
     """The scan as a positive-looking picture for the model: a negative inverted with its own levels (the same inversion the editor does), a
     positive left as it is. mono makes a black-and-white scan grey first, like the editor does before inverting."""
-    pixels = to_uint8(raw)  # the model works on 8-bit pictures; a 16-bit scan is rounded down to one
+    pixels = to_uint8(raw)
     if mono:
         gray = (0.299 * pixels[..., 0] + 0.587 * pixels[..., 1] + 0.114 * pixels[..., 2]).astype(np.uint8)
         pixels = np.repeat(gray[..., None], 3, axis=2)
@@ -69,7 +69,7 @@ def positive_view(raw: np.ndarray, inverted: bool, mono: bool = False) -> np.nda
 
 
 def predict(rgb: np.ndarray, progress: Optional[Callable[[int, int], None]] = None, cancelled: Optional[Callable[[], bool]] = None) -> Optional[np.ndarray]:
-    """The defect probability of every pixel, uint8 0-255, same size as rgb (uint8 HxWx3). None if cancelled."""
+    """The defect probability of every pixel, uint8 0-255, same size as rgb (uint8 HxWx3)."""
     session = _get_session()
     h, w = rgb.shape[:2]
     prob = np.zeros((h, w), dtype=np.uint8)
@@ -81,7 +81,7 @@ def predict(rgb: np.ndarray, progress: Optional[Callable[[int, int], None]] = No
         ey0, ex0, ey1, ex1 = max(0, y - OVERLAP), max(0, x - OVERLAP), min(h, y1 + OVERLAP), min(w, x1 + OVERLAP)
         crop = rgb[ey0:ey1, ex0:ex1]
         ch, cw = crop.shape[:2]
-        pad_h, pad_w = (8 - ch % 8) % 8, (8 - cw % 8) % 8  # the network needs sides that are multiples of 8
+        pad_h, pad_w = (8 - ch % 8) % 8, (8 - cw % 8) % 8
         tensor = np.ascontiguousarray(crop.transpose(2, 0, 1)[None].astype(np.float32) / 255.0)
         if pad_h or pad_w:
             tensor = np.pad(tensor, ((0, 0), (0, 0), (0, pad_h), (0, pad_w)), mode="reflect")
@@ -103,8 +103,7 @@ def mask_from_prob(prob: np.ndarray, threshold: float, grow: int) -> np.ndarray:
 
 
 def mask_for_source(prob: np.ndarray, shape: tuple[int, int], threshold: float, grow: int) -> np.ndarray:
-    """The mask at a source's own size (h, w). A source smaller than the analysed picture (the editor's preview) gets the mask shrunk so
-    that any flagged pixel under a new pixel flags it - a small speck must not vanish in the shrinking."""
+    """The mask at a source's own size (h, w)."""
     mask = mask_from_prob(prob, threshold, grow)
     if mask.shape == tuple(shape):
         return mask
@@ -112,7 +111,6 @@ def mask_for_source(prob: np.ndarray, shape: tuple[int, int], threshold: float, 
     return (cv2.resize(mask.astype(np.float32), (w, h), interpolation=cv2.INTER_AREA) > 0).astype(np.uint8)
 
 
-# ---- the on-disk cache of analyses ----
 def _model_signature() -> str:
     try:
         st = MODEL_FILE.stat()
@@ -156,12 +154,12 @@ def save_cached(path: str, inverted: bool, mono: bool, prob: np.ndarray) -> None
         for old in files[:-_CACHE_KEEP]:
             os.remove(old)
     except OSError:
-        pass  # a cache that cannot be written only costs a re-analysis
+        pass
 
 
 def probability(path: str, raw: np.ndarray, inverted: bool, mono: bool,
                 progress: Optional[Callable[[int, int], None]] = None, cancelled: Optional[Callable[[], bool]] = None) -> Optional[np.ndarray]:
-    """The analysis of a photo: from the cache when it has been done, else computed (and cached). raw is the full-resolution scan."""
+    """The analysis of a photo: from the cache when it has been done, else computed (and cached)."""
     cached = load_cached(path, inverted, mono)
     if cached is not None and cached.shape == raw.shape[:2]:
         return cached

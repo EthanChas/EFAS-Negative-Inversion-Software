@@ -8,7 +8,7 @@ from ..open_image.logic import is_raw
 from ..open_image.processor import load_image_rgb
 from .logic import POOL_MIN_FRAMES, compute_gain, pool_gain_from_frames
 
-_FRAME_MAX_DIM = 640  # roll frames only feed a 256px gain map, so there's no need to decode them whole
+_FRAME_MAX_DIM = 640
 
 
 def load_small_frame(path: str) -> np.ndarray:
@@ -29,10 +29,7 @@ def gain_from_reference(path: str) -> np.ndarray:
 
 
 def gain_from_roll(paths: list[str], progress=None, cancelled=None):
-    """A gain map pooled from every frame in paths. progress(done, total, name)
-    is called after each frame; cancelled() -> True aborts (returns None).
-    Raises ValueError with a readable message if there aren't enough
-    readable frames."""
+    """A gain map pooled from every frame in paths."""
     frames = []
     total = len(paths)
     for i, path in enumerate(paths):
@@ -41,7 +38,7 @@ def gain_from_roll(paths: list[str], progress=None, cancelled=None):
         try:
             frames.append(load_small_frame(path))
         except Exception:
-            pass  # an unreadable frame just doesn't contribute
+            pass
         if progress is not None:
             progress(i + 1, total, path)
     if len(frames) < POOL_MIN_FRAMES:

@@ -1,4 +1,4 @@
-"""Pure file-type logic for single-file open. No Qt/UI imports - unit-testable."""
+"""Pure file-type logic for single-file open."""
 
 import os
 

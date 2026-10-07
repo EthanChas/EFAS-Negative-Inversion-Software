@@ -10,15 +10,15 @@ from PIL import Image, ImageDraw, ImageFont
 
 from ..metadata.roll import RollCard
 
-PAGE_SIZES = {"Letter": (8.5, 11.0), "A4": (8.27, 11.69)}  # inches, portrait
+PAGE_SIZES = {"Letter": (8.5, 11.0), "A4": (8.27, 11.69)}
 MIN_COLUMNS, MAX_COLUMNS = 2, 10
 DEFAULT_DPI = 150
 
 _MARGIN_IN = 0.45
 _GAP_IN = 0.14
-_FIRST_HEADER_IN = 1.0      # the roll's details, on the first page
-_RUNNING_HEADER_IN = 0.4    # a one-line header on every later page
-_CELL_ASPECT = 3 / 2        # every cell is a landscape 3:2 box; portrait frames sit inside it
+_FIRST_HEADER_IN = 1.0
+_RUNNING_HEADER_IN = 0.4
+_CELL_ASPECT = 3 / 2
 _PAPER = (255, 255, 255)
 _INK = (30, 30, 30)
 _MUTED = (110, 110, 110)
@@ -40,10 +40,10 @@ class SheetOptions:
 @dataclass(frozen=True)
 class SheetFrame:
     image: Image.Image
-    number: int          # the frame's place on the roll (1-based), whatever was left out
-    rating: int = 0      # 0-5
-    flag: Optional[str] = None  # "keeper", "rejected" or None
-    name: str = ""       # the file's name (without its extension), printed beside the number
+    number: int
+    rating: int = 0
+    flag: Optional[str] = None
+    name: str = ""
 
 
 def page_pixels(options: SheetOptions) -> tuple[int, int]:
@@ -58,8 +58,7 @@ def clamp_columns(columns: int) -> int:
 
 
 def cell_layout(options: SheetOptions, count: int) -> list[list[tuple[int, int, int, int]]]:
-    """The picture box (x, y, w, h) of every frame, page by page. Each box is 3:2; a caption strip sits under it, inside the row's height.
-    The first page has room for the roll's details, later pages for a single line."""
+    """The picture box (x, y, w, h) of every frame, page by page."""
     page_w, page_h = page_pixels(options)
     dpi = options.dpi
     margin, gap = round(_MARGIN_IN * dpi), round(_GAP_IN * dpi)
@@ -89,7 +88,7 @@ def cell_layout(options: SheetOptions, count: int) -> list[list[tuple[int, int, 
 
 
 def header_text(roll: RollCard, folder_name: str, frames: int) -> tuple[str, list[str]]:
-    """-> (title, detail lines) for the top of the first page. A blank roll card falls back to the folder's name."""
+    """-> (title, detail lines) for the top of the first page."""
     title = roll.name.strip() or folder_name
     film = " ".join(p for p in (roll.film.strip(), f"ISO {roll.iso}" if roll.iso else "", roll.format.strip()) if p)
     gear = "  ·  ".join(p for p in (roll.camera.strip(), roll.lens.strip()) if p)
@@ -128,7 +127,7 @@ def _fit(image: Image.Image, w: int, h: int) -> Image.Image:
 
 
 def draw_pages(frames: list[SheetFrame], options: SheetOptions, title: str, lines: list[str]) -> list[Image.Image]:
-    """The finished pages, as RGB images. frames are laid out in the order given."""
+    """The finished pages, as RGB images."""
     layout = cell_layout(options, len(frames))
     page_w, page_h = page_pixels(options)
     dpi = options.dpi
@@ -163,7 +162,7 @@ def draw_pages(frames: list[SheetFrame], options: SheetOptions, title: str, line
             cap_y = y + h + 3
             label = str(frame.number)
             d.text((x, cap_y), label, fill=_INK, font=tiny)
-            if frame.name:  # the file name after the number, cut to what the stars (right) leave of the width
+            if frame.name:
                 stars_w = round(frame.rating * (max(4.0, dpi * 0.032) * 2.1 + 1)) + 4 if frame.rating else 0
                 room = w - (d.textbbox((0, 0), label + "  ", font=tiny)[2]) - stars_w
                 name = frame.name
@@ -188,7 +187,7 @@ def draw_pages(frames: list[SheetFrame], options: SheetOptions, title: str, line
 
 
 def save_pdf(pages: list[Image.Image], path: str, dpi: int = DEFAULT_DPI) -> None:
-    """One PDF, one image per page. Written to a temporary name first, so a failed save never leaves a broken file where a good one was."""
+    """One PDF, one image per page."""
     tmp = path + ".part"
     try:
         pages[0].save(tmp, "PDF", resolution=float(dpi), save_all=True, append_images=pages[1:])

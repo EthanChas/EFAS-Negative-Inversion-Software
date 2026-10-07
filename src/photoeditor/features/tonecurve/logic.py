@@ -4,17 +4,11 @@ import numpy as np
 
 from ..lut.logic import apply_channel_lut
 
-# Identity curve: a straight diagonal line, output == input.
 DEFAULT_POINTS: tuple[tuple[int, int], ...] = ((0, 0), (255, 255))
 
 
 def build_lut(points: list[tuple[int, int]]) -> np.ndarray:
-    """A 256-entry 0-255 uint8 lookup table from sparse (x, y) control
-    points. Uses a cubic Hermite spline through them - each interior
-    point's tangent is the slope between its two neighbors (the standard
-    Catmull-Rom choice) - so the curve passes exactly through every point
-    and bends smoothly between them, instead of the sharp corners a plain
-    connect-the-dots polyline would have."""
+    """A 256-entry 0-255 uint8 lookup table from sparse (x, y) control points."""
     return curve_values(points, np.arange(256, dtype=np.float64)).round().astype(np.uint8)
 
 
@@ -38,7 +32,6 @@ def curve_values(points: list[tuple[int, int]], sample_x: np.ndarray) -> np.ndar
     h = x1 - x0
     t = (sample_x - x0) / h
 
-    # Cubic Hermite basis functions.
     t2, t3 = t * t, t * t * t
     h00 = 2 * t3 - 3 * t2 + 1
     h10 = t3 - 2 * t2 + t
@@ -60,12 +53,11 @@ def _tangents(xs: np.ndarray, ys: np.ndarray) -> np.ndarray:
 
 
 def apply_tone_curve(pixels: np.ndarray, points: list[tuple[int, int]]) -> np.ndarray:
-    """Remap every pixel through the same curve - one combined RGB curve,
-    not three independent per-channel curves."""
-    if pixels.dtype == np.float32:  # a wide ramp: the curve's own values, not rounded
+    """Remap every pixel through the same curve - one combined RGB curve, not three independent per-channel curves."""
+    if pixels.dtype == np.float32:
         if tuple(map(tuple, points)) == DEFAULT_POINTS:
             return pixels
-        grid = np.linspace(0.0, 255.0, 4097)  # the spline sampled finely, then read off by interpolation: far cheaper than evaluating it 196608 times
+        grid = np.linspace(0.0, 255.0, 4097)
         return np.interp(pixels, grid, curve_values(points, grid)).astype(np.float32)
     lut = build_lut(points)
     return apply_channel_lut(pixels, np.broadcast_to(lut, (3, 256)))

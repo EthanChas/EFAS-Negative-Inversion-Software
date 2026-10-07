@@ -42,8 +42,6 @@ def build_xmp_xml(payload: MetadataPayload, *, standalone: bool = True) -> str:
     for prefix in ("dc", "photoshop", "exif", "negpy"):
         desc.set(f"xmlns:{prefix}", _NS[prefix])
 
-    # negpy namespace: the original film capture. A structured mirror, with standard EXIF
-    # when flagged.
     if payload.camera_make:
         _sub(desc, "negpy", "CaptureCameraMake", payload.camera_make)
     if payload.camera_model:
@@ -59,8 +57,6 @@ def build_xmp_xml(payload: MetadataPayload, *, standalone: bool = True) -> str:
     if payload.capture_exposure:
         _sub(desc, "negpy", "CaptureExposure", payload.capture_exposure)
     if payload.capture_date is not None:
-        # photoshop:DateCreated keeps the truncated form; the precision word says whether
-        # "1998" meant a year or the first of January.
         _sub(desc, "photoshop", "DateCreated", payload.capture_date.xmp_text())
         _sub(desc, "negpy", "CaptureDatePrecision", payload.capture_date.precision)
     if payload.iso is not None:
@@ -103,7 +99,6 @@ def build_xmp_xml(payload: MetadataPayload, *, standalone: bool = True) -> str:
     if payload.capture_frame is not None:
         _sub(desc, "negpy", "CaptureFrame", str(payload.capture_frame))
 
-    # Digitization rig, always from the source snapshot
     if payload.scan_camera_make:
         _sub(desc, "negpy", "ScanCameraMake", payload.scan_camera_make)
     if payload.scan_camera_model:

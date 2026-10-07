@@ -6,10 +6,10 @@ from ...features.exposure.logic import EV_RANGE
 from ...theme.tokens import THEME
 from .collapsible_panel import CollapsiblePanel
 
-_SLIDER_STEPS = 100  # slider units per EV stop, so its int range covers +-EV_RANGE
+_SLIDER_STEPS = 100
 _DEFAULT_EV = 0.0
-_PREVIEW_THROTTLE_MS = 33  # ~30fps cap for the cheap image-only preview
-_SETTLE_DEBOUNCE_MS = 200  # full histogram/stats recompute once dragging pauses
+_PREVIEW_THROTTLE_MS = 33
+_SETTLE_DEBOUNCE_MS = 200
 
 
 class _ResettableSlider(QSlider):
@@ -56,7 +56,7 @@ class ExposureToolPanel(CollapsiblePanel):
 
     exposure_changed = pyqtSignal(float)
     preview_requested = pyqtSignal(float)
-    proof_requested = pyqtSignal(str)  # "strip" (test strip) or "ring" (ring-around): show that mosaic on the picture
+    proof_requested = pyqtSignal(str)
 
     def __init__(self, parent: QWidget | None = None):
         super().__init__(
@@ -73,7 +73,7 @@ class ExposureToolPanel(CollapsiblePanel):
         body = self.body()
         body.setSpacing(THEME.space_sm)
 
-        self._updating = False  # guards the slider<->spinbox feedback loop
+        self._updating = False
         self._current_ev = _DEFAULT_EV
 
         self._pending_preview_ev: float | None = None
@@ -159,7 +159,7 @@ class ExposureToolPanel(CollapsiblePanel):
     def _on_value_changed(self, ev: float) -> None:
         self._current_ev = ev
         self._request_preview(ev)
-        self._settle_timer.start()  # restart the "are they done yet" debounce
+        self._settle_timer.start()
 
     def _request_preview(self, ev: float) -> None:
         """Same leading-edge-immediate, trailing-edge-guaranteed throttle

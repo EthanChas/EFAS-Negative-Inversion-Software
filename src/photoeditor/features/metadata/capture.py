@@ -29,7 +29,7 @@ _MAX_YEAR = 2999
 
 @dataclass(frozen=True)
 class CaptureDate:
-    """A capture instant known only to some precision. `text` is ISO-8601, truncated."""
+    """A capture instant known only to some precision."""
 
     text: str
     precision: str
@@ -161,8 +161,6 @@ def _dms(value: float) -> tuple[tuple[int, int], tuple[int, int], tuple[int, int
     minutes_full = (total - degrees) * 60.0
     minutes = int(minutes_full)
     seconds = round((minutes_full - minutes) * 60.0 * 100.0)
-    # Rounding the hundredths can carry seconds to 60.00, an invalid GPS
-    # rational; fold that carry into minutes, and minutes into degrees.
     if seconds >= 6000:
         seconds -= 6000
         minutes += 1
@@ -191,9 +189,6 @@ def xmp_gps(lat: float, lon: float) -> tuple[str, str]:
         total = abs(value)
         degrees = int(total)
         minutes = round((total - degrees) * 60.0, 4)
-        # Rounding to four decimals can carry minutes to 60.0000, an invalid XMP
-        # rational; fold that carry into degrees, same shape as the EXIF seconds
-        # carry in _dms().
         if minutes >= 60.0:
             minutes -= 60.0
             degrees += 1
@@ -223,7 +218,7 @@ DEV_TIME_HINT = "mm:ss or minutes"
 
 
 def parse_dev_time(text: str) -> Optional[int]:
-    """Seconds from "9:30" or from plain minutes ("9", "9.5"). None when unreadable."""
+    """Seconds from "9:30" or from plain minutes ("9", "9.5")."""
     raw = (text or "").strip()
     if not raw:
         return None
@@ -253,7 +248,7 @@ def format_dev_time(seconds: Optional[int]) -> str:
 
 
 def parse_temperature(text: str) -> Optional[float]:
-    """Degrees Celsius from free text ("20", "20.5", "20°C"). None when unreadable."""
+    """Degrees Celsius from free text ("20", "20.5", "20°C")."""
     raw = (text or "").strip().rstrip("Cc°").strip()
     if not raw:
         return None

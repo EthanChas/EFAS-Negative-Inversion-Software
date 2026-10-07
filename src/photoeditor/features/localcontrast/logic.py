@@ -1,9 +1,4 @@
-"""Local contrast - CLAHE (contrast-limited adaptive histogram equalization) on lightness only. numpy + OpenCV, no Qt imports.
-
-The method follows NegPy's: the frame is cut into a fixed 8 x 8 grid of tiles at any size, each tile gets a histogram of its lightness that is
-clipped (the clip limit is strength x 2.5 x the tile's pixels / 256, the clipped excess shared out over all bins) and turned into a
-cumulative curve, and every pixel is mapped through the bilinear blend of the four nearest tiles' curves (smoothstepped, so tile borders do
-not show). The result is mixed back in by `strength`: L' = L + (equalized - L) x strength. Color is left alone."""
+"""Local contrast - CLAHE (contrast-limited adaptive histogram equalization) on lightness only."""
 
 import cv2
 import numpy as np
@@ -11,7 +6,7 @@ import numpy as np
 GRID = 8
 BINS = 256
 CLIP_SCALE = 2.5
-_CHUNK_ROWS = 256  # rows blended at a time, so a 26 MP export does not need four full-frame float arrays at once
+_CHUNK_ROWS = 256
 
 
 def _tile_cdfs(lightness: np.ndarray, clip_limit: float) -> np.ndarray:
@@ -43,11 +38,11 @@ def _axis(n: int) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
 
 
 def apply_local_contrast(pixels: np.ndarray, strength: float) -> np.ndarray:
-    """pixels: uint8 RGB. strength 0-1; 0 returns the picture untouched."""
+    """pixels: uint8 RGB."""
     if strength <= 0:
         return pixels
     lab = cv2.cvtColor(pixels, cv2.COLOR_RGB2LAB)
-    lightness = lab[..., 0].astype(np.int32)  # OpenCV scales L* to 0-255
+    lightness = lab[..., 0].astype(np.int32)
     h, w = lightness.shape
     cdfs = _tile_cdfs(lightness, strength * CLIP_SCALE).reshape(-1)
     y0, y1, fy = _axis(h)

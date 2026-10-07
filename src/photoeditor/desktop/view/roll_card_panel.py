@@ -1,9 +1,4 @@
-"""The Roll Card tab: one card per roll of film.
-
-A ticket at the top (the canister, the roll's name, its film and camera, and a FRAME n / N stamp) is what the folder's photos have
-in common, and the sections under it fill it in: ROLL (film, camera, lens, the dates it was shot, how it was developed and scanned -
-every frame in the folder inherits it), THIS FRAME (the details only this photo has) and EXPORT (what goes into the files).
-Nothing here changes the picture, so edits only save."""
+"""The Roll Card tab: one card per roll of film."""
 
 import os
 from typing import Callable, Optional
@@ -79,17 +74,14 @@ class RollTicket(QWidget):
         p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
         w, h = self.width(), self.height()
         p.fillRect(self.rect(), QColor(THEME.bg_input))
-        # the sunken bevel, like the app's other canvases
         for i in range(THEME.border_width):
             p.setPen(QColor(THEME.border_color)); p.drawLine(i, i, w - 1 - i, i); p.drawLine(i, i, i, h - 1 - i)
             p.setPen(QColor(THEME.bevel_light)); p.drawLine(w - 1 - i, i, w - 1 - i, h - 1 - i); p.drawLine(i, h - 1 - i, w - 1 - i, h - 1 - i)
-        # film perforations along the top and bottom edges
         p.setPen(Qt.PenStyle.NoPen); p.setBrush(QColor(THEME.bg_app))
         x = 8
         while x < w - 12:
             p.drawRoundedRect(QRectF(x, 5, 6, 4), 1, 1); p.drawRoundedRect(QRectF(x, h - 9, 6, 4), 1, 1)
             x += 12
-        # the canister
         box = QRectF(12, 14, 64, h - 28)
         art = _canister_pixmap(self._roll.film)
         if art is not None:
@@ -97,7 +89,6 @@ class RollTicket(QWidget):
             p.drawPixmap(int(box.x() + (box.width() - scaled.width()) / 2), int(box.y() + (box.height() - scaled.height()) / 2), scaled)
         else:
             self._paint_plain_canister(p, box)
-        # the words
         left = int(box.right()) + 12
         right = w - 12
         name = self._roll.name.strip()
@@ -116,7 +107,6 @@ class RollTicket(QWidget):
         rig = " · ".join(t for t in (self._roll.camera.strip(), self._roll.lens.strip()) if t)
         p.setPen(QColor(THEME.text_secondary if rig else THEME.text_muted))
         p.drawText(left, y + fm.ascent(), fm.elidedText(rig or "Camera and lens", Qt.TextElideMode.ElideRight, right - left))
-        # the stamp: FRAME n / N, a little crooked, like a lab's rubber stamp
         number = str(self._frame) if self._frame is not None else "—"
         label = f"FRAME {number}" + (f" / {self._total}" if self._total else "")
         stamp = QFont(self.font()); stamp.setBold(True); stamp.setStyleHint(QFont.StyleHint.Monospace); stamp.setFamily("Consolas")
@@ -161,11 +151,10 @@ def _row(body: QVBoxLayout, label: str, widget: QWidget, tip: str = "") -> None:
 
 
 class RollCardTab(QWidget):
-    """The ticket plus its sections. `roll_edited` carries the whole RollCard and `frame_edited` this frame's own MetadataConfig,
-    each after a short pause, so typing never saves per keystroke."""
+    """The ticket plus its sections."""
 
-    roll_edited = pyqtSignal(object)   # RollCard
-    frame_edited = pyqtSignal(object)  # MetadataConfig
+    roll_edited = pyqtSignal(object)
+    frame_edited = pyqtSignal(object)
 
     def __init__(
         self,
@@ -183,7 +172,7 @@ class RollCardTab(QWidget):
         self._position: tuple[Optional[int], int] = (None, 0)
         self._folder = ""
         self._place_edited = False
-        self._auto_iso: Optional[int] = None  # the ISO a film preset filled in, which a different film may replace
+        self._auto_iso: Optional[int] = None
         self._completers: dict[str, QStringListModel] = {}
 
         self._roll_timer = QTimer(self); self._roll_timer.setSingleShot(True); self._roll_timer.setInterval(_COMMIT_MS)
@@ -201,7 +190,6 @@ class RollCardTab(QWidget):
         col.addWidget(self._build_export())
         col.addWidget(self._build_presets())
 
-    # ---- sections ----
     def _panel(self, title: str, help_text: str) -> tuple[CollapsiblePanel, QVBoxLayout]:
         panel = CollapsiblePanel(title, help_text=help_text, collapsible=True, start_expanded=False)
         body = panel.body()
@@ -241,7 +229,7 @@ class RollCardTab(QWidget):
         self._film.addItems(suggest.suggestions("film"))
         self._film.setCurrentText("")
         self._film.lineEdit().setPlaceholderText("e.g. Kodak Gold 200")
-        self._film.completer().setCompletionMode(QCompleter.CompletionMode.PopupCompletion)  # the default inline mode splices a half-typed name onto its match
+        self._film.completer().setCompletionMode(QCompleter.CompletionMode.PopupCompletion)
         self._film.completer().setFilterMode(Qt.MatchFlag.MatchContains)
         self._film.completer().setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
         self._film.setToolTip("Pick a film or type your own. The canisters the Canister Watermark has art for are listed first.")
@@ -276,7 +264,7 @@ class RollCardTab(QWidget):
         self._scanned = self._text("scanned", "e.g. DSLR copy-stand", self._roll_dirty)
         _row(body, "Scanned with", self._scanned)
         for edit in (self._name, self._film.lineEdit(), self._camera, self._lens, self._from, self._to, self._developed, self._scanned, self._iso):
-            edit.editingFinished.connect(self._commit_now)  # leaving a field (clicking another photo, say) saves what was typed in it
+            edit.editingFinished.connect(self._commit_now)
         buttons = QHBoxLayout()
         self._copy_btn = QToolButton(); self._copy_btn.setText("Copy another roll…")
         self._copy_btn.setToolTip("Start from the card of a roll you have already filled in")
@@ -333,7 +321,6 @@ class RollCardTab(QWidget):
         body.addWidget(self._preview)
         return panel
 
-    # ---- presets ----
     def _build_presets(self) -> CollapsiblePanel:
         panel, body = self._panel(
             "Presets",
@@ -444,7 +431,6 @@ class RollCardTab(QWidget):
         autofill.set_use_bundled(on)
         self.refresh_suggestions()
 
-    # ---- state in ----
     def set_state(self, roll: RollCard, frame: MetadataConfig, position: tuple[Optional[int], int], folder: str) -> None:
         """Show a photo (its folder's card and its own details) without emitting - a photo was opened."""
         self._roll_timer.stop(); self._frame_timer.stop()
@@ -497,7 +483,6 @@ class RollCardTab(QWidget):
         finally:
             self._block(False)
 
-    # ---- state out ----
     def _roll_from_fields(self) -> RollCard:
         keep_date = lambda text, old: text.strip() if not text.strip() or parse_capture_date(text) is not None else old
         film = self._film.currentText().strip()
@@ -514,7 +499,7 @@ class RollCardTab(QWidget):
         parsed = parse_capture_date(date_text)
         date = parsed.xmp_text() if parsed else ("" if not date_text else f.capture_date)
         changes = dict(capture_frame=self._frame_no.value() or None, capture_date=date, exposure_override=self._exposure.text().strip(), note=self._note.toPlainText().strip())
-        if self._place_edited:  # typed text is the place now; coordinates from an earlier version stay
+        if self._place_edited:
             changes.update(location_city=self._place.text().strip(), location_state="", location_country="")
         return dataclasses.replace(f, **changes)
 
@@ -540,10 +525,9 @@ class RollCardTab(QWidget):
         self.frame_edited.emit(cfg)
         self._refresh_views()
 
-    # ---- handlers ----
     def _on_film_changed(self, text: str) -> None:
-        iso, fmt = autofill.film_info(text)   # a film preset (or a film the app knows) fills in its ISO and format...
-        if iso and self._iso.value() in (0, self._auto_iso):   # ...unless a different ISO was typed by hand
+        iso, fmt = autofill.film_info(text)
+        if iso and self._iso.value() in (0, self._auto_iso):
             self._iso.blockSignals(True); self._iso.setValue(iso); self._iso.blockSignals(False)
             self._auto_iso = iso
         if fmt in FORMAT_OPTIONS[1:] and self._format.currentIndex() == 0:
@@ -603,7 +587,6 @@ class RollCardTab(QWidget):
     def _clear_roll(self) -> None:
         self._apply_card(RollCard())
 
-    # ---- views ----
     def _refresh_ticket_only(self) -> None:
         self._ticket.set_data(self._roll_from_fields(), self._position[0], self._position[1])
 

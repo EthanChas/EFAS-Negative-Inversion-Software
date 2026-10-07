@@ -1,8 +1,4 @@
-"""Every rebindable key: what it does, where it is listed, and what it is set to out of the box - no Qt imports.
-
-A key sequence is Qt's portable text ("K", "Ctrl+Shift+O", "F1", "Left"). Two kinds of action exist:
-  "key"  - handled by the app-wide key filter, so a plain key (K, Z, Tab...) works from anywhere except while typing in a field;
-  "menu" - a menu item's own shortcut, which also fires while typing, so it must carry Ctrl or Alt (or be an F key)."""
+"""Every rebindable key: what it does, where it is listed, and what it is set to out of the box - no Qt imports."""
 
 from dataclasses import dataclass
 
@@ -57,7 +53,6 @@ ACTIONS: tuple[KeyAction, ...] = (
 BY_ID = {a.id: a for a in ACTIONS}
 DEFAULT_BINDINGS: dict[str, str] = {a.id: a.default for a in ACTIONS}
 RATING_IDS = tuple(f"rating_{n}" for n in range(6))
-# keys that are always what they are (shown on the cheat sheet, not rebindable)
 FIXED_KEYS: tuple[tuple[str, str, str], ...] = (
     ("Views", "Arrows", "Move through the grid"),
     ("Views", "Enter", "Open the photo in the editor"),
@@ -67,7 +62,7 @@ FIXED_KEYS: tuple[tuple[str, str, str], ...] = (
 
 
 def bindings(overrides: dict[str, str] | None) -> dict[str, str]:
-    """The key sequence of every action: the saved override where there is one, the default otherwise. An override of "" means 'no key'."""
+    """The key sequence of every action: the saved override where there is one, the default otherwise."""
     out = dict(DEFAULT_BINDINGS)
     for key, seq in (overrides or {}).items():
         if key in BY_ID and isinstance(seq, str):
@@ -90,7 +85,7 @@ def conflicts(current: dict[str, str]) -> dict[str, list[str]]:
 
 
 def menu_key_problem(action_id: str, seq: str) -> str:
-    """Why `seq` cannot be this action's key, or "" when it can. A menu shortcut works inside text fields too, so a bare letter would break typing."""
+    """Why `seq` cannot be this action's key, or "" when it can."""
     action = BY_ID[action_id]
     if action.kind != "menu" or not seq:
         return ""

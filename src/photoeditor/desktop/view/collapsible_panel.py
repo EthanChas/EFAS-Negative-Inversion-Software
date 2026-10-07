@@ -5,7 +5,7 @@ from PyQt6.QtWidgets import QHBoxLayout, QLabel, QMessageBox, QPushButton, QVBox
 from ...theme.tokens import THEME
 from .bevel_widgets import BevelPanel, CaptionButton
 
-_NO_MAX = 16777215  # Qt's own QWIDGETSIZE_MAX - "no cap" for maximumHeight
+_NO_MAX = 16777215
 
 
 class _CollapsibleHeader(QWidget):
@@ -32,12 +32,9 @@ class _CollapsibleHeader(QWidget):
 
         label = QLabel(title)
         label.setProperty("role", "mini_header_text")
-        # So a click on the title still reaches this widget's own
-        # mousePressEvent below, instead of being swallowed by the label.
         label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
         row.addWidget(label, 0, Qt.AlignmentFlag.AlignVCenter)
 
-        # "PRESET: name" in small grey beside the title while a module preset is applied; nothing at all otherwise
         self.preset_label = QLabel("")
         self.preset_label.setStyleSheet(f"color: {THEME.text_muted}; font-size: {THEME.font_size_small}pt;")
         self.preset_label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
@@ -45,7 +42,6 @@ class _CollapsibleHeader(QWidget):
         row.addWidget(self.preset_label, 0, Qt.AlignmentFlag.AlignVCenter)
         row.addStretch(1)
 
-        # Reset and Presets: shown only on the panels that opt in (see CollapsiblePanel.enable_module_buttons)
         self.reset_button = CaptionButton("refresh")
         self.reset_button.setToolTip("Reset this module to its defaults")
         self.presets_button = CaptionButton("menu")
@@ -84,7 +80,7 @@ class CollapsiblePanel(BevelPanel):
     content via `.body()`, not `.layout()` (that's the outer frame's own
     layout, already spoken for by the header)."""
 
-    toggled = pyqtSignal(bool)  # True = expanded
+    toggled = pyqtSignal(bool)
 
     def __init__(
         self,
@@ -127,11 +123,10 @@ class CollapsiblePanel(BevelPanel):
         return self._body_layout
 
     def enable_module_buttons(self) -> None:
-        """Show a Reset button and a Presets (menu) button in the header, next to the help button. The panel only provides the buttons;
-        whoever uses it connects reset_button.clicked and presets_button.clicked."""
+        """Show a Reset button and a Presets (menu) button in the header, next to the help button."""
         self._header.reset_button.show()
         self._header.presets_button.show()
-        if self._module_update_button is None:  # at the top of the body, shown only while the loaded preset has been changed
+        if self._module_update_button is None:
             self._module_update_button = QPushButton("Update Preset")
             self._module_update_button.hide()
             self._body_layout.insertWidget(0, self._module_update_button)
@@ -182,9 +177,6 @@ class CollapsiblePanel(BevelPanel):
         self.toggled.emit(expanded)
 
     def _on_animation_finished(self) -> None:
-        # Release the cap once fully open, so later content changes (e.g.
-        # stats text wrapping to another line) aren't clipped at whatever
-        # height happened to be current when the panel was last opened.
         if self._expanded:
             self._body_container.setMaximumHeight(_NO_MAX)
 

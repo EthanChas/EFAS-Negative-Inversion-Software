@@ -1,20 +1,4 @@
-"""XMP sidecar read/write - stdlib only, no Qt/UI imports.
-
-Edits are saved next to the photo as `<filename>.<ext>.xmp` (darktable's
-naming: IMG_0001.CR2 -> IMG_0001.CR2.xmp), so they travel with the files
-and survive a lost or copied database. Two groups of properties are written:
-
-* Lightroom/Camera Raw (`crs:`) equivalents for the settings that map
-  cleanly (exposure, saturation, shadows, highlights, sharpening, crop, tone
-  curve) - best-effort interoperability; other tools may render them
-  differently than this app does, since the pipelines aren't identical.
-* A private `pe:` namespace carrying this app's exact values, which is what
-  read_sidecar restores from - lossless round trip, including the settings
-  with no crs: counterpart (temperature/tint offsets, invert, flips).
-
-An existing sidecar is merged into, not replaced - ratings, keywords or
-other tools' develop settings already in it are kept. If it can't be parsed,
-it's left untouched rather than overwritten."""
+"""XMP sidecar read/write - stdlib only, no Qt/UI imports."""
 
 import json
 import os
@@ -90,10 +74,7 @@ def _set_curve(desc: ET.Element, tag: str, points: list[tuple[int, int]], sep: s
 
 
 def apply_edits_to_document(root: ET.Element, state: dict, frame_size: tuple[int, int]) -> None:
-    """state: edit_store's dict shape. frame_size: (height, width) of the
-    pre-crop frame the crop rect is expressed in - turned into 0..1
-    fractions so the saved crop doesn't depend on this app's preview
-    resolution."""
+    """state: edit_store's dict shape."""
     desc = _description(root)
     for name in _PE_ATTRS:
         desc.attrib.pop(_q(NS_PE, name), None)
@@ -174,8 +155,7 @@ def apply_edits_to_document(root: ET.Element, state: dict, frame_size: tuple[int
 
 
 def write_sidecar(image_path: str, state: dict, frame_size: tuple[int, int]) -> bool:
-    """True if written. False (nothing touched) when the folder isn't
-    writable or an existing sidecar can't be parsed."""
+    """True if written."""
     path = sidecar_path(image_path)
     root = None
     if os.path.exists(path):
@@ -293,7 +273,7 @@ def write_flag(image_path: str, flag: str | None) -> bool:
             return False
     if root is None:
         if flag is None:
-            return True  # nothing to record, and no sidecar to clean up
+            return True
         root = _new_document()
     desc = _description(root)
 
@@ -301,7 +281,7 @@ def write_flag(image_path: str, flag: str | None) -> bool:
     stars_attr = _q(NS_PE, "Stars")
     if desc.get(rating) == "-1":
         desc.attrib.pop(rating)
-        if desc.get(stars_attr):  # un-rejecting gives the star rating back
+        if desc.get(stars_attr):
             desc.set(rating, desc.get(stars_attr))
     if desc.get(label) == "Green":
         desc.attrib.pop(label)
@@ -398,7 +378,7 @@ def read_tags(image_path: str) -> list[str]:
         return []
     if desc is None:
         return []
-    subject = desc.find(_q(NS_DC, "subject"))  # only the keywords: the tone curve and others keep their own rdf:li lists in the same description
+    subject = desc.find(_q(NS_DC, "subject"))
     return [li.text.strip() for li in subject.iter(_q(NS_RDF, "li")) if li.text and li.text.strip()] if subject is not None else []
 
 

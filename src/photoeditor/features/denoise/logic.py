@@ -1,18 +1,10 @@
-"""Chroma denoise - numpy + OpenCV, no Qt/UI imports.
-
-Ported from NegPy's apply_chroma_denoise (negpy/features/lab/logic.py):
-edge-aware smoothing of the a* and b* channels of CIELAB, which removes color
-noise (the blotchy red/green/blue speckle of film grain scans and high ISO)
-while leaving luminance - the actual detail - alone. The smoothing is a
-bilateral filter weighted by chroma similarity as well as distance, so a
-saturated object's color doesn't bleed into its surroundings. OpenCV is
-imported lazily."""
+"""Chroma denoise - numpy + OpenCV, no Qt/UI imports."""
 
 import numpy as np
 
-CHROMA_DENOISE_MAX = 5.0  # slider range, in pixels of smoothing at 1600 px
-_CHROMA_SIGMA_R = 15.0  # a*/b* distance past which a neighbor is rejected
-_MAX_WORKING_SIGMA = 2.0  # the bilateral is O(pixels x sigma^2): bigger radii are done on a shrunken copy
+CHROMA_DENOISE_MAX = 5.0
+_CHROMA_SIGMA_R = 15.0
+_MAX_WORKING_SIGMA = 2.0
 
 _cv2 = None
 
@@ -39,12 +31,10 @@ def apply_chroma_denoise(pixels: np.ndarray, radius: float, scale: float = 1.0) 
     l_chan, a, b = cv2.split(lab)
 
     sigma = max(0.5, radius * scale)
-    ab = cv2.merge([a, b, np.zeros_like(a)])  # bilateralFilter takes 1 or 3 channels; the zero plane adds nothing
+    ab = cv2.merge([a, b, np.zeros_like(a)])
     h, w = ab.shape[:2]
     shrink = min(1.0, _MAX_WORKING_SIGMA / sigma)
     if shrink < 1.0:
-        # Color noise is low-frequency, so filtering a smaller copy (sigma scaled to match)
-        # and enlarging the result is visually the same and far cheaper.
         small = cv2.resize(ab, (max(1, round(w * shrink)), max(1, round(h * shrink))), interpolation=cv2.INTER_AREA)
         small = cv2.bilateralFilter(small, 0, np.float32(_CHROMA_SIGMA_R), np.float32(sigma * shrink), borderType=cv2.BORDER_REFLECT_101)
         smoothed = cv2.resize(small, (w, h), interpolation=cv2.INTER_LINEAR)

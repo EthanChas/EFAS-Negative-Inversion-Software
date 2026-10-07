@@ -17,15 +17,12 @@ from PyQt6.QtWidgets import (
     QTextEdit, QVBoxLayout, QWidget,
 )
 
-# Structural Qt chrome, not "content" - these need their own native drag
-# behavior to keep working even while Debug mode is on (a splitter that
-# stops resizing because Debug ate its drag is a regression, not a feature).
 _NATIVE_DRAG_TYPES = (QSplitterHandle, QScrollBar)
 
 _HANDLE_SIZE = 8
 _EDGE_MARGIN = 10
 _HIGHLIGHT_COLOR = "#39ff6a"
-_MOVE_THRESHOLD = 2  # px of drag before a press counts as a move/resize, not a click
+_MOVE_THRESHOLD = 2
 
 _CURSOR_BY_EDGE = {
     "n": Qt.CursorShape.SizeVerCursor,
@@ -124,9 +121,7 @@ class _SelectionOverlay(QWidget):
 
 
 class DebugLogWindow(QDialog):
-    """A small, non-modal running log of every move/resize/rename made while
-    Debug mode is on. Copy All puts the whole thing on the clipboard to
-    hand back as a change spec."""
+    """A small, non-modal running log of every move/resize/rename made while Debug mode is on."""
 
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
@@ -158,16 +153,7 @@ class DebugLogWindow(QDialog):
 
 
 class DebugController(QObject):
-    """Installed app-wide via installEventFilter (see AppWindow). While
-    enabled, it intercepts mouse input everywhere except the log window
-    itself:
-    - drag a widget's body: previews a move, logs the requested (dx, dy)
-    - drag from a widget's edge/corner: previews a resize, logs the
-      requested old-size -> new-size
-    - double-click a widget with text (a label, a button): renames it for
-      real and logs the old/new text
-    Neither a move nor a resize is actually kept - the active layout would
-    just put the widget back on its next pass - the log is the point."""
+    """Installed app-wide via installEventFilter (see AppWindow)."""
 
     def __init__(self, window: QWidget, parent: QObject | None = None):
         super().__init__(parent)
@@ -177,7 +163,7 @@ class DebugController(QObject):
         self._overlay = _SelectionOverlay(window)
 
         self._drag_widget: QWidget | None = None
-        self._drag_mode: str | None = None  # "move" or an edge string
+        self._drag_mode: str | None = None
         self._press_global: QPoint | None = None
         self._press_geom: QRect | None = None
 
@@ -202,7 +188,6 @@ class DebugController(QObject):
     def is_enabled(self) -> bool:
         return self._enabled
 
-    # ---- QObject event filter protocol (installed on QApplication) ----
     def eventFilter(self, watched, event) -> bool:
         if not self._enabled or not isinstance(watched, QWidget):
             return False
@@ -234,7 +219,6 @@ class DebugController(QObject):
             widget = widget.parentWidget()
         return False
 
-    # ---- highlight on hover ----
     def _show_highlight(self, widget: QWidget) -> None:
         if widget is self._overlay or widget is self._window:
             return
@@ -251,7 +235,6 @@ class DebugController(QObject):
         top_left = widget.mapTo(self._window, QPoint(0, 0))
         return QRect(top_left, widget.size())
 
-    # ---- press / move / release: move or resize preview ----
     def _on_press(self, widget: QWidget, event: QMouseEvent) -> bool:
         if event.button() != Qt.MouseButton.LeftButton:
             return False
@@ -304,10 +287,7 @@ class DebugController(QObject):
         self._window.unsetCursor()
         self._overlay.hide()
 
-    # ---- double-click text edit (applied live) ----
     def _on_double_click(self, widget: QWidget, event: QMouseEvent) -> bool:
-        # The second press of the double-click landed and set drag state
-        # just before this event arrives - this is a rename, not a drag.
         self._cancel_drag()
 
         text_getter = getattr(widget, "text", None)
@@ -341,7 +321,7 @@ class DebugController(QObject):
         self._edit_box = None
         self._edit_target = None
         if new_text != previous:
-            description = describe_widget(widget)  # before the rename, or it'd echo new_text
+            description = describe_widget(widget)
             widget.setText(new_text)
             self._log(f'TEXT {description} changed from "{previous}" to "{new_text}"')
 

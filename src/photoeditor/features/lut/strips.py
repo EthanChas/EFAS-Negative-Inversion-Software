@@ -9,14 +9,11 @@ import numpy as np
 
 _WORKERS = max(1, min(8, (os.cpu_count() or 2)))
 _POOL = ThreadPoolExecutor(max_workers=_WORKERS, thread_name_prefix="strips")
-_MIN_ROWS_PER_STRIP = 128  # below this, thread hand-off costs more than it saves
+_MIN_ROWS_PER_STRIP = 128
 
 
 def run_strips(fn, pixels: np.ndarray, overlap: int = 0) -> np.ndarray:
-    """fn(strip) -> same-shaped uint8 array. overlap is how many extra rows
-    each strip reads past its own edges (for neighborhood filters like blur),
-    discarded from the result - so strip seams match a single full-image
-    call as long as overlap covers the filter's reach."""
+    """fn(strip) -> same-shaped uint8 array."""
     h = pixels.shape[0]
     n = min(_WORKERS, h // _MIN_ROWS_PER_STRIP)
     if n <= 1:

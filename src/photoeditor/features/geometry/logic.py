@@ -4,7 +4,7 @@ import math
 
 import numpy as np
 
-Rect = tuple[int, int, int, int]  # (x1, y1, x2, y2) in pixel coordinates
+Rect = tuple[int, int, int, int]
 
 
 def rotate_left(pixels: np.ndarray) -> np.ndarray:
@@ -76,7 +76,7 @@ def transform_rect_flip_v(rect: Rect, height: int) -> Rect:
     return (x1, height - y2, x2, height - y1)
 
 
-FINE_ROTATION_LIMIT = 45.0  # degrees either way; beyond that is a quarter turn's job
+FINE_ROTATION_LIMIT = 45.0
 
 
 def _fine_matrix(degrees: float, w: int, h: int) -> np.ndarray:
@@ -87,15 +87,14 @@ def _fine_matrix(degrees: float, w: int, h: int) -> np.ndarray:
     theta = math.radians(abs(degrees))
     cos, sin = math.cos(theta), math.sin(theta)
     scale = max((w * cos + h * sin) / w, (w * sin + h * cos) / h)
-    alpha = math.radians(-degrees)  # OpenCV's positive angle is counter-clockwise
+    alpha = math.radians(-degrees)
     a, b = scale * math.cos(alpha), scale * math.sin(alpha)
     cx, cy = w / 2.0, h / 2.0
     return np.array([[a, b, (1 - a) * cx - b * cy], [-b, a, b * cx + (1 - a) * cy]], dtype=np.float64)
 
 
 def fine_rotate(pixels: np.ndarray, degrees: float, nearest: bool = False) -> np.ndarray:
-    """Straighten by an arbitrary small angle (positive = clockwise). nearest
-    picks nearest-neighbor sampling, for masks."""
+    """Straighten by an arbitrary small angle (positive = clockwise)."""
     if abs(degrees) < 1e-3:
         return pixels
     import cv2
@@ -115,14 +114,12 @@ def unfine_rotate_point(px: float, py: float, degrees: float, w: int, h: int) ->
     return float(x / w), float(y / h)
 
 
-DISTORTION_LIMIT = 0.10  # k1 either way; beyond that the correction folds the picture over itself
+DISTORTION_LIMIT = 0.10
 _DISTORT_EPS = 1e-6
-_distort_cache: dict = {}  # (k1, w, h) -> (map_x, map_y), the last one - dragging other sliders reuses it
+_distort_cache: dict = {}
 
 
 def _radial_center(w: int, h: int) -> tuple[float, float, float]:
-    # Pixel-index convention: the center of a w x h frame is ((w-1)/2, (h-1)/2); the radius is
-    # normalized to the half-diagonal, so the model is the same for any rotation or aspect.
     return (w - 1) * 0.5, (h - 1) * 0.5, 0.5 * math.hypot(w, h)
 
 
@@ -145,7 +142,7 @@ def distortion_scale(k1: float, w: int, h: int, samples: int = 128) -> float:
         px, py = pts[:, 0] * scale, pts[:, 1] * scale
         f = 1.0 + k1 * (px * px + py * py) * inv_hd2
         if (f <= 0).any():
-            return math.inf  # fold-over: the scale is too large
+            return math.inf
         return float(max((np.abs(px * f) / max(cx, 1e-9)).max(), (np.abs(py * f) / max(cy, 1e-9)).max()))
 
     lo, hi = 1e-3, 1.0
@@ -171,7 +168,7 @@ def _radial_maps(k1: float, w: int, h: int):
     px, py = (xs - cx) * np.float32(s), (ys - cy) * np.float32(s)
     f = 1.0 + np.float32(k1) * (px * px + py * py) * np.float32(1.0 / (halfdiag * halfdiag))
     maps = ((cx + px * f).astype(np.float32), (cy + py * f).astype(np.float32))
-    if w * h <= 4_000_000:  # a full-resolution map pair is hundreds of MB - recomputed instead
+    if w * h <= 4_000_000:
         _distort_cache["last"] = (key, maps)
     return maps
 
@@ -191,9 +188,7 @@ def radial_distort(pixels: np.ndarray, k1: float, nearest: bool = False) -> np.n
 
 
 def undistort_point(px: float, py: float, k1: float, w: int, h: int) -> tuple[float, float]:
-    """A point in the corrected frame (0..1 fractions) -> where it came from
-    in the uncorrected one. The correction's own resample map goes exactly in
-    this direction, so it's a direct formula."""
+    """A point in the corrected frame (0..1 fractions) -> where it came from in the uncorrected one."""
     if abs(k1) < _DISTORT_EPS:
         return px, py
     cx, cy, halfdiag = _radial_center(w, h)
@@ -230,9 +225,9 @@ def map_display_to_raw(
     if flip_h:
         px = 1.0 - px
     for _ in range(rotation_quarter_turns % 4):
-        px, py = py, 1.0 - px  # undo one clockwise quarter turn
+        px, py = py, 1.0 - px
     raw_h, raw_w = (w, h) if rotation_quarter_turns % 2 else (h, w)
-    if distortion:  # then fine rotation, then the distortion correction, all on the raw frame
+    if distortion:
         px, py = undistort_point(px, py, distortion, raw_w, raw_h)
     if fine_rotation:
         px, py = unfine_rotate_point(px, py, fine_rotation, raw_w, raw_h)

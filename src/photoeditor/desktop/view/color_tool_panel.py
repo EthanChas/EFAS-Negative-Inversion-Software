@@ -5,7 +5,7 @@ from ...theme.tokens import THEME
 from .collapsible_panel import CollapsiblePanel
 from .slider_row import SliderRow
 
-_PREVIEW_THROTTLE_MS = 33  # ~30fps cap for the cheap image-only preview, same as Exposure
+_PREVIEW_THROTTLE_MS = 33
 _SETTLE_DEBOUNCE_MS = 200
 
 
@@ -17,7 +17,7 @@ class ColorToolPanel(CollapsiblePanel):
     Curve, just carrying all three values together in one signal instead
     of adding three separate preview/changed signal pairs."""
 
-    color_changed = pyqtSignal(float, float, float)  # saturation, temperature, tint
+    color_changed = pyqtSignal(float, float, float)
     preview_requested = pyqtSignal(float, float, float)
 
     def __init__(self, parent: QWidget | None = None):
@@ -76,8 +76,7 @@ class ColorToolPanel(CollapsiblePanel):
         self.set_values(0.0, 0.0, 0.0)
 
     def set_values(self, saturation: float, temperature: float, tint: float) -> None:
-        """Sync the three sliders without emitting anything - used by
-        reset() and after a history revert."""
+        """Sync the three sliders without emitting anything - used by reset() and after a history revert."""
         self._saturation.set_value(saturation)
         self._temperature.set_value(temperature)
         self._tint.set_value(tint)

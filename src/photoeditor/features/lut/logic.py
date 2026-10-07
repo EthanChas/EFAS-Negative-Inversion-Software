@@ -1,10 +1,4 @@
-"""Per-channel 0-255 lookup-table helpers - numpy + Pillow only, no Qt/UI imports.
-
-Exposure, white balance offsets, the negative inversion and the tone curve
-are all pointwise per-channel maps, so instead of running each one over every
-pixel (several full-image float passes per slider tick), they're run once over
-a 256-entry "ramp" image and composed into a single (3, 256) table, which
-then costs one fast pass over the real image."""
+"""Per-channel 0-255 lookup-table helpers - numpy + Pillow only, no Qt/UI imports."""
 
 import numpy as np
 from PIL import Image
@@ -18,13 +12,9 @@ def identity_ramp() -> np.ndarray:
 
 
 def ramp_to_lut(ramp: np.ndarray) -> np.ndarray:
-    return np.ascontiguousarray(ramp[0].T)  # (3, 256)
+    return np.ascontiguousarray(ramp[0].T)
 
 
-# ---- the wide (16-bit) path ----
-# A 16-bit scan has 65536 levels, so its table has 65536 entries, and the stages between the scan and the first 8-bit picture run on a float32
-# ramp of 0..255 values instead of a uint8 one: nothing is rounded until the very end. That is what stops the stretch of a narrow negative
-# (inversion, contrast, the curve) from leaving gaps - banding - in the 8-bit result.
 WIDE_SIZE = 65536
 
 
@@ -44,8 +34,8 @@ def apply_wide_lut(pixels16: np.ndarray, lut: np.ndarray) -> np.ndarray:
     try:
         import cv2
 
-        return cv2.LUT(np.ascontiguousarray(pixels16), np.ascontiguousarray(lut.T[None]))  # one pass in C; several times faster than indexing
-    except Exception:  # an OpenCV build without 16-bit LUT support
+        return cv2.LUT(np.ascontiguousarray(pixels16), np.ascontiguousarray(lut.T[None]))
+    except Exception:
         out = np.empty(pixels16.shape, dtype=np.uint8)
         for c in range(3):
             np.take(lut[c], pixels16[..., c], out=out[..., c])
@@ -64,9 +54,7 @@ def is_identity(lut: np.ndarray) -> bool:
 
 
 def apply_channel_lut(pixels: np.ndarray, lut: np.ndarray) -> np.ndarray:
-    """Applies a (3, 256) uint8 table, one curve per channel. Pillow's point()
-    does the whole thing in C - several times faster than numpy fancy
-    indexing per channel, and bit-identical."""
+    """Applies a (3, 256) uint8 table, one curve per channel."""
     if pixels.size == 0:
         return pixels
     out = Image.fromarray(np.ascontiguousarray(pixels)).point(lut.reshape(-1).tolist())

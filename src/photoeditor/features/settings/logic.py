@@ -6,7 +6,6 @@ from typing import Any
 
 from ..datadir import app_data_dir
 
-# RAW demosaic methods LibRaw offers without its optional GPL packs: key -> (label, rawpy DemosaicAlgorithm name, what it is like)
 DEMOSAIC_CHOICES: dict[str, tuple[str, str, str]] = {
     "linear": ("Fast (linear)", "LINEAR", "Quickest and softest - fine for a quick look."),
     "ppg": ("Balanced (PPG)", "PPG", "Fast, with decent edges."),
@@ -20,11 +19,11 @@ BACKUP_KEEP_RANGE = (1, 365)
 DEFAULTS: dict[str, Any] = {
     "raw_demosaic": "ahd",
     "raw_auto_bright": True,
-    "auto_advance": True,       # after K or R, open the next photo of the roll
-    "backup_auto": True,        # one database copy a day, when the app starts
-    "backup_keep": 14,          # how many daily copies to keep
-    "backup_dir": "",           # "" = the backups folder inside the data folder
-    "keybinds": {},             # action id -> key sequence, only where it differs from the default
+    "auto_advance": True,
+    "backup_auto": True,
+    "backup_keep": 14,
+    "backup_dir": "",
+    "keybinds": {},
 }
 
 _cache: tuple[int, dict[str, Any]] | None = None
@@ -70,7 +69,7 @@ def has(key: str) -> bool:
 
 
 def load() -> dict[str, Any]:
-    """All the settings (defaults filled in). Re-read only when the file has changed."""
+    """All the settings (defaults filled in)."""
     global _cache
     path = settings_path()
     try:
@@ -95,7 +94,7 @@ def save(values: dict[str, Any]) -> None:
         json.dump(_clean(merged), f, indent=2)
     os.replace(tmp, settings_path())
     global _cache
-    _cache = None  # the file's timestamp may not have moved yet (two saves in a row), so never trust the old copy
+    _cache = None
 
 
 def get(key: str) -> Any:

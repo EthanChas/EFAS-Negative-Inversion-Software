@@ -1,9 +1,4 @@
-"""Test strip and ring-around - what each of the 5 x 5 proof patches changes. Pure functions, no Qt/UI imports.
-
-Like a darkroom test strip, a proof is ONE print divided into patches: the photo is rendered 25 ways, and each way contributes only the slice of the
-picture at its own place in the grid, so the patches read together as one picture. Both ladders are centred on the photo as it is now (the middle
-patch is the current edit). The ladder can be turned in quarter-turns, which moves the far ends onto other edges of the picture; all four
-arrangements are cut from the same 25 renders, so turning costs nothing."""
+"""Test strip and ring-around - what each of the 5 x 5 proof patches changes."""
 
 from dataclasses import dataclass
 
@@ -16,21 +11,21 @@ RING_AROUND = "ring"
 
 @dataclass(frozen=True)
 class Axis:
-    field: str            # the edit field this axis steps
-    step: float           # the change between neighbouring patches
-    low: float            # the field's limits
+    field: str
+    step: float
+    low: float
     high: float
     title: str
-    tag: str              # the short name on the patch labels
-    ends: tuple[str, str]  # what the low and high ends mean
+    tag: str
+    ends: tuple[str, str]
 
 
 @dataclass(frozen=True)
 class ProofKind:
     id: str
     title: str
-    columns: Axis  # steps across (left to right), unrotated
-    rows: Axis     # steps down (top to bottom), unrotated
+    columns: Axis
+    rows: Axis
 
 
 KINDS: dict[str, ProofKind] = {
@@ -72,7 +67,6 @@ def describe(kind: str, values: dict) -> str:
     return ", ".join(f"{axis.title.lower()} {values[axis.field]:+.2f}" for axis in (k.columns, k.rows))
 
 
-# ---- the grid, turned ----
 def slot_index(rotation: int) -> np.ndarray:
     """(5, 5): which base cell (row-major index into the 25 renders) sits at each slot of the picture after `rotation` quarter-turns."""
     return np.rot90(np.arange(GRID * GRID).reshape(GRID, GRID), rotation % 4)
@@ -88,7 +82,7 @@ def _bounds(extent: int, index: int) -> tuple[int, int]:
 
 
 def slot_rect(h: int, w: int, row: int, col: int) -> tuple[int, int, int, int]:
-    """(x0, y0, x1, y1) of slot (row, col) in an h x w picture. Both sides of a seam round the same fraction, so the patches tile exactly."""
+    """(x0, y0, x1, y1) of slot (row, col) in an h x w picture."""
     y0, y1 = _bounds(h, row)
     x0, x1 = _bounds(w, col)
     return x0, y0, x1, y1

@@ -1,9 +1,4 @@
-"""A file's resolution, and where to read it from.
-
-Kept as the rationals and unit the file actually carries, not a rounded DPI: a
-source can declare centimetres, a fraction, or different densities per axis, and
-Protect original metadata has to copy all three through untouched.
-"""
+"""A file's resolution, and where to read it from."""
 
 from dataclasses import dataclass
 from fractions import Fraction
@@ -56,11 +51,7 @@ def _to_rational(value: float) -> tuple[int, int]:
 
 
 def from_exif(exif_dict: Optional[dict]) -> Optional[Resolution]:
-    """Resolution declared in an EXIF/TIFF IFD0, or None.
-
-    ResolutionUnit 1 means "no absolute unit", so the pair is an aspect ratio and
-    not a resolution; anything but inches or centimetres is treated the same way.
-    """
+    """Resolution declared in an EXIF/TIFF IFD0, or None."""
     if not exif_dict:
         return None
     zeroth = exif_dict.get("0th") or {}
@@ -76,7 +67,6 @@ def _is_rational(value: Any) -> TypeGuard[tuple[int, int]]:
     return isinstance(value, tuple) and len(value) == 2 and all(isinstance(v, int) for v in value) and value[0] > 0 and value[1] > 0
 
 
-# JFIF density units, which are numbered differently from TIFF's ResolutionUnit.
 _JFIF_UNITS = {1: _INCH, 2: _CENTIMETRE}
 
 
@@ -95,10 +85,7 @@ def from_container(path: str) -> Optional[Resolution]:
 
 
 def _from_jfif(info: dict) -> Optional[Resolution]:
-    """A JPEG's own density, in the numbers and unit it states. Pillow's ``dpi`` converts
-    a per-centimetre density to inches, which is the same resolution written differently;
-    Protect original metadata has to hand back what the file actually says. JFIF unit 0
-    is an aspect ratio and carries no resolution."""
+    """A JPEG's own density, in the numbers and unit it states."""
     unit = _JFIF_UNITS.get(info.get("jfif_unit"))
     density = info.get("jfif_density")
     if unit is None or not isinstance(density, tuple) or len(density) != 2:
@@ -123,9 +110,7 @@ def _from_pillow_dpi(info: dict) -> Optional[Resolution]:
 
 
 def read_source(path: Optional[str], exif_dict: Optional[dict] = None) -> Optional[Resolution]:
-    """The source's declared resolution: its EXIF first, then the container's own
-    record. ``exif_dict`` is the cached read when there is one; it is only populated
-    for files the user has selected, so the file is still consulted without it."""
+    """The source's declared resolution: its EXIF first, then the container's own record."""
     found = from_exif(exif_dict)
     if found is not None:
         return found

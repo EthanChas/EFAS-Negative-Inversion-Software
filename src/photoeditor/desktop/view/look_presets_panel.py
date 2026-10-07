@@ -12,11 +12,11 @@ class LookPresetsPanel(CollapsiblePanel):
     any photo with Apply (or a double-click) - or on the whole folder. The panel only asks for names and confirmations; the controller
     keeps the presets."""
 
-    save_requested = pyqtSignal(str)       # a name, already confirmed (overwrite included)
+    save_requested = pyqtSignal(str)
     apply_requested = pyqtSignal(str)
     apply_folder_requested = pyqtSignal(str)
-    delete_requested = pyqtSignal(str)     # already confirmed
-    advanced_requested = pyqtSignal(str)   # open Advanced Preset Edit for this preset
+    delete_requested = pyqtSignal(str)
+    advanced_requested = pyqtSignal(str)
 
     def __init__(self, parent: QWidget | None = None):
         super().__init__(
@@ -95,7 +95,7 @@ class LookPresetsPanel(CollapsiblePanel):
         self._apply_btn.setEnabled(picked and self._has_photo)
         self._folder_btn.setEnabled(picked and self._has_photo)
         self._delete_btn.setEnabled(picked)
-        self._advanced_btn.setEnabled(picked)  # editing a preset needs no open photo
+        self._advanced_btn.setEnabled(picked)
         self._save_btn.setEnabled(self._has_photo)
 
     def _apply(self) -> None:

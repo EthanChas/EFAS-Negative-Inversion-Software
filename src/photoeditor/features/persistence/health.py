@@ -1,20 +1,16 @@
-"""Noticing that the database lost its contents - sqlite3 / os only, no Qt imports.
-
-A database that comes up nearly empty while a backup holds far more is almost never what the user wanted (the data folder moved, a file was
-replaced, a restore went wrong). startup_check() compares the live database with the daily backups and the "best" copy kept beside them, so the
-editor can say so and offer the backup instead of silently carrying on with an empty one."""
+"""Noticing that the database lost its contents - sqlite3 / os only, no Qt imports."""
 
 import os
 import sqlite3
 
-BEST_NAME = "photoeditor-best.db"  # the most-filled database ever seen; never rotated out with the daily copies
+BEST_NAME = "photoeditor-best.db"
 _COUNTED = ("edits", "ratings", "flags", "folder_roll", "folder_base", "tags", "snapshots")
-_MIN_BACKUP_ROWS = 10      # a backup this small proves nothing
-_LOSS_RATIO = 0.6          # the live database holding under this share of a backup's rows is a loss
+_MIN_BACKUP_ROWS = 10
+_LOSS_RATIO = 0.6
 
 
 def count_rows(db_path: str) -> int:
-    """How much the user has put in a database: the rows of the tables that hold edits, marks and roll details. 0 when it cannot be read."""
+    """How much the user has put in a database: the rows of the tables that hold edits, marks and roll details."""
     try:
         conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
     except sqlite3.Error:
@@ -47,7 +43,7 @@ def best_copy(backup_dir: str) -> tuple[str, int] | None:
 
 
 def startup_check(db_path: str, backup_dir: str) -> dict | None:
-    """None when all is well. Otherwise {"backup": path, "backup_rows": n, "live_rows": m}: the live database holds far less than a backup does."""
+    """None when all is well."""
     best = best_copy(backup_dir)
     if best is None or best[1] < _MIN_BACKUP_ROWS:
         return None

@@ -9,7 +9,7 @@ _cache: dict[str, tuple[int, int, Optional[dict]]] = {}
 
 
 def read_exif_from_file(file_path: str) -> Optional[dict]:
-    """None when the file has no readable EXIF. The caller gets its own copy, so mutating it never leaks into a later read."""
+    """None when the file has no readable EXIF."""
     try:
         st = os.stat(file_path)
     except OSError:

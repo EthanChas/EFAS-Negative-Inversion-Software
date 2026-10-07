@@ -98,9 +98,9 @@ def _edits_for(path: str, conn, preview) -> tuple:
     if saved is None:
         saved = default_edit_state(detect_process_mode(preview) != ProcessMode.E6)
     roll = load_roll(path, conn)
-    base = edit_store.get_folder_base(conn, edit_store.folder_key(path))  # the roll's measured film base, if it has one
+    base = edit_store.get_folder_base(conn, edit_store.folder_key(path))
     params = EditParams.from_dict(
-        {**saved, "roll_camera": roll.camera.strip(), "roll_lens": roll.lens.strip(), "film_base": base}  # the watermark's text falls back to the roll's
+        {**saved, "roll_camera": roll.camera.strip(), "roll_lens": roll.lens.strip(), "film_base": base}
     )
     flatfield = None
     row = edit_store.get_folder_flatfield(conn, edit_store.folder_key(path))
@@ -110,13 +110,12 @@ def _edits_for(path: str, conn, preview) -> tuple:
 
 
 def render_full_resolution(path: str, conn) -> "tuple":
-    """-> (pixels at the original resolution with the photo's saved edits
-    applied, EXIF bytes or None)."""
+    """-> (pixels at the original resolution with the photo's saved edits applied, EXIF bytes or None)."""
     full = load_image_rgb(path)
     preview = make_preview_rgb(full)
     params, flatfield = _edits_for(path, conn, to_uint8(preview))
     renderer = Renderer()
-    if params.ai_dust:  # the photo's analysis, from the cache or made now - an export waits for it rather than leaving the dust in
+    if params.ai_dust:
         renderer.ai_prob_lookup = lambda token, inverted, mono: aidust.probability(path, full, inverted, mono)
     image, _pre, _stats, _overlay = renderer.render(
         full, params, path, preview.shape[1], live=None, want_stats=False, overlay=False, flatfield=flatfield
@@ -130,7 +129,7 @@ def render_edited_thumbnail(path: str, conn, max_dim: int = 800):
     full = load_image_rgb(path)
     preview = make_preview_rgb(full)
     params, flatfield = _edits_for(path, conn, to_uint8(preview))
-    small = make_preview_rgb(preview, max_dim)  # the crop rectangle is kept in preview coordinates; the renderer scales it to the source
+    small = make_preview_rgb(preview, max_dim)
     image, _pre, _stats, _overlay = Renderer().render(
         small, params, path, preview.shape[1], live=None, want_stats=False, overlay=False, flatfield=flatfield
     )
@@ -164,11 +163,10 @@ def load_metadata(path: str, conn, folder_cache: dict | None = None) -> Metadata
 
 
 class ExportWorker(QThread):
-    """jobs is a list of (preset name, ExportOptions): each photo is rendered
-    once, then written once per job."""
+    """jobs is a list of (preset name, ExportOptions): each photo is rendered once, then written once per job."""
 
-    progress = pyqtSignal(int, int, str)  # steps done, total steps, what just finished - one step per render and per file written
-    finished_all = pyqtSignal(object)  # {"done": [paths], "skipped": [paths], "failed": [(path, message)], "cancelled": bool}
+    progress = pyqtSignal(int, int, str)
+    finished_all = pyqtSignal(object)
 
     def __init__(self, paths: list[str], jobs: list, db_path: str):
         super().__init__()
@@ -182,7 +180,7 @@ class ExportWorker(QThread):
 
     def run(self) -> None:
         summary = {"done": [], "skipped": [], "failed": [], "cancelled": False}
-        conn = edit_store.connect(self._db_path)  # sqlite connections are per-thread
+        conn = edit_store.connect(self._db_path)
         try:
             photos = len(self._paths)
             folder_cache: dict = {}
@@ -209,7 +207,7 @@ class ExportWorker(QThread):
                                 save_image(pixels, dest, options, exif)
                                 try:
                                     embed_into_file(dest, metadata, path, options.copy_exif, int(options.dpi))
-                                except Exception as exc:  # the picture is written; only the notes are missing
+                                except Exception as exc:
                                     summary["failed"].append((path, f"{name}: metadata not written ({type(exc).__name__}: {exc})"))
                                 embed_keywords(dest, edit_store.get_tags(conn, [path]).get(path, []))
                                 summary["done"].append(dest)
@@ -219,7 +217,7 @@ class ExportWorker(QThread):
                         self.progress.emit(done, total, f"{os.path.basename(path)} ({i + 1} of {photos})")
                 except Exception as exc:
                     summary["failed"].append((path, f"{type(exc).__name__}: {exc}"))
-                done = (i + 1) * (1 + len(self._jobs))  # a failed photo still counts as handled
+                done = (i + 1) * (1 + len(self._jobs))
                 self.progress.emit(done, total, f"{os.path.basename(path)} ({i + 1} of {photos})")
         finally:
             conn.close()

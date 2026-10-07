@@ -1,16 +1,4 @@
-"""Dust and scratch removal - numpy + OpenCV only, no Qt/UI imports.
-
-Ported from NegPy's retouch module (negpy/features/retouch/logic.py): the
-statistical "optical" dust detector, the score-weighted multiscale fill that
-repairs specks, Navier-Stokes inpaint for hair-shaped defects, and
-click-to-trace transport-scratch repair. NegPy's infrared-channel routes,
-painted heal strokes and Smart Heal are left out (no IR plane here, and no
-brush tools yet), and its numba kernels are plain numpy.
-
-Everything runs on the raw scan, before inversion: dust and scratches block
-light, so they're dark in the scan whether it's a negative or a slide. The
-sRGB bytes are linearized with a 2.2 gamma for detection and filling, since
-averaging is only meaningful in linear light. OpenCV is imported lazily."""
+"""Dust and scratch removal - numpy + OpenCV only, no Qt/UI imports."""
 
 import math
 from dataclasses import dataclass
@@ -30,7 +18,6 @@ def _cv():
     return _cv2
 
 
-# Adobe RGB (1998) luminance row, as NegPy uses for its detection proxy.
 _LUMA = (0.2973769, 0.6273491, 0.0752741)
 _GAMMA = 2.2
 
@@ -66,7 +53,7 @@ _SCRATCH_WIDTH_MAX = 14.0
 _SCRATCH_WIDTH_MIN = 3.0
 _SCRATCH_RIDGE_REACH = 128
 
-_DETECT_REF = 1600  # detection long edge (NegPy's _IR_DETECT_REF) the film-scale windows are pinned to
+_DETECT_REF = 1600
 _SCORE_FLOOR = 0.02
 _FILL_SCALES = (9, 5, 3)
 _FILL_TAU = 0.15
@@ -84,8 +71,6 @@ _HAIR_TILE_PX = 1024
 _HAIR_TILE_HALO = 32
 _HAIR_INPAINT_PAD = 16
 
-# Manual heal gate: a painted stroke marks a *search area*, not a stamp - only
-# pixels that stand out from the film around them are repaired.
 _MANUAL_Z_HI = 8.0
 _MANUAL_Z_GROW = 2.0
 _MANUAL_Z_GROW_FRAC = 0.25
@@ -94,7 +79,7 @@ _MANUAL_WIN_FACTOR = 3.0
 _MANUAL_RIM_PX = 1.5
 _MANUAL_SENS_MULT_LOOSE = 0.2
 _MANUAL_SENS_MULT_TIGHT = 1.8
-HEAL_SIZE_REF = 1600  # brush size is a diameter at this reference long edge (px)
+HEAL_SIZE_REF = 1600
 SMART_HEAL_SEARCH_SIZE = 40.0
 _ROUTE_RADIUS = 5
 _ROUTE_DILATE = 2
@@ -111,9 +96,6 @@ DEFAULT_MANUAL_SENSITIVITY = 0.5
 DEFAULT_THRESHOLD = 0.66
 DEFAULT_SIZE = 4
 DEFAULT_SCRATCH_SENSITIVITY = 0.5
-
-
-# ---------------------------------------------------------------- detection
 
 
 def _density(lin: np.ndarray) -> np.ndarray:
@@ -213,9 +195,7 @@ def detect_bar(slider: float) -> float:
 def detect_luma_score(
     lin: np.ndarray, dust_threshold: float, dust_size: int, stats: Optional[Tuple[np.ndarray, ...]] = None
 ) -> Tuple[Optional[np.ndarray], Optional[np.ndarray]]:
-    """Statistical dust detection -> (score, hair_mask). Seeds above the
-    threshold's bar grow through connected pixels down to a lower bar, so a
-    mark covers the defect's footprint rather than its brightest pixel."""
+    """Statistical dust detection -> (score, hair_mask)."""
     cv2 = _cv()
     if stats is None:
         stats = compute_dust_stats(lin, dust_size)
@@ -263,12 +243,8 @@ def _min_pool(lin: np.ndarray, target_long_edge: int) -> np.ndarray:
     return cv2.resize(lin, dims, interpolation=cv2.INTER_AREA).astype(np.float32)
 
 
-# ------------------------------------------------------------------- repair
-
-
 def _score_weighted_fill(img: np.ndarray, score: np.ndarray, scales: Tuple[int, ...], reject_floor_mass: bool) -> np.ndarray:
-    """Multiscale score-normalized average, blended coarse to fine by each
-    rung's clean fraction."""
+    """Multiscale score-normalized average, blended coarse to fine by each rung's clean fraction."""
     cv2 = _cv()
     weighted = img * score[..., None]
     fill = np.empty_like(img)
@@ -342,8 +318,6 @@ def _apply_score_repair(
         grain, blur_src = _borrow_clean_grain(src, clean, sigma, idx)
         out.reshape(-1, 3)[idx] += a.reshape(-1, 1)[idx] * grain
     if floor:
-        # Dust is dark in the scan, so a repair may only lighten - compared on
-        # the low-frequency deficit so the fill's grain isn't half-rectified.
         if blur_src is None:
             blur_src = cv2.GaussianBlur(src, (0, 0), sigma)
         deficit = np.maximum(blur_src - cv2.GaussianBlur(out, (0, 0), sigma), 0.0)
@@ -447,9 +421,6 @@ def _apply_hair_inpaint(img: np.ndarray, hair_mask: np.ndarray) -> np.ndarray:
     return out
 
 
-# ---------------------------------------------------------------- scratches
-
-
 def scratch_detect_bar(slider: float) -> float:
     s = float(np.clip(slider, 0.0, 1.0))
     return _SCRATCH_Z_LOOSE + (_SCRATCH_Z_TIGHT - _SCRATCH_Z_LOOSE) * s
@@ -542,9 +513,7 @@ def trace_scratch(
 
 
 def lines_to_score(lin: np.ndarray, lines: List[Tuple], threshold: float = DEFAULT_SCRATCH_SENSITIVITY) -> Optional[np.ndarray]:
-    """Traced scratch lines -> a defect score for the shared repair. The line
-    says where to look; presence and width are re-measured here, so
-    stretches carrying no scratch are left alone."""
+    """Traced scratch lines -> a defect score for the shared repair."""
     cv2 = _cv()
     if not lines:
         return None
@@ -591,7 +560,7 @@ def lines_to_score(lin: np.ndarray, lines: List[Tuple], threshold: float = DEFAU
     return _mask_to_score(mask, _DETECT_PAD_PX * scale) if touched and mask.any() else None
 
 
-MANUAL_LINE_MIN_RUN = 0.05  # the two clicked points must be at least this far apart across the frame (0-1)
+MANUAL_LINE_MIN_RUN = 0.05
 
 
 def extend_line_to_frame(p1, p2):
@@ -602,7 +571,7 @@ def extend_line_to_frame(p1, p2):
     if abs(dx) < MANUAL_LINE_MIN_RUN:
         return None
     slope = (y2 - y1) / dx
-    lo, hi = 0.0, 1.0  # the stretch of x where the line is still inside the frame vertically
+    lo, hi = 0.0, 1.0
     if slope != 0.0:
         a, b = x1 + (0.0 - y1) / slope, x1 + (1.0 - y1) / slope
         lo, hi = max(lo, min(a, b)), min(hi, max(a, b))
@@ -638,26 +607,13 @@ def smooth_polyline(pts, closed: bool = False, samples_per_seg: int = 16):
 
 
 def manual_sensitivity_mult(slider: float) -> float:
-    """UI sensitivity (higher = more conservative) -> the multiplier applied
-    to a stroke's z-score bars. 1.0 at the slider's midpoint."""
+    """UI sensitivity (higher = more conservative) -> the multiplier applied to a stroke's z-score bars."""
     s = float(np.clip(slider, 0.0, 1.0))
     return _MANUAL_SENS_MULT_LOOSE + (_MANUAL_SENS_MULT_TIGHT - _MANUAL_SENS_MULT_LOOSE) * s
 
 
 def strokes_to_score(lin: np.ndarray, strokes) -> Tuple[Optional[np.ndarray], Optional[np.ndarray]]:
-    """Painted heal strokes -> (score, method_mask). Each stroke is
-    (points, size, mult, force, method): points are 0..1 raw-frame [x, y]
-    pairs, size is the brush diameter at HEAL_SIZE_REF, mult scales the
-    z-score bars (sensitivity), force skips detection and repairs everything
-    the stroke covers, method pins the fill (smooth) or inpaint (structure).
-
-    The capsule a stroke paints is a search area: inside it, a pixel is
-    repaired by how far it stands out from the film around it (two-sided,
-    since dust is a bright density outlier and a scratch a dark one), so
-    clean grain under a generous brush comes back untouched.
-
-    method_mask is None unless a stroke pinned a method: 1 marks pixels
-    pinned to the fill, 2 pixels pinned to the inpaint."""
+    """Painted heal strokes -> (score, method_mask)."""
     cv2 = _cv()
     if not strokes:
         return None, None
@@ -688,7 +644,7 @@ def strokes_to_score(lin: np.ndarray, strokes) -> Tuple[Optional[np.ndarray], Op
         local = np.round(pts - (x0, y0)).astype(np.int32)
         if len(local) > 1:
             cv2.polylines(cover, [local], False, 1, thickness=max(1, int(round(2.0 * radius))))
-        for cx, cy in local:  # round caps and joins
+        for cx, cy in local:
             cv2.circle(cover, (int(cx), int(cy)), max(1, int(round(radius))), 1, -1)
         if not cover.any():
             continue
@@ -705,7 +661,7 @@ def strokes_to_score(lin: np.ndarray, strokes) -> Tuple[Optional[np.ndarray], Op
             z_min = _MANUAL_Z_MIN * mult
             z_hi = _MANUAL_Z_HI * mult
             if peak < z_min:
-                continue  # the brush found clean film; repairing it would only smooth grain
+                continue
             hi = z_hi if peak >= z_hi else peak * 0.9
             lo = max(_MANUAL_Z_GROW * mult, hi * _MANUAL_Z_GROW_FRAC)
             strong = inside & (z >= hi)
@@ -761,9 +717,6 @@ def route_wide_defects(score: np.ndarray) -> Optional[np.ndarray]:
     return cv2.dilate(routed, k)
 
 
-# --------------------------------------------------------------- top level
-
-
 def _linearize(pixels: np.ndarray) -> np.ndarray:
     return np.power(pixels.astype(np.float32) * np.float32(1.0 / 255.0), np.float32(_GAMMA))
 
@@ -785,10 +738,10 @@ class DustStatsCache:
 
 @dataclass
 class RetouchResult:
-    pixels: np.ndarray  # the repaired scan (or the input itself if nothing changed)
-    specks: Optional[np.ndarray] = None  # uint8 mask, detection scale: auto-detected specks
-    hairs: Optional[np.ndarray] = None  # uint8 mask, detection scale: hair-shaped defects
-    manual: Optional[np.ndarray] = None  # uint8 mask, source scale: painted heals + traced scratches
+    pixels: np.ndarray
+    specks: Optional[np.ndarray] = None
+    hairs: Optional[np.ndarray] = None
+    manual: Optional[np.ndarray] = None
 
 
 def _detect(lin, threshold, size, stats_cache, cache_token):
@@ -866,13 +819,8 @@ def remove_dust_and_scratches(
             hairs = hair
             changed = True
 
-    # Painted strokes and traced lines go through one repair: whichever calls
-    # a pixel more damaged wins. floor=False - a scratch has lost emulsion and
-    # reads brighter than the film around it, so the repair must be free to
-    # darken as well as lighten.
     stroke_score, method_mask = strokes_to_score(lin, heal_strokes)
     line_score = lines_to_score(lin, scratch_lines, scratch_sensitivity)
-    # What the AI model marked is a mask already: it becomes a score the same way a traced line's band does, and is repaired with the rest
     ai_score = _mask_to_score(ai_mask, _DETECT_PAD_PX * film_scale(lin.shape[:2])) if ai_mask is not None else None
     parts = [p for p in (stroke_score, line_score, ai_score) if p is not None]
     if parts:

@@ -189,7 +189,6 @@ QSplitter::handle:hover { background-color: @accent_primary; }
 def load_stylesheet(theme: ThemeConfig) -> str:
     """Resolve every @token in the template against `theme`'s own field values."""
     qss = _QSS_TEMPLATE
-    # Longest name first, so a token that is a prefix of another can't clip it.
     for f in sorted(dataclasses.fields(theme), key=lambda f: -len(f.name)):
         value = getattr(theme, f.name)
         if isinstance(value, (str, int)):

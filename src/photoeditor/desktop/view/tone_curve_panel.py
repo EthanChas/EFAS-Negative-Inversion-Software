@@ -6,7 +6,7 @@ from ...theme.tokens import THEME
 from .collapsible_panel import CollapsiblePanel
 from .curve_editor import CurveEditor
 
-_PREVIEW_THROTTLE_MS = 33  # ~30fps cap for the cheap image-only preview, same as Exposure
+_PREVIEW_THROTTLE_MS = 33
 
 
 class ToneCurveToolPanel(CollapsiblePanel):
@@ -91,7 +91,7 @@ class ToneCurveToolPanel(CollapsiblePanel):
         self._preview_timer.stop()
         self._pending_preview_points = None
         self._editor.set_points(points)
-        self._eyedropper_btn.setChecked(False)  # also clears the marker, via toggled
+        self._eyedropper_btn.setChecked(False)
 
     def deactivate_eyedropper(self) -> None:
         self._eyedropper_btn.setChecked(False)
