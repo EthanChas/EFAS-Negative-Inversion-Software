@@ -163,6 +163,12 @@ class LibraryIndex:
         self.conn.commit()
         return len(paths)
 
+    def remove_under(self, folder: str) -> int:
+        """Forget the indexed photos inside `folder` (the files themselves are not touched)."""
+        prefix = os.path.normcase(os.path.abspath(folder)).rstrip("\\/") + os.sep
+        gone = [p for p in self.known() if os.path.normcase(p).startswith(prefix)]
+        return self.remove(gone) if gone else 0
+
     def all(self) -> list[dict]:
         cur = self.conn.execute(f"SELECT {','.join(_COLUMNS)} FROM images")
         return [dict(zip(_COLUMNS, row)) for row in cur]

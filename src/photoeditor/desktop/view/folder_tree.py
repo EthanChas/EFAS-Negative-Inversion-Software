@@ -1,8 +1,8 @@
 import os
 
-from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtGui import QColor
-from PyQt6.QtWidgets import QTreeWidget, QTreeWidgetItem
+from PyQt6.QtCore import QPoint, Qt, QUrl, pyqtSignal
+from PyQt6.QtGui import QColor, QDesktopServices
+from PyQt6.QtWidgets import QMenu, QTreeWidget, QTreeWidgetItem
 
 from ...features.browse.logic import folder_counts, list_subfolders
 from ...theme.tokens import THEME
@@ -24,9 +24,13 @@ class FolderTree(QTreeWidget):
 
     folder_selected = pyqtSignal(str)
     folder_double_clicked = pyqtSignal(str)
+    remove_root_requested = pyqtSignal(str)
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, removable: bool = False):
         super().__init__(parent)
+        self._removable = removable
+        self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.customContextMenuRequested.connect(self._on_context_menu)
         self.setHeaderHidden(True)
         self.setColumnCount(2)
         self.header().setStretchLastSection(False)
@@ -46,6 +50,36 @@ class FolderTree(QTreeWidget):
                 return
         self.addTopLevelItem(self._make_item(folder))
         self._resize_columns()
+
+    def remove_root(self, folder: str) -> bool:
+        """Take a top-level folder out of the tree (nothing on disk is touched)."""
+        for i in range(self.topLevelItemCount()):
+            if self.topLevelItem(i).data(0, Qt.ItemDataRole.UserRole) == folder:
+                self.takeTopLevelItem(i)
+                self._resize_columns()
+                return True
+        return False
+
+    def _on_context_menu(self, pos: QPoint) -> None:
+        item = self.itemAt(pos)
+        folder = item.data(0, Qt.ItemDataRole.UserRole) if item is not None else None
+        if not folder or folder == _PLACEHOLDER:
+            return
+        menu = QMenu(self)
+        explorer = menu.addAction("Show in File Explorer")
+        remove = None
+        if self._removable:
+            if item.parent() is None:
+                remove = menu.addAction("Remove from Library")
+                remove.setToolTip("Takes the folder off this list. Your photos and edits are not touched.")
+            else:
+                note = menu.addAction("Remove from Library (top-level folders only)")
+                note.setEnabled(False)
+        chosen = menu.exec(self.viewport().mapToGlobal(pos))
+        if chosen is explorer:
+            QDesktopServices.openUrl(QUrl.fromLocalFile(folder))
+        elif remove is not None and chosen is remove:
+            self.remove_root_requested.emit(folder)
 
     def roots(self) -> list[str]:
         return [self.topLevelItem(i).data(0, Qt.ItemDataRole.UserRole) for i in range(self.topLevelItemCount())]

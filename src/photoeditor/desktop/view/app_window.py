@@ -571,6 +571,7 @@ class AppWindow(QMainWindow):
         self._library_panel = LibraryPanel()
         self._library_panel.folder_selected.connect(self._on_library_folder_selected)
         self._library_panel.folder_double_clicked.connect(self._on_library_folder_double_clicked)
+        self._library_panel.root_removed.connect(self._on_library_root_removed)
         left_tools_col.addWidget(self._library_panel)
 
         self._masking_tool = MaskingToolPanel()
@@ -1451,6 +1452,22 @@ class AppWindow(QMainWindow):
         self._library_panel.reveal(folder)
         if self.lighttable_active():
             self._filmstrip.setVisible(False)
+
+    def _on_library_root_removed(self, folder: str) -> None:
+        """A folder was taken off the Library: forget it in the recents and the Workbench's index (photos and edits stay on disk and in the database)."""
+        prefix = library_query.norm(folder).rstrip("\\/") + os.sep
+        recents = self._session.get("recent_folders", [])
+        self._session["recent_folders"] = [f for f in recents if not (library_query.norm(f) + os.sep).startswith(prefix)]
+        session_store.save(self._session)
+        if self._index_worker is not None and self._index_worker.isRunning():
+            self._index_worker.cancel()
+            self._index_worker.wait(5000)
+        index = LibraryIndex()
+        try:
+            index.remove_under(folder)
+        finally:
+            index.close()
+        self._lighttable_reload_rows()
 
     def _on_library_folder_double_clicked(self, folder: str) -> None:
         self._on_library_folder_selected(folder)

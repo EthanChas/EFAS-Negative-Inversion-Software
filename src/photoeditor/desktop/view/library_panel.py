@@ -1,5 +1,7 @@
+import os
+
 from PyQt6.QtCore import pyqtSignal
-from PyQt6.QtWidgets import QFileDialog, QHBoxLayout, QWidget
+from PyQt6.QtWidgets import QFileDialog, QHBoxLayout, QMessageBox, QWidget
 
 from ..settings_store import qsettings
 from ...theme.tokens import THEME
@@ -25,6 +27,7 @@ class LibraryPanel(CollapsiblePanel):
 
     folder_selected = pyqtSignal(str)
     folder_double_clicked = pyqtSignal(str)
+    root_removed = pyqtSignal(str)
 
     def __init__(self, parent: QWidget | None = None):
         super().__init__(
@@ -32,7 +35,9 @@ class LibraryPanel(CollapsiblePanel):
             help_text=(
                 "A folder tree of your added root folders, like a film "
                 "library - add one with the + button, click any folder "
-                "(or subfolder) to browse its photos in the Import window."
+                "(or subfolder) to browse its photos in the Import window. "
+                "Right-click a top-level folder to remove it from the list "
+                "(your photos and edits are not touched)."
             ),
             collapsible=False,
             parent=parent,
@@ -56,10 +61,11 @@ class LibraryPanel(CollapsiblePanel):
         toolbar.addWidget(refresh_btn)
         body.addLayout(toolbar)
 
-        self._tree = FolderTree()
+        self._tree = FolderTree(removable=True)
         self._tree.setMaximumHeight(_TREE_MAX_HEIGHT)
         self._tree.folder_selected.connect(self.folder_selected)
         self._tree.folder_double_clicked.connect(self.folder_double_clicked)
+        self._tree.remove_root_requested.connect(self._remove_root_folder)
         body.addWidget(self._tree)
 
         self._tree.set_roots(self._settings.value(ROOTS_SETTINGS_KEY, [], type=list))
@@ -71,6 +77,21 @@ class LibraryPanel(CollapsiblePanel):
         self._tree.add_root(folder)
         self._settings.setValue(ROOTS_SETTINGS_KEY, self._tree.roots())
         self.folder_selected.emit(folder)
+
+    def _remove_root_folder(self, folder: str) -> None:
+        name = os.path.basename(folder.rstrip("\\/")) or folder
+        box = QMessageBox(QMessageBox.Icon.Question, "Remove from Library", f"Remove \"{name}\" from the Library?", parent=self)
+        box.setInformativeText("Only the entry in this list goes. The folder, its photos and your edits stay exactly where they are, "
+                               "and you can add the folder back at any time.")
+        remove = box.addButton("Remove", QMessageBox.ButtonRole.AcceptRole)
+        box.addButton("Cancel", QMessageBox.ButtonRole.RejectRole)
+        box.exec()
+        if box.clickedButton() is not remove:
+            return
+        if self._tree.remove_root(folder):
+            self._settings.setValue(ROOTS_SETTINGS_KEY, self._tree.roots())
+            self._settings.sync()
+            self.root_removed.emit(folder)
 
     def _tree_refresh(self) -> None:
         self._tree.refresh()
