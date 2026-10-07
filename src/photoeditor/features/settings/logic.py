@@ -21,6 +21,7 @@ DEFAULTS: dict[str, Any] = {
     "raw_auto_bright": True,
     "auto_advance": True,
     "backup_auto": True,
+    "check_updates": True,
     "backup_keep": 14,
     "backup_dir": "",
     "keybinds": {},
@@ -40,7 +41,7 @@ def _clean(data: Any) -> dict[str, Any]:
         return out
     if data.get("raw_demosaic") in DEMOSAIC_CHOICES:
         out["raw_demosaic"] = data["raw_demosaic"]
-    for key in ("raw_auto_bright", "auto_advance", "backup_auto"):
+    for key in ("raw_auto_bright", "auto_advance", "backup_auto", "check_updates"):
         if isinstance(data.get(key), bool):
             out[key] = data[key]
     keep = data.get("backup_keep")

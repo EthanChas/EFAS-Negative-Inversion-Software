@@ -103,6 +103,12 @@ class SettingsDialog(QDialog):
         col.addWidget(self._auto_advance)
         col.addWidget(_hint("When on, marking a photo as a keeper or rejected opens the next photo of the roll at once, so a whole roll can be culled "
                             "with one key per frame. Marking it again to take the flag off stays on the same photo."))
+        self._check_updates = QCheckBox("Check for a new version when the app starts")
+        self._check_updates.setChecked(self._initial["check_updates"])
+        self._check_updates.setToolTip("Asks the GitHub releases page whether a newer version exists. Nothing else is ever sent.")
+        col.addWidget(self._check_updates)
+        col.addWidget(_hint("The only time the editor goes online. It asks the GitHub releases page for the latest version number and tells you "
+                            "if there is a newer one. No data about you or your photos is sent. You can also check by hand under Info."))
         col.addStretch(1)
         return page
 
@@ -426,6 +432,7 @@ class SettingsDialog(QDialog):
     def values(self) -> dict:
         return {
             "raw_demosaic": self._demosaic.currentData(), "raw_auto_bright": self._auto_bright.isChecked(), "auto_advance": self._auto_advance.isChecked(),
+            "check_updates": self._check_updates.isChecked(),
             "backup_auto": self._backup_auto.isChecked(), "backup_keep": self._backup_keep.value(), "backup_dir": self._backup_dir,
             "keybinds": binds.overrides_from(self._keys),
         }

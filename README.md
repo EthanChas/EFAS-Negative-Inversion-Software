@@ -15,7 +15,23 @@ Built in **Python** with **PyQt6**. Created by Ethan.
 - **Look presets** and per-module presets, copy and paste of settings between photos
 - **Proofing tools**: test strip, ring-around, split view, contact sheets
 - **Export**: JPEG, PNG and TIFF (16-bit supported), size and quality options, metadata and XMP, batch export
+- **Updates**: Info > Version, with a startup notice when a new version is out (see Updates below)
 - **Data safety**: automatic backups, startup health check with restore, and full data export/import (Settings > Data & backup)
+
+## Privacy
+
+The editor is **offline only**. No data is sent out: no analytics, no telemetry, no accounts, and your photos and edits never leave your computer.
+
+The one thing it does online is ask the GitHub releases page for the latest version number, so it can tell you when an update exists (and download it if you choose to update). That is a plain web request, so GitHub sees your IP address the way any website does, and nothing else. You can turn the check off under Settings > General, and you can run the app with no internet connection at all.
+
+Your privacy is a right, and it will be respected.
+
+## Updates
+
+- **Info > Version** shows the installed version and checks for a newer one. **Info > Check for Updates...** does the same check directly.
+- On start, if a newer version is available, the app says so and asks whether you would like to update.
+- Choosing **Update** downloads the new `.exe` from the GitHub release, checks its size and SHA-256 checksum against what GitHub lists, replaces the running program and restarts it. Downloads are only accepted over https from GitHub's own hosts.
+- Self-update works for the packaged Windows `.exe`. When running from source, the update button opens the release page instead.
 
 ## Credits and inspiration
 

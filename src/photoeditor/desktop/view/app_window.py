@@ -12,7 +12,10 @@ from PyQt6.QtWidgets import (
     QLineEdit, QMenu, QPlainTextEdit, QTextEdit, QMenuBar, QMessageBox, QProgressDialog, QPushButton, QScrollArea, QSizePolicy, QSplitter, QVBoxLayout, QWidget,
 )
 
+from ... import __version__
 from ...features import session as session_store
+from ...features.updates import logic as update_logic
+from ...features.updates import processor
 from ...features.browse.logic import list_images_in_folder
 from ...features.open_image.logic import SUPPORTED_EXTS
 from ...features.open_image.logic import file_dialog_filter
@@ -25,6 +28,7 @@ from ...features.whitebalance.logic import luminance_of
 from ...theme.tokens import THEME
 from ..controller import AppController
 from ..export_worker import ExportWorker
+from ..update_worker import UpdateCheckWorker
 from .bevel_widgets import thin_sunken_panel
 from .collapsible_panel import CollapsiblePanel
 from .contrast_panel import ContrastToolPanel
@@ -33,6 +37,7 @@ from .local_contrast_panel import LocalContrastToolPanel
 from ...features.metadata.source_exif import read_exif_from_file
 from .contact_sheet_dialog import ContactSheetDialog
 from .credits_dialog import CreditsDialog
+from .version_dialog import VersionDialog
 from .finishing_panel import FinishingPanel
 from ..keybinds import KeyMap
 from ...features.persistence.consolidate import ensure_ready as ensure_data_ready
@@ -284,6 +289,7 @@ class AppWindow(QMainWindow):
         self._sheet_worker = None
         self._quick_export = False
         self._index_worker = None
+        self._update_worker = None
         self._export_paths_override: list[str] = []
         self._peaking_request = 0
         self._peaking_levels = None
@@ -497,6 +503,13 @@ class AppWindow(QMainWindow):
         credits_action.setToolTip("Who this editor was inspired by")
         credits_action.triggered.connect(self.show_credits)
         info_menu.addAction(credits_action)
+        version_action = QAction(f"Version {__version__}", self)
+        version_action.setToolTip("The installed version, and a check for a newer one")
+        version_action.triggered.connect(self.show_version)
+        info_menu.addAction(version_action)
+        update_action = QAction("Check for Updates...", self)
+        update_action.triggered.connect(lambda: self.show_version(check=True))
+        info_menu.addAction(update_action)
 
         view_menu_anchor = menubar.addMenu("View")
         self._split_action = QAction("Before && After", self)
@@ -1261,6 +1274,36 @@ class AppWindow(QMainWindow):
     def show_credits(self) -> None:
         CreditsDialog(self).exec()
 
+    def show_version(self, check: bool = False, release=None, auto_start: bool = False) -> None:
+        dialog = VersionDialog(self, release=release, auto_start=auto_start)
+        if check and release is None:
+            dialog._start_check()
+        dialog.exec()
+        if dialog.restart_requested:
+            self.close()
+            QApplication.quit()
+
+    def _check_for_update(self) -> None:
+        """At start, quietly ask GitHub whether a newer version exists; say so only when it does."""
+        if os.environ.get("PHOTOEDITOR_DATA_DIR") or not app_settings.get("check_updates"):
+            return
+        self._update_worker = UpdateCheckWorker()
+        self._update_worker.found.connect(self._on_update_found)
+        self._update_worker.start()
+
+    def _on_update_found(self, release) -> None:
+        if release is None or not update_logic.is_newer(release.version, update_logic.parse_version(__version__)):
+            return
+        box = QMessageBox(self)
+        box.setWindowTitle("New version available")
+        box.setIcon(QMessageBox.Icon.Question)
+        box.setText(f"Version {update_logic.version_text(release.version)} is available (you have {__version__}).\n\nWould you like to update?")
+        yes = box.addButton("Update" if processor.can_self_update() else "See What's New", QMessageBox.ButtonRole.AcceptRole)
+        box.addButton("Not Now", QMessageBox.ButtonRole.RejectRole)
+        box.exec()
+        if box.clickedButton() is yes:
+            self.show_version(release=release, auto_start=True)
+
     def show_shortcuts(self) -> None:
         if getattr(self, "_shortcuts_dialog", None) is None:
             self._shortcuts_dialog = ShortcutsDialog(self, self._keys.all())
@@ -1350,6 +1393,7 @@ class AppWindow(QMainWindow):
         if tab in self._tool_rail._buttons:
             self._tool_rail._buttons[tab].click()
         QTimer.singleShot(1500, self._check_data_health)
+        QTimer.singleShot(4000, self._check_for_update)
 
     def _check_data_health(self) -> None:
         """If the database holds far less than a backup does, say so and offer the backup (it is put in place the next time the app starts)."""
@@ -2332,6 +2376,8 @@ class AppWindow(QMainWindow):
             self._coord_label.setText("Quick export: " + (f"saved {os.path.basename(done[0])}" if done else ". ".join(parts)))
 
     def closeEvent(self, event) -> None:
+        if self._update_worker is not None:
+            self._update_worker.wait(8000)
         if self._index_worker is not None:
             self._index_worker.cancel()
             self._index_worker.wait(5000)
