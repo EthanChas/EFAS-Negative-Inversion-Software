@@ -35,11 +35,11 @@ from ..features.watermark.marks import Marks
 from ..features.open_image.processor import load_image_rgb, make_preview_rgb, to_uint8
 from ..features.persistence import edit_store
 from ..features.persistence import export as data_export
+from ..features.persistence.consolidate import ensure_ready as ensure_data_ready
 from ..features.proofs import logic as proof_logic
 from ..features.tags import logic as tag_logic
 from ..features.persistence.backup import backup_database
 from ..features.settings import logic as app_settings
-from ..features.persistence.legacy import merge_legacy_databases
 from ..features.retouch.logic import (
     DEFAULT_SCRATCH_SENSITIVITY,
     DEFAULT_SIZE,
@@ -59,7 +59,7 @@ from ..features.tonecurve.logic import DEFAULT_POINTS
 from ..features.watermark import logic as wm
 from ..features.xmp import logic as xmp
 from ..features.whitebalance.logic import clipping_overlay
-from .paths import app_data_dir, legacy_database_paths
+from .paths import app_data_dir
 from .ai_dust_worker import AiDustWorker
 from .render import EditParams, _scale_rect, RenderJob, Renderer, RenderOutput, RenderThread
 from .session import AppState, HistoryEntry
@@ -181,13 +181,13 @@ class AppController(QObject):
         # write frequency (one row per committed edit, not per drag tick).
         data_dir = app_data_dir()
         os.makedirs(data_dir, exist_ok=True)
+        ensure_data_ready()  # copies of the data from other launches (packaged / per-executable) are merged in first
         try:
             data_export.apply_pending_restore(data_dir)  # an Import chosen in Settings takes effect now, before the database is opened
         except Exception:
             pass
         self.db_path = os.path.join(data_dir, "photoeditor.db")
         self._db = edit_store.connect(self.db_path)
-        merge_legacy_databases(self._db, data_dir, legacy_database_paths())  # edits saved under older launch names
 
     def export_size(self) -> tuple[int, int] | None:
         """(width, height) the open image exports at with no resizing: the

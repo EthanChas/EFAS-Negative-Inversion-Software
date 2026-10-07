@@ -5,6 +5,8 @@ import os
 import re
 import sqlite3
 
+from .health import update_best
+
 _NAME = re.compile(r"^photoeditor-\d{4}-\d{2}-\d{2}\.db$")
 
 
@@ -47,4 +49,8 @@ def backup_database(conn: sqlite3.Connection, backup_dir: str, keep: int = 14, f
             os.remove(os.path.join(backup_dir, name))
         except OSError:
             pass
+    try:
+        update_best(conn, backup_dir)  # the fullest database ever seen is kept apart from the daily copies, which rotate
+    except (sqlite3.Error, OSError):
+        pass
     return path

@@ -1,6 +1,6 @@
 import json
 
-from PyQt6.QtCore import QSettings, QStandardPaths, Qt, QUrl, pyqtSignal
+from PyQt6.QtCore import QStandardPaths, Qt, QUrl, pyqtSignal
 from PyQt6.QtGui import QDesktopServices
 from PyQt6.QtWidgets import (
     QCheckBox,
@@ -22,6 +22,7 @@ from PyQt6.QtWidgets import (
 
 from ...features.export import logic as X
 from ...theme.tokens import THEME
+from ..settings_store import qsettings
 from .collapsible_panel import CollapsiblePanel
 from .slider_row import SliderRow
 
@@ -483,7 +484,7 @@ class ExportPanel(CollapsiblePanel):
         ]
 
     def _load_settings(self) -> None:
-        settings = QSettings("PhotoEditor", "PhotoEditor")
+        settings = qsettings()
         try:
             presets = json.loads(settings.value(_PRESETS_KEY, "") or "null")
         except (TypeError, ValueError):
@@ -505,10 +506,10 @@ class ExportPanel(CollapsiblePanel):
         # everything else) shows what the user left it at - not the first preset's.
         last = str(settings.value(_SELECTED_KEY, "") or "")
         names = [p["name"] for p in self._presets]
-        self._rebuild_list(select=names.index(last) if last in names else 0)
+        self._rebuild_list(select=names.index(last) if last in names else names.index(_DEFAULT_CHECKED) if _DEFAULT_CHECKED in names else 0)
 
     def _save_settings(self) -> None:
-        settings = QSettings("PhotoEditor", "PhotoEditor")
+        settings = qsettings()
         settings.setValue(_PRESETS_KEY, json.dumps(self._presets))
         shared = {k: v for k, v in self.options().to_dict().items() if k in X.GLOBAL_FIELDS}
         settings.setValue(_GLOBAL_KEY, json.dumps(shared))

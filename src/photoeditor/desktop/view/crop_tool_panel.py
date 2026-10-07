@@ -1,9 +1,10 @@
-from PyQt6.QtCore import QSettings, QTimer, pyqtSignal
+from PyQt6.QtCore import QTimer, pyqtSignal
 from PyQt6.QtWidgets import QComboBox, QHBoxLayout, QLabel, QPushButton, QWidget
 
 from ...features.geometry.guides import GUIDE_LABELS, ORIENTATION_COUNT, CropGuide
 from ...features.geometry.logic import DISTORTION_LIMIT, FINE_ROTATION_LIMIT
 from ...theme.tokens import THEME
+from ..settings_store import qsettings
 from .collapsible_panel import CollapsiblePanel
 from .slider_row import SliderRow
 
@@ -179,7 +180,7 @@ class CropToolPanel(CollapsiblePanel):
         guide_row.addWidget(self._guide_orient_btn)
         body.addLayout(guide_row)
         self._guide_orientation = 0
-        saved = str(QSettings("PhotoEditor", "PhotoEditor").value(_GUIDE_KEY, CropGuide.THIRDS.value) or CropGuide.THIRDS.value)
+        saved = str(qsettings().value(_GUIDE_KEY, CropGuide.THIRDS.value) or CropGuide.THIRDS.value)
         self._guide_combo.blockSignals(True)
         self._guide_combo.setCurrentIndex(max(0, self._guide_combo.findData(saved)))
         self._guide_combo.blockSignals(False)
@@ -274,7 +275,7 @@ class CropToolPanel(CollapsiblePanel):
     def _on_guide_changed(self, _index: int) -> None:
         self._guide_orientation = 0
         self._refresh_guide_button()
-        QSettings("PhotoEditor", "PhotoEditor").setValue(_GUIDE_KEY, self._guide_combo.currentData())
+        qsettings().setValue(_GUIDE_KEY, self._guide_combo.currentData())
         self.guide_changed.emit(*self.current_guide())
 
     def _on_guide_orient(self) -> None:

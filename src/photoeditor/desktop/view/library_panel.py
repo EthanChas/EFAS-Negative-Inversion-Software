@@ -1,6 +1,7 @@
-from PyQt6.QtCore import QSettings, pyqtSignal
+from PyQt6.QtCore import pyqtSignal
 from PyQt6.QtWidgets import QFileDialog, QHBoxLayout, QWidget
 
+from ..settings_store import qsettings
 from ...theme.tokens import THEME
 from .bevel_widgets import CaptionButton
 from .collapsible_panel import CollapsiblePanel
@@ -40,7 +41,7 @@ class LibraryPanel(CollapsiblePanel):
         body = self.body()
         body.setSpacing(THEME.space_sm)
 
-        self._settings = QSettings("PhotoEditor", "PhotoEditor")
+        self._settings = qsettings()
 
         toolbar = QHBoxLayout()
         toolbar.setSpacing(THEME.space_sm)

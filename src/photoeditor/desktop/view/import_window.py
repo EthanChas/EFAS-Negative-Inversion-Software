@@ -1,12 +1,13 @@
 import os
 
-from PyQt6.QtCore import QSettings, QSize, Qt
+from PyQt6.QtCore import QSize, Qt
 from PyQt6.QtGui import QIcon, QPixmap
 from PyQt6.QtWidgets import (
     QAbstractItemView, QFileDialog, QHBoxLayout, QLabel, QListWidget, QListWidgetItem,
     QMainWindow, QPushButton, QSplitter, QVBoxLayout, QWidget,
 )
 
+from ..settings_store import qsettings
 from ...theme.tokens import THEME
 from ..controller import AppController
 from ..paths import thumbnail_cache_dir
@@ -44,7 +45,7 @@ class ImportWindow(QMainWindow):
         self.controller.folder_changed.connect(self._on_folder_changed)
         self._loader: ThumbnailLoader | None = None
         self._cache_dir = thumbnail_cache_dir()
-        self._settings = QSettings("PhotoEditor", "PhotoEditor")
+        self._settings = qsettings()
 
         self._build_ui()
         self._tree.set_roots(self._settings.value(ROOTS_SETTINGS_KEY, [], type=list))

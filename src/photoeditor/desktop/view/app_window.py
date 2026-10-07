@@ -16,7 +16,9 @@ from ...features import session as session_store
 from ...features.browse.logic import list_images_in_folder
 from ...features.open_image.logic import SUPPORTED_EXTS
 from ...features.open_image.logic import file_dialog_filter
-from ...features.persistence import edit_store
+from ...features.datadir import app_data_dir
+from ...features.persistence import edit_store, health
+from ...features.persistence import export as data_export
 from ...features.retouch.logic import DEFAULT_MANUAL_SENSITIVITY
 from ...features.tonecurve.logic import DEFAULT_POINTS
 from ...features.whitebalance.logic import luminance_of
@@ -33,6 +35,7 @@ from .contact_sheet_dialog import ContactSheetDialog
 from .credits_dialog import CreditsDialog
 from .finishing_panel import FinishingPanel
 from ..keybinds import KeyMap
+from ...features.persistence.consolidate import ensure_ready as ensure_data_ready
 from .settings_dialog import SettingsDialog
 from .snapshots_panel import SnapshotsPanel
 from .tags_panel import TagsPanel
@@ -285,6 +288,7 @@ class AppWindow(QMainWindow):
     opens the separate folder/tile-grid browser."""
 
     def __init__(self):
+        ensure_data_ready()  # the session and settings read below must come from the one data folder, with other launches' copies merged in
         super().__init__()
         _live_windows.add(self)
         # No native title bar to theme - Win98 chrome is hand-painted instead
@@ -569,6 +573,13 @@ class AppWindow(QMainWindow):
         # sidebar's minimum width, and toggle_sidebar()'s setSizes([..., 0])
         # below, actually reach zero instead of snapping back to the minimum.
         self._splitter.setChildrenCollapsible(True)
+        # The widths the user drags the sidebars to are saved as they are set (a moment after the drag stops), not only when the window closes - a
+        # crash, a kill or Exit from the tray would otherwise lose them - and they are what the next start opens with.
+        self._layout_save_timer = QTimer(self)
+        self._layout_save_timer.setSingleShot(True)
+        self._layout_save_timer.setInterval(400)
+        self._layout_save_timer.timeout.connect(self._save_session_layout)
+        self._splitter.splitterMoved.connect(lambda _pos, _index: self._layout_save_timer.start())
 
         # --- left: constant Masking/History sections, the image, and the
         # hover coordinate/pixel readout underneath everything ---
@@ -1440,6 +1451,32 @@ class AppWindow(QMainWindow):
         tab = sess["tab"]
         if tab in self._tool_rail._buttons:
             self._tool_rail._buttons[tab].click()
+        QTimer.singleShot(1500, self._check_data_health)  # after the window is up: is the saved data all there?
+
+    def _check_data_health(self) -> None:
+        """If the database holds far less than a backup does, say so and offer the backup (it is put in place the next time the app starts)."""
+        c = self.controller
+        problem = health.startup_check(c.db_path, c.backup_dir())
+        if problem is None:
+            return
+        box = QMessageBox(self)
+        box.setWindowTitle("Your saved edits look incomplete")
+        box.setIcon(QMessageBox.Icon.Warning)
+        box.setText(
+            f"The editor's database holds {problem['live_rows']:,} saved items, but a backup ({os.path.basename(problem['backup'])}) holds "
+            f"{problem['backup_rows']:,}.\n\nRestore that backup? What is there now is kept in the backups folder. It takes effect the next "
+            "time the editor starts."
+        )
+        restore = box.addButton("Restore the Backup", QMessageBox.ButtonRole.AcceptRole)
+        box.addButton("Keep What I Have", QMessageBox.ButtonRole.RejectRole)
+        box.exec()
+        if box.clickedButton() is restore:
+            try:
+                data_export.stage_import(problem["backup"], app_data_dir())
+            except Exception as exc:
+                QMessageBox.warning(self, "Restore", f"The backup could not be prepared:\n{exc}")
+                return
+            QMessageBox.information(self, "Restore", "Close the editor and open it again to finish the restore.")
 
     def _save_session_layout(self) -> None:
         left, _center, right = self._splitter.sizes()
