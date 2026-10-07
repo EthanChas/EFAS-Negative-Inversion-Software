@@ -1,5 +1,7 @@
 # EFAS Negative Inversion Software
 
+**Notice: this software is heavily under development and may have issues and bugs. Back up your photos and use it at your own risk.**
+
 A desktop editor for turning scanned or camera-scanned film negatives into finished positives. Open a negative (RAW, TIFF, PNG or JPEG), invert it, balance the colour and tone, retouch dust and scratches, then export, all non-destructively, with every edit stored per photo in a local database.
 
 Built in **Python** with **PyQt6**. Created by Ethan.
@@ -51,7 +53,8 @@ Also built on [PyQt6](https://pypi.org/project/PyQt6/), [Pillow](https://python-
 
 - Created in PyQt6 by Ethan.
 - UI design and interface are based on, and inspired by, darktable.
-- Developed with the help of Claude (Anthropic) for code corrections, bug fixes and implementation work, with Ethan directing the design and reviewing the result.
+- Design, basic functionality and concepts by Ethan.
+- Developed with the help of Claude (Anthropic) for code corrections, bug fixes and implementation work.
 
 ## Requirements
 
@@ -112,4 +115,8 @@ Every icon and button glyph the app draws is rendered to the [`symbols`](symbols
 
 ## Licence
 
-Parts of this project are adapted from NegPy, which is GPL-3.0. Check that licence before redistributing.
+Copyright (C) 2026 Ethan.
+
+This is free, open-source software, released under the [GNU General Public License v3.0](LICENSE). You are free to use, edit and redistribute it, as long as redistributed versions (modified or not) stay open source under the same licence. The GPL is used because parts of the app are adapted from [NegPy](https://github.com/marcinz606/NegPy), which is GPL-3.0.
+
+There is no warranty of any kind.
