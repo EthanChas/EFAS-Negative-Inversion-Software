@@ -131,6 +131,17 @@ CREATE TABLE IF NOT EXISTS folder_linear_ref (
 """
 LINEAR_REF_KINDS = ("base", "clear")
 
+_INVERSION_SCHEMA = """
+CREATE TABLE IF NOT EXISTS photo_inversion (
+    path TEXT PRIMARY KEY,
+    engine TEXT NOT NULL,
+    profile_id TEXT NOT NULL DEFAULT '',
+    setup_id TEXT NOT NULL DEFAULT '',
+    white TEXT NOT NULL DEFAULT '[]'
+)
+"""
+INVERSION_ENGINES = ("classic", "curve")
+
 FLAG_KEEPER = "keeper"
 FLAG_REJECTED = "rejected"
 
@@ -242,6 +253,7 @@ def connect(db_path: str) -> sqlite3.Connection:
     conn.execute(_RATINGS_SCHEMA)
     conn.execute(_BASE_SCHEMA)
     conn.execute(_LINEAR_REF_SCHEMA)
+    conn.execute(_INVERSION_SCHEMA)
     conn.execute(_TAGS_SCHEMA)
     conn.execute(_TAGS_INDEX)
     conn.execute(_SNAPSHOTS_SCHEMA)
@@ -589,6 +601,35 @@ def set_linear_ref(conn: sqlite3.Connection, folder: str, kind: str, rgb, pixels
 
 def delete_linear_ref(conn: sqlite3.Connection, folder: str, kind: str) -> None:
     conn.execute("DELETE FROM folder_linear_ref WHERE folder = ? AND kind = ?", (folder, kind))
+    conn.commit()
+
+
+def get_inversion(conn: sqlite3.Connection, path: str) -> dict | None:
+    """Which inversion method a photo uses. Kept apart from the edit state so presets, snapshots, history and sidecars are never touched by it;
+    a photo with no row uses the standard method."""
+    row = conn.execute("SELECT engine, profile_id, setup_id, white FROM photo_inversion WHERE path = ?", (path,)).fetchone()
+    if row is None:
+        return None
+    try:
+        white = [float(x) for x in json.loads(row[3])]
+    except (ValueError, TypeError):
+        white = []
+    return {"engine": row[0], "profile_id": row[1], "setup_id": row[2], "white": white}
+
+
+def set_inversion(conn: sqlite3.Connection, path: str, engine: str, profile_id: str = "", setup_id: str = "", white=()) -> None:
+    if engine not in INVERSION_ENGINES:
+        raise ValueError(f"unknown inversion engine: {engine}")
+    conn.execute(
+        "INSERT INTO photo_inversion (path, engine, profile_id, setup_id, white) VALUES (?, ?, ?, ?, ?) "
+        "ON CONFLICT(path) DO UPDATE SET engine=excluded.engine, profile_id=excluded.profile_id, setup_id=excluded.setup_id, white=excluded.white",
+        (path, engine, profile_id, setup_id, json.dumps([float(x) for x in white])),
+    )
+    conn.commit()
+
+
+def delete_inversion(conn: sqlite3.Connection, path: str) -> None:
+    conn.execute("DELETE FROM photo_inversion WHERE path = ?", (path,))
     conn.commit()
 
 

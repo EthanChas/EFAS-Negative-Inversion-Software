@@ -131,7 +131,7 @@ class EditParams:
         return cls(
             exposure_ev=s.exposure_ev,
             tone_curve_points=tuple(tuple(p) for p in s.tone_curve_points),
-            negative_inverted=s.negative_inverted,
+            negative_inverted=s.negative_inverted and getattr(s, "inversion_engine", "classic") != "curve",
             rotation_quarter_turns=s.rotation_quarter_turns,
             flip_h=s.flip_h,
             flip_v=s.flip_v,

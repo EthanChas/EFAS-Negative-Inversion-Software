@@ -75,7 +75,8 @@ def invert_with_curves(v: np.ndarray, v_base, models: dict, floor=(1e-6, 1e-6, 1
     """Invert the linear scan `v` (HxWx3) with each channel's measured curve.
 
     `white` is the per-channel relative exposure that should come out as 1.0: None takes the `white_percentile` of the picture (or of
-    `reference_region`, a (y1, y2, x1, x2) slice, when given). That choice is an assumption and is reported in `notes`."""
+    `reference_region`, a (y1, y2, x1, x2) slice, when given). That choice is an assumption and is reported in `notes`. The coverage and
+    flat-curve shares are counted over `reference_region` too (the clear film border is not picture and would read as out of range)."""
     v = np.asarray(v)
     if v.ndim != 3 or v.shape[2] != 3:
         raise InversionError("the scan must be an HxWx3 array")
@@ -114,10 +115,15 @@ def invert_with_curves(v: np.ndarray, v_base, models: dict, floor=(1e-6, 1e-6, 1
     if np.any(white_ref <= 0) or not np.isfinite(white_ref).all():
         raise InversionError("the white reference is not usable")
     positive = (expo / white_ref).astype(np.float32).reshape(h, w, 3)
-    below = tuple(float((status[:, c] < 0).mean()) for c in range(3))
-    above = tuple(float((status[:, c] > 0).mean()) for c in range(3))
-    covered = float((status == 0).all(axis=1).mean())
-    poor = tuple(float((flat_zone[:, c] & (status[:, c] == 0)).mean()) for c in range(3))
+    stat, flatz = status, flat_zone
+    if reference_region is not None:
+        y1, y2, x1, x2 = reference_region
+        stat = status.reshape(h, w, 3)[y1:y2, x1:x2].reshape(-1, 3)
+        flatz = flat_zone.reshape(h, w, 3)[y1:y2, x1:x2].reshape(-1, 3)
+    below = tuple(float((stat[:, c] < 0).mean()) for c in range(3))
+    above = tuple(float((stat[:, c] > 0).mean()) for c in range(3))
+    covered = float((stat == 0).all(axis=1).mean())
+    poor = tuple(float((flatz[:, c] & (stat[:, c] == 0)).mean()) for c in range(3))
     if covered < 0.9:
         notes.append(f"Only {covered * 100:.0f}% of the picture lies inside the profile's measured density range in all three channels. The rest was clamped to the "
                      "ends of the measured curve, so its tones are not estimated, only limited.")
@@ -125,6 +131,30 @@ def invert_with_curves(v: np.ndarray, v_base, models: dict, floor=(1e-6, 1e-6, 1
         notes.append(f"Up to {max(poor) * 100:.0f}% of the picture sits where the curve is nearly flat (the toe or shoulder), so a small density error there means a large "
                      f"exposure error (about {ASSUMED_SIGMA_D / (FLAT_RATIO):.2f} log units at the flattest allowed point for {ASSUMED_SIGMA_D:g} density of uncertainty).")
     return InversionResult(positive, x.reshape(h, w, 3), dd.reshape(h, w, 3), tuple(float(s) for s in white_ref), below, above, covered, poor, tuple(notes))
+
+
+def invert_to_uint16(v: np.ndarray, v_base, models: dict, floor, white, flare=None) -> np.ndarray:
+    """The same inversion with a given white reference, written straight to a display-encoded 16-bit picture in row blocks, so a full-resolution scan
+    does not need several full-size float arrays at once. Matches to_uint16(invert_with_curves(..., white=white).positive) exactly."""
+    v = np.asarray(v)
+    if v.ndim != 3 or v.shape[2] != 3:
+        raise InversionError("the scan must be an HxWx3 array")
+    white_ref = np.asarray(white, dtype=np.float64)
+    if np.any(white_ref <= 0) or not np.isfinite(white_ref).all():
+        raise InversionError("the white reference is not usable")
+    h, w = v.shape[:2]
+    out = np.empty((h, w, 3), dtype=np.uint16)
+    rows = max(1, CHUNK // max(w, 1))
+    for y in range(0, h, rows):
+        block = v[y:y + rows].reshape(-1, 3)
+        d = _density(block, v_base, floor, flare)
+        e = np.empty_like(d)
+        for c, ch in enumerate("RGB"):
+            m = models[ch]
+            xc, _st = invert_curve(m.curve, d[:, c], m.support[0], m.support[1])
+            e[:, c] = np.power(10.0, xc.astype(np.float32).astype(np.float64))
+        out[y:y + rows] = to_uint16((e / white_ref).astype(np.float32)).reshape(-1, w, 3)
+    return out
 
 
 def srgb_oetf(linear: np.ndarray) -> np.ndarray:

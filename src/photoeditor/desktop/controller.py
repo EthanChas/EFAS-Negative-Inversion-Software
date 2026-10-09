@@ -13,6 +13,8 @@ from ..features.geometry.autocrop import AUTO_STRAIGHTEN_MAX, AUTO_STRAIGHTEN_MI
 from ..features.geometry.gradientcrop import detect_gradient_frame
 from ..features.densitometry import analysis as dens_analysis
 from ..features.densitometry import base as dens_base
+from ..features.densitometry import film_profile as fpmod
+from ..features.densitometry import inversion as dens_inversion
 from ..features.densitometry import processor as dens_processor
 from ..features.densitometry.linear import LinearScan
 from ..features.geometry.logic import (
@@ -73,6 +75,7 @@ from .render import EditParams, _scale_rect, RenderJob, Renderer, RenderOutput, 
 from .session import AppState, HistoryEntry
 from .workers import FlatFieldWorker, run_blocking
 from .densitometry_worker import LinearScanWorker
+from . import curve_engine
 
 
 BW_SATURATION = -1.0
@@ -115,6 +118,7 @@ class AppController(QObject):
     negative_state_changed = pyqtSignal()
     film_base_changed = pyqtSignal()
     measurement_changed = pyqtSignal()
+    inversion_changed = pyqtSignal()
     roll_changed = pyqtSignal()
     flatfield_changed = pyqtSignal()
     flatfield_progress = pyqtSignal(int, int, str)
@@ -160,6 +164,8 @@ class AppController(QObject):
         self._linear = None
         self._linear_worker = None
         self._linear_threads: set = set()
+        self._curve_error = ""
+        self._curve_full = None
         self._linear_error = ""
         self._framed_linear = None
         self._measurement = None
@@ -226,6 +232,7 @@ class AppController(QObject):
         QCoreApplication.processEvents()
         try:
             self._open_file_impl(path)
+            self._restore_engine(path)
         finally:
             self.loading_finished.emit()
 
@@ -435,8 +442,10 @@ class AppController(QObject):
         return self.state.image_path
 
     def _render_base(self):
-        """The picture a render starts from: the preview with all its bits when the photo has more than 8."""
+        """The picture a render starts from: the preview with all its bits when the photo has more than 8 (or the curve-informed positive)."""
         s = self.state
+        if s.inversion_engine == "curve" and s.curve_positive16 is not None:
+            return s.curve_positive16
         return s.preview_rgb16 if s.preview_rgb16 is not None else s.preview_rgb
 
     def _submit(self, *, full: bool, live=None, hq: bool = False, hq_only: bool = False) -> None:
@@ -447,7 +456,7 @@ class AppController(QObject):
             gen=self._gen,
             params=EditParams.from_state(self.state),
             base=self._render_base(),
-            hq=self.state.original_rgb if (hq and self.state.hq_enabled) else None,
+            hq=self.hq_source() if (hq and self.state.hq_enabled) else None,
             token=self._token(),
             full=full,
             live=live,
@@ -544,7 +553,7 @@ class AppController(QObject):
             self._gen = gen
             self._thread.submit(
                 RenderJob(
-                    gen=gen, params=params, base=base, hq=s.original_rgb, token=self._token(),
+                    gen=gen, params=params, base=base, hq=self.hq_source(), token=self._token(),
                     full=True, live=None, hq_only=True, flatfield=self._ff,
                 )
             )
@@ -2316,6 +2325,13 @@ class AppController(QObject):
         self._framed_linear = None
         self._measurement = None
         self._measure_key = None
+        self.state.inversion_engine = "classic"
+        self.state.inversion_profile = ""
+        self.state.curve_positive16 = None
+        self.state.curve_result = None
+        self.state.curve_white = None
+        self._curve_full = None
+        self._curve_error = ""
 
     def linear_ready(self) -> bool:
         return self._linear is not None and self._linear[0] == self.state.image_path
@@ -2343,7 +2359,7 @@ class AppController(QObject):
         if self._linear_worker is not None and self._linear_worker.isRunning():
             return
         self._linear_error = ""
-        worker = LinearScanWorker(path, self._render_base(), app_settings.get("scan_transfer"))
+        worker = LinearScanWorker(path, self._negative_base(), app_settings.get("scan_transfer"))
         worker.done.connect(self._on_linear_done)
         worker.failed.connect(self._on_linear_failed)
         self._linear_threads.add(worker)
@@ -2373,6 +2389,8 @@ class AppController(QObject):
         self._framed_linear = None
         self._measure_key = None
         self.request_linear()
+        if self.state.inversion_engine == "curve":
+            self._activate_curve(self.state.inversion_profile, self._saved_setup_id(), None)
 
     def _geometry_key(self) -> tuple:
         s = self.state
@@ -2439,7 +2457,7 @@ class AppController(QObject):
         if path is None:
             return False
         try:
-            scan = run_blocking(lambda: dens_processor.linear_scan(path, self._render_base(), app_settings.get("scan_transfer")))
+            scan = run_blocking(lambda: dens_processor.linear_scan(path, self._negative_base(), app_settings.get("scan_transfer")))
         except Exception as exc:
             self._linear_error = str(exc)
             return False
@@ -2473,6 +2491,11 @@ class AppController(QObject):
             self.state.linear_clear = ref
         self._measure_key = None
         self._refresh_measurement()
+        if kind == "base" and self.state.inversion_engine == "curve":
+            if ref is None:
+                self._deactivate_curve("The curve-informed inversion needs a film base, so the standard method is used again.")
+            else:
+                self._activate_curve(self.state.inversion_profile, self._saved_setup_id(), None)
         return warnings
 
     def current_measurement(self):
@@ -2500,6 +2523,129 @@ class AppController(QObject):
             self._linear_error = f"Measurement failed: {exc}"
         self._measure_key = key
         self.measurement_changed.emit()
+
+    def profile_store(self) -> fpmod.ProfileStore:
+        return fpmod.ProfileStore(fpmod.profiles_dir(app_data_dir()))
+
+    def setup_store(self) -> fpmod.SetupStore:
+        return fpmod.SetupStore(fpmod.setups_dir(app_data_dir()))
+
+    def _saved_setup_id(self) -> str:
+        row = edit_store.get_inversion(self._db, self.state.image_path) if self.state.image_path else None
+        return row["setup_id"] if row else ""
+
+    def _negative_base(self):
+        """The photo as scanned (never the converted positive): what the film base is sampled on and what the standard inversion starts from."""
+        s = self.state
+        return s.preview_rgb16 if s.preview_rgb16 is not None else s.preview_rgb
+
+    def inversion_status(self) -> dict:
+        """What the Negative tab shows about the inversion method: which one runs, the profile, and how much of the picture the profile covers."""
+        s = self.state
+        res = s.curve_result
+        name = ""
+        if s.inversion_profile:
+            try:
+                name = self.profile_store().load(s.inversion_profile).name
+            except fpmod.ProfileError:
+                name = ""
+        return {
+            "engine": s.inversion_engine, "profile_id": s.inversion_profile, "profile_name": name, "error": self._curve_error,
+            "covered": res.covered if res is not None else None, "poor": res.poorly_determined if res is not None else None,
+            "notes": list(res.notes) if res is not None else [], "base_ready": s.linear_base is not None,
+        }
+
+    def set_inversion_engine(self, engine: str, profile_id: str = "", setup_id: str = "") -> str:
+        """Choose how this photo's negative is inverted: "classic" (the standard method) or "curve" (through a film profile's measured curves).
+        Returns "" on success, or the reason it could not be done (the photo keeps its current method)."""
+        s = self.state
+        if s.image_path is None or s.preview_rgb is None:
+            return "Open a photo first."
+        if engine == "classic":
+            return self._deactivate_curve()
+        if engine != "curve":
+            return "Unknown inversion method."
+        return self._activate_curve(profile_id, setup_id, None)
+
+    def _deactivate_curve(self, note: str = "") -> str:
+        s = self.state
+        was = s.inversion_engine == "curve"
+        s.inversion_engine = "classic"
+        s.inversion_profile = ""
+        s.curve_positive16 = None
+        s.curve_result = None
+        s.curve_white = None
+        self._curve_full = None
+        self._curve_error = note
+        if s.image_path is not None:
+            edit_store.delete_inversion(self._db, s.image_path)
+        if was:
+            self._renderer.reset()
+            self._recompute_image()
+            self.image_adjusted.emit()
+            self._log("Inversion method: standard")
+        self.inversion_changed.emit()
+        return ""
+
+    def _activate_curve(self, profile_id: str, setup_id: str, white) -> str:
+        s = self.state
+        path = s.image_path
+        try:
+            setup = curve_engine.build_setup(
+                app_data_dir(), profile_id, setup_id, s.linear_base[0] if s.linear_base else None, s.linear_clear[0] if s.linear_clear else None
+            )
+        except curve_engine.CurveEngineUnavailable as exc:
+            self._curve_error = str(exc)
+            self.inversion_changed.emit()
+            return str(exc)
+        if not self._ensure_linear_now():
+            self._curve_error = f"The scan could not be read for measurement: {self._linear_error}"
+            self.inversion_changed.emit()
+            return self._curve_error
+        try:
+            res, positive = curve_engine.preview_positive(self._linear[1], setup, white if white else None)
+        except dens_inversion.InversionError as exc:
+            self._curve_error = str(exc)
+            self.inversion_changed.emit()
+            return str(exc)
+        s.curve_positive16, s.curve_result, s.curve_white = positive, res, res.white
+        s.inversion_engine, s.inversion_profile = "curve", profile_id
+        self._curve_error = ""
+        edit_store.set_inversion(self._db, path, "curve", profile_id, setup_id, res.white)
+        self._curve_full = None
+        self._renderer.reset()
+        self._recompute_image()
+        self.image_adjusted.emit()
+        self.inversion_changed.emit()
+        self._log(f"Inversion method: curve-informed ({setup.profile.name})")
+        self.notice.emit(f"Curve-informed inversion with '{setup.profile.name}': {res.covered * 100:.0f}% of the picture is inside the profile's measured range")
+        return ""
+
+    def _restore_engine(self, path: str) -> None:
+        """A photo saved with the curve method gets it back as it opens (the picture first shows with the standard method for an instant)."""
+        row = edit_store.get_inversion(self._db, path)
+        if row is None or row["engine"] != "curve" or self.state.image_path != path:
+            return
+        message = self._activate_curve(row["profile_id"], row["setup_id"], row["white"])
+        if message:
+            self.notice.emit(f"This photo is saved with the curve-informed inversion, which could not be applied: {message}")
+
+    def hq_source(self):
+        """The full-resolution picture the sharp (HQ) pass starts from: the original, or for the curve method the positive made at full resolution."""
+        s = self.state
+        if s.inversion_engine != "curve" or s.curve_white is None:
+            return s.original_rgb
+        key = (s.image_path, s.inversion_profile, s.curve_white)
+        if self._curve_full is None or self._curve_full[0] != key:
+            try:
+                setup = curve_engine.build_setup(
+                    app_data_dir(), s.inversion_profile, self._saved_setup_id(), s.linear_base[0] if s.linear_base else None, s.linear_clear[0] if s.linear_clear else None
+                )
+                full = run_blocking(lambda: curve_engine.full_positive(s.image_path, setup, s.curve_white))
+            except Exception:
+                return s.original_rgb
+            self._curve_full = (key, full)
+        return self._curve_full[1]
 
     def render_raw_scan(self):
         """The scan as it came in, framed like the edit (rotation, flips, straightening) but uncropped, uninverted and untouched - what the
@@ -2545,7 +2691,7 @@ class AppController(QObject):
         return self._render_neutral(keep_inversion=True, keep_frame=True)
 
     def _render_neutral(self, keep_inversion: bool, keep_frame: bool = False):
-        base = self._render_base()
+        base = self._render_base() if keep_inversion else self._negative_base()
         if base is None:
             return None
         params = dataclasses.replace(

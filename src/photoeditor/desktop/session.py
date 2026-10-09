@@ -136,6 +136,11 @@ class AppState:
     film_base: tuple[int, int, int] | None = None
     linear_base: tuple[tuple[float, float, float], int] | None = None
     linear_clear: tuple[tuple[float, float, float], int] | None = None
+    inversion_engine: str = "classic"
+    inversion_profile: str = ""
+    curve_positive16: np.ndarray | None = None
+    curve_result: object = None
+    curve_white: tuple | None = None
     roll_camera: str = ""
     roll_lens: str = ""
     show_detections: bool = False

@@ -2,6 +2,7 @@
 full resolution, apply its saved edits through the same renderer the editor
 uses, and write it with the chosen export options."""
 
+import dataclasses
 import os
 
 from PyQt6.QtCore import QThread, pyqtSignal
@@ -23,6 +24,7 @@ from ..features.retouch.logic import DEFAULT_SCRATCH_SENSITIVITY, DEFAULT_SIZE, 
 from ..features.sharpening.logic import DEFAULT_METHOD
 from ..features.tonecurve.logic import DEFAULT_POINTS
 from ..features.xmp import logic as xmp
+from . import curve_engine
 from .render import EditParams, Renderer
 
 
@@ -109,11 +111,26 @@ def _edits_for(path: str, conn, preview) -> tuple:
     return params, flatfield
 
 
+def _curve_source(path: str, conn, full, params, flatfield):
+    """For a photo saved with the curve-informed inversion: the positive made from its linear scan with the white reference used on screen, the edits
+    applied as to a positive, and no flat-field (its gain acts on the negative). A photo using the standard method passes through untouched. If the curve
+    method is saved but cannot be applied, this raises, so the export fails for that photo with the reason instead of silently using another method."""
+    found = curve_engine.setup_for_photo(conn, path, curve_engine.data_dir_of(conn))
+    if found is None:
+        return full, params, flatfield
+    setup, row = found
+    if not row["white"]:
+        raise curve_engine.CurveEngineUnavailable("The curve-informed inversion was saved without a white reference. Open the photo once, then export again.")
+    del full
+    return curve_engine.full_positive(path, setup, row["white"]), dataclasses.replace(params, negative_inverted=False), None
+
+
 def render_full_resolution(path: str, conn) -> "tuple":
     """-> (pixels at the original resolution with the photo's saved edits applied, EXIF bytes or None)."""
     full = load_image_rgb(path)
     preview = make_preview_rgb(full)
     params, flatfield = _edits_for(path, conn, to_uint8(preview))
+    full, params, flatfield = _curve_source(path, conn, full, params, flatfield)
     renderer = Renderer()
     if params.ai_dust:
         renderer.ai_prob_lookup = lambda token, inverted, mono: aidust.probability(path, full, inverted, mono)
@@ -129,6 +146,10 @@ def render_edited_thumbnail(path: str, conn, max_dim: int = 800):
     full = load_image_rgb(path)
     preview = make_preview_rgb(full)
     params, flatfield = _edits_for(path, conn, to_uint8(preview))
+    scanned = full
+    full, params, flatfield = _curve_source(path, conn, full, params, flatfield)
+    if full is not scanned:
+        preview = make_preview_rgb(full)
     small = make_preview_rgb(preview, max_dim)
     image, _pre, _stats, _overlay = Renderer().render(
         small, params, path, preview.shape[1], live=None, want_stats=False, overlay=False, flatfield=flatfield
