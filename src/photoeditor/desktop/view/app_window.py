@@ -1544,6 +1544,7 @@ class AppWindow(QMainWindow):
             self._image_view.set_pick_mode(False)
         self._sync_film_base()
         self._sync_inversion()
+        self._negative_tool.set_quality(self.controller.scan_quality())
         self._probe_image = None
         self._advanced.set_probe_active(False)
         self._advanced.set_probe(None)
@@ -2030,6 +2031,7 @@ class AppWindow(QMainWindow):
 
     def _on_measurement_changed(self) -> None:
         c = self.controller
+        self._negative_tool.set_quality(c.scan_quality())
         self._advanced.set_measurement(c.current_measurement(), c.linear_error(), c.linear_busy(), c.state.image_path is not None)
 
     def _on_scan_transfer_changed(self, key: str) -> None:

@@ -109,6 +109,12 @@ class SettingsDialog(QDialog):
         col.addWidget(self._check_updates)
         col.addWidget(_hint("The only time the editor goes online. It asks the GitHub releases page for the latest version number and tells you "
                             "if there is a newer one. No data about you or your photos is sent. You can also check by hand under Info."))
+        self._scan_quality = QCheckBox("Check scan quality when a RAW photo opens")
+        self._scan_quality.setChecked(self._initial["scan_quality"])
+        self._scan_quality.setToolTip("Reads the RAW file a second time in the background to tell you if the scan was exposed well enough to measure the whole negative.")
+        col.addWidget(self._scan_quality)
+        col.addWidget(_hint("Shows a plain verdict in the Negative tab (good, underexposed, clipped) with how many stops to change. It uses extra memory and a few seconds of "
+                            "background work per photo, so turn it off on a slow computer."))
         col.addStretch(1)
         return page
 
@@ -432,7 +438,7 @@ class SettingsDialog(QDialog):
     def values(self) -> dict:
         return {
             "raw_demosaic": self._demosaic.currentData(), "raw_auto_bright": self._auto_bright.isChecked(), "auto_advance": self._auto_advance.isChecked(),
-            "check_updates": self._check_updates.isChecked(),
+            "check_updates": self._check_updates.isChecked(), "scan_quality": self._scan_quality.isChecked(),
             "backup_auto": self._backup_auto.isChecked(), "backup_keep": self._backup_keep.value(), "backup_dir": self._backup_dir,
             "keybinds": binds.overrides_from(self._keys),
         }

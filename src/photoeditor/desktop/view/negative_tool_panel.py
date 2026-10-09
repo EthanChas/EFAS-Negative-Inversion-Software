@@ -1,8 +1,9 @@
 import dataclasses
 
-from PyQt6.QtCore import QTimer, pyqtSignal
+from PyQt6.QtCore import Qt, QTimer, pyqtSignal
 from PyQt6.QtWidgets import QCheckBox, QComboBox, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
 
+from ...features.densitometry.quality import COLOURS as QUALITY_COLOURS
 from ...features.negative.logic import FILM_TYPE_LABELS, FILM_TYPES, ProcessMode
 from ...features.negative.metering import DEFAULT_BUFFER, MAX_BUFFER, Metering
 from ...theme.tokens import THEME
@@ -122,6 +123,19 @@ class NegativeToolPanel(CollapsiblePanel):
         self._base_label.setWordWrap(True)
         body.addWidget(self._base_label)
         self.set_film_base(None)
+        quality_title = QLabel("SCAN QUALITY")
+        quality_title.setProperty("role", "subtitle")
+        body.addWidget(quality_title)
+        self._quality_head = QLabel("")
+        self._quality_head.setWordWrap(True)
+        self._quality_head.setTextFormat(Qt.TextFormat.RichText)
+        body.addWidget(self._quality_head)
+        self._quality_detail = QLabel("")
+        self._quality_detail.setProperty("role", "hint")
+        self._quality_detail.setWordWrap(True)
+        body.addWidget(self._quality_detail)
+        self.set_quality(None)
+
         inv_title = QLabel("INVERSION METHOD")
         inv_title.setProperty("role", "subtitle")
         body.addWidget(inv_title)
@@ -315,6 +329,21 @@ class NegativeToolPanel(CollapsiblePanel):
             note = "The standard method is in use."
         self._engine_note.setText(note)
         self._inv_block = False
+
+    def set_quality(self, q) -> None:
+        """The scan-quality verdict (features/densitometry/quality.ScanQuality), or None for nothing to show yet."""
+        if q is None:
+            self._quality_head.setText("")
+            self._quality_detail.setText("")
+            self._quality_head.setVisible(False)
+            self._quality_detail.setVisible(False)
+            return
+        colour = QUALITY_COLOURS.get(q.level, "#9a9a9a")
+        self._quality_head.setText(f"<span style='color:{colour}'>&#9679;</span> <b>{q.headline}</b>")
+        self._quality_detail.setText(q.detail)
+        self._quality_head.setToolTip(q.detail)
+        self._quality_head.setVisible(True)
+        self._quality_detail.setVisible(True)
 
     def set_guidance(self, text: str) -> None:
         self._guidance.setText(text)

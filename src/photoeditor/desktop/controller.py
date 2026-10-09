@@ -13,6 +13,7 @@ from ..features.geometry.autocrop import AUTO_STRAIGHTEN_MAX, AUTO_STRAIGHTEN_MI
 from ..features.geometry.gradientcrop import detect_gradient_frame
 from ..features.densitometry import analysis as dens_analysis
 from ..features.densitometry import base as dens_base
+from ..features.densitometry import quality as dens_quality
 from ..features.densitometry import film_profile as fpmod
 from ..features.densitometry import inversion as dens_inversion
 from ..features.densitometry import processor as dens_processor
@@ -42,6 +43,7 @@ from ..features.negative import metering as metering_mod
 from ..features.negative.logic import FILM_TYPE_LABELS, ProcessMode, detect_process_mode
 from ..features.negative.metering import Metering
 from ..features.watermark.marks import Marks
+from ..features.open_image.logic import is_raw
 from ..features.open_image.processor import load_image_rgb, make_preview_rgb, to_uint8
 from ..features.persistence import edit_store
 from ..features.persistence import export as data_export
@@ -233,6 +235,8 @@ class AppController(QObject):
         try:
             self._open_file_impl(path)
             self._restore_engine(path)
+            if app_settings.get("scan_quality") and is_raw(path):
+                self.request_linear()
         finally:
             self.loading_finished.emit()
 
@@ -2349,6 +2353,19 @@ class AppController(QObject):
     def wait_linear_workers(self, msecs: int = 20000) -> None:
         for worker in list(self._linear_threads):
             worker.wait(msecs)
+
+    def scan_quality(self):
+        """The plain verdict on how well the open photo was scanned (see features/densitometry/quality.py)."""
+        path = self.state.image_path
+        if path is None:
+            return dens_quality.unknown("Open a photo first.")
+        if not is_raw(path):
+            return dens_quality.unknown("The check needs a RAW file. This picture is an encoded file, so its exposure cannot be judged reliably.")
+        if self._measurement is None:
+            if self.linear_busy():
+                return dens_quality.ScanQuality("unknown", "Checking the scan...", "Reading the RAW data in the background.")
+            return dens_quality.unknown(self._linear_error or "The scan has not been checked.")
+        return dens_quality.assess(self._measurement)
 
     def linear_busy(self) -> bool:
         return self._linear_worker is not None and self._linear_worker.isRunning()
