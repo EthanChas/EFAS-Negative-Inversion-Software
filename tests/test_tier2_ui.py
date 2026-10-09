@@ -133,7 +133,11 @@ _SCRIPT = textwrap.dedent(r'''
     pdg._ask = lambda parent, title, fields: ["Light table 2", "Cam", "Lens", "LED", "n"]
     sd._edit(); assert "Light table 2" in sd.list.item(0).text()
     sd._delete(); assert sd.list.count() == 0
+    for r in store.list():
+        store.delete(r["id"])
+    c.set_inversion_engine("classic")
     win._sync_inversion()
+    assert not nt._engine.model().item(1).isEnabled() and "needs a film profile" in nt._engine.itemText(1) and "step tablet" in nt._engine_note.text(), nt._engine_note.text()
     win.close()
     print("TIER2 UI OK")
 ''')

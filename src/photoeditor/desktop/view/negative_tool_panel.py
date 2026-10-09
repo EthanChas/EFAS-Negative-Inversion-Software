@@ -298,6 +298,7 @@ class NegativeToolPanel(CollapsiblePanel):
         if status.get("profile_id"):
             self._engine_profile.setCurrentIndex(max(0, self._engine_profile.findData(status["profile_id"])))
         self._engine.model().item(1).setEnabled(bool(usable))
+        self._engine.setItemText(1, "Curve-informed (experimental)" if usable else "Curve-informed (needs a film profile)")
         self._engine_profile.setVisible(bool(usable))
         self._engine_setup.setVisible(bool(usable) and curve_on)
         self._ab_btn.setVisible(bool(usable))
@@ -306,7 +307,8 @@ class NegativeToolPanel(CollapsiblePanel):
         elif curve_on and status.get("covered") is not None:
             note = f"{status['covered'] * 100:.0f}% of the picture is inside the profile's measured range; the rest is limited to the ends of the measured curve."
         elif not usable:
-            note = "The standard method is in use. Curve-informed needs a film profile made from known exposures (Advanced mode > Sensitometry)."
+            note = ("The standard method is in use. Curve-informed needs a film profile: make one from a film strip exposed through a step tablet, "
+                    "or import a curve file (Advanced mode > Sensitometry).")
         elif not status.get("base_ready"):
             note = "Curve-informed also needs the film base sampled (Sample Film Base)."
         else:
