@@ -1,6 +1,6 @@
 # EFAS Tier 2: sensitometric curve fitting, calibration workflows, film profiles, and curve-informed inversion
 
-Status: design, written before the implementation and updated to match what was built (section 13 records the result). It builds on `docs/scientific-inversion-design.md` (Tier 1); read that first for the density equations and the evidence tags used here.
+Status: implemented. This document was written before the implementation and section 13 records what was built, what was validated, what is still estimated and what needs further research. The user-facing guide is `docs/film-characterization-guide.md`. It builds on `docs/scientific-inversion-design.md` (Tier 1); read that first for the density equations and the evidence tags used here.
 
 Evidence tags: **[S]** sourced (read in a document or page during research, listed in section 14), **[K]** standard knowledge not re-read from a source, **[D]** EFAS design decision, **[?]** not established.
 
@@ -223,9 +223,60 @@ Synthetic references with known truth (no tolerance guessed from appearance):
 
 Too few patches, patches not monotonic in the expected direction, clipped or noise-floor patches, a tablet entered with nominal densities, a curve with a plateau at both ends (fit not unique), a Dmin patch that is not film base, a profile made at a different exposure than the scan being converted (EFAS warns when the base level differs strongly from the profile's), a profile whose supported range barely covers the picture, and a missing or deleted profile (the photo falls back to the standard inversion with a note).
 
-## 13. Implementation status
+## 13. Implementation status and validation (as built)
 
-Filled in after the build (section 13a).
+### 13.1 What exists
+
+| Stage | What was built | Module | Tests |
+|---|---|---|---|
+| 1. Curve fitting | PCHIP interpolation, softplus and Richards models, weighted Levenberg-Marquardt in numpy, standard errors, leave-one-out error, runs test, confidence band, model recommendation, inverse with clamping | `features/densitometry/fit.py` | `tests/test_fit.py` |
+| 2. Gradients | Local gradient, chord (average) gradient with its interval, gamma and straight-line interval, toe/straight/shoulder, ISO 6 geometry, plain-language guidance | `gradient.py` | `tests/test_gradient.py` |
+| 3. Profiles | Versioned film-profile and camera set-up formats, stores (list, save, duplicate, import, export, delete, compare), Tier 1 file conversion | `film_profile.py` | `tests/test_film_profile.py` |
+| 4. Calibration workflow | Step-target description, RP 14 tolerance checks, patch layout and sampling with validity checks, camera calibration against a tablet (gain, offset, flare fraction, usable range), flare correction, linearity test | `target.py`, `scanner.py` | `tests/test_calibration.py` |
+| 4b. Film characterization | Exposure-strip patches to a measured curve and a *measured* profile with full provenance; refuses without confirmed exposures | `characterize.py` | `tests/test_characterize.py` |
+| 5. Diagnostics | Sensor-clipped / below-floor / noise-limited / usable / invalid shares with evidence status; exposure headroom; film-limit inference only when safe; block-bootstrap intervals | `diagnostics.py` (+ `analysis.py`) | `tests/test_diagnostics.py` |
+| 6. Inversion | Curve-informed inversion in four labelled steps; memory-lean full-resolution path; comparison metrics | `inversion.py` | `tests/test_inversion.py` |
+| 7. Integration and interface | Per-photo method stored in its own table; editor, HQ pass and exporter follow it; A/B comparison; Sensitometry viewer; Film Characterization dialog; profile, set-up and A/B dialogs; Negative-tab controls | `desktop/curve_engine.py`, `controller.py`, `export_worker.py`, `view/*` | `tests/test_curve_integration.py`, `test_characterization_dialog.py`, `test_tier2_ui.py`, `test_view_model.py` |
+| Regression | The standard inversion and render are bit-identical to the commit before Tier 2 | | `tests/test_classic_unchanged.py` |
+
+### 13.2 What was validated, and how
+
+All against synthetic data with known truth (no real sensitometric curve data could be obtained as numbers; see 13.4).
+
+- **Fitting.** Noise-free data recover the parameters to within 3%. Over 80 trials with noise of 0.01 density, the 2-sigma intervals contained the true value 95% of the time for gamma, 94% for Dmax and 95% for the curve position (nominal: 95%). A deliberately wrongly shaped curve (a kinked curve with a wiggle) is flagged "poor" for both parametric models and the interpolated curve is recommended. Parameters the data cannot reach are reported as undetermined.
+- **Camera calibration.** Over 400 trials the 2-sigma intervals contained the true gain 97% and the true offset 97% of the time (nominal: 95%). A nonlinear camera is not called good; a negative offset, a wrong direction and too few steps are reported.
+- **Gradients.** Exact for a straight line and for a logistic (analytic derivative); the ISO 6 geometry is reproduced on a curve built to satisfy it; regions the measurements do not reach are reported as not measured.
+- **Diagnostics.** Controlled shares of clipped, below-floor and noise-limited pixels are reproduced exactly. A pile-up at the camera's noise floor is never blamed on the film. On real CR2 scans the diagnostics differ sensibly between a dense frame (16% weak signal, headroom of 1.7 stops) and a thin one (all usable).
+- **Inversion.** With a profile fitted from a simulated tablet (noise 0.01 density), the log-exposure error was 0.007 to 0.008 RMS. Rendered against the scene's own exposure, the RMS lightness difference was 0.16 to 0.27 L* for the curve-informed method and 11.9 to 24.4 L* for the standard method on the same scenes. **That comparison is a statement about distance from a scene-referred ideal, not about which picture is better**: the standard method is a display-referred stretch built to look good and was never aiming at the scene. On a film whose curve is *not* in either fitted family (kinks and asymmetric knees, with the interpolated curve chosen for two channels) the log-exposure error was 0.023 RMS (largest 0.099) inside the well-conditioned range. Where the curve is nearly flat the inversion is ill-conditioned (sigma_exposure = sigma_density / gradient), and EFAS reports the share of the picture there.
+- **Do not over-read the inversion results.** The synthetic film shares the model family of one of the fitters in most tests, which flatters it; the different-family test is the honest one. No physical film, strip or tablet measurement was available, so nothing here shows the method working on real exposed film.
+- **Integration.** The method is off until chosen, persisted per photo, restored on open, used by the HQ pass and the exporter, refused loudly when its profile or film base is missing, and leaves saved edit states byte-for-byte unchanged. Other photos in the folder are unaffected.
+- **Backward compatibility.** All 100+ Tier 1 and earlier tests pass. The standard inversion, 8-bit and 16-bit lookup tables (with and without a sampled base or metering) and the full render with its histograms match the pre-Tier-2 commit exactly.
+
+### 13.3 What remains estimated
+
+- The thresholds for "good / fair / poor" fits, for noise-limited signal (10 times the read noise), the exposure-headroom target (90% of saturation), the pile-up test for a film limit, and the wording cut-offs for guidance (gamma below 0.45 is "low", above 0.75 "high") are EFAS's engineering choices, not standards.
+- The white reference (99.5th percentile of estimated exposure) is an assumption about the scene's lighting.
+- Flare correction assumes a single fraction for the whole frame.
+- The confidence band shown for stored profiles is rebuilt from stored standard errors (each parameter varied alone), so it ignores parameter correlation and is approximate; fitting time (live) uses the full covariance.
+- Shot noise is not modelled (no gain data), so "noise limited" is read-noise only.
+
+### 13.4 What needs further research or equipment
+
+- Primary definitions of Kodak's contrast index and of the ISO 6 and ISO 5800 average gradients (paywalled); EFAS exposes configurable intervals and the ISO 6 geometry as geometry only.
+- Numeric Kodak and Fujifilm characteristic curves (published as graphics), for a comparison against trusted published data.
+- A real sensitometric strip with a calibrated tablet, to validate the characterization on physical film.
+- A calibrated densitometer or calibrated scanner, to compare camera-band density with Status M or laboratory density.
+- Spectral sensitivities of the camera bands and spectra of backlights, to attempt any band conversion.
+- Illumination-uniformity statistics, lens transmission, and a flare model that depends on the scene (not built).
+- The curve-informed method with AI dust detection or flat-field correction (not supported; the interface says so).
+
+### 13.5 Developer notes
+
+- `features/densitometry/` is Qt-free and holds the whole engine. `desktop/curve_engine.py` is the small bridge the controller and the exporter share (which profile, which base, the preview and full-resolution positives).
+- The per-photo method lives in table `photo_inversion` (`edit_store.get_inversion` and friends), merged by the data-consolidation code like every other table. Camera set-ups and film profiles are JSON files under `camera_setups/` and `film_profiles/` in the data folder.
+- `AppState.inversion_engine` is read in exactly one place that changes behaviour: `EditParams.from_state` (the curve method hands the pipeline an already-converted positive, so the pipeline's own inversion is off). Everything else is the existing pipeline.
+- The view model (`view_model.py`) computes everything the Sensitometry plots draw, so the widgets can be tested without Qt.
+- To add a curve representation, add a class with `__call__`, `derivative`, `values`, `to_theta`, `from_theta` and `jacobian_scale` to `fit.py` and register it in `MODELS`.
 
 ## 14. Sources consulted
 

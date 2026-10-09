@@ -66,6 +66,12 @@ _SCRIPT = textwrap.dedent(r'''
     assert np.array_equal(c.state.image_rgb, classic_before) or True
     classic_after = c.state.image_rgb.copy()
 
+    # a side-by-side comparison changes nothing about the photo
+    cmp_ = c.compare_inversions(profile.id)
+    assert "error" not in cmp_ and cmp_["classic"].shape == cmp_["curve"].shape == c.state.preview_rgb.shape and cmp_["metrics"]["rms_delta_lstar"] > 1.0
+    assert c.state.inversion_engine == "classic" and edit_store.get_inversion(c.database(), first) is None and np.array_equal(c.state.image_rgb, classic_after)
+    assert len(cmp_["tone"]) >= 5 and cmp_["covered"] > 0.9 and cmp_["profile"] == "Synthetic film"
+    assert "error" in c.compare_inversions("does-not-exist")
     # switch on
     assert c.set_inversion_engine("curve", profile.id) == ""
     st = c.inversion_status()

@@ -7,7 +7,7 @@ from PyQt6.QtGui import QBrush, QColor, QPainter, QPen, QPolygonF
 
 from ...features.densitometry.view_model import ChannelView
 from ...theme.tokens import THEME
-from .scientific_panel import _Plot
+from .plot_base import _Plot
 
 _COLOURS = {"R": THEME.channel_red, "G": THEME.channel_green, "B": THEME.channel_blue, "K": "#e6e6e6"}
 
@@ -26,9 +26,10 @@ class FitPlot(_Plot):
         self._views: list[ChannelView] = []
         self._exposure_label = "log exposure"
         self._empty = "No curve to show"
+        self._band: tuple[float, float] | None = None
 
-    def set_views(self, views: list[ChannelView], exposure_label: str = "log exposure", empty: str = "No curve to show") -> None:
-        self._views, self._exposure_label, self._empty = views, exposure_label, empty
+    def set_views(self, views: list[ChannelView], exposure_label: str = "log exposure", empty: str = "No curve to show", band: tuple[float, float] | None = None) -> None:
+        self._views, self._exposure_label, self._empty, self._band = views, exposure_label, empty, band
         self.update()
 
     def paintEvent(self, _event) -> None:
@@ -56,6 +57,9 @@ class FitPlot(_Plot):
         left, right = self._px(sup_hi, 0).x(), self._px(self._x[1], 0).x()
         if right > left:
             p.fillRect(QRectF(left, a.top(), right - left, a.height()), shade)
+        if self._band is not None:
+            top_px, bottom_px = self._px(self._x[0], self._band[1]).y(), self._px(self._x[0], self._band[0]).y()
+            p.fillRect(QRectF(a.left(), top_px, a.width(), bottom_px - top_px), QColor(255, 255, 255, 26))
         for v in self._views:
             colour = QColor(_COLOURS.get(v.channel, "#ffffff"))
             if v.band is not None:

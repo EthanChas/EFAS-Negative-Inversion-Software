@@ -45,6 +45,8 @@ class NegativeToolPanel(CollapsiblePanel):
     region_cleared = pyqtSignal()
     metering_reset_requested = pyqtSignal()
     advanced_toggled = pyqtSignal(bool)
+    inversion_requested = pyqtSignal(str, str, str)
+    compare_requested = pyqtSignal(str, str)
 
     def __init__(self, parent: QWidget | None = None):
         super().__init__(
@@ -120,6 +122,37 @@ class NegativeToolPanel(CollapsiblePanel):
         self._base_label.setWordWrap(True)
         body.addWidget(self._base_label)
         self.set_film_base(None)
+        inv_title = QLabel("INVERSION METHOD")
+        inv_title.setProperty("role", "subtitle")
+        body.addWidget(inv_title)
+        self._inv_block = False
+        self._engine = QComboBox()
+        self._engine.addItem("Standard", "classic")
+        self._engine.addItem("Curve-informed (experimental)", "curve")
+        self._engine.setToolTip("Standard is the usual conversion. Curve-informed estimates exposure through a film profile's measured curves; it needs a profile and a sampled film base.")
+        self._engine_profile = QComboBox()
+        self._engine_profile.setToolTip("A film profile with measured (or supplied) curves")
+        self._engine_setup = QComboBox()
+        self._engine_setup.setToolTip("A saved camera set-up whose flare fraction is removed before the curve is used (optional)")
+        for combo in (self._engine, self._engine_profile, self._engine_setup):
+            combo.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
+            combo.setMinimumContentsLength(10)
+            combo.currentIndexChanged.connect(self._on_engine_changed)
+            body.addWidget(combo)
+        self._engine_note = QLabel("")
+        self._engine_note.setProperty("role", "hint")
+        self._engine_note.setWordWrap(True)
+        body.addWidget(self._engine_note)
+        self._ab_btn = QPushButton("Compare Methods...")
+        self._ab_btn.setToolTip("See the standard and the curve-informed conversion side by side, with numbers. Changes nothing.")
+        self._ab_btn.clicked.connect(lambda: self.compare_requested.emit(self._engine_profile.currentData() or "", self._engine_setup.currentData() or ""))
+        body.addWidget(self._ab_btn)
+        self._guidance = QLabel("")
+        self._guidance.setProperty("role", "hint")
+        self._guidance.setWordWrap(True)
+        body.addWidget(self._guidance)
+        self.set_inversion({"engine": "classic", "profile_id": "", "error": "", "covered": None, "base_ready": False}, [], [])
+
         self._advanced = QCheckBox("Advanced mode (scientific panels)")
         self._advanced.setToolTip("Show density, histogram, H&D and calibration panels. The same measurements run either way; this only shows them.")
         self._advanced.toggled.connect(self.advanced_toggled)
@@ -239,6 +272,51 @@ class NegativeToolPanel(CollapsiblePanel):
         else:
             self._base_swatch.setStyleSheet(f"background: rgb({rgb[0]},{rgb[1]},{rgb[2]}); border: 1px solid {THEME.border_color};")
             self._base_label.setText("Film base sampled. Every photo in this folder uses it.")
+
+    def _on_engine_changed(self, _index: int) -> None:
+        if self._inv_block:
+            return
+        engine = self._engine.currentData()
+        profile_id, setup_id = self._engine_profile.currentData() or "", self._engine_setup.currentData() or ""
+        if engine == "curve" and not profile_id:
+            return
+        self.inversion_requested.emit(engine, profile_id if engine == "curve" else "", setup_id if engine == "curve" else "")
+
+    def set_inversion(self, status: dict, profiles: list[dict], setups: list[dict]) -> None:
+        """Show which inversion method runs and offer the profiles that can drive the curve-informed one."""
+        self._inv_block = True
+        usable = [r for r in profiles if r["usable"]]
+        self._engine_profile.clear()
+        for r in usable:
+            self._engine_profile.addItem(f"{r['name']} ({r['film']})", r["id"])
+        self._engine_setup.clear()
+        self._engine_setup.addItem("No camera set-up", "")
+        for s in setups:
+            self._engine_setup.addItem(s["name"], s["id"])
+        curve_on = status.get("engine") == "curve"
+        self._engine.setCurrentIndex(1 if curve_on else 0)
+        if status.get("profile_id"):
+            self._engine_profile.setCurrentIndex(max(0, self._engine_profile.findData(status["profile_id"])))
+        self._engine.model().item(1).setEnabled(bool(usable))
+        self._engine_profile.setVisible(bool(usable))
+        self._engine_setup.setVisible(bool(usable) and curve_on)
+        self._ab_btn.setVisible(bool(usable))
+        if status.get("error"):
+            note = status["error"]
+        elif curve_on and status.get("covered") is not None:
+            note = f"{status['covered'] * 100:.0f}% of the picture is inside the profile's measured range; the rest is limited to the ends of the measured curve."
+        elif not usable:
+            note = "The standard method is in use. Curve-informed needs a film profile made from known exposures (Advanced mode > Sensitometry)."
+        elif not status.get("base_ready"):
+            note = "Curve-informed also needs the film base sampled (Sample Film Base)."
+        else:
+            note = "The standard method is in use."
+        self._engine_note.setText(note)
+        self._inv_block = False
+
+    def set_guidance(self, text: str) -> None:
+        self._guidance.setText(text)
+        self._guidance.setVisible(bool(text))
 
     def set_advanced(self, on: bool) -> None:
         """Show the Advanced Mode switch's state without emitting anything."""

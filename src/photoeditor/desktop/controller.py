@@ -2637,6 +2637,46 @@ class AppController(QObject):
         if message:
             self.notice.emit(f"This photo is saved with the curve-informed inversion, which could not be applied: {message}")
 
+    def compare_inversions(self, profile_id: str, setup_id: str = "") -> dict:
+        """The standard inversion and the curve-informed one for this photo, rendered through the same neutral settings at the same size, with numbers on
+        how they differ. Nothing about the photo changes. Returns {"error": reason} when the comparison cannot be made."""
+        s = self.state
+        if s.image_path is None or s.preview_rgb is None:
+            return {"error": "Open a photo first."}
+        if not s.negative_inverted and s.inversion_engine != "curve":
+            return {"error": "This photo is not set to be inverted, so there is nothing to compare."}
+        try:
+            setup = curve_engine.build_setup(
+                app_data_dir(), profile_id, setup_id, s.linear_base[0] if s.linear_base else None, s.linear_clear[0] if s.linear_clear else None
+            )
+        except curve_engine.CurveEngineUnavailable as exc:
+            return {"error": str(exc)}
+        if not self._ensure_linear_now():
+            return {"error": f"The scan could not be read for measurement: {self._linear_error}"}
+        try:
+            res, positive = curve_engine.preview_positive(self._linear[1], setup, None)
+        except dens_inversion.InversionError as exc:
+            return {"error": str(exc)}
+        neutral = dataclasses.replace(
+            EditParams.from_state(s),
+            exposure_ev=0.0, tone_curve_points=tuple(tuple(p) for p in DEFAULT_POINTS), saturation=0.0, temperature=0.0, tint=0.0, shadows=0.0,
+            highlights=0.0, sharpen_amount=0.0, dust_auto=False, scratch_lines=(), heal_strokes=(), clone_strokes=(), ai_dust=False, contrast=0.0,
+            chroma_denoise=0.0, local_contrast=0.0, vignette=0.0, border=0.0, carrier=False, wm_film="off", wm_info=False, crop_rect=None,
+            rotation_quarter_turns=0, flip_h=False, flip_v=False, fine_rotation=0.0, distortion=0.0,
+        )
+        scanned = self._negative_base()
+        renderer = Renderer()
+        classic, _a, _b, _c = renderer.render(scanned, dataclasses.replace(neutral, negative_inverted=True), ("compare", "standard", self._token()), scanned.shape[1], None,
+                                              want_stats=False, overlay=False, flatfield=None)
+        curve, _d, _e, _f = renderer.render(positive, dataclasses.replace(neutral, negative_inverted=False), ("compare", "curve", self._token()), positive.shape[1], None,
+                                            want_stats=False, overlay=False, flatfield=None)
+        a, b = to_uint8(classic), to_uint8(curve)
+        return {
+            "classic": a, "curve": b, "metrics": dens_inversion.compare_positives(a / 255.0, b / 255.0),
+            "tone": dens_inversion.tone_transfer(res.delta_density, a / 255.0, b / 255.0), "covered": res.covered, "poor": res.poorly_determined,
+            "notes": list(res.notes), "profile": setup.profile.name,
+        }
+
     def hq_source(self):
         """The full-resolution picture the sharp (HQ) pass starts from: the original, or for the curve method the positive made at full resolution."""
         s = self.state

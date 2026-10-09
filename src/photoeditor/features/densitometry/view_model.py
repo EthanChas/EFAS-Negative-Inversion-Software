@@ -129,3 +129,16 @@ def guidance_for(profile: FilmProfile):
     if cc is None:
         return None
     return gradient.guidance(cc.curve(), cc.supported())
+
+
+def model_view(curve, lo: float = -4.0, hi: float = 1.0) -> ChannelView:
+    """A curve with no measurements behind it (the model): drawn as a line, with no points, residuals or confidence."""
+    grid = np.linspace(lo, hi, BAND_POINTS)
+    values = np.asarray(curve(grid), dtype=np.float64)
+    gm = gradient.gamma(curve, (lo, hi))
+    empty = np.array([], dtype=np.float64)
+    return ChannelView(
+        "K", empty, empty, empty, np.array([], dtype=bool), grid, values, None, empty, grid, gradient.local_gradient(curve, grid), (lo, hi), "model", "model", (),
+        float("nan"), float("nan"), None, gm.gamma if gm else None, gm.interval if gm else None, None, gradient.iso6_geometry(curve, (lo, hi)),
+        gradient.regions(curve, (lo, hi)), ("Illustrative model: not measured from any film.",),
+    )

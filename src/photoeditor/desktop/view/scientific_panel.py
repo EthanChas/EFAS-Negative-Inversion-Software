@@ -8,11 +8,14 @@ from PyQt6.QtWidgets import (
     QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog, QFormLayout, QGridLayout, QHBoxLayout, QLabel, QMessageBox, QPushButton, QSizePolicy, QVBoxLayout, QWidget,
 )
 
-from ...features.densitometry import analysis, hd, profiles
+from ...features.densitometry import analysis, film_profile, fit, hd, profiles, view_model
+from ...features.densitometry import diagnostics as diagnostics_mod
 from ...features.densitometry.histogram import DensityHistogram
 from ...features.densitometry.linear import TRANSFER_LABELS, TRANSFERS
 from ...theme.tokens import THEME
 from .collapsible_panel import CollapsiblePanel
+from .fit_plots import FitPlot, GradientPlot, ResidualPlot
+from .plot_base import _Plot
 
 _CHANNELS = (("R", THEME.channel_red), ("G", THEME.channel_green), ("B", THEME.channel_blue))
 _LOG10_2 = 0.30103
@@ -23,54 +26,6 @@ def _hint(text: str) -> QLabel:
     label.setProperty("role", "hint")
     label.setWordWrap(True)
     return label
-
-
-class _Plot(QWidget):
-    """A plain plotting area: a margin for axis labels and a mapping from data to pixels."""
-
-    LEFT, RIGHT, TOP, BOTTOM = 34, 8, 8, 34
-
-    def __init__(self, height: int = 150, parent: QWidget | None = None):
-        super().__init__(parent)
-        self.setMinimumHeight(height)
-        self._x = (0.0, 1.0)
-        self._y = (0.0, 1.0)
-
-    def _area(self) -> QRectF:
-        return QRectF(self.LEFT, self.TOP, max(10, self.width() - self.LEFT - self.RIGHT), max(10, self.height() - self.TOP - self.BOTTOM))
-
-    def _px(self, x: float, y: float) -> QPointF:
-        a = self._area()
-        fx = (x - self._x[0]) / max(self._x[1] - self._x[0], 1e-9)
-        fy = (y - self._y[0]) / max(self._y[1] - self._y[0], 1e-9)
-        return QPointF(a.left() + fx * a.width(), a.bottom() - fy * a.height())
-
-    def _frame(self, p: QPainter, x_label: str, step_x: float, step_y: float) -> None:
-        p.fillRect(self.rect(), QColor(THEME.bg_input))
-        a = self._area()
-        grid, text = QColor(THEME.border_color), QColor(THEME.text_muted)
-        grid.setAlpha(255)
-        p.setFont(QFont(THEME.font_family, 7))
-        v = np.ceil(self._x[0] / step_x) * step_x
-        while v <= self._x[1] + 1e-9:
-            pt = self._px(v, self._y[0])
-            p.setPen(QPen(QColor("#2a2a2a")))
-            p.drawLine(QPointF(pt.x(), a.top()), QPointF(pt.x(), a.bottom()))
-            p.setPen(text)
-            p.drawText(QRectF(pt.x() - 18, a.bottom() + 2, 36, 14), Qt.AlignmentFlag.AlignCenter, f"{v:g}")
-            v += step_x
-        v = np.ceil(self._y[0] / step_y) * step_y
-        while v <= self._y[1] + 1e-9:
-            pt = self._px(self._x[0], v)
-            p.setPen(QPen(QColor("#2a2a2a")))
-            p.drawLine(QPointF(a.left(), pt.y()), QPointF(a.right(), pt.y()))
-            p.setPen(text)
-            p.drawText(QRectF(0, pt.y() - 7, self.LEFT - 4, 14), Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter, f"{v:g}")
-            v += step_y
-        p.setPen(QPen(grid))
-        p.drawRect(a)
-        p.setPen(text)
-        p.drawText(QRectF(a.left(), a.bottom() + 16, a.width(), 14), Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter, x_label)
 
 
 class DensityHistogramPlot(_Plot):
@@ -134,48 +89,6 @@ class DensityHistogramPlot(_Plot):
             p.drawText(QPointF(pt.x() - 58 if left_side else pt.x() + 2, a.top() + 9 + 10 * (i % 4)), label)
 
 
-class SensitometryPlot(_Plot):
-    """The H&D viewer: density against log exposure for curve data the user supplied and/or the model, with the photograph's density band."""
-
-    def __init__(self, parent: QWidget | None = None):
-        super().__init__(190, parent)
-        self._curves: list[tuple[np.ndarray, np.ndarray, QColor, bool]] = []
-        self._band: tuple[float, float] | None = None
-        self._empty = "No curve to show"
-
-    def set_data(self, curves, band, empty_text: str) -> None:
-        self._curves, self._band, self._empty = curves, band, empty_text
-        self.update()
-
-    def paintEvent(self, _event) -> None:
-        p = QPainter(self)
-        p.setRenderHint(QPainter.RenderHint.Antialiasing)
-        if not self._curves:
-            self._x, self._y = (-4.0, 1.0), (0.0, 4.0)
-            self._frame(p, "log exposure (lux-seconds)", 1.0, 1.0)
-            p.setPen(QColor(THEME.text_muted))
-            p.drawText(self.rect().adjusted(40, 0, -10, 0), Qt.AlignmentFlag.AlignCenter | Qt.TextFlag.TextWordWrap, self._empty)
-            return
-        xs = np.concatenate([c[0] for c in self._curves])
-        ys = np.concatenate([c[1].ravel() for c in self._curves])
-        self._x = (float(np.floor(xs.min())), float(np.ceil(xs.max())))
-        self._y = (0.0, float(max(2.0, np.ceil(ys.max() * 2) / 2 + 0.5)))
-        self._frame(p, "log exposure (lux-seconds)", 1.0, 0.5)
-        a = self._area()
-        if self._band is not None:
-            top, bottom = self._px(self._x[0], self._band[1]), self._px(self._x[0], self._band[0])
-            p.fillRect(QRectF(a.left(), top.y(), a.width(), bottom.y() - top.y()), QColor(255, 255, 255, 28))
-        for x, d, colour, dashed in self._curves:
-            pen = QPen(colour, 1.6, Qt.PenStyle.DashLine if dashed else Qt.PenStyle.SolidLine)
-            p.setPen(pen)
-            cols = d.reshape(len(x), -1)
-            for c in range(cols.shape[1]):
-                pen.setColor(QColor(_CHANNELS[c][1]) if cols.shape[1] == 3 and not dashed else colour)
-                p.setPen(pen)
-                poly = QPolygonF([self._px(float(a_), float(b_)) for a_, b_ in zip(x, cols[:, c])])
-                p.drawPolyline(poly)
-
-
 class AdvancedPanels(QWidget):
     """The four expandable scientific panels. Hidden until Advanced Mode is switched on."""
 
@@ -183,11 +96,16 @@ class AdvancedPanels(QWidget):
     clear_pick_toggled = pyqtSignal(bool)
     clear_ref_cleared = pyqtSignal()
     transfer_changed = pyqtSignal(str)
+    characterize_requested = pyqtSignal()
+    profiles_requested = pyqtSignal()
+    setups_requested = pyqtSignal()
+    profile_chosen = pyqtSignal(str)
+    profile_imported = pyqtSignal(object)
 
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
         self._measurement = None
-        self._curve: profiles.CurveSet | None = None
+        self._profile = None
         self._model = hd.ModelCurve()
         self._probe_text = "Turn on Probe, then hover the raw scan."
         col = QVBoxLayout(self)
@@ -303,28 +221,40 @@ class AdvancedPanels(QWidget):
         panel = CollapsiblePanel(
             "Sensitometry (H&D)", collapsible=True, start_expanded=False,
             help_text=("The Hurter-Driffield (characteristic) curve plots a film's density against the logarithm of the exposure it received. It rises from "
-                       "the film base (Dmin), bends through the toe, runs along a straight line whose slope is the gamma, bends again at the shoulder "
-                       "and levels off at the maximum density (Dmax).\n\nA photograph records densities but not the exposures behind them, so EFAS "
-                       "cannot draw this curve from your picture. Load measured or published curve data (for example from a step tablet scan), or "
-                       "show the model curve to see how the parts of the curve fit together. The shaded band shows which densities your picture "
-                       "uses."),
+                       "the film base, bends through the toe, runs along a straight line whose slope is the gamma, bends again at the shoulder and "
+                       "levels off at the maximum density.\n\nA photograph records densities but not the exposures behind them, so EFAS cannot draw "
+                       "this curve from your picture. A curve here comes from a film profile: one you measured with Film Characterization (a strip "
+                       "exposed through a step tablet), or one you supplied. Points are the measurements with their uncertainty, the line is the fit, "
+                       "the lighter band its 95% range, and the shaded zones at the sides are beyond what was measured. The strip below shows what the "
+                       "fit missed, and the lower plot the gradient (the film's contrast) along the curve."),
         )
         body = panel.body()
+        self._profile_combo = QComboBox()
+        self._profile_combo.currentIndexChanged.connect(self._profile_picked)
+        body.addWidget(self._profile_combo)
+        characterize = QPushButton("Film Characterization...")
+        characterize.setToolTip("Calibrate the camera with a step tablet, fit a film's curves from an exposed strip, or test the sensor's linearity.")
+        characterize.clicked.connect(self.characterize_requested)
+        body.addWidget(characterize)
+        manage = QPushButton("Film Profiles...")
+        manage.setToolTip("List, duplicate, edit, import, export, compare and apply film profiles.")
+        manage.clicked.connect(self.profiles_requested)
+        body.addWidget(manage)
         self._curve_banner = QLabel("")
         self._curve_banner.setWordWrap(True)
         body.addWidget(self._curve_banner)
-        self._hd_plot = SensitometryPlot()
-        body.addWidget(self._hd_plot)
-        row = QHBoxLayout()
-        load = QPushButton("Load Curve Data...")
-        load.setToolTip("A .json or .csv file of log exposure against R, G, B density. See docs/scientific-inversion-design.md for the format.")
+        self._fit_plot = FitPlot()
+        self._resid_plot = ResidualPlot()
+        self._grad_plot = GradientPlot()
+        body.addWidget(self._fit_plot)
+        body.addWidget(self._resid_plot)
+        body.addWidget(self._grad_plot)
+        load = QPushButton("Import Curve File...")
+        load.setToolTip("A .json or .csv file of log exposure against R, G, B density. It becomes a 'supplied' profile, which EFAS does not verify.")
         load.clicked.connect(self._load_curve)
-        row.addWidget(load, 1)
-        drop = QPushButton("Remove")
-        drop.clicked.connect(self._remove_curve)
-        row.addWidget(drop)
-        body.addLayout(row)
-        self._show_model = QCheckBox("Show model curve (not measured)")
+        body.addWidget(load)
+        self._show_model = QCheckBox("Show a model curve")
+        self._show_model.setToolTip("An illustrative curve, not measured from any film.")
         self._show_model.toggled.connect(self._model_toggled)
         body.addWidget(self._show_model)
         self._model_box = QWidget()
@@ -347,20 +277,33 @@ class AdvancedPanels(QWidget):
         body.addWidget(self._hd_readout)
         return panel
 
+    def set_profiles(self, rows: list[dict], selected: str = "") -> None:
+        """The film profiles on offer in the viewer (name, film, kind), with the one to show chosen."""
+        self._profile_combo.blockSignals(True)
+        self._profile_combo.clear()
+        self._profile_combo.addItem("No profile", "")
+        for r in rows:
+            self._profile_combo.addItem(f"{r['name']} ({r['film']})", r["id"])
+        self._profile_combo.setCurrentIndex(max(0, self._profile_combo.findData(selected)))
+        self._profile_combo.blockSignals(False)
+
+    def set_profile(self, profile) -> None:
+        self._profile = profile
+        self._draw_hd()
+
+    def _profile_picked(self, _index: int) -> None:
+        self.profile_chosen.emit(self._profile_combo.currentData() or "")
+
     def _load_curve(self) -> None:
-        path, _ = QFileDialog.getOpenFileName(self, "Load curve data", "", "Curve data (*.json *.csv)")
+        path, _ = QFileDialog.getOpenFileName(self, "Import curve data", "", "Curve data (*.json *.csv)")
         if not path:
             return
         try:
-            self._curve = profiles.load_curve_file(path)
-        except profiles.ProfileError as exc:
+            profile = film_profile.from_curve_set(profiles.load_curve_file(path))
+        except (profiles.ProfileError, fit.FitError, film_profile.ProfileError) as exc:
             QMessageBox.warning(self, "Curve data", str(exc))
             return
-        self._draw_hd()
-
-    def _remove_curve(self) -> None:
-        self._curve = None
-        self._draw_hd()
+        self.profile_imported.emit(profile)
 
     def _model_toggled(self, on: bool) -> None:
         self._model_box.setVisible(on)
@@ -374,55 +317,70 @@ class AdvancedPanels(QWidget):
         self._model = hd.ModelCurve(v["dmin"], v["dmax"], v["gamma"], x0=-1.5, d0=mid, toe_sharpness=v["toe_sharpness"], shoulder_sharpness=v["shoulder_sharpness"])
         self._draw_hd()
 
+    def _model_curve(self):
+        m = self._model
+        return fit.SoftplusCurve(gamma=m.gamma, x0=m.x0, dmax=max(m.dmax - m.dmin, 0.2), toe=m.toe_sharpness, shoulder=m.shoulder_sharpness)
+
     def _draw_hd(self) -> None:
-        curves, readout = [], []
-        banner = ("No curve loaded. EFAS never draws an H&D curve from a photograph, because a photograph does not record the exposures that made "
-                  "it. Load measured or published curve data, or show the model.")
+        views: list = []
+        readout: list[str] = []
+        banner = ("No film profile selected. EFAS never draws an H&D curve from a photograph, because a photograph does not record the exposures that made "
+                  "it. Choose a profile, make one with Film Characterization, or show the model.")
         colour = THEME.text_muted
-        base_dmin = None
-        reference = None
-        if self._curve is not None:
-            c = self._curve
-            curves.append((c.log_exposure, c.density, QColor("#ffffff"), False))
-            banner = f"{profiles.KIND_LABELS[c.kind]}: {c.name}" + (f" - {c.source}" if c.source else "") + (f" - {c.densitometry}" if c.densitometry else "")
-            colour = THEME.accent_hover if c.is_measured() else THEME.status_warning
-            channel = 1 if c.channels() == 3 else 0
-            a = hd.analyse_curve(c.log_exposure, c.density[:, channel])
-            base_dmin, reference = a.dmin, (c.log_exposure, c.density[:, channel])
-            readout.append(self._analysis_text(a, "G" if c.channels() == 3 else "grey"))
-        if self._show_model.isChecked():
-            x, d = hd.sample(self._model)
-            curves.append((x, d, QColor("#e0b040"), True))
-            if self._curve is None:
-                banner = "MODEL CURVE: illustrative only, not measured from your film."
-                colour = THEME.status_warning
-                a = hd.analyse_curve(x, d)
-                base_dmin, reference = self._model.dmin, (x, d)
-                readout.append(self._analysis_text(a, "model"))
+        label = "log exposure"
+        p = self._profile
+        if p is not None:
+            try:
+                views = [view_model.channel_view(ch, p.curves[ch]) for ch in ("R", "G", "B", "K") if ch in p.curves]
+            except (film_profile.ProfileError, fit.FitError, ValueError) as exc:
+                views = []
+                banner = f"This profile's curves could not be drawn: {exc}"
+            else:
+                banner = f"{film_profile.KIND_LABELS[p.kind]}: {p.name} ({p.identity_text()})"
+                colour = THEME.accent_hover if p.kind == "measured" else THEME.status_warning
+                scales = {cc.scale for cc in p.curves.values()}
+                label = "log exposure (lux-seconds)" if scales == {"absolute"} else "log exposure (relative)"
+                for v in views:
+                    readout.append(f"{v.channel}: " + view_model.quality_text(v))
+                    if v.gamma is not None:
+                        readout.append(f"    gradient peaks at {v.gamma:.2f} (gamma), log exposure {v.gamma_interval[0]:.2f} to {v.gamma_interval[1]:.2f}; measured range "
+                                       f"{v.support[0]:.2f} to {v.support[1]:.2f}")
+                    if v.average is not None:
+                        a = v.average
+                        readout.append(f"    average gradient {a['gradient']:.2f} over log exposure {a['interval'][0]:.2f} to {a['interval'][1]:.2f} (the middle of the measured range)")
+                    iso = v.iso6
+                    if iso.get("available") and p.kind in ("measured", "supplied") and len(views) == 1:
+                        readout.append(f"    ISO 6 geometry (black-and-white negatives only): density rise {iso['rise']:.2f} over 1.30 log H (the criterion is 0.80)")
+                g = view_model.guidance_for(p)
+                if g is not None:
+                    readout += [g.shadow, g.midtone, g.highlight, g.note]
+        elif self._show_model.isChecked():
+            views = [view_model.model_view(self._model_curve())]
+            banner = "MODEL CURVE: illustrative only, not measured from your film."
+            colour = THEME.status_warning
+            readout.append(f"model: gamma about {views[0].gamma:.2f}." if views[0].gamma else "model")
         self._curve_banner.setText(banner)
         self._curve_banner.setStyleSheet(f"color: {colour};")
         band = None
         m = self._measurement
-        if m is not None and base_dmin is not None and reference is not None:
+        if m is not None and views:
             top = float(np.mean(m.density_range()))
-            band = (base_dmin, base_dmin + top)
-            lo = hd.log_exposure_at(reference[0], reference[1], band[0] + hd.DEFAULT_GRADIENT_TOE_OFFSET)
-            hi = hd.log_exposure_at(reference[0], reference[1], band[1])
+            band = (0.0, top)
+            ref = next((v for v in views if v.channel in ("G", "K")), views[0])
+            lo = hd.log_exposure_at(ref.grid, ref.curve, hd.DEFAULT_GRADIENT_TOE_OFFSET)
+            hi = hd.log_exposure_at(ref.grid, ref.curve, top)
             if np.isfinite(lo) and np.isfinite(hi):
-                readout.append(f"This picture's density range ({top:.2f} above base) implies a log-exposure range of {hi - lo:.2f} "
-                               f"(about {(hi - lo) / _LOG10_2:.1f} stops) on this curve, counted from 0.10 above the film base, since a curve only reaches its base asymptotically. "
-                               "This assumes the curve describes your film, exposure and development.")
+                beyond = hi > ref.support[1] or lo < ref.support[0]
+                readout.append(f"This picture's density range ({top:.2f} above base) implies a log-exposure range of {hi - lo:.2f} (about {(hi - lo) / _LOG10_2:.1f} stops) on this curve, "
+                               "counted from 0.10 above the film base, since a curve only reaches its base asymptotically. "
+                               + ("Part of that lies beyond the measured range, so it is extrapolated. " if beyond and ref.representation != "model" else "")
+                               + "This assumes the curve describes your film, exposure and development.")
             else:
                 readout.append("The picture's density range runs past the end of this curve, so no exposure range is implied.")
-        empty = "Load curve data or show the model curve to see an H&D plot."
-        self._hd_plot.set_data(curves, band, empty)
+        self._fit_plot.set_views(views, label, "Choose a film profile or show the model curve to see an H&D plot.", band)
+        self._resid_plot.set_views(views)
+        self._grad_plot.set_views(views)
         self._hd_readout.setText("\n".join(readout))
-
-    @staticmethod
-    def _analysis_text(a: hd.CurveAnalysis, label: str) -> str:
-        gamma = f"gamma {a.gamma:.2f}" if a.gamma is not None else "no clear straight-line portion"
-        avg = f"average gradient {a.average_gradient:.2f} (Dmin + 0.10 to +1.30 log E)" if a.average_gradient is not None else "average gradient out of range"
-        return f"{label}: Dmin {a.dmin:.2f}, Dmax {a.dmax:.2f}, {gamma}, {avg}."
 
     # --- Calibration and diagnostics -----------------------------------------------------------------------------------------------------
 
@@ -445,6 +403,10 @@ class AdvancedPanels(QWidget):
             self._transfer.addItem(TRANSFER_LABELS[key], key)
         self._transfer.currentIndexChanged.connect(lambda _i: self.transfer_changed.emit(self._transfer.currentData()))
         body.addWidget(self._transfer)
+        setups = QPushButton("Camera Set-ups...")
+        setups.setToolTip("Saved calibrations of your camera and backlight, made in Film Characterization.")
+        setups.clicked.connect(self.setups_requested)
+        body.addWidget(setups)
         return panel
 
     def set_transfer(self, key: str) -> None:
@@ -471,6 +433,18 @@ class AdvancedPanels(QWidget):
             colour = THEME.status_warning if d.level == "warning" else THEME.text_muted
             html.append(f"<li><span style='color:{colour}'>{tag}:</span> {d.text}</li>")
         html.append("</ul>")
+        d = m.diagnosis
+        if d is not None:
+            html.append("<p><b>Where the measurement can be trusted</b></p><table cellpadding='2'>")
+            for key in diagnostics_mod.CATEGORIES:
+                share = d.any_channel.get(key, 0.0)
+                html.append(f"<tr><td>{diagnostics_mod.CATEGORY_LABELS[key]}</td><td align='right'>{share * 100:.1f}%</td><td style='color:{THEME.text_muted}'>&nbsp;{d.evidence[key]}</td></tr>")
+            html.append("</table>")
+            if d.headroom_stops is not None:
+                html.append(f"<p>The film base reads well below the sensor's top: about {d.headroom_stops:.1f} stops more light would still keep it unclipped "
+                            f"and reach about {d.headroom_density:.2f} more density.</p>")
+            lo_hi = ", ".join(f"{('R', 'G', 'B')[i]} {iv.value:.2f} ({iv.low:.2f} to {iv.high:.2f})" for i, iv in enumerate(d.dmax))
+            html.append(f"<p>Dmax above base with a 95% range: {lo_hi}.</p>")
         html.append(f"<p><b>Confidence in these numbers:</b> {m.confidence}</p>")
         html.append("<p><b>Inversion model (current)</b></p><p>Turning the negative into a positive still uses the existing method, unchanged: it works on "
                     "the displayed picture and stretches each colour between a low and a high density (or your sampled film base) to black and white. "

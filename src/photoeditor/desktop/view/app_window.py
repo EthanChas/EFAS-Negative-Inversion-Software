@@ -82,6 +82,11 @@ from .loading_overlay import LoadingOverlay
 from .masking_panel import MaskingToolPanel
 from .negative_tool_panel import NegativeToolPanel
 from .scientific_panel import AdvancedPanels
+from .characterization_dialog import CharacterizationDialog
+from .profile_dialogs import ABCompareDialog, ProfilesDialog, SetupsDialog
+from ...features.densitometry import film_profile as fp
+from ...features.densitometry import view_model as dens_view_model
+from ..settings_store import qsettings
 from ...features.densitometry import analysis as dens_analysis
 from .dust_panel import DustToolPanel
 from .export_panel import ExportPanel
@@ -307,6 +312,7 @@ class AppWindow(QMainWindow):
         self._keys = KeyMap()
         self._base_pick_image = None
         self._pick_kind = "base"
+        self._viewer_profile = str(qsettings().value("sensitometry/viewer_profile", "") or "")
         self._probe_image = None
         self._region_drawing = False
         self._measure_timer = QTimer(self)
@@ -858,12 +864,21 @@ class AppWindow(QMainWindow):
         self._advanced.clear_pick_toggled.connect(self._on_clear_pick_toggled)
         self._advanced.clear_ref_cleared.connect(lambda: self.controller.set_linear_reference("clear", None))
         self._advanced.transfer_changed.connect(self._on_scan_transfer_changed)
+        self._advanced.characterize_requested.connect(self._open_characterization)
+        self._advanced.profiles_requested.connect(self._open_profiles)
+        self._advanced.setups_requested.connect(self._open_setups)
+        self._advanced.profile_chosen.connect(self._on_viewer_profile_chosen)
+        self._advanced.profile_imported.connect(self._on_profile_imported)
+        self._negative_tool.inversion_requested.connect(self._on_inversion_requested)
+        self._negative_tool.compare_requested.connect(self._on_compare_requested)
+        self.controller.inversion_changed.connect(self._sync_inversion)
         self._advanced.set_transfer(app_settings.get("scan_transfer"))
         self._negative_tool.advanced_toggled.connect(self._on_advanced_toggled)
         self._negative_tool.set_advanced(app_settings.get("advanced_mode"))
         self._advanced.setVisible(app_settings.get("advanced_mode"))
         self.controller.measurement_changed.connect(self._on_measurement_changed)
         negative_tools_col.addWidget(self._advanced)
+        self._sync_inversion()
 
         self._flatfield_tool = FlatFieldPanel()
         self._flatfield_tool.reference_picked.connect(self.controller.set_folder_flatfield_from_reference)
@@ -1528,6 +1543,7 @@ class AppWindow(QMainWindow):
             self._negative_tool.set_pick_active(False)
             self._image_view.set_pick_mode(False)
         self._sync_film_base()
+        self._sync_inversion()
         self._probe_image = None
         self._advanced.set_probe_active(False)
         self._advanced.set_probe(None)
@@ -1907,6 +1923,88 @@ class AppWindow(QMainWindow):
         if self.controller.state.image_rgb is not None:
             self._coord_label.setText("Move the mouse over the image to inspect a pixel.")
         self._histogram_panel.set_marker(None)
+
+    def _sync_inversion(self) -> None:
+        """Bring the Negative tab's inversion-method controls and the Sensitometry viewer in line with the open photo and the stored profiles."""
+        c = self.controller
+        try:
+            profiles = c.profile_store().list()
+            setups = c.setup_store().list()
+        except OSError:
+            profiles, setups = [], []
+        status = c.inversion_status()
+        self._negative_tool.set_inversion(status, profiles, setups)
+        self._advanced.set_profiles(profiles, self._viewer_profile)
+        self._show_viewer_profile()
+        text = ""
+        if status["engine"] == "curve" and status["profile_id"]:
+            try:
+                g = dens_view_model.guidance_for(c.profile_store().load(status["profile_id"]))
+            except fp.ProfileError:
+                g = None
+            if g is not None:
+                text = f"{g.shadow} {g.highlight} {g.note}"
+        self._negative_tool.set_guidance(text)
+
+    def _show_viewer_profile(self) -> None:
+        profile = None
+        if self._viewer_profile:
+            try:
+                profile = self.controller.profile_store().load(self._viewer_profile)
+            except fp.ProfileError:
+                profile = None
+        self._advanced.set_profile(profile)
+
+    def _on_viewer_profile_chosen(self, ident: str) -> None:
+        self._viewer_profile = ident
+        qsettings().setValue("sensitometry/viewer_profile", ident)
+        self._show_viewer_profile()
+
+    def _on_profile_imported(self, profile) -> None:
+        try:
+            self.controller.profile_store().save(profile)
+        except (OSError, fp.ProfileError) as exc:
+            QMessageBox.warning(self, "Film profile", f"The profile could not be saved: {exc}")
+            return
+        self._on_viewer_profile_chosen(profile.id)
+        self._sync_inversion()
+        self.controller.notice.emit(f"Imported '{profile.name}' as a supplied film profile")
+
+    def _on_inversion_requested(self, engine: str, profile_id: str, setup_id: str) -> None:
+        message = self.controller.set_inversion_engine(engine, profile_id, setup_id)
+        if message:
+            QMessageBox.information(self, "Inversion method", message)
+        self._sync_inversion()
+
+    def _on_compare_requested(self, profile_id: str, setup_id: str) -> None:
+        if not profile_id:
+            QMessageBox.information(self, "Compare methods", "Choose a film profile first.")
+            return
+        dlg = ABCompareDialog(self.controller, profile_id, setup_id, self)
+        dlg.adopt.connect(lambda ident: self._on_inversion_requested("curve", ident, setup_id))
+        dlg.exec()
+
+    def _open_characterization(self) -> None:
+        if self.controller.state.image_path is None:
+            QMessageBox.information(self, "Film Characterization", "Open the photo of a step tablet, or of a developed exposure strip, first.")
+            return
+        dlg = CharacterizationDialog(self.controller, self)
+        dlg.profile_saved.connect(lambda ident: (self._on_viewer_profile_chosen(ident), self._sync_inversion()))
+        dlg.setup_saved.connect(lambda _ident: self._sync_inversion())
+        dlg.exec()
+
+    def _open_profiles(self) -> None:
+        dlg = ProfilesDialog(self.controller, self)
+        dlg.use_for_photo.connect(lambda ident: (self._on_inversion_requested("curve", ident, ""), dlg.refresh()))
+        dlg.use_in_viewer.connect(lambda ident: (self._on_viewer_profile_chosen(ident), self._sync_inversion()))
+        dlg.changed.connect(self._sync_inversion)
+        dlg.exec()
+        self._sync_inversion()
+
+    def _open_setups(self) -> None:
+        dlg = SetupsDialog(self.controller, self)
+        dlg.changed.connect(self._sync_inversion)
+        dlg.exec()
 
     def _on_advanced_toggled(self, on: bool) -> None:
         app_settings.save({"advanced_mode": bool(on)})
