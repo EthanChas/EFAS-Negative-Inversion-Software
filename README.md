@@ -17,6 +17,7 @@ Built in **Python** with **PyQt6**. Created by Ethan.
 - **Look presets** and per-module presets, copy and paste of settings between photos
 - **Proofing tools**: test strip, ring-around, split view, contact sheets
 - **Export**: JPEG, PNG and TIFF (16-bit supported), size and quality options, metadata and XMP, batch export
+- **Scientific measurement (Advanced mode)**: linear RAW values, optical density, per-channel film base (Dmin) and Dmax, a density histogram, an H&D curve viewer for curve data you supply, and the calibration behind every number. See [the design document](docs/scientific-inversion-design.md)
 - **Updates**: Info > Version, with a startup notice when a new version is out (see Updates below)
 - **Data safety**: automatic backups, startup health check with restore, and full data export/import (Settings > Data & backup)
 

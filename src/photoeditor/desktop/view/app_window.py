@@ -81,6 +81,8 @@ from .module_menu import ModuleMenus
 from .loading_overlay import LoadingOverlay
 from .masking_panel import MaskingToolPanel
 from .negative_tool_panel import NegativeToolPanel
+from .scientific_panel import AdvancedPanels
+from ...features.densitometry import analysis as dens_analysis
 from .dust_panel import DustToolPanel
 from .export_panel import ExportPanel
 from .shadows_highlights_panel import ShadowsHighlightsToolPanel
@@ -304,7 +306,13 @@ class AppWindow(QMainWindow):
         self._proof_rotation = 0
         self._keys = KeyMap()
         self._base_pick_image = None
+        self._pick_kind = "base"
+        self._probe_image = None
         self._region_drawing = False
+        self._measure_timer = QTimer(self)
+        self._measure_timer.setSingleShot(True)
+        self._measure_timer.setInterval(300)
+        self._measure_timer.timeout.connect(self._run_measurement)
         self._session = session_store.load()
         self._open_tab = ""
         self._filmstrip_folder = ""
@@ -844,6 +852,18 @@ class AppWindow(QMainWindow):
         self._negative_tool.rgb_preview_requested.connect(self.controller.preview_invert_rgb)
         self.controller.negative_state_changed.connect(self._sync_negative_panel)
         negative_tools_col.addWidget(self._negative_tool)
+
+        self._advanced = AdvancedPanels()
+        self._advanced.probe_toggled.connect(self._on_probe_toggled)
+        self._advanced.clear_pick_toggled.connect(self._on_clear_pick_toggled)
+        self._advanced.clear_ref_cleared.connect(lambda: self.controller.set_linear_reference("clear", None))
+        self._advanced.transfer_changed.connect(self._on_scan_transfer_changed)
+        self._advanced.set_transfer(app_settings.get("scan_transfer"))
+        self._negative_tool.advanced_toggled.connect(self._on_advanced_toggled)
+        self._negative_tool.set_advanced(app_settings.get("advanced_mode"))
+        self._advanced.setVisible(app_settings.get("advanced_mode"))
+        self.controller.measurement_changed.connect(self._on_measurement_changed)
+        negative_tools_col.addWidget(self._advanced)
 
         self._flatfield_tool = FlatFieldPanel()
         self._flatfield_tool.reference_picked.connect(self.controller.set_folder_flatfield_from_reference)
@@ -1508,6 +1528,10 @@ class AppWindow(QMainWindow):
             self._negative_tool.set_pick_active(False)
             self._image_view.set_pick_mode(False)
         self._sync_film_base()
+        self._probe_image = None
+        self._advanced.set_probe_active(False)
+        self._advanced.set_probe(None)
+        self._schedule_measurement(now=True)
         self._refresh_edit_actions()
         self._exposure_tool.reset()
         self._exposure_tool.set_value(state.exposure_ev)
@@ -1615,8 +1639,9 @@ class AppWindow(QMainWindow):
         state = self.controller.state
         if self._showing_pre_crop():
             self._image_view.update_pixels(state.pre_crop_rgb)
-        elif self._base_pick_image is None:
+        elif self._base_pick_image is None and self._probe_image is None:
             self._image_view.update_pixels(state.image_rgb)
+        self._schedule_measurement()
         self._refresh_split()
         self._refresh_overlay()
         self._refresh_export_hints()
@@ -1869,6 +1894,11 @@ class AppWindow(QMainWindow):
         QMessageBox.warning(self, "Couldn't open image", message)
 
     def _on_pixel_hovered(self, x: int, y: int, rgb: tuple[int, int, int]) -> None:
+        if self._probe_image is not None:
+            values = self.controller.linear_values_at(x, y)
+            m = self.controller.current_measurement()
+            if values is not None and m is not None:
+                self._advanced.set_probe(dens_analysis.density_at(m, values))
         r, g, b = rgb
         self._coord_label.setText(f"X: {x}   Y: {y}       RGB: ({r}, {g}, {b})")
         self._histogram_panel.set_marker(luminance_of(rgb))
@@ -1878,17 +1908,87 @@ class AppWindow(QMainWindow):
             self._coord_label.setText("Move the mouse over the image to inspect a pixel.")
         self._histogram_panel.set_marker(None)
 
+    def _on_advanced_toggled(self, on: bool) -> None:
+        app_settings.save({"advanced_mode": bool(on)})
+        self._advanced.setVisible(on)
+        if on:
+            self._schedule_measurement(now=True)
+        else:
+            self._end_probe()
+
+    def _schedule_measurement(self, now: bool = False) -> None:
+        advanced = getattr(self, "_advanced", None)
+        if advanced is None or not advanced.isVisibleTo(self):
+            return
+        if now:
+            self._measure_timer.stop()
+            self._run_measurement()
+        else:
+            self._measure_timer.start()
+
+    def _run_measurement(self) -> None:
+        if self._advanced.isVisibleTo(self):
+            self.controller.request_linear()
+
+    def _on_measurement_changed(self) -> None:
+        c = self.controller
+        self._advanced.set_measurement(c.current_measurement(), c.linear_error(), c.linear_busy(), c.state.image_path is not None)
+
+    def _on_scan_transfer_changed(self, key: str) -> None:
+        app_settings.save({"scan_transfer": key})
+        self.controller.scan_transfer_changed()
+
+    def _on_probe_toggled(self, on: bool) -> None:
+        """On: the raw scan replaces the view and the cursor reads the density under it (the same scan the film base is sampled on)."""
+        if not on:
+            self._end_probe()
+            return
+        self._end_base_pick()
+        raw = self.controller.render_raw_scan()
+        if raw is None:
+            self._advanced.set_probe_active(False)
+            return
+        self.controller.request_linear()
+        if self._split:
+            self.set_split(False)
+        self._probe_image = raw
+        self._image_view.update_pixels(raw)
+        self._coord_label.setText("Probe: move the cursor over the raw scan to read its density.")
+
+    def _end_probe(self) -> None:
+        if self._probe_image is None:
+            return
+        self._probe_image = None
+        self._advanced.set_probe_active(False)
+        self._advanced.set_probe(None)
+        state = self.controller.state
+        if state.image_rgb is not None:
+            self._image_view.update_pixels(state.pre_crop_rgb if self._showing_pre_crop() else state.image_rgb)
+
+    def _on_clear_pick_toggled(self, on: bool) -> None:
+        """Arms the same raw-scan pick as the film base, but the click samples the bare backlight."""
+        if not on:
+            self._end_base_pick()
+            return
+        self._end_probe()
+        self._arm_raw_pick("clear", "Clear light: click a spot with no film in it (the bare backlight) on the raw scan.")
+
     def _on_base_pick_toggled(self, on: bool) -> None:
         """Armed: the raw scan - uncropped and uninverted, so the clear film border is on screen - replaces the view, and the next click on
         it measures the film base for the whole roll. Disarmed: the edit comes back."""
         if not on:
             self._end_base_pick()
             return
+        self._end_probe()
+        self._arm_raw_pick("base", "Film base: click the clear, unexposed film border on the raw scan.")
+
+    def _arm_raw_pick(self, kind: str, message: str) -> None:
         c = self.controller
         self._end_region_draw()
         raw = c.render_raw_scan()
         if raw is None:
             self._negative_tool.set_pick_active(False)
+            self._advanced.set_clear_pick_active(False)
             return
         if self._crop_tool.is_crop_active():
             self._crop_tool.set_crop_mode(False)
@@ -1898,9 +1998,10 @@ class AppWindow(QMainWindow):
         self._image_view.set_tool(None)
         self.set_split(False)
         self._base_pick_image = raw
+        self._pick_kind = kind
         self._image_view.update_pixels(raw)
         self._image_view.set_pick_mode(True, eyedropper_cursor())
-        self._coord_label.setText("Film base: click the clear, unexposed film border (the rebate) on the raw scan.")
+        self._coord_label.setText(message)
 
     def _end_base_pick(self) -> None:
         if self._base_pick_image is None:
@@ -1908,6 +2009,7 @@ class AppWindow(QMainWindow):
         self._base_pick_image = None
         self._image_view.set_pick_mode(False)
         self._negative_tool.set_pick_active(False)
+        self._advanced.set_clear_pick_active(False)
         state = self.controller.state
         if state.image_rgb is not None:
             self._image_view.update_pixels(state.pre_crop_rgb if self._showing_pre_crop() else state.image_rgb)
@@ -1926,9 +2028,15 @@ class AppWindow(QMainWindow):
 
     def _on_pixel_picked(self, x: int, y: int, rgb: tuple[int, int, int]) -> None:
         if self._base_pick_image is not None:
+            kind = self._pick_kind
+            if kind == "clear":
+                self._end_base_pick()
+                problems = self.controller.set_linear_reference("clear", (x, y))
+                self.controller.notice.emit(problems[0] if problems else "Clear light sampled for this roll")
+                return
             base = self._sample_base(x, y)
             self._end_base_pick()
-            self.controller.set_film_base(base)
+            self.controller.set_film_base(base, pick=(x, y))
             return
         tool = self._dust_tool.active_tool()
         if tool == "line":
@@ -2393,6 +2501,8 @@ class AppWindow(QMainWindow):
             self._coord_label.setText("Quick export: " + (f"saved {os.path.basename(done[0])}" if done else ". ".join(parts)))
 
     def closeEvent(self, event) -> None:
+        self._measure_timer.stop()
+        self.controller.wait_linear_workers()
         if self._update_worker is not None:
             self._update_worker.wait(8000)
         if self._index_worker is not None:

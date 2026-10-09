@@ -22,6 +22,8 @@ DEFAULTS: dict[str, Any] = {
     "auto_advance": True,
     "backup_auto": True,
     "check_updates": True,
+    "advanced_mode": False,
+    "scan_transfer": "srgb",
     "backup_keep": 14,
     "backup_dir": "",
     "keybinds": {},
@@ -41,9 +43,11 @@ def _clean(data: Any) -> dict[str, Any]:
         return out
     if data.get("raw_demosaic") in DEMOSAIC_CHOICES:
         out["raw_demosaic"] = data["raw_demosaic"]
-    for key in ("raw_auto_bright", "auto_advance", "backup_auto", "check_updates"):
+    for key in ("raw_auto_bright", "auto_advance", "backup_auto", "check_updates", "advanced_mode"):
         if isinstance(data.get(key), bool):
             out[key] = data[key]
+    if data.get("scan_transfer") in ("linear", "srgb", "gamma2.2"):
+        out["scan_transfer"] = data["scan_transfer"]
     keep = data.get("backup_keep")
     if isinstance(keep, int) and not isinstance(keep, bool):
         out["backup_keep"] = max(BACKUP_KEEP_RANGE[0], min(BACKUP_KEEP_RANGE[1], keep))

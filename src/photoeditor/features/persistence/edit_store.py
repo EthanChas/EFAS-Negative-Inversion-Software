@@ -118,6 +118,19 @@ CREATE TABLE IF NOT EXISTS folder_base (
 )
 """
 
+_LINEAR_REF_SCHEMA = """
+CREATE TABLE IF NOT EXISTS folder_linear_ref (
+    folder TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    r REAL NOT NULL,
+    g REAL NOT NULL,
+    b REAL NOT NULL,
+    pixels INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (folder, kind)
+)
+"""
+LINEAR_REF_KINDS = ("base", "clear")
+
 FLAG_KEEPER = "keeper"
 FLAG_REJECTED = "rejected"
 
@@ -228,6 +241,7 @@ def connect(db_path: str) -> sqlite3.Connection:
     conn.execute(_ROLL_SCHEMA)
     conn.execute(_RATINGS_SCHEMA)
     conn.execute(_BASE_SCHEMA)
+    conn.execute(_LINEAR_REF_SCHEMA)
     conn.execute(_TAGS_SCHEMA)
     conn.execute(_TAGS_INDEX)
     conn.execute(_SNAPSHOTS_SCHEMA)
@@ -553,6 +567,28 @@ def set_folder_base(conn: sqlite3.Connection, folder: str, rgb: tuple[int, int, 
         "INSERT INTO folder_base (folder, r, g, b) VALUES (?, ?, ?, ?) ON CONFLICT(folder) DO UPDATE SET r=excluded.r, g=excluded.g, b=excluded.b",
         (folder, int(rgb[0]), int(rgb[1]), int(rgb[2])),
     )
+    conn.commit()
+
+
+def get_linear_ref(conn: sqlite3.Connection, folder: str, kind: str) -> tuple[tuple[float, float, float], int] | None:
+    """A roll's sampled film base ("base") or clear backlight ("clear") in linear sensor units, with the pixel count it came from."""
+    row = conn.execute("SELECT r, g, b, pixels FROM folder_linear_ref WHERE folder = ? AND kind = ?", (folder, kind)).fetchone()
+    return ((float(row[0]), float(row[1]), float(row[2])), int(row[3])) if row else None
+
+
+def set_linear_ref(conn: sqlite3.Connection, folder: str, kind: str, rgb, pixels: int = 0) -> None:
+    if kind not in LINEAR_REF_KINDS:
+        raise ValueError(f"unknown reference kind: {kind}")
+    conn.execute(
+        "INSERT INTO folder_linear_ref (folder, kind, r, g, b, pixels) VALUES (?, ?, ?, ?, ?, ?) "
+        "ON CONFLICT(folder, kind) DO UPDATE SET r=excluded.r, g=excluded.g, b=excluded.b, pixels=excluded.pixels",
+        (folder, kind, float(rgb[0]), float(rgb[1]), float(rgb[2]), int(pixels)),
+    )
+    conn.commit()
+
+
+def delete_linear_ref(conn: sqlite3.Connection, folder: str, kind: str) -> None:
+    conn.execute("DELETE FROM folder_linear_ref WHERE folder = ? AND kind = ?", (folder, kind))
     conn.commit()
 
 

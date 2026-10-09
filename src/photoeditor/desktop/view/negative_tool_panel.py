@@ -1,7 +1,7 @@
 import dataclasses
 
 from PyQt6.QtCore import QTimer, pyqtSignal
-from PyQt6.QtWidgets import QComboBox, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
+from PyQt6.QtWidgets import QCheckBox, QComboBox, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
 
 from ...features.negative.logic import FILM_TYPE_LABELS, FILM_TYPES, ProcessMode
 from ...features.negative.metering import DEFAULT_BUFFER, MAX_BUFFER, Metering
@@ -44,6 +44,7 @@ class NegativeToolPanel(CollapsiblePanel):
     region_draw_toggled = pyqtSignal(bool)
     region_cleared = pyqtSignal()
     metering_reset_requested = pyqtSignal()
+    advanced_toggled = pyqtSignal(bool)
 
     def __init__(self, parent: QWidget | None = None):
         super().__init__(
@@ -56,9 +57,9 @@ class NegativeToolPanel(CollapsiblePanel):
                 "anything. Invert to Positive flips the inversion by hand. Red/Green/Blue trim the "
                 "inverted result per color - drag right to add that color, left to remove it; "
                 "double-click a slider to reset it.\n\n"
-                "Film base: pick the unexposed film border (the rebate) once and every photo in this folder is "
-                "calibrated to it, so a whole roll comes out with consistent color instead of each frame guessing "
-                "its own. Pick shows the raw scan - click the clear film at the edge. Clear goes back to estimating.\n\n"
+                "Film base: tell EFAS which part of the scan contains unexposed film. EFAS uses this to understand the colour of your film "
+                "base and improve the inversion. Sample Film Base shows the raw scan - click the clear film at the edge, once, and every photo in "
+                "this folder is calibrated to it. Clear goes back to estimating.\n\n"
                 "Metering: what the inversion reads to set black and white. Margin leaves the film edges out of the reading; Draw "
                 "Region reads only a patch you drag out. Range clip clips the extreme tails harder (+) or lighter (-). Color cast "
                 "1 removes the film's cast fully, 0 leaves it. White and black points move where white and black land - for all "
@@ -102,9 +103,9 @@ class NegativeToolPanel(CollapsiblePanel):
         body.addWidget(base_title)
         base_row = QHBoxLayout()
         base_row.setSpacing(THEME.space_sm)
-        self._base_btn = QPushButton("Pick from Rebate")
+        self._base_btn = QPushButton("Sample Film Base")
         self._base_btn.setCheckable(True)
-        self._base_btn.setToolTip("Click the unexposed film border (the clear rebate) on the raw scan. Applies to every photo in this folder.")
+        self._base_btn.setToolTip("Click the unexposed film border (the clear edge of the film) on the raw scan. Applies to every photo in this folder.")
         self._base_btn.toggled.connect(self.base_pick_toggled)
         base_row.addWidget(self._base_btn, 1)
         self._base_swatch = QLabel()
@@ -119,6 +120,10 @@ class NegativeToolPanel(CollapsiblePanel):
         self._base_label.setWordWrap(True)
         body.addWidget(self._base_label)
         self.set_film_base(None)
+        self._advanced = QCheckBox("Advanced mode (scientific panels)")
+        self._advanced.setToolTip("Show density, histogram, H&D and calibration panels. The same measurements run either way; this only shows them.")
+        self._advanced.toggled.connect(self.advanced_toggled)
+        body.addWidget(self._advanced)
 
         meter_title = QLabel("METERING")
         meter_title.setProperty("role", "subtitle")
@@ -230,10 +235,16 @@ class NegativeToolPanel(CollapsiblePanel):
         self._base_clear.setEnabled(rgb is not None)
         if rgb is None:
             self._base_swatch.setStyleSheet(f"background: transparent; border: 1px solid {THEME.border_color};")
-            self._base_label.setText("Estimated from each photo. Pick the clear film border to calibrate the whole roll.")
+            self._base_label.setText("Auto: estimated from each photo. For the best colour, sample the clear film border once for the whole roll.")
         else:
             self._base_swatch.setStyleSheet(f"background: rgb({rgb[0]},{rgb[1]},{rgb[2]}); border: 1px solid {THEME.border_color};")
-            self._base_label.setText(f"Measured on this roll: R {rgb[0]}  G {rgb[1]}  B {rgb[2]}. Every photo in the folder uses it.")
+            self._base_label.setText("Film base sampled. Every photo in this folder uses it.")
+
+    def set_advanced(self, on: bool) -> None:
+        """Show the Advanced Mode switch's state without emitting anything."""
+        self._advanced.blockSignals(True)
+        self._advanced.setChecked(on)
+        self._advanced.blockSignals(False)
 
     def set_pick_active(self, active: bool) -> None:
         """Sync the Pick button without emitting anything."""

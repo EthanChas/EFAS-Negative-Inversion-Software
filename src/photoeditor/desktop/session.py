@@ -134,6 +134,8 @@ class AppState:
     metadata: MetadataConfig = field(default_factory=MetadataConfig)
     roll: RollCard = field(default_factory=RollCard)
     film_base: tuple[int, int, int] | None = None
+    linear_base: tuple[tuple[float, float, float], int] | None = None
+    linear_clear: tuple[tuple[float, float, float], int] | None = None
     roll_camera: str = ""
     roll_lens: str = ""
     show_detections: bool = False

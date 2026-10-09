@@ -11,8 +11,16 @@ from ..features.aidust import logic as aidust
 from ..features.browse.logic import list_images_in_folder
 from ..features.geometry.autocrop import AUTO_STRAIGHTEN_MAX, AUTO_STRAIGHTEN_MIN, detect_frame
 from ..features.geometry.gradientcrop import detect_gradient_frame
+from ..features.densitometry import analysis as dens_analysis
+from ..features.densitometry import base as dens_base
+from ..features.densitometry import processor as dens_processor
+from ..features.densitometry.linear import LinearScan
 from ..features.geometry.logic import (
     FINE_ROTATION_LIMIT,
+    fine_rotate,
+    flip_horizontal,
+    flip_vertical,
+    rotate_quarter_turns,
     map_display_to_raw,
     transform_rect_flip_h,
     transform_rect_flip_v,
@@ -64,6 +72,7 @@ from .ai_dust_worker import AiDustWorker
 from .render import EditParams, _scale_rect, RenderJob, Renderer, RenderOutput, RenderThread
 from .session import AppState, HistoryEntry
 from .workers import FlatFieldWorker, run_blocking
+from .densitometry_worker import LinearScanWorker
 
 
 BW_SATURATION = -1.0
@@ -105,6 +114,7 @@ class AppController(QObject):
     clone_source_changed = pyqtSignal()
     negative_state_changed = pyqtSignal()
     film_base_changed = pyqtSignal()
+    measurement_changed = pyqtSignal()
     roll_changed = pyqtSignal()
     flatfield_changed = pyqtSignal()
     flatfield_progress = pyqtSignal(int, int, str)
@@ -147,6 +157,13 @@ class AppController(QObject):
         self._folder_images: tuple[str, list[str], float] | None = None
         self._ff_info = {"has": False, "enabled": False, "source": ""}
         self._ff_worker = None
+        self._linear = None
+        self._linear_worker = None
+        self._linear_threads: set = set()
+        self._linear_error = ""
+        self._framed_linear = None
+        self._measurement = None
+        self._measure_key = None
 
         self._renderer = Renderer()
         self._renderer.ai_prob_lookup = self._ai_prob_for
@@ -384,6 +401,7 @@ class AppController(QObject):
         self._load_flatfield(path)
         self._load_roll(path)
         self.state.film_base = edit_store.get_folder_base(self._db, edit_store.folder_key(path))
+        self._load_linear_refs(path)
         self.state.history = []
         flag = edit_store.get_flag(self._db, path)
         if flag is None:
@@ -2261,9 +2279,10 @@ class AppController(QObject):
         self.notice.emit(f"{label} on {done} photo{'s' if done != 1 else ''} in {folder}")
         return done
 
-    def set_film_base(self, rgb: tuple[int, int, int] | None) -> None:
+    def set_film_base(self, rgb: tuple[int, int, int] | None, pick: tuple[int, int] | None = None) -> None:
         """Calibrate the roll to the film base measured on its rebate: every photo in the open photo's folder inverts against it instead
-        of estimating its own, so their colors agree. None goes back to estimating."""
+        of estimating its own, so their colors agree. None goes back to estimating. `pick` is where it was clicked on the raw scan; the
+        linear value there is kept too, for the density measurements."""
         path = self.state.image_path
         if path is None or self.state.preview_rgb is None:
             return
@@ -2280,6 +2299,207 @@ class AppController(QObject):
         self.film_base_changed.emit()
         self._log("Film base set from the rebate" if rgb is not None else "Film base back to automatic")
         self.notice.emit(f"Film base {'set for this roll: ' + str(self.state.film_base) if rgb is not None else 'cleared: estimated from each photo again'}")
+        if rgb is None:
+            self.set_linear_reference("base", None)
+        elif pick is not None:
+            problems = self.set_linear_reference("base", pick)
+            if problems:
+                self.notice.emit(problems[0])
+
+    def _load_linear_refs(self, path: str) -> None:
+        key = edit_store.folder_key(path)
+        self.state.linear_base = edit_store.get_linear_ref(self._db, key, "base")
+        self.state.linear_clear = edit_store.get_linear_ref(self._db, key, "clear")
+        if self._linear is not None and self._linear[0] != path:
+            self._linear = None
+        self._linear_error = ""
+        self._framed_linear = None
+        self._measurement = None
+        self._measure_key = None
+
+    def linear_ready(self) -> bool:
+        return self._linear is not None and self._linear[0] == self.state.image_path
+
+    def linear_error(self) -> str:
+        return self._linear_error
+
+    def wait_linear_workers(self, msecs: int = 20000) -> None:
+        for worker in list(self._linear_threads):
+            worker.wait(msecs)
+
+    def linear_busy(self) -> bool:
+        return self._linear_worker is not None and self._linear_worker.isRunning()
+
+    def request_linear(self) -> None:
+        """Decode the photo's linear scan in the background if it is not ready; measurement_changed fires when there is something to show."""
+        path = self.state.image_path
+        if path is None or self.state.preview_rgb is None:
+            self._measurement = None
+            self.measurement_changed.emit()
+            return
+        if self.linear_ready():
+            self._refresh_measurement()
+            return
+        if self._linear_worker is not None and self._linear_worker.isRunning():
+            return
+        self._linear_error = ""
+        worker = LinearScanWorker(path, self._render_base(), app_settings.get("scan_transfer"))
+        worker.done.connect(self._on_linear_done)
+        worker.failed.connect(self._on_linear_failed)
+        self._linear_threads.add(worker)
+        worker.finished.connect(lambda w=worker: self._linear_threads.discard(w))
+        self._linear_worker = worker
+        worker.start()
+
+    def _on_linear_done(self, path: str, scan) -> None:
+        self._linear_worker = None
+        if path != self.state.image_path:
+            self.request_linear()
+            return
+        self._linear = (path, scan)
+        self._framed_linear = None
+        self._refresh_measurement()
+
+    def _on_linear_failed(self, path: str, message: str) -> None:
+        self._linear_worker = None
+        if path == self.state.image_path:
+            self._linear_error = message or "The scan could not be read for measurement."
+            self._measurement = None
+            self.measurement_changed.emit()
+
+    def scan_transfer_changed(self) -> None:
+        """The assumed encoding of non-RAW pictures was changed: measure again from the pictures as loaded."""
+        self._linear = None
+        self._framed_linear = None
+        self._measure_key = None
+        self.request_linear()
+
+    def _geometry_key(self) -> tuple:
+        s = self.state
+        return (s.rotation_quarter_turns, s.flip_h, s.flip_v, round(s.fine_rotation, 4))
+
+    def framed_linear(self):
+        """The linear preview rotated, flipped and straightened exactly like the raw scan the film-base eyedropper is picked on, so a
+        click there maps to the same pixel here. None until the linear scan is decoded."""
+        if not self.linear_ready():
+            return None
+        key = (self._linear[0], self._geometry_key())
+        if self._framed_linear is None or self._framed_linear[0] != key:
+            s = self.state
+            arr = fine_rotate(self._linear[1].rgb, s.fine_rotation, nearest=True)
+            if s.rotation_quarter_turns:
+                arr = rotate_quarter_turns(arr, s.rotation_quarter_turns)
+            if s.flip_h:
+                arr = flip_horizontal(arr)
+            if s.flip_v:
+                arr = flip_vertical(arr)
+            self._framed_linear = (key, np.ascontiguousarray(arr))
+        return self._framed_linear[1]
+
+    def _picture_region(self, shape) -> tuple[int, int, int, int]:
+        """The part of the framed scan that is picture: the crop, else the metering region, else the frame less the metering margin."""
+        h, w = shape[:2]
+        s = self.state
+        rect = s.crop_rect or s.metering.rect
+        if rect is not None:
+            x1, x2 = sorted((max(0, min(rect[0], w)), max(0, min(rect[2], w))))
+            y1, y2 = sorted((max(0, min(rect[1], h)), max(0, min(rect[3], h))))
+            if x2 - x1 >= 8 and y2 - y1 >= 8:
+                return x1, y1, x2, y2
+        dx, dy = int(w * s.metering.buffer), int(h * s.metering.buffer)
+        return dx, dy, w - dx, h - dy
+
+    def sample_linear(self, x: int, y: int, radius: int = 6):
+        """The linear values around a point on the raw scan (its framed coordinates), as a BaseSample; None until the scan is decoded."""
+        framed = self.framed_linear()
+        if framed is None:
+            return None
+        h, w = framed.shape[:2]
+        patch = framed[max(0, y - radius):min(h, y + radius + 1), max(0, x - radius):min(w, x + radius + 1)]
+        if patch.size == 0:
+            return None
+        return dens_base.measure_base(patch, self._linear[1].info.floor())
+
+    def linear_values_at(self, x: int, y: int, radius: int = 2):
+        """Median linear R, G, B around a point on the raw scan, or None when the scan is not decoded or the point is outside it."""
+        framed = self.framed_linear()
+        if framed is None:
+            return None
+        h, w = framed.shape[:2]
+        if not (0 <= x < w and 0 <= y < h):
+            return None
+        patch = framed[max(0, y - radius):min(h, y + radius + 1), max(0, x - radius):min(w, x + radius + 1)].reshape(-1, 3)
+        return tuple(float(v) for v in np.median(patch, axis=0))
+
+    def _ensure_linear_now(self) -> bool:
+        """Wait (keeping the window alive) until the linear scan is decoded; used when the user has just clicked a sample."""
+        if self.linear_ready():
+            return True
+        path = self.state.image_path
+        if path is None:
+            return False
+        try:
+            scan = run_blocking(lambda: dens_processor.linear_scan(path, self._render_base(), app_settings.get("scan_transfer")))
+        except Exception as exc:
+            self._linear_error = str(exc)
+            return False
+        self._linear = (path, LinearScan(make_preview_rgb(scan.rgb), scan.info))
+        self._framed_linear = None
+        return True
+
+    def set_linear_reference(self, kind: str, pick: tuple[int, int] | None) -> list[str]:
+        """Keep the linear value of a sampled spot for the whole folder: the film base ("base") or the bare backlight ("clear"). pick=None
+        clears it. Returns the sample's warnings for the caller to show."""
+        path = self.state.image_path
+        if path is None:
+            return []
+        key = edit_store.folder_key(path)
+        warnings: list[str] = []
+        if pick is None:
+            edit_store.delete_linear_ref(self._db, key, kind)
+            ref = None
+        else:
+            if not self._ensure_linear_now():
+                return [f"The scan could not be read for measurement: {self._linear_error}"]
+            sample = self.sample_linear(*pick)
+            if sample is None:
+                return ["That spot is outside the scan."]
+            warnings = list(sample.warnings)
+            edit_store.set_linear_ref(self._db, key, kind, sample.v, sample.pixels)
+            ref = (sample.v, sample.pixels)
+        if kind == "base":
+            self.state.linear_base = ref
+        else:
+            self.state.linear_clear = ref
+        self._measure_key = None
+        self._refresh_measurement()
+        return warnings
+
+    def current_measurement(self):
+        return self._measurement
+
+    def _refresh_measurement(self) -> None:
+        if not self.linear_ready():
+            self.measurement_changed.emit()
+            return
+        framed = self.framed_linear()
+        s = self.state
+        key = (self._linear[0], self._geometry_key(), s.crop_rect, s.metering.rect, s.metering.buffer, s.linear_base, s.linear_clear,
+               self._linear[1].info.encoding)
+        if key == self._measure_key and self._measurement is not None:
+            self.measurement_changed.emit()
+            return
+        x1, y1, x2, y2 = self._picture_region(framed.shape)
+        info = self._linear[1].info
+        base = dens_base.from_reference(*s.linear_base) if s.linear_base else None
+        clear = s.linear_clear[0] if s.linear_clear else None
+        try:
+            self._measurement = dens_analysis.analyse(framed[y1:y2, x1:x2], info, base, clear)
+        except Exception as exc:
+            self._measurement = None
+            self._linear_error = f"Measurement failed: {exc}"
+        self._measure_key = key
+        self.measurement_changed.emit()
 
     def render_raw_scan(self):
         """The scan as it came in, framed like the edit (rotation, flips, straightening) but uncropped, uninverted and untouched - what the

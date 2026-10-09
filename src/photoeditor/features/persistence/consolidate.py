@@ -16,6 +16,7 @@ _TABLES = {
     "flags": (("path",), False),
     "folder_roll": (("folder",), True),
     "folder_base": (("folder",), False),
+    "folder_linear_ref": (("folder", "kind"), False),
     "folder_flatfield": (("folder",), False),
     "tags": (("path", "tag"), False),
     "snapshots": (("path", "name"), False),
