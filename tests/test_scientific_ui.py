@@ -131,3 +131,33 @@ def test_advanced_mode_end_to_end():
     env = dict(os.environ, PYTHONPATH=SRC + os.pathsep + os.environ.get("PYTHONPATH", ""))
     done = subprocess.run([sys.executable, "-X", "faulthandler", "-c", _SCRIPT], env=env, capture_output=True, text=True, timeout=180)
     assert done.returncode == 0 and "SCIENTIFIC UI OK" in done.stdout, (done.stdout + done.stderr)[-3000:]
+
+
+_WIDTH_SCRIPT = textwrap.dedent(r'''
+    import os, tempfile
+    os.environ["QT_QPA_PLATFORM"] = "offscreen"; os.environ["PHOTOEDITOR_DATA_DIR"] = tempfile.mkdtemp()
+    import numpy as np
+    from PyQt6.QtWidgets import QApplication
+    app = QApplication([])
+    from photoeditor.desktop.view.scientific_panel import AdvancedPanels
+    from photoeditor.desktop.view.negative_tool_panel import NegativeToolPanel
+    from photoeditor.desktop.view.collapsible_panel import CollapsiblePanel
+    from photoeditor.features.densitometry import analysis, base, linear
+    v = (0.5 * 10.0 ** -np.random.default_rng(0).uniform(0, 2, (200, 300, 3))).astype(np.float32)
+    info = linear.ScanInfo(True, "raw-linear", 14, quantisation=1e-4, noise_sigma=(2e-5,) * 3)
+    m = analysis.analyse(v, info, base.measure_base(v[:30, :30], info.floor()), clear=(0.9, 0.9, 0.9))
+    adv = AdvancedPanels(); adv.set_measurement(m, "", False, True)
+    for p in adv.findChildren(CollapsiblePanel):
+        p.set_expanded(True)
+    adv._show_model.setChecked(True)
+    a, n = adv.minimumSizeHint().width(), NegativeToolPanel().minimumSizeHint().width()
+    assert a <= n, (a, n)
+    print("WIDTH OK", a, n)
+''')
+
+
+def test_advanced_panels_never_widen_the_sidebar():
+    """A table wider than the sidebar pushes every module off its right edge, so the panels must fit within what the Negative panel already needs."""
+    env = dict(os.environ, PYTHONPATH=SRC + os.pathsep + os.environ.get("PYTHONPATH", ""))
+    done = subprocess.run([sys.executable, "-c", _WIDTH_SCRIPT], env=env, capture_output=True, text=True, timeout=120)
+    assert done.returncode == 0 and "WIDTH OK" in done.stdout, (done.stdout + done.stderr)[-2000:]

@@ -5,7 +5,7 @@ import numpy as np
 from PyQt6.QtCore import QPointF, QRectF, Qt, pyqtSignal
 from PyQt6.QtGui import QBrush, QColor, QFont, QPainter, QPen, QPolygonF
 from PyQt6.QtWidgets import (
-    QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog, QFormLayout, QGridLayout, QHBoxLayout, QLabel, QMessageBox, QPushButton, QVBoxLayout, QWidget,
+    QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog, QFormLayout, QGridLayout, QHBoxLayout, QLabel, QMessageBox, QPushButton, QSizePolicy, QVBoxLayout, QWidget,
 )
 
 from ...features.densitometry import analysis, hd, profiles
@@ -437,15 +437,14 @@ class AdvancedPanels(QWidget):
         self._calib_text.setWordWrap(True)
         self._calib_text.setTextFormat(Qt.TextFormat.RichText)
         body.addWidget(self._calib_text)
-        row = QHBoxLayout()
-        self._transfer_label = QLabel("Picture encoding (non-RAW)")
-        row.addWidget(self._transfer_label)
+        self._transfer_label = QLabel("Picture encoding (non-RAW files)")
+        self._transfer_label.setWordWrap(True)
+        body.addWidget(self._transfer_label)
         self._transfer = QComboBox()
         for key in TRANSFERS:
             self._transfer.addItem(TRANSFER_LABELS[key], key)
         self._transfer.currentIndexChanged.connect(lambda _i: self.transfer_changed.emit(self._transfer.currentData()))
-        row.addWidget(self._transfer, 1)
-        body.addLayout(row)
+        body.addWidget(self._transfer)
         return panel
 
     def set_transfer(self, key: str) -> None:
@@ -502,21 +501,26 @@ class AdvancedPanels(QWidget):
             for c, (name, colour) in enumerate(_CHANNELS):
                 head = QLabel(name)
                 head.setStyleSheet(f"color: {colour}; font-weight: bold;")
-                head.setAlignment(Qt.AlignmentFlag.AlignRight)
-                self._grid.addWidget(head, 0, c + 1)
-            for r, row in enumerate(analysis.summary_rows(m), start=1):
-                label = QLabel(row.label)
+                head.setAlignment(Qt.AlignmentFlag.AlignCenter)
+                self._grid.addWidget(head, 0, c)
+            for c in range(3):
+                self._grid.setColumnStretch(c, 1)
+                self._grid.setColumnMinimumWidth(c, 0)
+            line = 1
+            for row in analysis.summary_rows(m):
+                label = QLabel(f"{row.label} <span style='color:{THEME.text_muted}'>({row.status})</span>")
+                label.setTextFormat(Qt.TextFormat.RichText)
+                label.setWordWrap(True)
                 label.setToolTip(row.tip)
-                self._grid.addWidget(label, r, 0)
+                label.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Minimum)
+                self._grid.addWidget(label, line, 0, 1, 3)
                 for c, value in enumerate(row.values):
                     cell = QLabel(value)
-                    cell.setAlignment(Qt.AlignmentFlag.AlignRight)
+                    cell.setAlignment(Qt.AlignmentFlag.AlignCenter)
                     cell.setToolTip(row.tip)
-                    self._grid.addWidget(cell, r, c + 1)
-                status = QLabel(row.status)
-                status.setProperty("role", "hint")
-                status.setToolTip(row.tip)
-                self._grid.addWidget(status, r, 4)
+                    cell.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Minimum)
+                    self._grid.addWidget(cell, line + 1, c)
+                line += 2
         self._draw_histogram()
         self._draw_hd()
         self._draw_calibration(error)
