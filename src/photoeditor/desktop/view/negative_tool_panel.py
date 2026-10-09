@@ -46,6 +46,7 @@ class NegativeToolPanel(CollapsiblePanel):
     region_cleared = pyqtSignal()
     metering_reset_requested = pyqtSignal()
     advanced_toggled = pyqtSignal(bool)
+    auto_base_requested = pyqtSignal()
     inversion_requested = pyqtSignal(str, str, str)
     compare_requested = pyqtSignal(str, str)
 
@@ -118,6 +119,10 @@ class NegativeToolPanel(CollapsiblePanel):
         self._base_clear.clicked.connect(self.base_cleared)
         base_row.addWidget(self._base_clear)
         body.addLayout(base_row)
+        self._auto_base_btn = QPushButton("Find Film Base Automatically")
+        self._auto_base_btn.setToolTip("Looks for the clear film border and shows you what it found. Nothing changes until you confirm.")
+        self._auto_base_btn.clicked.connect(self.auto_base_requested)
+        body.addWidget(self._auto_base_btn)
         self._base_label = QLabel("")
         self._base_label.setProperty("role", "hint")
         self._base_label.setWordWrap(True)

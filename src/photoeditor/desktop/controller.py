@@ -14,6 +14,7 @@ from ..features.geometry.gradientcrop import detect_gradient_frame
 from ..features.densitometry import analysis as dens_analysis
 from ..features.densitometry import base as dens_base
 from ..features.densitometry import quality as dens_quality
+from ..features.densitometry import rebate as rebate_mod
 from ..features.densitometry import film_profile as fpmod
 from ..features.densitometry import inversion as dens_inversion
 from ..features.densitometry import processor as dens_processor
@@ -2292,7 +2293,7 @@ class AppController(QObject):
         self.notice.emit(f"{label} on {done} photo{'s' if done != 1 else ''} in {folder}")
         return done
 
-    def set_film_base(self, rgb: tuple[int, int, int] | None, pick: tuple[int, int] | None = None) -> None:
+    def set_film_base(self, rgb: tuple[int, int, int] | None, pick: tuple[int, int] | None = None, radius: int = 6) -> None:
         """Calibrate the roll to the film base measured on its rebate: every photo in the open photo's folder inverts against it instead
         of estimating its own, so their colors agree. None goes back to estimating. `pick` is where it was clicked on the raw scan; the
         linear value there is kept too, for the density measurements."""
@@ -2315,7 +2316,7 @@ class AppController(QObject):
         if rgb is None:
             self.set_linear_reference("base", None)
         elif pick is not None:
-            problems = self.set_linear_reference("base", pick)
+            problems = self.set_linear_reference("base", pick, radius)
             if problems:
                 self.notice.emit(problems[0])
 
@@ -2489,7 +2490,7 @@ class AppController(QObject):
         self._framed_linear = None
         return True
 
-    def set_linear_reference(self, kind: str, pick: tuple[int, int] | None) -> list[str]:
+    def set_linear_reference(self, kind: str, pick: tuple[int, int] | None, radius: int = 6) -> list[str]:
         """Keep the linear value of a sampled spot for the whole folder: the film base ("base") or the bare backlight ("clear"). pick=None
         clears it. Returns the sample's warnings for the caller to show."""
         path = self.state.image_path
@@ -2503,7 +2504,7 @@ class AppController(QObject):
         else:
             if not self._ensure_linear_now():
                 return [f"The scan could not be read for measurement: {self._linear_error}"]
-            sample = self.sample_linear(*pick)
+            sample = self.sample_linear(*pick, radius=radius)
             if sample is None:
                 return ["That spot is outside the scan."]
             warnings = list(sample.warnings)
@@ -2693,6 +2694,31 @@ class AppController(QObject):
             "tone": dens_inversion.tone_transfer(res.delta_density, a / 255.0, b / 255.0), "covered": res.covered, "poor": res.poorly_determined,
             "notes": list(res.notes), "profile": setup.profile.name,
         }
+
+    def suggest_film_base(self) -> dict:
+        """Look for the film's clear border in the open photo's scan. Returns {"found": False, "message"} or {"found": True, "rebate", "raw"}; nothing is changed."""
+        if self.state.image_path is None or self.state.preview_rgb is None:
+            return {"found": False, "message": "Open a photo first."}
+        if not self._ensure_linear_now():
+            return {"found": False, "message": f"The scan could not be read for measurement: {self._linear_error}"}
+        framed = self.framed_linear()
+        found = rebate_mod.find_rebate(framed, self._linear[1].info.floor())
+        if found is None:
+            return {"found": False, "message": "No clear film border was found. Use Sample Film Base and click the unexposed border yourself, or leave it on automatic estimation."}
+        raw = self.render_raw_scan()
+        if raw is None or raw.shape[:2] != framed.shape[:2]:
+            return {"found": False, "message": "The scan view does not match the measurement, so the border cannot be marked."}
+        return {"found": True, "rebate": found, "raw": raw}
+
+    def apply_suggested_film_base(self, rebate) -> None:
+        """Use a found border as this roll's film base, exactly as if it had been clicked."""
+        raw = self.render_raw_scan()
+        x1, y1, x2, y2 = rebate.rect
+        patch = raw[y1:y2, x1:x2].reshape(-1, 3)
+        rgb = tuple(int(round(v)) for v in np.median(patch, axis=0))
+        centre = ((x1 + x2) // 2, (y1 + y2) // 2)
+        radius = max(2, min((x2 - x1), (y2 - y1)) // 2 - 1)
+        self.set_film_base(rgb, pick=centre, radius=min(radius, 40))
 
     def hq_source(self):
         """The full-resolution picture the sharp (HQ) pass starts from: the original, or for the curve method the positive made at full resolution."""

@@ -82,6 +82,7 @@ from .loading_overlay import LoadingOverlay
 from .masking_panel import MaskingToolPanel
 from .negative_tool_panel import NegativeToolPanel
 from .scientific_panel import AdvancedPanels
+from .rebate_dialog import RebateDialog
 from .characterization_dialog import CharacterizationDialog
 from .profile_dialogs import ABCompareDialog, ProfilesDialog, SetupsDialog
 from ...features.densitometry import film_profile as fp
@@ -847,6 +848,7 @@ class AppWindow(QMainWindow):
         self._negative_tool.inverted_toggled.connect(self.controller.set_negative_inverted)
         self._negative_tool.film_type_changed.connect(self.controller.set_film_type)
         self._negative_tool.base_pick_toggled.connect(self._on_base_pick_toggled)
+        self._negative_tool.auto_base_requested.connect(self._on_auto_base_requested)
         self._negative_tool.base_cleared.connect(lambda: self.controller.set_film_base(None))
         self.controller.film_base_changed.connect(self._sync_film_base)
         self._negative_tool.rgb_changed.connect(self.controller.set_invert_rgb)
@@ -2006,6 +2008,18 @@ class AppWindow(QMainWindow):
         dlg = SetupsDialog(self.controller, self)
         dlg.changed.connect(self._sync_inversion)
         dlg.exec()
+
+    def _on_auto_base_requested(self) -> None:
+        """Offer the film border EFAS found, with a preview, and use it only if the user confirms."""
+        self._end_probe()
+        self._end_base_pick()
+        found = self.controller.suggest_film_base()
+        if not found["found"]:
+            QMessageBox.information(self, "Film base", found["message"])
+            return
+        dlg = RebateDialog(found["raw"], found["rebate"], self)
+        if dlg.exec():
+            self.controller.apply_suggested_film_base(found["rebate"])
 
     def _on_advanced_toggled(self, on: bool) -> None:
         app_settings.save({"advanced_mode": bool(on)})
