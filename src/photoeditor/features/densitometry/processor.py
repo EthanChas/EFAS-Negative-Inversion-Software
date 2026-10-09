@@ -14,12 +14,12 @@ from .linear import LinearScan, ScanInfo, from_display_referred
 _OB_GUARD = 4
 
 
-def linear_settings(demosaic: str, user_flip: int | None = None) -> dict:
+def linear_settings(demosaic: str, user_flip: int | None = None, half_size: bool = False) -> dict:
     """The rawpy settings that keep LibRaw's output linear in the sensor's light. Every one of them undoes a default that would not be."""
     return dict(
         gamma=(1, 1), no_auto_bright=True, bright=1.0, adjust_maximum_thr=0.0, use_camera_wb=False, use_auto_wb=False, user_wb=[1.0, 1.0, 1.0, 1.0],
         output_color=rawpy.ColorSpace.raw, output_bps=16, highlight_mode=rawpy.HighlightMode.Clip,
-        demosaic_algorithm=getattr(rawpy.DemosaicAlgorithm, demosaic), user_flip=user_flip,
+        demosaic_algorithm=getattr(rawpy.DemosaicAlgorithm, demosaic), user_flip=user_flip, half_size=half_size,
     )
 
 
@@ -56,7 +56,7 @@ def _saturation_levels(raw: "rawpy.RawPy", black: list[float], white: float):
     return (white, white, white), False
 
 
-def decode_linear_raw(path: str, user_flip: int | None = None) -> LinearScan:
+def decode_linear_raw(path: str, user_flip: int | None = None, half_size: bool = False) -> LinearScan:
     """The RAW file as linear values: (N - black) / (saturation - black) per channel, demosaiced, orientation as the picture. 1.0 is sensor white."""
     demosaic = settings.DEMOSAIC_CHOICES[settings.get("raw_demosaic")][1]
     with rawpy.imread(path) as raw:
@@ -68,7 +68,7 @@ def decode_linear_raw(path: str, user_flip: int | None = None) -> LinearScan:
             noise = optical_black_noise(raw, black, white)
         except Exception:
             noise = None
-        rgb16 = raw.postprocess(**linear_settings(demosaic, user_flip))
+        rgb16 = raw.postprocess(**linear_settings(demosaic, user_flip, half_size))
         colour_desc = raw.color_desc.decode("ascii", "ignore") if isinstance(raw.color_desc, bytes) else str(raw.color_desc)
         colours = raw.raw_colors_visible
         vis = raw.raw_image_visible

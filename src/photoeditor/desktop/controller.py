@@ -2339,6 +2339,13 @@ class AppController(QObject):
     def linear_error(self) -> str:
         return self._linear_error
 
+    def ensure_linear(self) -> bool:
+        """Make sure the linear scan of the open photo is decoded (waiting for it, with the window kept alive)."""
+        return self._ensure_linear_now()
+
+    def linear_info(self):
+        return self._linear[1].info if self.linear_ready() else None
+
     def wait_linear_workers(self, msecs: int = 20000) -> None:
         for worker in list(self._linear_threads):
             worker.wait(msecs)

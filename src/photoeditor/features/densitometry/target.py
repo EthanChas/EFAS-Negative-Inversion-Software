@@ -35,14 +35,17 @@ class StepTarget:
     increment: float = 0.15
     densities: tuple[float, ...] | None = None
     name: str = ""
+    reverse: bool = False
 
     def values(self) -> np.ndarray:
+        """The step densities in the order the patches are laid out: lowest to highest, or highest to lowest when `reverse` is set."""
         if self.densities is not None:
             d = np.asarray(self.densities, dtype=np.float64)
             if d.size != self.steps:
                 raise TargetError("the list of tablet densities must have one value per step")
-            return d
-        return self.start + self.increment * np.arange(self.steps)
+        else:
+            d = self.start + self.increment * np.arange(self.steps)
+        return d[::-1].copy() if self.reverse else d
 
     def actual(self) -> bool:
         """True when the densities came from a calibration chart or a densitometer rather than the nominal series."""
