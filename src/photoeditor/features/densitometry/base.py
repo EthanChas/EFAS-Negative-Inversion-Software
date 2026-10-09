@@ -39,8 +39,7 @@ def measure_base(patch: np.ndarray, floor=(0.0, 0.0, 0.0)) -> BaseSample:
         raise ValueError("the film-base patch is empty")
     med = np.median(px, axis=0)
     dens = optical_density(px, np.asarray(floor))
-    d_med = optical_density(med, np.asarray(floor))
-    mad = np.median(np.abs(dens - d_med), axis=0)
+    mad = (np.percentile(dens, 90, axis=0) - np.percentile(dens, 10, axis=0)) / 2.563
     fl = np.asarray(floor, dtype=np.float64)
     near_floor = float((px <= fl * 1.5).any(axis=1).mean()) if fl.any() else 0.0
     saturated = float((px >= 0.999).any(axis=1).mean())

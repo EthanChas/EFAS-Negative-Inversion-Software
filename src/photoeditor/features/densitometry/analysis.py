@@ -9,6 +9,7 @@ from dataclasses import dataclass
 import numpy as np
 
 from . import base as base_mod
+from . import diagnostics as diag_mod
 from .base import BaseSample
 from .dmax import DmaxResult, estimate_dmax
 from .histogram import NET_RANGE, REL_RANGE, DensityHistogram, density_histogram
@@ -44,6 +45,7 @@ class Measurement:
     net_hist: DensityHistogram
     diagnostics: tuple[Diagnostic, ...]
     confidence: str
+    diagnosis: object = None
 
     def density_range(self) -> tuple[float, float, float]:
         """Density between the film base and the dense end, per channel."""
@@ -67,7 +69,8 @@ def _subsample(v: np.ndarray, max_pixels: int) -> np.ndarray:
 def analyse(v: np.ndarray, info: ScanInfo, base: BaseSample | None = None, clear=None, max_pixels: int = MAX_PIXELS) -> Measurement:
     """Measure the linear picture `v` (HxWx3, normalised). `base` is the sampled film base (None: estimated from the picture);
     `clear` is the per-channel value of the light source with no film, when the user sampled it."""
-    px = _subsample(np.asarray(v), max_pixels).reshape(-1, 3).astype(np.float64)
+    sub = _subsample(np.asarray(v), max_pixels)
+    px = sub.reshape(-1, 3).astype(np.float64)
     floor = info.floor()
     estimated = base is None
     base = base_mod.estimate_base(px, floor) if estimated else base
@@ -87,8 +90,6 @@ def analyse(v: np.ndarray, info: ScanInfo, base: BaseSample | None = None, clear
         diags.append(Diagnostic("warning", f"This is not a RAW file, so the {info.encoding} encoding is assumed. Densities are approximate."))
     if info.bit_depth <= 8:
         diags.append(Diagnostic("warning", "An 8-bit file has coarse steps in the dense areas, so densities there are rough."))
-    if info.saturated_fraction > SATURATED_WARN:
-        diags.append(Diagnostic("warning", f"{info.saturated_fraction * 100:.1f}% of the picture is at the sensor's white level (clipped). Expose the scan lower."))
     if info.noise_sigma is None:
         diags.append(Diagnostic("info", "The noise floor comes from the file's bit depth only; no sensor noise estimate was available."))
     for w in base.warnings:
@@ -110,6 +111,8 @@ def analyse(v: np.ndarray, info: ScanInfo, base: BaseSample | None = None, clear
                                         "Density above the film base is still exact."))
     diags.append(Diagnostic("info", "Camera flare is not corrected: the densest areas read lighter than they really are."))
 
+    diagnosis = diag_mod.diagnose(px, info, base.v, floor, d_net, sub.shape[:2])
+    diags.extend(Diagnostic(s.level, f"{s.text} [{s.evidence}]") for s in diagnosis.statements)
     warnings = sum(d.level == "warning" for d in diags)
     if estimated or not info.measured:
         confidence = "low"
@@ -119,7 +122,7 @@ def analyse(v: np.ndarray, info: ScanInfo, base: BaseSample | None = None, clear
         confidence = "high"
     return Measurement(
         info, int(px.shape[0]), floor, base, clear_t, dmin_rel, dmin_abs, dmax, value_range, t_rel,
-        density_histogram(d_rel, REL_RANGE), density_histogram(d_net, NET_RANGE), tuple(diags), confidence,
+        density_histogram(d_rel, REL_RANGE), density_histogram(d_net, NET_RANGE), tuple(diags), confidence, diagnosis,
     )
 
 
