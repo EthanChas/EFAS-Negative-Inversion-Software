@@ -2368,6 +2368,14 @@ class AppController(QObject):
             return dens_quality.unknown(self._linear_error or "The scan has not been checked.")
         return dens_quality.assess(self._measurement)
 
+    def roll_check_inputs(self) -> tuple[list[str], tuple | None]:
+        """The open folder's photos and, when one was sampled for this roll, its film base (linear), for the roll consistency check."""
+        paths = list(self.state.image_paths)
+        if self.state.image_path and self.state.image_path not in paths:
+            paths.append(self.state.image_path)
+        ref = self.state.linear_base
+        return paths, (tuple(ref[0]) if ref else None)
+
     def linear_busy(self) -> bool:
         return self._linear_worker is not None and self._linear_worker.isRunning()
 

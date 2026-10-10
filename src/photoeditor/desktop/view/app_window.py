@@ -83,6 +83,7 @@ from .masking_panel import MaskingToolPanel
 from .negative_tool_panel import NegativeToolPanel
 from .scientific_panel import AdvancedPanels
 from .merge_dialog import MergeDialog
+from .roll_check_dialog import RollCheckDialog
 from .rebate_dialog import RebateDialog
 from .characterization_dialog import CharacterizationDialog
 from .profile_dialogs import ABCompareDialog, ProfilesDialog, SetupsDialog
@@ -429,6 +430,11 @@ class AppWindow(QMainWindow):
         self._merge_action.setToolTip("Combine an exposure bracket, or red, green and blue lit scans, of one frame into one measured scan")
         self._merge_action.triggered.connect(self._on_merge_scans)
         file_menu.addAction(self._merge_action)
+
+        self._roll_check_action = QAction("Check Roll Consistency...", self)
+        self._roll_check_action.setToolTip("Find frames of this folder that were scanned with a different light level or colour from the rest")
+        self._roll_check_action.triggered.connect(self._on_roll_check)
+        file_menu.addAction(self._roll_check_action)
 
         import_action = QAction("Import Images...", self)
         import_action.triggered.connect(self._open_import_window)
@@ -1073,6 +1079,10 @@ class AppWindow(QMainWindow):
         )
         if path:
             self.controller.open_file(path)
+
+    def _on_roll_check(self) -> None:
+        paths, reference = self.controller.roll_check_inputs()
+        RollCheckDialog(paths, reference, self).exec()
 
     def _on_merge_scans(self) -> None:
         dlg = MergeDialog(self)
