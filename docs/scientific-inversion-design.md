@@ -276,3 +276,14 @@ Coordinates: the film-base click happens on the raw scan view. The linear scan i
 - Imatest, "Measuring the impact of flare light on dynamic range" and ISO 18844 pages.
 - Adobe DNG specification (not retrievable; secondary summaries only).
 - Photrio / large-format forum threads on D-max, characteristic curves and Kodak contrast index (practitioner-level; used only where tagged "forum-level").
+
+## 13. Scan merging, roll checks and colour targets (technical notes)
+
+Details of the scanning tools in the [scanning guide](scanning-and-export-guide.md).
+
+- **Bracket merge.** Each frame i is scaled to the shortest exposure's units by t_ref / t_i. A pixel is used from a frame only if it is below 0.95 (not clipped) and above 1.5 times the noise floor. Weights are the inverse of the variance in the scaled units, (t_ref / t_i)^2 (sigma^2 + 2e-5 v), where sigma is the frame's read noise and the second term is a shot-noise allowance. A pixel valid in no frame falls back to the shortest frame and is counted in the "lost" share. The reported shadow-noise gain is sigma_first divided by the effective sigma, with effective sigma^-2 = sum over frames of (t_i / t_ref)^2 sigma_i^-2.
+- **Exposure-time check.** Where two frames are both mid-range, the median of (signal_i / signal_ref) (t_ref / t_i) should be 1. A deviation over 2% is reported; optionally the measured ratio replaces the stated time.
+- **Alignment.** A shift is estimated on log density of the green channel (so exposure and colour do not matter), with blown or empty places filled smoothly from their surroundings (a flat patch stays put while the picture moves and biases the estimate). Phase correlation gives a coarse shift and enhanced correlation on high-passed images refines it, to about 0.03 pixel on synthetic fields. Only translation is modelled; shifts over 25 pixels are not applied.
+- **Merged file.** A 16-bit TIFF scaled so the top of the data sits near 0.92 of the code range, plus a JSON sidecar with the scale back to linear values, the noise estimate and what was merged. Without the sidecar the file is read as an ordinary picture.
+- **Roll consistency.** The film base of each frame (from its clear border where found, otherwise the thinnest 1% of the central picture) is compared with the median base of the roll in stops of brightness and in red/green and blue/green ratios. Notes at 0.12 stops (0.10 for colour), warnings at 0.25 (0.20); estimated bases are judged at twice those limits.
+- **Colour target.** Transmittance t = patch / clear light is mapped to XYZ (D50, relative to clear light = white) by a matrix M with M(1,1,1) = white, which leaves six free numbers. They start from a least-squares fit and are refined by Levenberg-Marquardt on the Delta E 2000 of every patch. The baseline is the camera channels treated as sRGB primaries. A five-fold hold-out gives the error on unseen patches.
