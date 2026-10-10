@@ -10,7 +10,8 @@ from PyQt6.QtWidgets import (
     QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
-from ...features.densitometry import film_profile as fp, view_model
+import photoeditor
+from ...features.densitometry import film_profile as fp, profile_bundle, view_model
 from ...features.densitometry.film_profile import KIND_LABELS
 from ...theme.tokens import THEME
 from .characterization_dialog import _ask
@@ -45,6 +46,10 @@ def _text(p: fp.FilmProfile) -> str:
         lines.append(f"Notes: {p.notes}")
     if p.derived_from:
         lines.append(f"Copied from profile {p.derived_from[:8]}")
+    got = p.extras.get("received") if isinstance(p.extras.get("received"), dict) else None
+    if got:
+        who = f" from {got['author']}" if got.get("author") else ""
+        lines.append(f"Received{who} as a shared bundle (originally marked {got.get('kind', 'unknown')}; files checked intact; fingerprint {got.get('fingerprint', '')})")
     return "\n".join(lines)
 
 
@@ -77,7 +82,7 @@ class ProfilesDialog(QDialog):
         self.buttons = {}
         for key, label, slot in (
             ("use", "Use for This Photo (curve-informed)", self._use), ("view", "Show in the H&D Viewer", self._view), ("dup", "Duplicate", self._duplicate),
-            ("edit", "Edit Details...", self._edit), ("export", "Export...", self._export), ("compare", "Compare with Another...", self._compare), ("delete", "Delete", self._delete),
+            ("edit", "Edit Details...", self._edit), ("export", "Export...", self._export), ("share", "Share as Bundle...", self._share), ("compare", "Compare with Another...", self._compare), ("delete", "Delete", self._delete),
         ):
             b = QPushButton(label)
             b.clicked.connect(slot)
@@ -153,8 +158,11 @@ class ProfilesDialog(QDialog):
         self.changed.emit()
 
     def _import(self) -> None:
-        path, _ = QFileDialog.getOpenFileName(self, "Import a film profile", "", "Film profiles (*.json)")
+        path, _ = QFileDialog.getOpenFileName(self, "Import a film profile", "", "Film profiles (*.json *.efasprofile)")
         if not path:
+            return
+        if path.lower().endswith(profile_bundle.EXTENSION):
+            self._import_bundle(path)
             return
         try:
             p = self.store.import_file(path)
@@ -163,6 +171,51 @@ class ProfilesDialog(QDialog):
             return
         self.refresh(p.id)
         self.changed.emit()
+
+    def _import_bundle(self, path: str) -> None:
+        """Check a shared bundle, show what it is and what the checks do and do not show, and import it only after a yes."""
+        rep = profile_bundle.inspect_bundle(path)
+        if not rep.ok:
+            QMessageBox.warning(self, "Shared profile", profile_bundle.describe(rep))
+            return
+        ask = QMessageBox(QMessageBox.Icon.Question, "Import shared profile", profile_bundle.describe(rep), QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, self)
+        ask.button(QMessageBox.StandardButton.Yes).setText("Import")
+        if ask.exec() != QMessageBox.StandardButton.Yes:
+            return
+        try:
+            res = profile_bundle.import_bundle(path, self.store, self.c.setup_store())
+        except (profile_bundle.BundleError, OSError, fp.ProfileError) as exc:
+            QMessageBox.warning(self, "Shared profile", str(exc))
+            return
+        self.refresh(res.profile.id)
+        self.changed.emit()
+
+    def _share(self) -> None:
+        ident = self._current()
+        if not ident:
+            return
+        p = self.store.load(ident)
+        vals = _ask(self, "Share this profile", [("Your name (optional)", ""), ("Note for the receiver (optional)", "")])
+        if vals is None:
+            return
+        setup = None
+        setups = self.c.setup_store().list()
+        if setups and QMessageBox.question(self, "Share this profile", "Include a camera set-up with it?\n\nThe set-up holds the camera's measured black levels, noise and flare, which the receiver can use only if "
+                                           "their equipment is the same.") == QMessageBox.StandardButton.Yes:
+            names = [s["name"] for s in setups]
+            name, ok = QInputDialog.getItem(self, "Share this profile", "Camera set-up:", names, 0, False)
+            if ok:
+                setup = self.c.setup_store().load(setups[names.index(name)]["id"])
+        path, _ = QFileDialog.getSaveFileName(self, "Save the shared profile", f"{p.name}{profile_bundle.EXTENSION}", "Shared film profile (*.efasprofile)")
+        if not path:
+            return
+        try:
+            fingerprint = profile_bundle.export_bundle(p, path, setup, vals[0], vals[1], photoeditor.__version__)
+        except (OSError, fp.ProfileError) as exc:
+            QMessageBox.warning(self, "Share this profile", str(exc))
+            return
+        QMessageBox.information(self, "Share this profile", f"Saved. The fingerprint of this bundle is:\n\n{fingerprint}\n\nSend it to the receiver by a different route "
+                                "(a message, say) so they can check the file they got is the one you made.")
 
     def _export(self) -> None:
         ident = self._current()
