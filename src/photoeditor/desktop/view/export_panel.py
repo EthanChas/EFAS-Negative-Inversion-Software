@@ -20,6 +20,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from ...features.export import kinds as K
 from ...features.export import logic as X
 from ...theme.tokens import THEME
 from ..settings_store import qsettings
@@ -31,6 +32,7 @@ _GLOBAL_KEY = "export/options"
 _PRESETS_KEY = "export/presets"
 _SELECTED_KEY = "export/selected"
 _DEFAULT_CHECKED = "High quality JPEG (full size)"
+_ALT_OFFERED_KEY = "export/alternate_presets_offered"
 
 
 def _default_folder() -> str:
@@ -108,6 +110,16 @@ class ExportPanel(CollapsiblePanel):
         body.addLayout(preset_buttons)
 
         body.addWidget(self._section("FORMAT"))
+        self._kind = QComboBox()
+        for kind in K.KINDS:
+            self._kind.addItem(K.KIND_LABELS[kind], kind)
+        self._kind.setToolTip("Standard exports the picture as you edited it. The others export the conversion alone, for finishing in other software.")
+        self._kind.currentIndexChanged.connect(self._on_changed)
+        body.addLayout(self._row("Output", self._kind))
+        self._kind_note = QLabel("")
+        self._kind_note.setProperty("role", "hint")
+        self._kind_note.setWordWrap(True)
+        body.addWidget(self._kind_note)
         self._format = QComboBox()
         for fmt in X.FORMATS:
             self._format.addItem(X.FORMAT_LABELS[fmt], fmt)
@@ -244,6 +256,11 @@ class ExportPanel(CollapsiblePanel):
         self._gray = QCheckBox("Convert to grayscale")
         self._gray.toggled.connect(self._on_changed)
         body.addWidget(self._gray)
+        self._record = QCheckBox("Write a conversion record (.json)")
+        self._record.setToolTip("Saves everything that produced the picture (source file and its checksum, film base, inversion method and profile, your edits, "
+                                "settings) beside it, so the conversion can be reproduced or audited later.")
+        self._record.toggled.connect(self._on_changed)
+        body.addWidget(self._record)
         self._exif = QCheckBox("Copy EXIF from the original")
         self._exif.setToolTip("Camera data from standard-format originals (not RAW files).")
         self._exif.toggled.connect(self._on_changed)
@@ -405,6 +422,8 @@ class ExportPanel(CollapsiblePanel):
             copy_exif=self._exif.isChecked(),
             suffix=self._suffix.text(),
             prefix=self._prefix.text(),
+            output_kind=self._kind.currentData(),
+            write_record=self._record.isChecked(),
             dest_mode=self._dest_mode.currentData(),
             folder=self._folder.text().strip(),
             subfolder=self._subfolder.text(),
@@ -442,6 +461,8 @@ class ExportPanel(CollapsiblePanel):
         self._no_upscale.setChecked(o.no_upscale)
         pick(self._resample, o.resample)
         self._dpi.setValue(int(o.dpi))
+        pick(self._kind, o.output_kind)
+        self._record.setChecked(o.write_record)
         self._srgb.setChecked(o.embed_srgb)
         self._gray.setChecked(o.grayscale)
         self._exif.setChecked(o.copy_exif)
@@ -477,6 +498,12 @@ class ExportPanel(CollapsiblePanel):
             options = preset.get("options")
             if "prefix" in built_in and isinstance(options, dict) and "prefix" not in options:
                 options["prefix"] = built_in["prefix"]
+        if not str(settings.value(_ALT_OFFERED_KEY, "") or ""):
+            have = {p["name"] for p in presets}
+            for name, values in X.PRESETS.items():
+                if values.get("output_kind", "standard") != "standard" and name not in have:
+                    presets.append({"name": name, "checked": False, "options": X.ExportOptions.from_dict(values).to_dict()})
+            settings.setValue(_ALT_OFFERED_KEY, "1")
         self._presets = presets
         try:
             shared = json.loads(settings.value(_GLOBAL_KEY, "") or "{}")
@@ -615,6 +642,17 @@ class ExportPanel(CollapsiblePanel):
         self._save_settings()
 
     def _refresh_visibility(self) -> None:
+        alternate = self._kind.currentData() != "standard"
+        self._kind_note.setText(K.KIND_NOTES.get(self._kind.currentData(), ""))
+        self._kind_note.setVisible(alternate)
+        if alternate and self._format.currentData() != "tiff":
+            self._format.blockSignals(True)
+            self._format.setCurrentIndex(max(0, self._format.findData("tiff")))
+            self._format.blockSignals(False)
+        self._format.setEnabled(not alternate)
+        self._srgb.setVisible(not alternate)
+        self._gray.setVisible(not alternate)
+        self._exif.setVisible(not alternate)
         fmt = self._format.currentData()
         self._jpeg_box.setVisible(fmt == "jpeg")
         self._png_box.setVisible(fmt == "png")
@@ -644,7 +682,7 @@ class ExportPanel(CollapsiblePanel):
             self._size_hint.setText("Open an image to see its export size.")
             size = (0, 0)
         stem = X.render_filename(o.pattern, self._example_name, 1, size, o.fmt)
-        names = [o.prefix + stem + o.suffix + X.EXTENSIONS[o.fmt]]
+        names = [o.prefix + stem + (o.suffix or K.SUFFIX[o.output_kind]) + (".tif" if o.output_kind != "standard" else X.EXTENSIONS[o.fmt])]
         self._name_preview.setText(f"e.g. {names[0]}")
 
     def set_source_info(self, name: str | None, size: tuple[int, int] | None) -> None:

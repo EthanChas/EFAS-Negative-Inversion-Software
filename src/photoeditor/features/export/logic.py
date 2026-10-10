@@ -8,6 +8,8 @@ from datetime import datetime
 import numpy as np
 from PIL import Image, ImageFile
 
+from .kinds import SUFFIX as KIND_SUFFIX
+
 FORMATS = ("jpeg", "png", "tiff", "webp")
 FORMAT_LABELS = {"jpeg": "JPEG", "png": "PNG", "tiff": "TIFF", "webp": "WebP"}
 EXTENSIONS = {"jpeg": ".jpg", "png": ".png", "tiff": ".tif", "webp": ".webp"}
@@ -83,6 +85,8 @@ class ExportOptions:
     preset_folders: bool = False
     suffix: str = ""
     prefix: str = ""
+    output_kind: str = "standard"
+    write_record: bool = False
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -101,6 +105,9 @@ PRESETS: dict[str, dict] = {
     "Print (full-size TIFF)": dict(fmt="tiff", tiff_compression="lzw", size_mode="original", dpi=300),
     "Archive (full-size PNG)": dict(fmt="png", png_compress=6, size_mode="original", dpi=300),
     "Modern web (WebP)": dict(fmt="webp", webp_quality=85, webp_lossless=False, size_mode="long_edge", long_edge=2560, dpi=72),
+    "Flat for grading (16-bit TIFF)": dict(fmt="tiff", tiff_compression="lzw", size_mode="original", dpi=300, output_kind="flat"),
+    "Linear light (16-bit TIFF)": dict(fmt="tiff", tiff_compression="lzw", size_mode="original", dpi=300, output_kind="linear"),
+    "Density, log (16-bit TIFF)": dict(fmt="tiff", tiff_compression="lzw", size_mode="original", dpi=300, output_kind="density"),
 }
 
 
@@ -183,12 +190,15 @@ def resolve_output_path(
 ) -> str | None:
     """Full output path for a source, or None if it should be skipped (file exists and on_conflict is 'skip')."""
     name = os.path.splitext(os.path.basename(source_path))[0]
+    alternate = opts.output_kind != "standard"
+    fmt = "tiff" if alternate else opts.fmt
+    suffix = opts.suffix or KIND_SUFFIX.get(opts.output_kind, "")
     stem = (
         _BAD_FILENAME_CHARS.sub("_", opts.prefix)
-        + render_filename(opts.pattern, name, index, size, opts.fmt, roll=roll, frame=frame)
-        + _BAD_FILENAME_CHARS.sub("_", opts.suffix)
+        + render_filename(opts.pattern, name, index, size, fmt, roll=roll, frame=frame)
+        + _BAD_FILENAME_CHARS.sub("_", suffix)
     )
-    path = os.path.join(resolve_directory(source_path, opts, preset_name), stem + EXTENSIONS[opts.fmt])
+    path = os.path.join(resolve_directory(source_path, opts, preset_name), stem + EXTENSIONS[fmt])
     if os.path.abspath(path).lower() == os.path.abspath(source_path).lower():
         return unique_path(path)
     if os.path.exists(path):

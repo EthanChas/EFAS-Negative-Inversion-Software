@@ -3,8 +3,11 @@ full resolution, apply its saved edits through the same renderer the editor
 uses, and write it with the chosen export options."""
 
 import dataclasses
+import hashlib
+import json
 import os
 
+import numpy as np
 from PyQt6.QtCore import QThread, pyqtSignal
 
 from ..features.aidust import logic as aidust
@@ -24,7 +27,15 @@ from ..features.retouch.logic import DEFAULT_SCRATCH_SENSITIVITY, DEFAULT_SIZE, 
 from ..features.sharpening.logic import DEFAULT_METHOD
 from ..features.tonecurve.logic import DEFAULT_POINTS
 from ..features.xmp import logic as xmp
-from . import curve_engine
+import photoeditor
+from ..features.densitometry import base as dens_base
+from ..features.densitometry import film_profile
+from ..features.densitometry import processor as dens_processor
+from ..features.densitometry.linear import from_display_referred
+from ..features.export import kinds as export_kinds
+from ..features.export.record import build_record, write_record
+from ..features.settings import logic as app_settings
+from . import alt_export, curve_engine
 from .render import EditParams, Renderer
 
 
@@ -125,6 +136,78 @@ def _curve_source(path: str, conn, full, params, flatfield):
     return curve_engine.full_positive(path, setup, row["white"]), dataclasses.replace(params, negative_inverted=False), None
 
 
+def render_alternate(path: str, conn, kind: str):
+    """-> (16-bit picture, notes) for the flat, linear and density exports: the conversion alone, in the editor's framing and crop."""
+    notes: list[str] = []
+    if kind == "density":
+        return _render_density(path, conn, notes), notes
+    full = load_image_rgb(path)
+    preview = make_preview_rgb(full)
+    params, flatfield = _edits_for(path, conn, to_uint8(preview))
+    scanned = full
+    full, params, flatfield = _curve_source(path, conn, full, params, flatfield)
+    positive = full is not scanned
+    if full.dtype == np.uint8 and not positive:
+        notes.append("The source is an 8-bit file, so this output has 8-bit precision.")
+    if flatfield is not None and not positive:
+        notes.append("Flat-field correction was not applied to this output.")
+    flat = alt_export.flat16(full, params, preview.shape[1], already_positive=positive)
+    if kind == "linear":
+        notes.append("Linear light assumes the conversion's output is sRGB-encoded." + (" The values are the reconstructed relative exposure." if positive else ""))
+        return export_kinds.to_linear16(flat), notes
+    return flat, notes
+
+
+def _render_density(path: str, conn, notes: list[str]) -> np.ndarray:
+    """Density above the film base at the original resolution, from the linear scan; the film base is the roll's sampled one or, failing that, an estimate."""
+    if is_raw(path):
+        scan = dens_processor.decode_linear_raw(path)
+    else:
+        scan = from_display_referred(load_image_rgb(path), app_settings.get("scan_transfer"))
+        notes.append("The source is not a RAW file, so its encoding is assumed and the density is approximate.")
+    folder = edit_store.folder_key(path)
+    ref = edit_store.get_linear_ref(conn, folder, "base")
+    if ref is not None:
+        v_base = ref[0]
+    else:
+        h, w = scan.rgb.shape[:2]
+        v_base = dens_base.estimate_base(scan.rgb[h // 8:h - h // 8:4, w // 8:w - w // 8:4], scan.info.floor()).v
+        notes.append("No film base was sampled for this roll, so the density is measured from an estimated film base.")
+    display = load_image_rgb(path)
+    preview8 = to_uint8(make_preview_rgb(display))
+    del display
+    params, _ff = _edits_for(path, conn, preview8)
+    return alt_export.density16(scan, v_base, params, preview8.shape[1])
+
+
+def conversion_record(path: str, conn, dest: str, options, kind: str, notes: list[str]) -> dict:
+    """What produced `dest`, from the database and the files (see features/export/record.py)."""
+    data_dir = curve_engine.data_dir_of(conn)
+    folder = edit_store.folder_key(path)
+    inv = edit_store.get_inversion(conn, path)
+    profile = None
+    if inv and inv["engine"] == "curve":
+        try:
+            p = film_profile.ProfileStore(film_profile.profiles_dir(data_dir)).load(inv["profile_id"])
+            profile = {"id": p.id, "name": p.name, "kind": p.kind, "film_stock": p.film_stock, "process": p.process,
+                       "sha256": hashlib.sha256(json.dumps(p.to_dict(), sort_keys=True).encode("utf-8")).hexdigest()}
+        except film_profile.ProfileError:
+            profile = {"id": inv["profile_id"], "error": "the profile could not be read"}
+    base = edit_store.get_linear_ref(conn, folder, "base")
+    clear = edit_store.get_linear_ref(conn, folder, "clear")
+    film_base = {"display_rgb": edit_store.get_folder_base(conn, folder), "linear": list(base[0]) if base else None, "clear_light_linear": list(clear[0]) if clear else None}
+    scan = None
+    if is_raw(path):
+        try:
+            import rawpy
+
+            with rawpy.imread(path) as raw:
+                scan = {"black_level_per_channel": list(raw.black_level_per_channel), "white_level": raw.white_level, "camera_white_level_per_channel": raw.camera_white_level_per_channel}
+        except Exception:
+            scan = None
+    return build_record(photoeditor.__version__, path, dest, kind, options.to_dict(), edit_store.load_edit_state(conn, path), inv, film_base, profile, scan, notes)
+
+
 def render_full_resolution(path: str, conn) -> "tuple":
     """-> (pixels at the original resolution with the photo's saved edits applied, EXIF bytes or None)."""
     full = load_image_rgb(path)
@@ -212,25 +295,42 @@ class ExportWorker(QThread):
                     summary["cancelled"] = True
                     break
                 try:
-                    pixels, exif = render_full_resolution(path, conn)
+                    pixels = exif = None
+                    if any(o.output_kind == "standard" for _n, o in self._jobs):
+                        pixels, exif = render_full_resolution(path, conn)
+                    alternates: dict = {}
                     metadata = load_metadata(path, conn, folder_cache)
                     done += 1
                     self.progress.emit(done, total, f"{os.path.basename(path)} ({i + 1} of {photos})")
-                    h, w = pixels.shape[:2]
                     for name, options in self._jobs:
                         try:
+                            kind = options.output_kind
+                            notes: list[str] = []
+                            if kind == "standard":
+                                data = pixels
+                            else:
+                                if kind not in alternates:
+                                    alternates[kind] = render_alternate(path, conn, kind)
+                                data, notes = alternates[kind]
+                            h, w = data.shape[:2]
                             dest = resolve_output_path(
                                 path, i + 1, target_size(w, h, options), options, name, roll=metadata.capture_roll, frame=metadata.capture_frame
                             )
                             if dest is None:
                                 summary["skipped"].append(path)
                             else:
-                                save_image(pixels, dest, options, exif)
-                                try:
-                                    embed_into_file(dest, metadata, path, options.copy_exif, int(options.dpi))
-                                except Exception as exc:
-                                    summary["failed"].append((path, f"{name}: metadata not written ({type(exc).__name__}: {exc})"))
-                                embed_keywords(dest, edit_store.get_tags(conn, [path]).get(path, []))
+                                if kind == "standard":
+                                    save_image(data, dest, options, exif)
+                                    try:
+                                        embed_into_file(dest, metadata, path, options.copy_exif, int(options.dpi))
+                                    except Exception as exc:
+                                        summary["failed"].append((path, f"{name}: metadata not written ({type(exc).__name__}: {exc})"))
+                                    embed_keywords(dest, edit_store.get_tags(conn, [path]).get(path, []))
+                                else:
+                                    out = export_kinds.resize16(data, target_size(w, h, options), options.resample)
+                                    export_kinds.write_tiff16(out, dest, options.tiff_compression, int(options.dpi))
+                                if options.write_record:
+                                    write_record(dest, conversion_record(path, conn, dest, options, kind, notes))
                                 summary["done"].append(dest)
                         except Exception as exc:
                             summary["failed"].append((path, f"{name}: {type(exc).__name__}: {exc}"))
