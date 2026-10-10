@@ -36,6 +36,7 @@ _SYNTH = textwrap.dedent(r'''
     for name, arr in cases.items():
         f = os.path.join(work, name + ".png"); cv2.imwrite(f, np.round(np.clip(arr, 0, 1) * 65535).astype(np.uint16)[..., ::-1]); files[f] = arr
     ctrl.is_raw = lambda p: True
+    dproc.is_measurable = lambda p: True
     dproc.linear_scan = lambda path, picture, transfer: linear.LinearScan(files[path], INFO)
     win = AppWindow(); c = win.controller; nt = win._negative_tool
     def pump(cond, secs=30):

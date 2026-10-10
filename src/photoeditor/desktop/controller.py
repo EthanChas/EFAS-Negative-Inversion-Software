@@ -236,7 +236,7 @@ class AppController(QObject):
         try:
             self._open_file_impl(path)
             self._restore_engine(path)
-            if app_settings.get("scan_quality") and is_raw(path):
+            if app_settings.get("scan_quality") and dens_processor.is_measurable(path):
                 self.request_linear()
         finally:
             self.loading_finished.emit()
@@ -2360,7 +2360,7 @@ class AppController(QObject):
         path = self.state.image_path
         if path is None:
             return dens_quality.unknown("Open a photo first.")
-        if not is_raw(path):
+        if not dens_processor.is_measurable(path):
             return dens_quality.unknown("The check needs a RAW file. This picture is an encoded file, so its exposure cannot be judged reliably.")
         if self._measurement is None:
             if self.linear_busy():

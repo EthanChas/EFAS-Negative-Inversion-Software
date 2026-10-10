@@ -82,6 +82,7 @@ from .loading_overlay import LoadingOverlay
 from .masking_panel import MaskingToolPanel
 from .negative_tool_panel import NegativeToolPanel
 from .scientific_panel import AdvancedPanels
+from .merge_dialog import MergeDialog
 from .rebate_dialog import RebateDialog
 from .characterization_dialog import CharacterizationDialog
 from .profile_dialogs import ABCompareDialog, ProfilesDialog, SetupsDialog
@@ -423,6 +424,11 @@ class AppWindow(QMainWindow):
         self._contact_sheet_action.setToolTip("Every frame of this roll on printable pages, with its roll details, frame numbers, stars and flags")
         self._contact_sheet_action.triggered.connect(self._on_contact_sheet)
         file_menu.addAction(self._contact_sheet_action)
+
+        self._merge_action = QAction("Merge Scans...", self)
+        self._merge_action.setToolTip("Combine an exposure bracket, or red, green and blue lit scans, of one frame into one measured scan")
+        self._merge_action.triggered.connect(self._on_merge_scans)
+        file_menu.addAction(self._merge_action)
 
         import_action = QAction("Import Images...", self)
         import_action.triggered.connect(self._open_import_window)
@@ -1067,6 +1073,11 @@ class AppWindow(QMainWindow):
         )
         if path:
             self.controller.open_file(path)
+
+    def _on_merge_scans(self) -> None:
+        dlg = MergeDialog(self)
+        dlg.open_requested.connect(self.controller.open_file)
+        dlg.exec()
 
     def _on_contact_sheet(self) -> None:
         """File > Contact Sheet: ask for the layout and a file name, then build the PDF in the background with a progress box."""

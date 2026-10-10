@@ -160,9 +160,8 @@ def render_alternate(path: str, conn, kind: str):
 
 def _render_density(path: str, conn, notes: list[str]) -> np.ndarray:
     """Density above the film base at the original resolution, from the linear scan; the film base is the roll's sampled one or, failing that, an estimate."""
-    if is_raw(path):
-        scan = dens_processor.decode_linear_raw(path)
-    else:
+    scan = dens_processor.decode_linear(path)
+    if scan is None:
         scan = from_display_referred(load_image_rgb(path), app_settings.get("scan_transfer"))
         notes.append("The source is not a RAW file, so its encoding is assumed and the density is approximate.")
     folder = edit_store.folder_key(path)

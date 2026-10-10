@@ -9,6 +9,7 @@ import rawpy
 
 from ..open_image.logic import is_raw
 from ..settings import logic as settings
+from . import merge
 from .linear import LinearScan, ScanInfo, from_display_referred
 
 _OB_GUARD = 4
@@ -97,8 +98,21 @@ def decode_linear_raw(path: str, user_flip: int | None = None, half_size: bool =
     return LinearScan(rgb, info)
 
 
-def linear_scan(path: str, preview_rgb, transfer: str) -> LinearScan:
-    """RAW files are decoded for measurement; any other picture is linearised from the already-loaded pixels with the assumed transfer function."""
+def is_measurable(path: str) -> bool:
+    """True when the file's linear light can be read exactly: a RAW file, or a scan merged here (which keeps its linear values in a sidecar)."""
+    return is_raw(path) or merge.is_merged_scan(path)
+
+
+def decode_linear(path: str) -> LinearScan | None:
+    """The exact linear scan of a RAW file or a merged scan; None for any other picture."""
     if is_raw(path):
         return decode_linear_raw(path)
+    return merge.load_merged(path)
+
+
+def linear_scan(path: str, preview_rgb, transfer: str) -> LinearScan:
+    """RAW files and merged scans are read for measurement; any other picture is linearised from the already-loaded pixels with the assumed transfer function."""
+    exact = decode_linear(path)
+    if exact is not None:
+        return exact
     return from_display_referred(preview_rgb, transfer)
