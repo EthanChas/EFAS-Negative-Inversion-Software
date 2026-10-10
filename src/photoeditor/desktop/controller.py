@@ -2718,6 +2718,20 @@ class AppController(QObject):
             return {"found": False, "message": "The scan view does not match the measurement, so the border cannot be marked."}
         return {"found": True, "rebate": found, "raw": raw}
 
+    def colour_target_inputs(self) -> dict:
+        """What the colour-target fit needs from the open photo: its framed linear scan, noise floor, clear-light sample and the raw view to mark the grid on."""
+        if self.state.image_path is None or self.state.preview_rgb is None:
+            return {"error": "Open the photo of the scanned colour target first."}
+        if not self._ensure_linear_now():
+            return {"error": f"The scan could not be read for measurement: {self._linear_error}"}
+        if not self.state.linear_clear:
+            return {"error": "Sample the clear light first (Advanced mode > Measure > Sample Clear Light), so the target can be read as transmittance."}
+        framed = self.framed_linear()
+        raw = self.render_raw_scan()
+        if raw is None or raw.shape[:2] != framed.shape[:2]:
+            return {"error": "The scan view does not match the measurement."}
+        return {"framed": framed, "floor": self._linear[1].info.floor(), "clear": tuple(self.state.linear_clear[0]), "raw": raw}
+
     def apply_suggested_film_base(self, rebate) -> None:
         """Use a found border as this roll's film base, exactly as if it had been clicked."""
         raw = self.render_raw_scan()

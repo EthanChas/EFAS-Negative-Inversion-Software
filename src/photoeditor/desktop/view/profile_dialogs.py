@@ -15,6 +15,7 @@ from ...features.densitometry import film_profile as fp, profile_bundle, view_mo
 from ...features.densitometry.film_profile import KIND_LABELS
 from ...theme.tokens import THEME
 from .characterization_dialog import _ask
+from .colour_target_dialog import ColourTargetDialog
 
 
 def _text(p: fp.FilmProfile) -> str:
@@ -382,11 +383,16 @@ class SetupsDialog(QDialog):
         right.addWidget(self.detail, 1)
         edit = QPushButton("Edit Details...")
         edit.clicked.connect(self._edit)
+        colour = QPushButton("Colour Target...")
+        colour.setToolTip("Measure the colour accuracy of a set-up from a scanned transmission colour target (open that scan first)")
+        colour.clicked.connect(self._colour_target)
         delete = QPushButton("Delete")
         delete.clicked.connect(self._delete)
         right.addWidget(edit)
+        right.addWidget(colour)
         right.addWidget(delete)
         outer.addLayout(right, 3)
+        self.c = controller
         self.refresh()
 
     def _current(self):
@@ -429,6 +435,10 @@ class SetupsDialog(QDialog):
             lines.append("Settings: " + ", ".join(f"{k} {v}" for k, v in s.settings.items() if v is not None))
         if s.calibration.get("date"):
             lines.append(f"Calibrated {s.calibration['date']}")
+        colour = s.calibration.get("colour")
+        if isinstance(colour, dict) and colour.get("after"):
+            lines.append(f"Colour accuracy ({colour.get('target', 'colour target')}, {colour.get('date', '')}): mean Delta E {colour['after']['mean']:.1f}, "
+                         f"worst {colour['after']['max']:.1f}, {colour.get('patches', 0)} patches, rated {colour.get('verdict', 'unknown')}")
         lines.append("This describes the set-up it was made in. Camera-band densities, not Status M.")
         if s.notes:
             lines.append(f"Notes: {s.notes}")
@@ -444,6 +454,11 @@ class SetupsDialog(QDialog):
             return
         s.name, s.camera, s.lens, s.light_source, s.notes = vals[0] or s.name, vals[1], vals[2], vals[3], vals[4]
         self.store.save(s)
+        self.refresh()
+        self.changed.emit()
+
+    def _colour_target(self) -> None:
+        ColourTargetDialog(self.c, self).exec()
         self.refresh()
         self.changed.emit()
 
