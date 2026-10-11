@@ -350,7 +350,7 @@ class FitReport:
 
 def runs_test_p(residuals: np.ndarray) -> float:
     """Wald-Wolfowitz runs test on the signs of the residuals. A small p means the residuals have a systematic pattern (the model has the wrong shape)."""
-    signs = residuals[residuals != 0] > 0
+    signs = residuals[np.abs(residuals) > 1e-6] > 0  # residuals a millionth of the uncertainty are rounding, not a pattern (noise-free data would otherwise get random signs)
     n1, n2 = int(signs.sum()), int((~signs).sum())
     if n1 == 0 or n2 == 0 or n1 + n2 < 6:
         return 1.0
