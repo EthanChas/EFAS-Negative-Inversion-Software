@@ -2857,6 +2857,34 @@ class AppWindow(QMainWindow):
             self._panels_hidden = False
         self._filmstrip.set_panels_hidden(self._panels_hidden)
 
+    def _ask_export_unedited(self, unedited: int, total: int) -> str:
+        """Before exporting photos that were never edited: 'all', 'edited' (only the ones with saved edits) or 'cancel'."""
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Icon.Warning)
+        box.setWindowTitle("Export")
+        box.setText(f"{unedited} of the {total} photos have no saved edits.")
+        box.setInformativeText("They would be exported as EFAS first shows them (inverted automatically, no crop or other edits). If that is not what you want, export only the "
+                               "photos you have edited, or cancel and edit them first.")
+        everything = box.addButton(f"Export All {total}", QMessageBox.ButtonRole.AcceptRole)
+        only = box.addButton("Only Edited Photos", QMessageBox.ButtonRole.ActionRole)
+        box.addButton("Cancel", QMessageBox.ButtonRole.RejectRole)
+        box.exec()
+        clicked = box.clickedButton()
+        return "all" if clicked is everything else "edited" if clicked is only else "cancel"
+
+    def _confirm_unedited_export(self, paths: list[str]) -> list[str]:
+        """Warn when some of the photos about to be exported were never edited; returns the photos to export (empty = cancelled)."""
+        touched = edit_store.touched_paths(self.controller._db, paths, DEFAULT_POINTS)
+        unedited = [p for p in paths if p not in touched]
+        if not unedited:
+            return paths
+        choice = self._ask_export_unedited(len(unedited), len(paths))
+        if choice == "all":
+            return paths
+        if choice == "edited":
+            return [p for p in paths if p in touched]
+        return []
+
     def _on_export_requested(self, scope: str, jobs: list) -> None:
         self._metadata_tab.flush()
         panel = self._export_panel
@@ -2901,6 +2929,11 @@ class AppWindow(QMainWindow):
                 if not paths:
                     panel.show_message("None of the photos in this folder have saved edits yet.")
                     return
+        if scope != "current" and scope != "edited":
+            paths = self._confirm_unedited_export(paths)
+            if not paths:
+                panel.show_message("Export cancelled.")
+                return
         worker = ExportWorker(paths, jobs, self.controller.db_path)
         worker.progress.connect(panel.set_progress)
         steps_per_photo = 1 + len(jobs)
@@ -2950,6 +2983,9 @@ class AppWindow(QMainWindow):
         if failed:
             first_path, message = failed[0]
             parts.append(f"{len(failed)} failed - {os.path.basename(first_path)}: {message}")
+        notes = summary.get("notes", [])
+        if notes:
+            parts.append(f"{len(notes)} photo{'s' if len(notes) != 1 else ''} saved as 8-bit although 16-bit was asked for (8-bit-only edits such as sharpening, saturation or a border are on)")
         if summary["cancelled"]:
             parts.append("cancelled")
         folder = os.path.dirname(done[0]) if done else None

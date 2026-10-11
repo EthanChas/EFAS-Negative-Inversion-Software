@@ -429,8 +429,10 @@ class Renderer:
         want_stats: bool = True,
         overlay: bool = False,
         flatfield: tuple | None = None,
+        deep: bool = False,
     ):
-        """-> (image, pre_crop, stats, overlay)."""
+        """-> (image, pre_crop, stats, overlay). With deep=True the image is 16-bit (uint16) when the photo has a 16-bit source and only tone edits
+        (inversion, colour balance, exposure, contrast, tone curve, geometry, crop); any 8-bit-only stage switched on gives the usual 8-bit image."""
         with self.lock:
             scale = source.shape[1] / base_width
             source16 = None
@@ -500,7 +502,14 @@ class Renderer:
                 if not is_identity(post):
                     pixels = apply_channel_lut(pixels, post)
             elif wide:
-                pixels = apply_wide_lut(pixels16, wide_ramp_to_lut(apply_tone_curve(ramp, curve)))
+                final = apply_tone_curve(ramp, curve)
+                if deep and not (params.sharpen_amount or params.vignette or watermark_active(params.wm_film) or params.marks.active() or params.border > 0 or params.carrier):
+                    table = np.clip(np.rint(final[0].T * np.float32(65535.0 / 255.0)), 0, 65535).astype(np.uint16)
+                    pixels = np.empty(pixels16.shape, dtype=np.uint16)
+                    for c in range(3):
+                        np.take(table[c], pixels16[..., c], out=pixels[..., c])
+                else:
+                    pixels = apply_wide_lut(pixels16, wide_ramp_to_lut(final))
             else:
                 lut = ramp_to_lut(apply_tone_curve(ramp, curve))
                 if not is_identity(lut):

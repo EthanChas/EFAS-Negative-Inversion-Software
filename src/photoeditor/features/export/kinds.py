@@ -67,8 +67,8 @@ def resize16(pixels: np.ndarray, size: tuple[int, int], resample: str = "lanczos
     return cv2.resize(np.ascontiguousarray(pixels), tuple(size), interpolation=flag)
 
 
-def write_tiff16(pixels: np.ndarray, dest: str, compression: str = "lzw", dpi: int = 300) -> tuple[int, int]:
-    """Write a 16-bit RGB picture as a TIFF (atomically); returns (w, h)."""
+def write_tiff16(pixels: np.ndarray, dest: str, compression: str = "lzw", dpi: int = 300, icc: bytes | None = None) -> tuple[int, int]:
+    """Write a 16-bit RGB picture as a TIFF (atomically); returns (w, h). With an ICC profile to carry it is written with tifffile, otherwise with OpenCV."""
     import os
 
     import cv2
@@ -77,11 +77,43 @@ def write_tiff16(pixels: np.ndarray, dest: str, compression: str = "lzw", dpi: i
         raise ValueError("a 16-bit RGB picture is needed")
     os.makedirs(os.path.dirname(dest) or ".", exist_ok=True)
     tmp = dest + ".part.tif"
+    if icc:
+        return _write_tiff16_tags(pixels, dest, tmp, compression, dpi, icc)
     try:
         ok = cv2.imwrite(tmp, np.ascontiguousarray(pixels[..., ::-1]), [
             cv2.IMWRITE_TIFF_COMPRESSION, CV2_COMPRESSION.get(compression, 5), cv2.IMWRITE_TIFF_XDPI, int(dpi), cv2.IMWRITE_TIFF_YDPI, int(dpi),
         ])
         if not ok:
+            raise OSError("the TIFF could not be written")
+        os.replace(tmp, dest)
+    finally:
+        if os.path.exists(tmp):
+            try:
+                os.remove(tmp)
+            except OSError:
+                pass
+    return pixels.shape[1], pixels.shape[0]
+
+
+def _write_tiff16_tags(pixels: np.ndarray, dest: str, tmp: str, compression: str, dpi: int, icc: bytes | None) -> tuple[int, int]:
+    """The tifffile route: 16-bit RGB with the sRGB profile tag (34675) and a resolution. Compression falls back to zlib when LZW needs a library that is not installed."""
+    import os
+
+    import tifffile
+
+    extra = []
+    if icc:
+        extra.append((34675, "B", len(icc), icc, True))
+    names = {"none": None, "lzw": "lzw", "zip": "adobe_deflate", "packbits": "packbits"}
+    wanted = names.get(compression, "lzw")
+    try:
+        for choice in dict.fromkeys([wanted, "adobe_deflate", None]):
+            try:
+                tifffile.imwrite(tmp, np.ascontiguousarray(pixels), photometric="rgb", compression=choice, resolution=(int(dpi), int(dpi)), resolutionunit="INCH", extratags=extra)
+                break
+            except (ValueError, ImportError, KeyError):
+                continue
+        else:
             raise OSError("the TIFF could not be written")
         os.replace(tmp, dest)
     finally:

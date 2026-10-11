@@ -12,7 +12,7 @@ import numpy as np
 from PyQt6.QtCore import QThread, pyqtSignal
 
 from ..features.aidust import logic as aidust
-from ..features.export.logic import ExportOptions, read_exif_bytes, resolve_output_path, save_image, target_size
+from ..features.export.logic import ExportOptions, deep_requested, read_exif_bytes, resolve_output_path, save_image, target_size, unique_path
 from ..features.flatfield.logic import gain_token
 from ..features.metadata import store as metadata_store
 from ..features.metadata.export import embed_into_file
@@ -219,8 +219,9 @@ def conversion_record(path: str, conn, dest: str, options, kind: str, notes: lis
     return build_record(photoeditor.__version__, path, dest, kind, options.to_dict(), state if state is not None else edit_store.load_edit_state(conn, path), inv, film_base, profile, scan, notes)
 
 
-def render_full_resolution(path: str, conn, state: dict | None = None) -> "tuple":
-    """-> (pixels at the original resolution with the photo's saved edits (or the given virtual copy's) applied, EXIF bytes or None)."""
+def render_full_resolution(path: str, conn, state: dict | None = None, deep: bool = False) -> "tuple":
+    """-> (pixels at the original resolution with the photo's saved edits (or the given virtual copy's) applied, EXIF bytes or None). With deep=True the
+    pixels are 16-bit when the photo allows it (see Renderer.render)."""
     full = load_image_rgb(path)
     preview = make_preview_rgb(full)
     params, flatfield = _edits_for(path, conn, to_uint8(preview), state)
@@ -229,7 +230,7 @@ def render_full_resolution(path: str, conn, state: dict | None = None) -> "tuple
     if params.ai_dust:
         renderer.ai_prob_lookup = lambda token, inverted, mono: aidust.probability(path, full, inverted, mono)
     image, _pre, _stats, _overlay = renderer.render(
-        full, params, path, preview.shape[1], live=None, want_stats=False, overlay=False, flatfield=flatfield
+        full, params, path, preview.shape[1], live=None, want_stats=False, overlay=False, flatfield=flatfield, deep=deep
     )
     return image, (None if is_raw(path) else read_exif_bytes(path))
 
@@ -277,6 +278,10 @@ def load_metadata(path: str, conn, folder_cache: dict | None = None, state: dict
     return compose(frame, roll, index, len(images))
 
 
+def _key(path: str) -> str:
+    return os.path.normcase(os.path.abspath(path))
+
+
 def _version_suffix(options, label: str):
     """The options for exporting a virtual copy: its name is added to the file name, after any suffix the preset already adds."""
     safe = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", label).strip() or "copy"
@@ -309,6 +314,8 @@ def export_photos(paths: list[str], jobs: list, db_path: str, progress=None, can
         photos = len(paths)
         folder_cache: dict = {}
         plan = [(i, path, _units(path, conn, jobs)) for i, path in enumerate(paths)]
+        sources = {_key(p) for p in paths}
+        written: set[str] = set()
         total = sum(1 + len(u_jobs) for _i, _p, units in plan for _l, _s, u_jobs in units)
         done = 0
         for i, path, units in plan:
@@ -319,7 +326,7 @@ def export_photos(paths: list[str], jobs: list, db_path: str, progress=None, can
                 try:
                     pixels = exif = None
                     if any(o.output_kind == "standard" for _n, o in unit_jobs):
-                        pixels, exif = render_full_resolution(path, conn, state)
+                        pixels, exif = render_full_resolution(path, conn, state, any(deep_requested(o) for _n, o in unit_jobs))
                     alternates: dict = {}
                     metadata = load_metadata(path, conn, folder_cache, state)
                     done += 1
@@ -330,6 +337,8 @@ def export_photos(paths: list[str], jobs: list, db_path: str, progress=None, can
                             notes: list[str] = []
                             if kind == "standard":
                                 data = pixels
+                                if deep_requested(options) and pixels.dtype != np.uint16:
+                                    summary.setdefault("notes", []).append((path, "16-bit was asked for, but this photo has 8-bit edits switched on (or an 8-bit source), so it was saved as 8-bit"))
                             else:
                                 if kind not in alternates:
                                     alternates[kind] = render_alternate(path, conn, kind, state)
@@ -338,6 +347,8 @@ def export_photos(paths: list[str], jobs: list, db_path: str, progress=None, can
                             dest = resolve_output_path(
                                 path, i + 1, target_size(w, h, options), options, name, roll=metadata.capture_roll, frame=metadata.capture_frame
                             )
+                            if dest is not None and (_key(dest) in sources or _key(dest) in written):
+                                dest = unique_path(dest)
                             if dest is None:
                                 summary["skipped"].append(path)
                             else:
@@ -353,6 +364,7 @@ def export_photos(paths: list[str], jobs: list, db_path: str, progress=None, can
                                     export_kinds.write_tiff16(out, dest, options.tiff_compression, int(options.dpi))
                                 if options.write_record:
                                     write_record(dest, conversion_record(path, conn, dest, options, kind, notes, state, label))
+                                written.add(_key(dest))
                                 summary["done"].append(dest)
                         except Exception as exc:
                             summary["failed"].append((path, f"{name}: {type(exc).__name__}: {exc}"))

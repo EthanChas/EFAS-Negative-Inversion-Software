@@ -9,6 +9,7 @@ import numpy as np
 from PIL import Image, ImageFile
 
 from .kinds import SUFFIX as KIND_SUFFIX
+from .sharpen import sharpen_output
 
 FORMATS = ("jpeg", "png", "tiff", "webp")
 FORMAT_LABELS = {"jpeg": "JPEG", "png": "PNG", "tiff": "TIFF", "webp": "WebP"}
@@ -88,6 +89,8 @@ class ExportOptions:
     output_kind: str = "standard"
     write_record: bool = False
     include_versions: bool = False
+    output_sharpen: int = 0
+    bit_depth: int = 8
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -242,11 +245,36 @@ def prepare_pixels(pixels: np.ndarray, opts: ExportOptions) -> Image.Image:
         img = img.resize(new_size, RESAMPLING.get(opts.resample, Image.Resampling.LANCZOS))
     if opts.grayscale:
         img = img.convert("L")
+    if opts.output_sharpen:
+        img = Image.fromarray(sharpen_output(np.asarray(img), opts.output_sharpen))
     return img
 
 
+def deep_requested(opts: ExportOptions) -> bool:
+    """True when this export asks for a 16-bit picture: the standard output, as TIFF, in colour."""
+    return opts.bit_depth == 16 and opts.fmt == "tiff" and opts.output_kind == "standard" and not opts.grayscale
+
+
+def save_image16(pixels: np.ndarray, dest_path: str, opts: ExportOptions, exif: bytes | None = None) -> tuple[int, int]:
+    """Writes a 16-bit RGB picture as a TIFF (tagged sRGB, with the resolution; frame details are added afterwards like any export); returns (w, h)."""
+    from . import kinds
+
+    new_size = target_size(pixels.shape[1], pixels.shape[0], opts)
+    if new_size != (pixels.shape[1], pixels.shape[0]):
+        pixels = kinds.resize16(pixels, new_size, opts.resample)
+    if opts.output_sharpen:
+        pixels = sharpen_output(pixels, opts.output_sharpen)
+    icc = srgb_profile_bytes() if opts.embed_srgb else None
+    kinds.write_tiff16(pixels, dest_path, opts.tiff_compression, int(opts.dpi), icc=icc)
+    return pixels.shape[1], pixels.shape[0]
+
+
 def save_image(pixels: np.ndarray, dest_path: str, opts: ExportOptions, exif: bytes | None = None) -> tuple[int, int]:
-    """Writes pixels (uint8 RGB) to dest_path with opts; returns the (w, h) written."""
+    """Writes pixels (uint8 RGB, or uint16 for a 16-bit TIFF) to dest_path with opts; returns the (w, h) written."""
+    if pixels.dtype == np.uint16:
+        if deep_requested(opts):
+            return save_image16(pixels, dest_path, opts, exif)
+        pixels = ((pixels.astype(np.uint32) + 128) // 257).astype(np.uint8)
     img = prepare_pixels(pixels, opts)
     os.makedirs(os.path.dirname(dest_path) or ".", exist_ok=True)
 

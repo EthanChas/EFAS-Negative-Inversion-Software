@@ -97,6 +97,10 @@ def build_jobs(args) -> list:
             o.write_record = True
         if args.versions:
             o.include_versions = True
+        if args.sharpen is not None:
+            o.output_sharpen = max(0, min(100, args.sharpen))
+        if args.bit_depth:
+            o.bit_depth = args.bit_depth
         if args.out:
             o.dest_mode, o.folder = "folder", os.path.abspath(args.out)
         else:
@@ -144,6 +148,8 @@ def cmd_convert(args) -> int:
     _out(f"Wrote {len(summary['done'])} file(s); {len(summary['skipped'])} skipped; {len(summary['failed'])} failed.")
     for path, why in summary["failed"]:
         _out(f"  FAILED {path}: {why}")
+    for path, why in summary.get("notes", []):
+        _out(f"  NOTE {os.path.basename(path)}: {why}")
     if args.json:
         _out(json.dumps({"done": summary["done"], "skipped": summary["skipped"], "failed": [list(f) for f in summary["failed"]]}, indent=2))
     return 1 if summary["failed"] else 0
@@ -254,6 +260,8 @@ def build_parser() -> argparse.ArgumentParser:
     c.add_argument("--long-edge", type=int, help="shrink so the long edge is this many pixels")
     c.add_argument("--kind", choices=["standard", "flat", "linear", "density"], help="export the conversion alone as a 16-bit TIFF")
     c.add_argument("--record", action="store_true", help="also write a conversion record (.json)")
+    c.add_argument("--sharpen", type=int, help="sharpen the finished picture at its final size, 0-100")
+    c.add_argument("--bit-depth", type=int, choices=[8, 16], help="16 writes a 16-bit TIFF when the photo's edits allow it")
     c.add_argument("--versions", action="store_true", help="also export each photo's virtual copies")
     mode = c.add_mutually_exclusive_group()
     mode.add_argument("--overwrite", action="store_true", help="replace files that already exist")

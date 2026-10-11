@@ -163,7 +163,18 @@ class ExportPanel(CollapsiblePanel):
             self._tiff_comp.addItem(label, key)
         self._tiff_comp.currentIndexChanged.connect(self._on_changed)
         tv.addLayout(self._row("Compression", self._tiff_comp))
+        self._bit_depth = QComboBox()
+        self._bit_depth.addItem("8-bit", 8)
+        self._bit_depth.addItem("16-bit", 16)
+        self._bit_depth.setToolTip("16-bit keeps the full precision of a 16-bit scan for grading elsewhere. It is used for photos whose edits are tone-only (inversion, colour balance, exposure, contrast, tone curve, crop and rotation); a photo with sharpening, shadows/highlights, saturation, denoise, local contrast, vignette, border or watermark is saved as 8-bit, and the export says so.")
+        self._bit_depth.currentIndexChanged.connect(self._on_changed)
+        tv.addLayout(self._row("Bit depth", self._bit_depth))
         body.addWidget(self._tiff_box)
+        self._out_sharpen = SliderRow("Output sharpening", min_value=0, max_value=100, reset_value=0, decimals=0, step=1)
+        self._out_sharpen.set_value(0)
+        self._out_sharpen.setToolTip("Sharpens the finished picture at its final size, after any resize (the Sharpening module works at the editing size, which a resize then softens). 0 is off; about 20 to 40 suits a resized picture.")
+        self._out_sharpen.value_changed.connect(self._on_changed)
+        body.addWidget(self._out_sharpen)
 
         self._webp_box = QWidget()
         wv = QVBoxLayout(self._webp_box)
@@ -429,6 +440,8 @@ class ExportPanel(CollapsiblePanel):
             output_kind=self._kind.currentData(),
             write_record=self._record.isChecked(),
             include_versions=self._versions.isChecked(),
+            output_sharpen=int(self._out_sharpen.value()),
+            bit_depth=int(self._bit_depth.currentData() or 8),
             dest_mode=self._dest_mode.currentData(),
             folder=self._folder.text().strip(),
             subfolder=self._subfolder.text(),
@@ -469,6 +482,8 @@ class ExportPanel(CollapsiblePanel):
         pick(self._kind, o.output_kind)
         self._record.setChecked(o.write_record)
         self._versions.setChecked(o.include_versions)
+        self._out_sharpen.set_value(o.output_sharpen)
+        pick(self._bit_depth, o.bit_depth)
         self._srgb.setChecked(o.embed_srgb)
         self._gray.setChecked(o.grayscale)
         self._exif.setChecked(o.copy_exif)
@@ -663,6 +678,8 @@ class ExportPanel(CollapsiblePanel):
         self._jpeg_box.setVisible(fmt == "jpeg")
         self._png_box.setVisible(fmt == "png")
         self._tiff_box.setVisible(fmt == "tiff")
+        self._bit_depth.setEnabled(not alternate and not self._gray.isChecked())
+        self._out_sharpen.setVisible(not alternate)
         self._webp_box.setVisible(fmt == "webp")
         self._webp_quality.setEnabled(not self._webp_lossless.isChecked())
 
