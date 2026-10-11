@@ -160,6 +160,8 @@ _SCRIPT = textwrap.dedent(r'''
     assert shown.grab().toImage().pixelColor(8, shown._header.geometry().center().y()).name() != "#181818"
     win.close()
     print("MODULES WINDOW OK")
+    sys.stdout.flush()
+    os._exit(0)  # leaving the loose widgets to the interpreter's shutdown crashes some Qt versions; the app itself deletes its window first
 ''')
 
 

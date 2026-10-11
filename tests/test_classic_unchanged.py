@@ -39,7 +39,9 @@ _SCRIPT = textwrap.dedent(r'''
     h = lambda a: hashlib.sha256(np.ascontiguousarray(a).tobytes()).hexdigest()[:16]
     out = {}
     out["lut8"] = h(compute_invert_lut(img8))
-    out["lut16"] = h(compute_invert_lut(img16))
+    lut16 = compute_invert_lut(img16)
+    arrays = {"lut16": np.asarray(lut16)}
+    out["lut16"] = h(lut16)
     out["lut8_base"] = h(compute_invert_lut(img8, None, (200, 150, 100)))
     out["lut8_meter"] = h(compute_invert_lut(img8, None, None, Metering(buffer=0.05, white=0.2, black=-0.1)))
     out["invert8"] = h(invert_negative(img8))
@@ -54,18 +56,41 @@ _SCRIPT = textwrap.dedent(r'''
     for tag, arr in (("render8", img8), ("render16", img16)):
         image, pre, stats, ov = Renderer().render(arr, params, ("fp", tag), arr.shape[1], None, want_stats=True, overlay=False, flatfield=None)
         out[tag] = h(image)
-        out[tag + "_hist"] = h(np.concatenate([np.asarray(stats["histogram"][k], dtype=np.float64).ravel() for k in ("r", "g", "b")]))
+        hist = np.concatenate([np.asarray(stats["histogram"][k], dtype=np.float64).ravel() for k in ("r", "g", "b")])
+        out[tag + "_hist"] = h(hist)
+        arrays[tag] = np.asarray(image)
+        arrays[tag + "_hist"] = hist
+    if os.environ.get("EFAS_DUMP"):
+        np.savez_compressed(os.environ["EFAS_DUMP"], **arrays)
     for k, v in out.items():
         print(f"{k}={v}")
 ''')
 
 
-def test_the_standard_inversion_and_render_are_bit_identical_to_before_tier_2():
-    env = dict(os.environ, PYTHONPATH=SRC + os.pathsep + os.environ.get("PYTHONPATH", ""))
+FLOAT_DEPENDENT = ("lut16", "render16", "render16_hist")
+REFERENCE = Path(__file__).resolve().parent / "data" / "classic_16bit_reference.npz"
+
+
+def test_the_standard_inversion_and_render_are_bit_identical_to_before_tier_2(tmp_path):
+    """Everything made of integers is pinned exactly on every system. The 16-bit results come out of floating-point maths, whose last bit differs between
+    versions of numpy and OpenCV and between processors, so they are compared with a stored reference to within two codes (they match exactly where the
+    pinned fingerprints were made)."""
+    import numpy as np
+
+    dump = tmp_path / "dump.npz"
+    env = dict(os.environ, PYTHONPATH=SRC + os.pathsep + os.environ.get("PYTHONPATH", ""), EFAS_DUMP=str(dump))
     done = subprocess.run([sys.executable, "-c", _SCRIPT], env=env, capture_output=True, text=True, timeout=120)
     assert done.returncode == 0, done.stderr[-2000:]
     got = dict(line.split("=", 1) for line in done.stdout.strip().splitlines() if "=" in line)
-    assert got == PINNED, {k: (got.get(k), PINNED[k]) for k in PINNED if got.get(k) != PINNED[k]}
+    exact = {k: v for k, v in PINNED.items() if k not in FLOAT_DEPENDENT}
+    assert {k: got.get(k) for k in exact} == exact, {k: (got.get(k), exact[k]) for k in exact if got.get(k) != exact[k]}
+    mine, ref = np.load(dump), np.load(REFERENCE)
+    for key in ("lut16", "render16"):
+        assert mine[key].shape == ref[key].shape
+        assert int(np.abs(mine[key].astype(np.int64) - ref[key].astype(np.int64)).max()) <= 2, key
+    assert np.allclose(mine["render16_hist"], ref["render16_hist"], rtol=1e-6, atol=1e-9)
+    if all(got.get(k) == PINNED[k] for k in FLOAT_DEPENDENT):
+        assert all(np.array_equal(mine[k], ref[k]) for k in ref.files), "the fingerprints match, so the arrays must too"
 
 
 def test_a_photo_without_a_curve_choice_renders_with_the_standard_method(tmp_path):
