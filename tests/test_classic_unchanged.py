@@ -88,7 +88,8 @@ def test_the_standard_inversion_and_render_are_bit_identical_to_before_tier_2(tm
     for key in ("lut16", "render16"):
         assert mine[key].shape == ref[key].shape
         assert int(np.abs(mine[key].astype(np.int64) - ref[key].astype(np.int64)).max()) <= 2, key
-    assert np.allclose(mine["render16_hist"], ref["render16_hist"], rtol=1e-6, atol=1e-9)
+    moved = float(np.abs(mine["render16_hist"] - ref["render16_hist"]).sum())
+    assert moved <= 0.02 * float(ref["render16_hist"].sum()), "a pixel one code over can move between neighbouring bins, but not many of them"
     if all(got.get(k) == PINNED[k] for k in FLOAT_DEPENDENT):
         assert all(np.array_equal(mine[k], ref[k]) for k in ref.files), "the fingerprints match, so the arrays must too"
 

@@ -34,7 +34,7 @@ DEFAULTS: dict[str, Any] = {
     "keybinds": {},
 }
 
-_cache: tuple[int, dict[str, Any]] | None = None
+_cache: tuple[tuple[int, int], dict[str, Any]] | None = None
 
 
 def settings_path() -> str:
@@ -85,7 +85,8 @@ def load() -> dict[str, Any]:
     global _cache
     path = settings_path()
     try:
-        stamp = os.stat(path).st_mtime_ns
+        st = os.stat(path)
+        stamp = (st.st_mtime_ns, st.st_size)
     except OSError:
         return _clean(None)
     if _cache is not None and _cache[0] == stamp:
