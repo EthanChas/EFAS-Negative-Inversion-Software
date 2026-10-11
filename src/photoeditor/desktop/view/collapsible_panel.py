@@ -1,11 +1,16 @@
-from PyQt6.QtCore import QEasingCurve, QPropertyAnimation, Qt, pyqtSignal
-from PyQt6.QtGui import QColor, QPainter, QPaintEvent
-from PyQt6.QtWidgets import QHBoxLayout, QLabel, QMessageBox, QPushButton, QVBoxLayout, QWidget
+from PyQt6.QtCore import QEasingCurve, QPointF, QPropertyAnimation, Qt, QTimer, pyqtSignal
+from PyQt6.QtGui import QAction, QActionGroup, QColor, QLinearGradient, QPainter, QPaintEvent
+from PyQt6.QtWidgets import (
+    QAbstractSpinBox, QApplication, QHBoxLayout, QLabel, QLineEdit, QMenu, QMessageBox, QPlainTextEdit, QPushButton, QTextEdit, QVBoxLayout, QWidget,
+)
 
 from ...theme.tokens import THEME
 from .bevel_widgets import BevelPanel, CaptionButton
+from .module_style import AUTOMATIC, NAMED, PLAIN, STYLE
 
 _NO_MAX = 16777215
+HOVER_OPEN_MS = 220
+HOVER_CLOSE_MS = 400
 
 
 class _CollapsibleHeader(QWidget):
@@ -18,7 +23,10 @@ class _CollapsibleHeader(QWidget):
 
     def __init__(self, title: str, collapsible: bool = True, parent: QWidget | None = None):
         super().__init__(parent)
+        self._title = title
         self.setFixedHeight(THEME.font_size_header + THEME.space_lg)
+        self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.customContextMenuRequested.connect(self._colour_menu)
 
         row = QHBoxLayout(self)
         row.setContentsMargins(THEME.space_sm, 0, THEME.space_sm, 0)
@@ -65,7 +73,33 @@ class _CollapsibleHeader(QWidget):
 
     def paintEvent(self, event: QPaintEvent) -> None:
         painter = QPainter(self)
-        painter.fillRect(self.rect(), QColor(THEME.border_color))
+        colours = STYLE.gradient(self._title)
+        if colours is None:
+            painter.fillRect(self.rect(), QColor(THEME.border_color))
+            return
+        gradient = QLinearGradient(QPointF(0, 0), QPointF(self.width(), 0))
+        gradient.setColorAt(0.0, colours[0])
+        gradient.setColorAt(1.0, colours[1])
+        painter.fillRect(self.rect(), gradient)
+
+    def build_colour_menu(self) -> QMenu:
+        """The right-click menu: this module's colour is automatic (its own assigned gradient), one of the named colours, or plain."""
+        menu = QMenu(self)
+        menu.setTitle(f"Colour of {self._title}")
+        group = QActionGroup(menu)
+        current = STYLE.choice(self._title)
+        for label, value in [("Automatic", AUTOMATIC), *[(n, n) for n in NAMED], ("None (plain)", PLAIN)]:
+            action = QAction(label, menu)
+            action.setCheckable(True)
+            action.setChecked(current == value)
+            action.triggered.connect(lambda _checked=False, v=value: STYLE.set_choice(self._title, v))
+            group.addAction(action)
+            menu.addAction(action)
+        return menu
+
+    def _colour_menu(self, pos) -> None:
+        if STYLE.colours:
+            self.build_colour_menu().exec(self.mapToGlobal(pos))
 
     def mousePressEvent(self, event) -> None:
         if event.button() == Qt.MouseButton.LeftButton:
@@ -119,6 +153,20 @@ class CollapsiblePanel(BevelPanel):
         self._animation.setEasingCurve(QEasingCurve.Type.InOutQuad)
         self._animation.finished.connect(self._on_animation_finished)
 
+        # opening on hover (a General setting): `pinned` panels were opened by a click and stay; the others close when the mouse leaves
+        self._pinned = False
+        self._inside = False
+        self._open_timer = QTimer(self)
+        self._open_timer.setSingleShot(True)
+        self._open_timer.setInterval(HOVER_OPEN_MS)
+        self._open_timer.timeout.connect(self._hover_open)
+        self._close_timer = QTimer(self)
+        self._close_timer.setSingleShot(True)
+        self._close_timer.setInterval(HOVER_CLOSE_MS)
+        self._close_timer.timeout.connect(self._hover_close)
+        STYLE.changed.connect(self._header.update)
+        STYLE.hover_changed.connect(self._on_hover_mode)
+
     def body(self) -> QVBoxLayout:
         return self._body_layout
 
@@ -161,7 +209,65 @@ class CollapsiblePanel(BevelPanel):
         return self._header.presets_button
 
     def toggle(self) -> None:
+        """A click on the header. With hover-open on, a click pins a hover-opened module open, and a second click closes it."""
+        if STYLE.hover and self._collapsible:
+            self._open_timer.stop()
+            self._close_timer.stop()
+            if self._expanded and self._pinned:
+                self._pinned = False
+                self.set_expanded(False)
+            elif self._expanded:
+                self._pinned = True
+            else:
+                self._pinned = True
+                self.set_expanded(True)
+            return
         self.set_expanded(not self._expanded)
+
+    def is_pinned(self) -> bool:
+        return self._pinned
+
+    def _on_hover_mode(self, on: bool) -> None:
+        """Turning hover-open on: whatever is open now was opened by the person, so it stays open until clicked."""
+        self._open_timer.stop()
+        self._close_timer.stop()
+        if on:
+            self._pinned = self._expanded
+
+    def enterEvent(self, event) -> None:
+        super().enterEvent(event)
+        self._inside = True
+        if STYLE.hover and self._collapsible:
+            self._close_timer.stop()
+            if not self._expanded:
+                self._open_timer.start()
+
+    def leaveEvent(self, event) -> None:
+        super().leaveEvent(event)
+        self._inside = False
+        self._open_timer.stop()
+        if STYLE.hover and self._collapsible and self._expanded and not self._pinned:
+            self._close_timer.start()
+
+    def _hover_open(self) -> None:
+        if STYLE.hover and self._inside and not self._expanded:
+            self._pinned = False
+            self.set_expanded(True)
+
+    def _busy(self) -> bool:
+        """Things that must not be interrupted by closing the module: a held mouse button (dragging a slider out of it), a drop-down list, typing in it."""
+        if QApplication.mouseButtons() != Qt.MouseButton.NoButton or QApplication.activePopupWidget() is not None:
+            return True
+        focus = QApplication.focusWidget()
+        return bool(focus is not None and self.isAncestorOf(focus) and isinstance(focus, (QLineEdit, QAbstractSpinBox, QPlainTextEdit, QTextEdit)))
+
+    def _hover_close(self) -> None:
+        if not (STYLE.hover and self._expanded and not self._pinned) or self._inside:
+            return
+        if self._busy():
+            self._close_timer.start()
+            return
+        self.set_expanded(False)
 
     def set_expanded(self, expanded: bool) -> None:
         if not self._collapsible or expanded == self._expanded:

@@ -106,6 +106,12 @@ EFAS keeps a small log of what it reports, including errors that would otherwise
 
 **Nothing is sent by EFAS.** *Save Report File* writes a zip. *Open GitHub Issue* saves the file, then opens your browser at the project's new-issue page with your text filled in; you read it, press Submit (a GitHub account is needed) and drag the zip into the description to attach it.
 
+## Module behaviour and colours (Settings > General)
+
+**Open modules when the mouse is over them, close them when it leaves**: with this on, resting the mouse on a module (a collapsible panel such as Exposure or Crop & Rotate) opens it and moving off closes it, so only the one you are using is open. A brief pass over a module does not open it, and a module does not close while a mouse button is held (dragging a slider out of it), a drop-down list is showing, or you are typing in it. Click a module's header to **pin** it open; click again to unpin and close it. Modules that are open when you turn the setting on stay open until you click them. It is off by default.
+
+**Colour-code modules**: every module gets its own header gradient. The colours are assigned, not random: a module has the same gradient every time and on every computer (the editor's modules have a fixed order spread round the colour wheel; a module added later gets a colour from a checksum of its name). Right-click a module's header to pick one of twelve named colours for it, go back to its automatic colour, or turn its colour off. It is off by default.
+
 ## Command line
 
 The same conversion without a window, for batches and scripts (from a source install; the packaged Windows app has no console):

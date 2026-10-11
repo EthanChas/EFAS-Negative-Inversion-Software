@@ -24,6 +24,9 @@ DEFAULTS: dict[str, Any] = {
     "check_updates": True,
     "advanced_mode": False,
     "scan_quality": True,
+    "hover_modules": False,
+    "module_colours": False,
+    "module_colour_choices": {},
     "scan_transfer": "srgb",
     "backup_keep": 14,
     "backup_dir": "",
@@ -44,7 +47,7 @@ def _clean(data: Any) -> dict[str, Any]:
         return out
     if data.get("raw_demosaic") in DEMOSAIC_CHOICES:
         out["raw_demosaic"] = data["raw_demosaic"]
-    for key in ("raw_auto_bright", "auto_advance", "backup_auto", "check_updates", "advanced_mode", "scan_quality"):
+    for key in ("raw_auto_bright", "auto_advance", "backup_auto", "check_updates", "advanced_mode", "scan_quality", "hover_modules", "module_colours"):
         if isinstance(data.get(key), bool):
             out[key] = data[key]
     if data.get("scan_transfer") in ("linear", "srgb", "gamma2.2"):
@@ -54,6 +57,8 @@ def _clean(data: Any) -> dict[str, Any]:
         out["backup_keep"] = max(BACKUP_KEEP_RANGE[0], min(BACKUP_KEEP_RANGE[1], keep))
     if isinstance(data.get("backup_dir"), str):
         out["backup_dir"] = data["backup_dir"].strip()
+    if isinstance(data.get("module_colour_choices"), dict):
+        out["module_colour_choices"] = {str(k): v for k, v in data["module_colour_choices"].items() if isinstance(v, str)}
     if isinstance(data.get("keybinds"), dict):
         out["keybinds"] = {str(k): v for k, v in data["keybinds"].items() if isinstance(v, str)}
     return out

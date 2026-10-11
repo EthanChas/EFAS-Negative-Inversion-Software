@@ -115,6 +115,19 @@ class SettingsDialog(QDialog):
         col.addWidget(self._scan_quality)
         col.addWidget(_hint("Shows a plain verdict in the Negative tab (good, underexposed, clipped) with how many stops to change. It uses extra memory and a few seconds of "
                             "background work per photo, so turn it off on a slow computer."))
+        self._hover_modules = QCheckBox("Open modules when the mouse is over them, close them when it leaves")
+        self._hover_modules.setChecked(self._initial["hover_modules"])
+        self._hover_modules.setToolTip("Hover a module's header to open it; move away and it closes. Click a header to keep it open (click again to close it).")
+        col.addWidget(self._hover_modules)
+        col.addWidget(_hint("Modules are the collapsible panels (Exposure, Crop & Rotate, Export...). With this on, resting the mouse on one opens it and moving off closes it, "
+                            "so only the one you are using is open. Click a module's header to pin it open; click again to unpin and close it. A module stays open while a "
+                            "mouse button is held, a drop-down is showing or you are typing in it."))
+        self._module_colours = QCheckBox("Colour-code modules")
+        self._module_colours.setChecked(self._initial["module_colours"])
+        self._module_colours.setToolTip("Give each module its own gradient header colour")
+        col.addWidget(self._module_colours)
+        col.addWidget(_hint("Every module gets its own header gradient. The colours are assigned, not random: a module has the same colour every time and on every computer. "
+                            "Right-click a module's header to pick a different colour for it, or none."))
         col.addStretch(1)
         return page
 
@@ -439,6 +452,7 @@ class SettingsDialog(QDialog):
         return {
             "raw_demosaic": self._demosaic.currentData(), "raw_auto_bright": self._auto_bright.isChecked(), "auto_advance": self._auto_advance.isChecked(),
             "check_updates": self._check_updates.isChecked(), "scan_quality": self._scan_quality.isChecked(),
+            "hover_modules": self._hover_modules.isChecked(), "module_colours": self._module_colours.isChecked(),
             "backup_auto": self._backup_auto.isChecked(), "backup_keep": self._backup_keep.value(), "backup_dir": self._backup_dir,
             "keybinds": binds.overrides_from(self._keys),
         }

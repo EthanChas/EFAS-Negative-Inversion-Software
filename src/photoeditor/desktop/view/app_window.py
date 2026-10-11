@@ -86,6 +86,7 @@ from .negative_tool_panel import NegativeToolPanel
 from .scientific_panel import AdvancedPanels
 from .merge_dialog import MergeDialog
 from .removal_dialogs import RemovedPhotosDialog, confirm_delete_from_disk
+from . import module_style
 from .bug_report_dialog import BugReportDialog
 from ..bulk_crop import BulkCropWorker, count_cropped
 from .duplicates_dialog import DuplicatesDialog
@@ -295,6 +296,7 @@ class AppWindow(QMainWindow):
     def __init__(self):
         ensure_data_ready()
         super().__init__()
+        module_style.STYLE.apply(app_settings.load())
         _live_windows.add(self)
         self.setWindowFlag(Qt.WindowType.FramelessWindowHint)
         self.setWindowTitle("Ethan's Fuckass Editing App")
@@ -1589,6 +1591,7 @@ class AppWindow(QMainWindow):
             return
         changed = dialog.decoding_changed()
         app_settings.save(dialog.values())
+        module_style.STYLE.apply(app_settings.load())
         self.apply_keybinds()
         path = self.controller.state.image_path
         if changed and path:
