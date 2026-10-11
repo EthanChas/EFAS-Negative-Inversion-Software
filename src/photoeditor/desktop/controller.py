@@ -46,6 +46,8 @@ from ..features.negative.metering import Metering
 from ..features.watermark.marks import Marks
 from ..features.open_image.logic import is_raw
 from ..features.open_image.processor import load_image_rgb, make_preview_rgb, to_uint8
+from ..features.library import removal as photo_removal
+from ..features.library.index import LibraryIndex
 from ..features.persistence import edit_store
 from ..features.persistence import export as data_export
 from ..features.persistence.consolidate import ensure_ready as ensure_data_ready
@@ -1437,6 +1439,31 @@ class AppController(QObject):
         if path := (paths[0] if len(paths) == 1 else None):
             if path == self.state.image_path:
                 self.notice.emit(("Tagged: " + ", ".join(add)) if add else ("Untagged: " + ", ".join(remove)))
+
+    def hide_photos(self, paths: list[str]) -> None:
+        """Take photos off the Workbench and the filmstrip. The files and their edits are untouched; restore_photos brings them back."""
+        edit_store.hide_photos(self._db, [p for p in paths if p])
+
+    def restore_photos(self, paths: list[str]) -> None:
+        edit_store.unhide_photos(self._db, [p for p in paths if p])
+
+    def hidden_photos(self) -> list[str]:
+        return edit_store.hidden_paths(self._db)
+
+    def hidden_keys(self) -> set[str]:
+        return edit_store.hidden_keys(self._db)
+
+    def delete_photos_from_disk(self, paths: list[str], trasher=None) -> "photo_removal.DeleteResult":
+        """Move photos (and their EFAS sidecars) to the Recycle Bin and forget them in the library index. Edits, ratings and tags are kept so a restored file keeps its look."""
+        result = photo_removal.delete_photos(paths, trasher)
+        if result.deleted:
+            edit_store.unhide_photos(self._db, result.deleted)
+            index = LibraryIndex()
+            try:
+                index.remove(result.deleted)
+            finally:
+                index.close()
+        return result
 
     def set_rating_for(self, path: str, stars: int) -> None:
         """Rate any photo (the Lighttable's selection), not just the open one."""

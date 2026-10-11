@@ -185,6 +185,8 @@ class LighttableList(QListView):
     open_requested = pyqtSignal(str)
     zoom_wheel = pyqtSignal(int)
     key_for_selection = pyqtSignal(object)
+    remove_key = pyqtSignal()
+    delete_key = pyqtSignal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -231,6 +233,10 @@ class LighttableList(QListView):
             self._on_double(self.currentIndex())
             event.accept()
             return
+        if event.key() == Qt.Key.Key_Delete:
+            (self.delete_key if event.modifiers() & Qt.KeyboardModifier.ShiftModifier else self.remove_key).emit()
+            event.accept()
+            return
         self.key_for_selection.emit(event)
         if not event.isAccepted():
             super().keyPressEvent(event)
@@ -246,6 +252,9 @@ class LighttableView(QWidget):
     paste_settings_requested = pyqtSignal(list)
     refresh_requested = pyqtSignal()
     reveal_requested = pyqtSignal(str)
+    remove_requested = pyqtSignal(list)
+    delete_requested = pyqtSignal(list)
+    removed_list_requested = pyqtSignal()
 
     def __init__(self, cache_dir: str | None, parent: QWidget | None = None):
         super().__init__(parent)
@@ -263,6 +272,10 @@ class LighttableView(QWidget):
         self._list.open_requested.connect(self.open_requested)
         self._list.zoom_wheel.connect(lambda d: self._zoom.setValue(self._zoom.value() + d * 20))
         self._list.key_for_selection.connect(self._on_list_key)
+        self._list.remove_key.connect(self._emit_remove)
+        self._list.delete_key.connect(self._emit_delete)
+        self._list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self._list.customContextMenuRequested.connect(self._on_context_menu)
         self._list.selectionModel().selectionChanged.connect(lambda *_: self._on_selection())
         self._list.selectionModel().currentChanged.connect(lambda *_: self._on_selection())
         self._pool.thumb_ready.connect(self._on_thumb)
@@ -455,6 +468,10 @@ class LighttableView(QWidget):
         refresh.setToolTip("Look for new, changed and removed photos in the library folders")
         refresh.clicked.connect(self.refresh_requested)
         bar.addWidget(refresh)
+        self._removed_btn = QPushButton("Removed Photos...")
+        self._removed_btn.setToolTip("Photos you took off the Workbench (they are still on disk). Bring them back from here.")
+        self._removed_btn.clicked.connect(self.removed_list_requested)
+        bar.addWidget(self._removed_btn)
         zoom_label = QLabel("Size")
         bar.addWidget(zoom_label)
         self._zoom = QSlider(Qt.Orientation.Horizontal)
@@ -534,6 +551,15 @@ class LighttableView(QWidget):
         self._reveal_btn = QPushButton("Show in Folder")
         self._reveal_btn.clicked.connect(self._emit_reveal)
         body.addWidget(self._reveal_btn)
+        self._remove_btn = QPushButton("Remove from Workbench")
+        self._remove_btn.setToolTip("Take the selected photos off the Workbench and the filmstrip. The files stay on disk, and you can restore them from Removed Photos. (Delete key)")
+        self._remove_btn.clicked.connect(self._emit_remove)
+        body.addWidget(self._remove_btn)
+        self._delete_btn = QPushButton("Delete from Disk...")
+        self._delete_btn.setToolTip("Delete the selected photos from your disk (to the Recycle Bin). You will be asked to confirm. (Shift+Delete)")
+        self._delete_btn.setStyleSheet(f"QPushButton {{ color: {THEME.status_critical}; font-weight: bold; }}")
+        self._delete_btn.clicked.connect(self._emit_delete)
+        body.addWidget(self._delete_btn)
         col.addStretch(1)
         self._on_selection()
         return self._scroll(host, _RIGHT_W)
@@ -688,6 +714,8 @@ class LighttableView(QWidget):
         for b in (self._open_btn, self._reveal_btn):
             b.setEnabled(n >= 1 or self._current_row() is not None)
         self._export_btn.setEnabled(n >= 1)
+        self._remove_btn.setEnabled(n >= 1)
+        self._delete_btn.setEnabled(n >= 1)
         self._refresh_tag_editor(rows)
         self._copy_btn.setEnabled(n == 1)
         self._paste_btn.setEnabled(n >= 1)
@@ -767,6 +795,39 @@ class LighttableView(QWidget):
         row = self._current_row() or (self._selected_rows() or [None])[0]
         if row:
             self.reveal_requested.emit(row["path"])
+
+    def _emit_remove(self) -> None:
+        paths = self.selected_paths()
+        if paths:
+            self.remove_requested.emit(paths)
+
+    def _emit_delete(self) -> None:
+        paths = self.selected_paths()
+        if paths:
+            self.delete_requested.emit(paths)
+
+    def set_removed_count(self, n: int) -> None:
+        self._removed_btn.setText(f"Removed Photos ({n})..." if n else "Removed Photos...")
+
+    def build_context_menu(self) -> QMenu:
+        menu = QMenu(self)
+        n = len(self.selected_paths())
+        what = "this photo" if n == 1 else f"{n} photos"
+        menu.addAction("Open in Editor", self._emit_open)
+        menu.addAction("Show in Folder", self._emit_reveal)
+        menu.addSeparator()
+        menu.addAction(f"Remove {what} from Workbench", self._emit_remove)
+        delete = menu.addAction(f"Delete {what} from Disk...", self._emit_delete)
+        delete.setToolTip("Moves the files to the Recycle Bin after you confirm")
+        return menu
+
+    def _on_context_menu(self, pos) -> None:
+        ix = self._list.indexAt(pos)
+        if ix.isValid() and not self._list.selectionModel().isSelected(ix):
+            self._list.setCurrentIndex(ix)
+        if not self.selected_paths():
+            return
+        self.build_context_menu().exec(self._list.viewport().mapToGlobal(pos))
 
     def _on_list_key(self, event: QKeyEvent) -> None:
         if self.handle_key(event):

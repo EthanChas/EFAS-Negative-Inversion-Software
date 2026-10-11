@@ -83,6 +83,8 @@ from .masking_panel import MaskingToolPanel
 from .negative_tool_panel import NegativeToolPanel
 from .scientific_panel import AdvancedPanels
 from .merge_dialog import MergeDialog
+from .removal_dialogs import RemovedPhotosDialog, confirm_delete_from_disk
+from ...features.library import removal as photo_removal
 from .roll_check_dialog import RollCheckDialog
 from .rebate_dialog import RebateDialog
 from .characterization_dialog import CharacterizationDialog
@@ -362,6 +364,9 @@ class AppWindow(QMainWindow):
         self._lighttable.paste_settings_requested.connect(self._lighttable_paste)
         self._lighttable.refresh_requested.connect(lambda: self.lighttable_refresh(force=True))
         self._lighttable.reveal_requested.connect(self._reveal_in_folder)
+        self._lighttable.remove_requested.connect(self.remove_photos)
+        self._lighttable.delete_requested.connect(self.delete_photos)
+        self._lighttable.removed_list_requested.connect(self.show_removed_photos)
         self.controller.rating_changed.connect(lambda path, stars: self._lighttable.update_item(library_query.norm(path), rating=stars))
         self.controller.flag_changed.connect(lambda path, flag: self._lighttable.update_item(library_query.norm(path), flag=flag))
         self.controller.history_changed.connect(self._mark_lighttable_edited)
@@ -382,6 +387,8 @@ class AppWindow(QMainWindow):
 
         self._filmstrip = Filmstrip()
         self._filmstrip.image_selected.connect(self.controller.open_file)
+        self._filmstrip.remove_requested.connect(self.remove_photos)
+        self._filmstrip.delete_requested.connect(self.delete_photos)
         self.controller.flag_changed.connect(self._filmstrip.set_flag)
         self.controller.rating_changed.connect(self._filmstrip.set_rating)
         self.controller.notice.connect(self._coord_label.setText)
@@ -425,6 +432,20 @@ class AppWindow(QMainWindow):
         self._contact_sheet_action.setToolTip("Every frame of this roll on printable pages, with its roll details, frame numbers, stars and flags")
         self._contact_sheet_action.triggered.connect(self._on_contact_sheet)
         file_menu.addAction(self._contact_sheet_action)
+
+        self._remove_open_action = QAction("Remove Open Photo from Workbench", self)
+        self._remove_open_action.setToolTip("Take the open photo off the Workbench and the filmstrip. The file stays on disk.")
+        self._remove_open_action.triggered.connect(lambda: self._photo_action_for_open(self.remove_photos))
+        file_menu.addAction(self._remove_open_action)
+        self._delete_open_action = QAction("Delete Open Photo from Disk...", self)
+        self._delete_open_action.setToolTip("Delete the open photo from your disk (to the Recycle Bin), after a confirmation")
+        self._delete_open_action.triggered.connect(lambda: self._photo_action_for_open(self.delete_photos))
+        file_menu.addAction(self._delete_open_action)
+        self._removed_action = QAction("Removed Photos...", self)
+        self._removed_action.setToolTip("Photos taken off the Workbench (still on disk); bring them back")
+        self._removed_action.triggered.connect(self.show_removed_photos)
+        file_menu.addAction(self._removed_action)
+        file_menu.addSeparator()
 
         self._merge_action = QAction("Merge Scans...", self)
         self._merge_action.setToolTip("Combine an exposure bracket, or red, green and blue lit scans, of one frame into one measured scan")
@@ -1196,6 +1217,76 @@ class AppWindow(QMainWindow):
         for key, btn in self._view_buttons.items():
             btn.setChecked((key == "lighttable") == want_lighttable)
 
+    def _photo_action_for_open(self, action) -> None:
+        path = self.controller.state.image_path
+        if path:
+            action([path])
+        else:
+            self._coord_label.setText("Open a photo first.")
+
+    def _leave_photos(self, paths: list[str]) -> None:
+        """If the open photo is among `paths`, move the editor to the nearest photo in the filmstrip that is staying."""
+        current = self.controller.state.image_path
+        gone = {library_query.norm(p) for p in paths}
+        if not current or library_query.norm(current) not in gone:
+            return
+        strip = self._filmstrip.paths()
+        keys = [library_query.norm(p) for p in strip]
+        here = keys.index(library_query.norm(current)) if library_query.norm(current) in keys else -1
+        ordered = strip[here + 1:] + strip[:here][::-1] if here >= 0 else []
+        stay = next((p for p in ordered if library_query.norm(p) not in gone), None)
+        if stay is not None:
+            self.controller.open_file(stay)
+
+    def _after_photos_left(self, paths: list[str], message: str) -> None:
+        self._filmstrip.remove_paths(paths)
+        self._lighttable_reload_rows()
+        self._lighttable.set_index_status(message)
+        self._coord_label.setText(message)
+
+    def remove_photos(self, paths: list[str]) -> None:
+        """Take photos off the Workbench and the filmstrip. Nothing on disk changes."""
+        paths = [p for p in dict.fromkeys(paths) if p]
+        if not paths:
+            return
+        self._leave_photos(paths)
+        self.controller.hide_photos(paths)
+        n = len(paths)
+        self._after_photos_left(paths, f"Removed {n} photo{'s' if n != 1 else ''} from the Workbench. {'They are' if n != 1 else 'It is'} still on disk (restore from Removed Photos in the Workbench or the File menu).")
+
+    def delete_photos(self, paths: list[str]) -> None:
+        """Delete photos from disk (to the Recycle Bin) after a very explicit confirmation."""
+        paths = [p for p in dict.fromkeys(paths) if p]
+        if not paths or not confirm_delete_from_disk(paths, self):
+            return
+        self._leave_photos(paths)
+        try:
+            result = self.controller.delete_photos_from_disk(paths)
+        except photo_removal.TrashUnavailable as exc:
+            QMessageBox.warning(self, "Delete from Disk", str(exc))
+            return
+        gone = result.deleted + [p for p in result.skipped if not os.path.exists(p)]
+        if gone:
+            self._after_photos_left(gone, f"Deleted {len(result.deleted)} photo{'s' if len(result.deleted) != 1 else ''} from disk (in the Recycle Bin).")
+        if result.failed:
+            lines = "\n".join(f"{os.path.basename(p)}: {why}" for p, why in result.failed[:10])
+            QMessageBox.warning(self, "Delete from Disk", f"{len(result.failed)} photo(s) could not be deleted and were left where they are:\n\n{lines}")
+
+    def show_removed_photos(self) -> None:
+        dlg = RemovedPhotosDialog(self.controller.hidden_photos(), self)
+
+        def restore(paths: list[str]) -> None:
+            self.controller.restore_photos(paths)
+            dlg.set_paths(self.controller.hidden_photos())
+            folder = self._filmstrip_folder
+            if folder:
+                self._on_library_folder_selected(folder)
+            self._lighttable_reload_rows()
+            self._lighttable.set_index_status(f"Restored {len(paths)} photo{'s' if len(paths) != 1 else ''} to the Workbench.")
+
+        dlg.restore_requested.connect(restore)
+        dlg.exec()
+
     def open_in_editor(self, path: str) -> None:
         self.set_view("editor")
         self.controller.open_file(path)
@@ -1219,6 +1310,10 @@ class AppWindow(QMainWindow):
             records = index.under(roots)
         finally:
             index.close()
+        hidden = self.controller.hidden_keys()
+        if hidden:
+            records = [r for r in records if library_query.norm(r["path"]) not in hidden]
+        self._lighttable.set_removed_count(len(hidden))
         meta = library_query.load_meta(self.controller._db, records)
         self._lighttable.set_rows(library_query.build_rows(records, meta))
 
@@ -1502,6 +1597,9 @@ class AppWindow(QMainWindow):
 
     def _on_library_folder_selected(self, folder: str) -> None:
         paths = list_images_in_folder(folder)
+        hidden = self.controller.hidden_keys()
+        if hidden:
+            paths = [p for p in paths if library_query.norm(p) not in hidden]
         db = self.controller._db
         self._filmstrip_folder = folder
         self._filmstrip.load_folder(

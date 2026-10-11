@@ -99,6 +99,13 @@ CREATE TABLE IF NOT EXISTS tags (
 """
 _TAGS_INDEX = "CREATE INDEX IF NOT EXISTS idx_tags_tag ON tags (tag)"
 
+_HIDDEN_SCHEMA = """
+CREATE TABLE IF NOT EXISTS hidden_photos (
+    path TEXT PRIMARY KEY,
+    hidden_at TEXT NOT NULL
+)
+"""
+
 _SNAPSHOTS_SCHEMA = """
 CREATE TABLE IF NOT EXISTS snapshots (
     path TEXT NOT NULL,
@@ -257,6 +264,7 @@ def connect(db_path: str) -> sqlite3.Connection:
     conn.execute(_TAGS_SCHEMA)
     conn.execute(_TAGS_INDEX)
     conn.execute(_SNAPSHOTS_SCHEMA)
+    conn.execute(_HIDDEN_SCHEMA)
     _migrate(conn)
     conn.commit()
     return conn
@@ -536,6 +544,26 @@ def add_tags(conn: sqlite3.Connection, paths: list[str], tags: list[str]) -> Non
 def remove_tags(conn: sqlite3.Connection, paths: list[str], tags: list[str]) -> None:
     conn.executemany("DELETE FROM tags WHERE path = ? AND tag = ?", [(p, t) for p in paths for t in tags])
     conn.commit()
+
+
+def hide_photos(conn: sqlite3.Connection, paths: list[str]) -> None:
+    """Take photos out of the Workbench and the filmstrip. Only the path is recorded; the files and their edits are untouched."""
+    conn.executemany("INSERT OR IGNORE INTO hidden_photos (path, hidden_at) VALUES (?, datetime('now', 'localtime'))", [(p,) for p in paths])
+    conn.commit()
+
+
+def unhide_photos(conn: sqlite3.Connection, paths: list[str]) -> None:
+    conn.executemany("DELETE FROM hidden_photos WHERE path = ?", [(p,) for p in paths])
+    conn.commit()
+
+
+def hidden_paths(conn: sqlite3.Connection) -> list[str]:
+    return [p for (p,) in conn.execute("SELECT path FROM hidden_photos ORDER BY hidden_at DESC, path")]
+
+
+def hidden_keys(conn: sqlite3.Connection) -> set[str]:
+    """The hidden photos spelled one way (case and slashes folded) for comparing with any other spelling of a path."""
+    return {os.path.normcase(os.path.abspath(p)) for p in hidden_paths(conn)}
 
 
 def tag_counts(conn: sqlite3.Connection) -> list[tuple[str, int]]:

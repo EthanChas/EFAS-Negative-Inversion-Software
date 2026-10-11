@@ -3,7 +3,7 @@ import os
 import numpy as np
 from PyQt6.QtCore import QSize, Qt, pyqtSignal
 from PyQt6.QtGui import QIcon, QImage, QPixmap, QWheelEvent
-from PyQt6.QtWidgets import QComboBox, QHBoxLayout, QLabel, QListView, QListWidget, QListWidgetItem, QVBoxLayout, QWidget
+from PyQt6.QtWidgets import QComboBox, QHBoxLayout, QLabel, QListView, QListWidget, QListWidgetItem, QMenu, QVBoxLayout, QWidget
 
 from ...theme.tokens import THEME
 from ...features.browse.processor import save_edited_thumbnail
@@ -54,6 +54,8 @@ class Filmstrip(QWidget):
 
     image_selected = pyqtSignal(str)
     filter_changed = pyqtSignal(str)
+    remove_requested = pyqtSignal(list)
+    delete_requested = pyqtSignal(list)
 
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
@@ -87,6 +89,8 @@ class Filmstrip(QWidget):
         self._list.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self._list.setItemDelegate(ThumbnailDelegate(self._list))
         self._list.itemClicked.connect(self._on_item_clicked)
+        self._list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self._list.customContextMenuRequested.connect(self._on_context_menu)
         layout.addWidget(self._list)
 
         self._loader: ThumbnailLoader | None = None
@@ -260,6 +264,32 @@ class Filmstrip(QWidget):
         self.image_selected.emit(path)
         return True
 
+    def remove_paths(self, paths: list[str]) -> None:
+        """Drop photos from the strip (they were removed from the Workbench or deleted); tiles still being loaded for them are ignored."""
+        gone = {os.path.normcase(os.path.abspath(p)) for p in paths}
+        self._paths = [p for p in self._paths if os.path.normcase(os.path.abspath(p)) not in gone]
+        for i in reversed(range(self._list.count())):
+            p = self._list.item(i).data(Qt.ItemDataRole.UserRole)
+            if p and os.path.normcase(os.path.abspath(p)) in gone:
+                self._list.takeItem(i)
+        self._update_count()
+        self.setVisible(bool(self._paths) and not self._panels_hidden)
+
+    def build_context_menu(self, path: str) -> QMenu:
+        menu = QMenu(self)
+        name = os.path.basename(path)
+        menu.addAction("Open", lambda: self.image_selected.emit(path))
+        menu.addSeparator()
+        menu.addAction(f"Remove {name} from Workbench", lambda: self.remove_requested.emit([path]))
+        menu.addAction(f"Delete {name} from Disk...", lambda: self.delete_requested.emit([path]))
+        return menu
+
+    def _on_context_menu(self, pos) -> None:
+        item = self._list.itemAt(pos)
+        path = item.data(Qt.ItemDataRole.UserRole) if item is not None else None
+        if path:
+            self.build_context_menu(path).exec(self._list.viewport().mapToGlobal(pos))
+
     def list_widget(self) -> QListWidget:
         return self._list
 
@@ -273,6 +303,8 @@ class Filmstrip(QWidget):
         return None
 
     def _add_tile(self, path: str, data: bytes | None) -> None:
+        if path not in self._paths:
+            return
         item = QListWidgetItem(os.path.basename(path))
         item.setData(Qt.ItemDataRole.UserRole, path)
         item.setData(FLAG_ROLE, self._flags.get(path))

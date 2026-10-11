@@ -58,6 +58,20 @@ If you have a transmission colour target (an IT8.7/1 slide or negative target an
 
 The result is saved with the camera set-up as a record of how colour-accurate that set-up is. **The standard conversion does not apply it**; that is a deliberate choice, so existing conversions stay exactly as they were.
 
+## Removing and deleting photos
+
+Two different actions, kept apart on purpose.
+
+**Remove from Workbench** takes a photo off the Workbench grid and the filmstrip. The file stays on disk with its edits, and it does not come back when the library refreshes. Use it for frames you do not want to see again but do not want to lose. Where: the Selection panel in the Workbench, right-click on a photo (Workbench or filmstrip), the Delete key in the Workbench grid, and File > Remove Open Photo from Workbench. **Removed Photos** (Workbench top bar, or File menu) lists them and restores any or all.
+
+**Delete from Disk** deletes the files. It is in the same places (Shift+Delete in the grid, File > Delete Open Photo from Disk), and always opens a confirmation that shows how many photos, their names, where they are and their total size, in red, with Cancel as the default button. The red button stays disabled until you tick "I understand these files will be deleted from my disk".
+
+- Files go to the **Recycle Bin**, never straight to oblivion. If the Recycle Bin cannot be used, nothing is deleted. A photo is only reported deleted once it is really gone from its folder; any that could not be moved are listed and left alone.
+- The small files EFAS keeps beside a photo (its `.xmp` and merge sidecar) go with it.
+- Only photo files are ever deleted: never a folder, and never another kind of file.
+- Your saved edits, rating and tags stay, so a photo restored from the Recycle Bin comes back with its look.
+- If the deleted photo is open in the editor, the editor moves to the next photo in the filmstrip.
+
 ## Not included
 
 Other processes (ECN-2 motion-picture film, for example) are not supported as a separate mode. The film base, density and curve tools are process-neutral, and you can characterize any process with a step tablet, but EFAS makes no claims about process-specific colour.
