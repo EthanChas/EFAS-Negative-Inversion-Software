@@ -57,6 +57,7 @@ class SliderRow(QWidget):
         row.setContentsMargins(0, 0, 0, 0)
         row.setSpacing(THEME.space_sm)
 
+        self.label_text = label
         name = QLabel(label)
         name.setFixedWidth(80)
         row.addWidget(name)

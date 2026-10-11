@@ -33,6 +33,7 @@ ACTIONS: tuple[KeyAction, ...] = (
     KeyAction("toggle_panels", "Hide / show the side panels", "Viewing", "Tab"),
     KeyAction("hq", "High quality (full resolution)", "Viewing", "Ctrl+H", "menu"),
     KeyAction("peaking", "Focus peaking", "Viewing", "Ctrl+Shift+F", "menu"),
+    KeyAction("find", "Find a control or action", "Viewing", "Ctrl+K", "menu"),
     KeyAction("shortcuts_help", "Keyboard shortcuts", "Viewing", "?"),
     KeyAction("shortcuts_menu", "Keyboard shortcuts (menu key)", "Viewing", "F1", "menu"),
     KeyAction("workbench", "Workbench (the library grid)", "Views", "W"),

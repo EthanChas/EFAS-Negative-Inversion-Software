@@ -8,7 +8,7 @@ from PyQt6 import sip
 from PyQt6.QtCore import QEvent, QObject, QSize, Qt, QTimer, QUrl, pyqtSignal
 from PyQt6.QtGui import QAction, QCursor, QDesktopServices, QKeySequence
 from PyQt6.QtWidgets import (
-    QCheckBox,
+    QCheckBox, QTabWidget,
     QStackedWidget, QAbstractItemView, QAbstractSlider, QAbstractSpinBox, QApplication, QButtonGroup, QComboBox, QDialog, QFileDialog, QHBoxLayout, QLabel, QMainWindow,
     QLineEdit, QMenu, QPlainTextEdit, QTextEdit, QMenuBar, QMessageBox, QProgressDialog, QPushButton, QScrollArea, QSizePolicy, QSplitter, QVBoxLayout, QWidget,
 )
@@ -88,6 +88,10 @@ from .merge_dialog import MergeDialog
 from .removal_dialogs import RemovedPhotosDialog, confirm_delete_from_disk
 from . import module_style
 from .bug_report_dialog import BugReportDialog
+from .bevel_widgets import CaptionButton
+from .slider_row import SliderRow
+from .find_dialog import FindDialog
+from ...features.find import logic as find_logic
 from ..bulk_crop import BulkCropWorker, count_cropped
 from .duplicates_dialog import DuplicatesDialog
 from ...features.library import duplicates as photo_duplicates
@@ -355,7 +359,8 @@ class AppWindow(QMainWindow):
         self._cursor_sync = CursorSyncFilter(frame)
         QApplication.instance().installEventFilter(self._cursor_sync)
 
-        frame.layout().addWidget(self._build_menu(), 0)
+        self._menubar = self._build_menu()
+        frame.layout().addWidget(self._menubar, 0)
         self._build_ui()
         self._lighttable = LighttableView(thumbnail_cache_dir())
         self._lighttable.set_key_resolver(self._keys.action_for)
@@ -502,6 +507,11 @@ class AppWindow(QMainWindow):
         file_menu.addAction(exit_action)
 
         edit_menu = menubar.addMenu("Edit")
+        self._find_action = QAction("Find a Control or Action...", self)
+        self._find_action.setToolTip("Type a name (or what it does) and jump to the module, slider or menu action")
+        self._find_action.triggered.connect(self.show_find)
+        edit_menu.addAction(self._find_action)
+        edit_menu.addSeparator()
         self._undo_action = QAction("Undo", self)
         self._undo_action.triggered.connect(self.controller.undo)
         edit_menu.addAction(self._undo_action)
@@ -1643,7 +1653,7 @@ class AppWindow(QMainWindow):
             (self._open_folder_action, ("open_folder",)), (self._quick_export_action, ("quick_export",)), (self._undo_action, ("undo",)),
             (self._redo_action, ("redo", "redo_alt")), (self._auto_crop_action, ("auto_crop",)), (self._gradient_crop_action, ("gradient_crop",)), (self._reset_action, ("reset_edits",)),
             (self._peaking_action, ("peaking",)), (self._hq_action, ("hq",)), (self._copy_settings_action, ("copy_settings",)),
-            (self._paste_settings_action, ("paste_settings",)), (self._shortcuts_action, ("shortcuts_menu",)),
+            (self._paste_settings_action, ("paste_settings",)), (self._shortcuts_action, ("shortcuts_menu",)), (self._find_action, ("find",)),
         ):
             action.setShortcuts([k for i in ids for k in seq(i)])
         w = current.get("workbench", "")
@@ -1652,6 +1662,118 @@ class AppWindow(QMainWindow):
         self._editor_action.setText(f"Editor   ({e})" if e else "Editor")
         self._lighttable.set_key_labels(current)
         self._shortcuts_dialog = None
+
+    # --- Find (Ctrl+K) ----------------------------------------------------------------------------------------------------------------
+    @staticmethod
+    def _panel_of(widget) -> "CollapsiblePanel | None":
+        w = widget.parentWidget()
+        while w is not None and not isinstance(w, CollapsiblePanel):
+            w = w.parentWidget()
+        return w
+
+    def _would_show(self, widget) -> bool:
+        """True unless the widget or something above it is hidden on purpose (a page of a tab or stack that is not the current one does not count: it is one click away)."""
+        w = widget
+        while w is not None and w is not self:
+            parent = w.parentWidget()
+            if w.isHidden() and not isinstance(parent, QStackedWidget):
+                return False
+            w = parent
+        return True
+
+    def _menu_entries(self, menu, trail: str) -> list:
+        out = []
+        for action in menu.actions():
+            text = action.text().replace("&", "").split("\t")[0].strip()
+            sub = action.menu()
+            if action.isSeparator() or not text:
+                continue
+            if sub is not None:
+                out += self._menu_entries(sub, f"{trail} > {text}" if trail else text)
+            else:
+                out.append(find_logic.Entry("action", text, f"{trail} menu" if trail else "menu", action.toolTip() or "", action))
+        return out
+
+    def find_entries(self) -> list:
+        """Everything Find can take you to: modules, sliders, checkboxes and buttons inside modules, and every menu action."""
+        entries: list = []
+        for panel in self.findChildren(CollapsiblePanel):
+            if self._would_show(panel):
+                entries.append(find_logic.Entry("module", panel._title, "Workbench" if self._lighttable.isAncestorOf(panel) else "Editor", "", panel))
+        for slider in self.findChildren(SliderRow):
+            if self._would_show(slider):
+                panel = self._panel_of(slider)
+                entries.append(find_logic.Entry("control", slider.label_text, f"in {panel._title}" if panel else "", "", slider))
+        for cls in (QCheckBox, QPushButton):
+            for w in self.findChildren(cls):
+                text = w.text().replace("&", "").strip()
+                panel = self._panel_of(w)
+                if panel is not None and 3 <= len(text) <= 48 and self._would_show(w) and not isinstance(w, CaptionButton):
+                    entries.append(find_logic.Entry("control", text, f"in {panel._title}", "", w))
+        for top in self._menubar.actions():
+            if top.menu() is not None:
+                entries += self._menu_entries(top.menu(), top.text().replace("&", ""))
+        return entries
+
+    def show_find(self) -> None:
+        dialog = FindDialog(self.find_entries(), self)
+        dialog.chosen.connect(self.go_to_entry)
+        geometry = self.geometry()
+        dialog.move(geometry.center().x() - 230, geometry.top() + 90)
+        dialog.exec()
+
+    def go_to_entry(self, entry) -> None:
+        """Take the person to what Find chose: switch to the Workbench or the editor, show the panels and tabs it is in, scroll to it and flash it."""
+        if entry.kind == "action":
+            if entry.target.isEnabled():
+                entry.target.trigger()
+            else:
+                self._coord_label.setText(f"'{entry.title}' is not available right now.")
+            return
+        widget = entry.target
+        in_workbench = self._lighttable.isAncestorOf(widget)
+        if in_workbench != self.lighttable_active():
+            self.set_view("lighttable" if in_workbench else "editor")
+        if self._panels_hidden and not in_workbench:
+            self.toggle_panels()
+        chain = []
+        w = widget
+        while w is not None:
+            chain.append(w)
+            parent = w.parentWidget()
+            if isinstance(parent, QTabWidget) or isinstance(parent, QStackedWidget):
+                pass
+            w = parent
+        for ancestor in chain:
+            if isinstance(ancestor, QTabWidget):
+                for cand in chain:
+                    if ancestor.indexOf(cand) >= 0:
+                        ancestor.setCurrentIndex(ancestor.indexOf(cand))
+                        break
+            elif isinstance(ancestor, QStackedWidget):
+                for cand in chain:
+                    if ancestor.indexOf(cand) >= 0:
+                        ancestor.setCurrentIndex(ancestor.indexOf(cand))
+                        break
+            if isinstance(ancestor, CollapsiblePanel):
+                ancestor._pinned = True
+                ancestor.set_expanded(True)
+        target = getattr(widget, "_slider", None) or widget
+
+        def arrive() -> None:
+            for ancestor in chain:
+                if isinstance(ancestor, QScrollArea):
+                    ancestor.ensureWidgetVisible(widget, 20, 60)
+            target.setFocus()
+            self._flash(widget)
+
+        QTimer.singleShot(260, arrive)
+
+    def _flash(self, widget) -> None:
+        old = widget.styleSheet()
+        widget.setStyleSheet(old + f"QWidget#findflash, SliderRow {{ background: {THEME.accent_primary}55; }}" if isinstance(widget, SliderRow)
+                             else old + f"{widget.metaObject().className()} {{ border: 2px solid {THEME.accent_primary}; }}")
+        QTimer.singleShot(1300, lambda: widget.setStyleSheet(old))
 
     def show_settings(self) -> None:
         dialog = SettingsDialog(self, self.controller)
