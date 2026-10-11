@@ -85,6 +85,8 @@ from .negative_tool_panel import NegativeToolPanel
 from .scientific_panel import AdvancedPanels
 from .merge_dialog import MergeDialog
 from .removal_dialogs import RemovedPhotosDialog, confirm_delete_from_disk
+from .duplicates_dialog import DuplicatesDialog
+from ...features.library import duplicates as photo_duplicates
 from ...features import platform
 from ...features.library import removal as photo_removal
 from .roll_check_dialog import RollCheckDialog
@@ -373,6 +375,7 @@ class AppWindow(QMainWindow):
         self._lighttable.set_collections(edit_store.list_collections(self.controller._db))
         self._lighttable.delete_requested.connect(self.delete_photos)
         self._lighttable.removed_list_requested.connect(self.show_removed_photos)
+        self._lighttable.duplicates_requested.connect(self.find_duplicates)
         self.controller.rating_changed.connect(lambda path, stars: self._lighttable.update_item(library_query.norm(path), rating=stars))
         self.controller.flag_changed.connect(lambda path, flag: self._lighttable.update_item(library_query.norm(path), flag=flag))
         self.controller.history_changed.connect(self._mark_lighttable_edited)
@@ -447,6 +450,10 @@ class AppWindow(QMainWindow):
         self._delete_open_action.setToolTip("Delete the open photo from your disk (to the Recycle Bin), after a confirmation")
         self._delete_open_action.triggered.connect(lambda: self._photo_action_for_open(self.delete_photos))
         file_menu.addAction(self._delete_open_action)
+        self._duplicates_action = QAction("Find Duplicates...", self)
+        self._duplicates_action.setToolTip("Look for identical files and look-alike photos in the library")
+        self._duplicates_action.triggered.connect(self.find_duplicates)
+        file_menu.addAction(self._duplicates_action)
         self._removed_action = QAction("Removed Photos...", self)
         self._removed_action.setToolTip("Photos taken off the Workbench (still on disk); bring them back")
         self._removed_action.triggered.connect(self.show_removed_photos)
@@ -1312,6 +1319,24 @@ class AppWindow(QMainWindow):
         if result.failed:
             lines = "\n".join(f"{os.path.basename(p)}: {why}" for p, why in result.failed[:10])
             QMessageBox.warning(self, "Delete from Disk", f"{len(result.failed)} photo(s) could not be deleted and were left where they are:\n\n{lines}")
+
+    def find_duplicates(self) -> None:
+        """Open the duplicate finder on every photo in the Workbench."""
+        rows = self._lighttable.all_rows()
+        if len(rows) < 2:
+            self._coord_label.setText("Find Duplicates: the Workbench needs at least two photos (press Refresh in the Workbench first).")
+            return
+        infos = [photo_duplicates.Info(r["path"], int(r["size"]), int(r["width"]), int(r["height"]), int(r["rating"]), bool(r["edited"]), int(r.get("versions", 1)), len(r.get("tags", ())))
+                 for r in rows]
+        dlg = DuplicatesDialog(infos, thumbnail_cache_dir(), self)
+        dlg.remove_requested.connect(self.remove_photos)
+
+        def delete(paths: list[str]) -> None:
+            self.delete_photos(paths)
+            dlg.drop([p for p in paths if not os.path.exists(p)])
+
+        dlg.delete_requested.connect(delete)
+        dlg.exec()
 
     def show_removed_photos(self) -> None:
         dlg = RemovedPhotosDialog(self.controller.hidden_photos(), self)

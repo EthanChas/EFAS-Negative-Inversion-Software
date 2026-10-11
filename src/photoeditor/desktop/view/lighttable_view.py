@@ -267,6 +267,7 @@ class LighttableView(QWidget):
     collection_save_requested = pyqtSignal(str, dict)
     collection_delete_requested = pyqtSignal(str)
     removed_list_requested = pyqtSignal()
+    duplicates_requested = pyqtSignal()
 
     def __init__(self, cache_dir: str | None, parent: QWidget | None = None):
         super().__init__(parent)
@@ -506,6 +507,10 @@ class LighttableView(QWidget):
         self._removed_btn.setToolTip("Photos you took off the Workbench (they are still on disk). Bring them back from here.")
         self._removed_btn.clicked.connect(self.removed_list_requested)
         bar.addWidget(self._removed_btn)
+        self._duplicates_btn = QPushButton("Find Duplicates...")
+        self._duplicates_btn.setToolTip("Look for identical files and look-alike photos in the library")
+        self._duplicates_btn.clicked.connect(self.duplicates_requested)
+        bar.addWidget(self._duplicates_btn)
         zoom_label = QLabel("Size")
         bar.addWidget(zoom_label)
         self._zoom = QSlider(Qt.Orientation.Horizontal)
@@ -936,6 +941,10 @@ class LighttableView(QWidget):
         paths = self.selected_paths()
         if paths:
             self.delete_requested.emit(paths)
+
+    def all_rows(self) -> list[dict]:
+        """Every photo the Workbench holds (not just the ones the filters show)."""
+        return list(self._rows)
 
     def set_removed_count(self, n: int) -> None:
         self._removed_btn.setText(f"Removed Photos ({n})..." if n else "Removed Photos...")
