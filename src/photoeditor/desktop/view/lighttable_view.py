@@ -9,20 +9,23 @@ from collections import OrderedDict
 from datetime import date
 
 from PyQt6.QtCore import QAbstractListModel, QDate, QModelIndex, QPointF, QRect, QSize, Qt, QTimer, pyqtSignal
-from PyQt6.QtGui import QAction, QColor, QFontMetrics, QKeyEvent, QPainter, QPen, QPolygonF
+from PyQt6.QtGui import QAction, QColor, QFontMetrics, QKeyEvent, QPainter, QPen, QPolygonF, QStandardItem, QStandardItemModel
 from PyQt6.QtWidgets import (
-    QAbstractItemView, QComboBox, QDateEdit, QFrame, QHBoxLayout, QLabel, QLineEdit, QListView, QProgressBar, QPushButton, QScrollArea, QSlider,
+    QAbstractItemView, QCompleter, QComboBox, QDateEdit, QFrame, QHBoxLayout, QLabel, QLineEdit, QListView, QProgressBar, QPushButton, QScrollArea, QSlider,
     QMenu, QStyle, QStyledItemDelegate, QVBoxLayout, QWidget,
 )
 
 from ...features import platform
 from ...features.library import query as Q
+from ...features.library import suggest
 from ...theme.tokens import THEME
 from ..library_worker import ThumbPool
 from .collapsible_panel import CollapsiblePanel
+from .library_panel import LibraryPanel
 from .tags_panel import TagsEditor
 
 ROLE_ROW = Qt.ItemDataRole.UserRole + 10
+COMPLETION_ROLE = Qt.ItemDataRole.UserRole + 11
 # Mac keyboards have no Delete key; the key labelled delete there is Backspace
 _DELETE_KEYS = (Qt.Key.Key_Delete, Qt.Key.Key_Backspace) if platform.MACOS else (Qt.Key.Key_Delete,)
 CELL_RANGE = (90, 300)
@@ -251,6 +254,16 @@ class LighttableList(QListView):
             super().keyPressEvent(event)
 
 
+class _TokenCompleter(QCompleter):
+    """Completes the word being typed in the search box, not the whole line: `camera:"Canon" rat` offers `rating:` and puts it after the camera term."""
+
+    def splitPath(self, path: str) -> list[str]:
+        return [suggest.match_key(suggest.current_token(path)[1])]
+
+    def pathFromIndex(self, index) -> str:
+        return suggest.apply(self.widget().text(), index.data(COMPLETION_ROLE))
+
+
 class LighttableView(QWidget):
     open_requested = pyqtSignal(str)
     rate_requested = pyqtSignal(list, int)
@@ -304,6 +317,7 @@ class LighttableView(QWidget):
         self._text_timer.setSingleShot(True)
         self._text_timer.setInterval(150)
         self._text_timer.timeout.connect(self.apply_filters)
+        self._candidates: list[tuple[str, str]] = []
         self._facets_for: list[dict] | None = None
 
     def _scroll(self, widget: QWidget, width: int) -> QScrollArea:
@@ -345,6 +359,13 @@ class LighttableView(QWidget):
         col.setContentsMargins(THEME.space_md, THEME.space_md, 2, THEME.space_md)
         col.setSpacing(THEME.space_sm)
 
+        self._under = ""
+        self._library = LibraryPanel(workbench=True)
+        self._library.enable_reset_button("Show all photos: clear the folder choice").clicked.connect(lambda _c=False: self._clear_library_selection())
+        self._library.folder_selected.connect(self._on_library_folder)
+        self._library.folder_double_clicked.connect(self._on_library_folder)
+        col.addWidget(self._library)
+
         body = self._section(
             col, "Smart Collections",
             "A smart collection is a saved set of filters (the search words, the Collection, Date, Rating and Sort settings below) under a name. Pick one to apply it. "
@@ -379,6 +400,15 @@ class LighttableView(QWidget):
         self._search.setPlaceholderText("canon  iso:>=400  date:2026-10  film:delta")
         self._search.setClearButtonEnabled(True)
         self._search.textChanged.connect(lambda _t: self._text_timer.start())
+        self._suggest_model = QStandardItemModel(self)
+        self._completer = _TokenCompleter(self._suggest_model, self)
+        self._completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+        self._completer.setFilterMode(Qt.MatchFlag.MatchContains)
+        self._completer.setModelSorting(QCompleter.ModelSorting.UnsortedModel)
+        self._completer.setMaxVisibleItems(12)
+        self._search.setCompleter(self._completer)
+        self._search.textEdited.connect(self._refresh_suggestions)
+        self._completer.activated.connect(lambda _text: QTimer.singleShot(0, lambda: self._refresh_suggestions(self._search.text())))
         body.addWidget(self._search)
         body.addWidget(self._build_quick_menu())
         self._search.textChanged.connect(self._sync_quick_terms)
@@ -607,6 +637,46 @@ class LighttableView(QWidget):
         self._on_selection()
         return self._scroll(host, _RIGHT_W)
 
+    def _refresh_suggestions(self, text: str) -> None:
+        """Fill the suggestion list for the word being typed and show it (or hide it when there is nothing to offer)."""
+        found = suggest.matching(self._candidates, suggest.current_token(text)[1])
+        self._suggest_model.clear()
+        for completion, hint in found:
+            item = QStandardItem(f"{completion}      {hint}")
+            item.setData(completion, COMPLETION_ROLE)
+            self._suggest_model.appendRow(item)
+        popup = self._completer.popup()
+        if found and self._search.hasFocus():
+            self._completer.setCompletionPrefix(suggest.match_key(suggest.current_token(text)[1]))
+            self._completer.complete()
+        elif popup is not None:
+            popup.hide()
+
+    def _on_library_folder(self, folder: str) -> None:
+        self._under = folder
+        self.apply_filters()
+
+    def _clear_library_selection(self) -> None:
+        """The Library's reset button: no folder chosen, so every photo shows."""
+        self._library.clear_selection()
+        self._under = ""
+        self.apply_filters()
+
+    def forget_folder_filter(self, folder: str) -> None:
+        """A library folder was taken off the list: drop the folder choice if it was that folder or inside it."""
+        if self._under and Q.in_folder({"folder": self._under}, folder):
+            self._clear_library_selection()
+
+    def set_library_visible(self, visible: bool) -> None:
+        """The General setting 'Show the Library folder list in the Workbench'. Hiding it also clears a folder choice, so no hidden filter is left on."""
+        self._library.setVisible(visible)
+        if not visible and self._under:
+            self._clear_library_selection()
+
+    @property
+    def library_panel(self) -> LibraryPanel:
+        return self._library
+
     def set_collections(self, collections: list[tuple[str, dict]], select: str | None = None) -> None:
         """The saved smart collections as (name, filter state), each shown with how many photos it holds now."""
         self._collections = [(n, Q.clean_state(s)) for n, s in collections]
@@ -667,6 +737,7 @@ class LighttableView(QWidget):
 
     def _fill_facets(self) -> None:
         f = Q.facets(self._rows)
+        self._candidates = suggest.build(self._rows)
         self._loading = True
         for combo, key, any_value in ((self._folder, "folder", ""), (self._camera, "camera", ""), (self._lens, "lens", ""), (self._film, "film", ""), (self._iso, "iso", 0), (self._tag, "tag", "")):
             keep = combo.currentData()
@@ -709,7 +780,7 @@ class LighttableView(QWidget):
         return Q.Query(
             text=self._search.text(), rating_min=self._rating.currentData(), flags=Q.FLAG_FILTERS.get(self._flag.currentData() or "any", ()), edited=self._edited.currentData(),
             camera=self._camera.currentData(), lens=self._lens.currentData(), film=self._film.currentData(), folder=self._folder.currentData(), tag=self._tag.currentData(),
-            iso=self._iso.currentData(), date_from=date_from, date_to=date_to, sort=self._sort.currentData(), descending=self._order.isChecked(),
+            iso=self._iso.currentData(), date_from=date_from, date_to=date_to, sort=self._sort.currentData(), descending=self._order.isChecked(), under=self._under,
         )
 
     def filter_state(self) -> dict:
@@ -719,7 +790,7 @@ class LighttableView(QWidget):
             "folder": self._folder.currentData() or "", "camera": self._camera.currentData() or "", "lens": self._lens.currentData() or "", "film": self._film.currentData() or "",
             "iso": self._iso.currentData() or 0, "tag": self._tag.currentData() or "", "when": self._when.currentData() or "",
             "date_from": self._from.date().toString("yyyy-MM-dd"), "date_to": self._to.date().toString("yyyy-MM-dd"), "sort": self._sort.currentData() or "taken",
-            "descending": self._order.isChecked(),
+            "descending": self._order.isChecked(), "under": self._under,
         }
 
     def set_filter_state(self, state: dict) -> None:
@@ -736,6 +807,11 @@ class LighttableView(QWidget):
                 edit.setDate(parsed)
         self._order.setChecked(s["descending"])
         self._order.setText("Descending" if s["descending"] else "Ascending")
+        self._under = s["under"]
+        if self._under:
+            self._library.reveal(self._under)
+        else:
+            self._library.clear_selection()
         self._loading = False
         custom = s["when"] == "custom"
         self._from.setEnabled(custom)
@@ -791,6 +867,8 @@ class LighttableView(QWidget):
 
     def clear_filters(self) -> None:
         self._loading = True
+        self._under = ""
+        self._library.clear_selection()
         self._search.clear()
         for combo in (self._folder, self._camera, self._lens, self._film, self._iso, self._tag, self._rating, self._flag, self._edited, self._when):
             combo.setCurrentIndex(0)

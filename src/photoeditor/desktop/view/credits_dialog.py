@@ -17,6 +17,8 @@ _CREDITS = (
     "</ul>"
     "<p>Please go and check them out - they are fantastic programs, and well worth your time.</p>"
     "<p>The AI dust detection runs a small model from the FilmDefectNet project.</p>"
+    "<p>This app is developed with the help of AI (Claude, by Anthropic). Its changelogs, release notes and documentation are written by AI, as it is more "
+    "effective and better organised than writing them by hand.</p>"
 )
 
 

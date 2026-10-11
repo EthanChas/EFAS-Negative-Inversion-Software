@@ -1,5 +1,7 @@
 # Scanning quality, merging and flat exports: a practical guide
 
+*This guide, like the project's changelogs and release notes, is written by AI (Claude); see the README.*
+
 These tools help you get a clean scan of a negative and take the result into other software. All of them are optional. Nothing here changes how an existing photo is converted unless you choose it.
 
 ## Scan quality (Negative tab)
@@ -111,6 +113,12 @@ EFAS keeps a small log of what it reports, including errors that would otherwise
 **Open modules when the mouse is over them, close them when it leaves**: with this on, resting the mouse on a module (a collapsible panel such as Exposure or Crop & Rotate) opens it and moving off closes it, so only the one you are using is open. A brief pass over a module does not open it, and a module does not close while a mouse button is held (dragging a slider out of it), a drop-down list is showing, or you are typing in it. Click a module's header to **pin** it open; click again to unpin and close it. Modules that are open when you turn the setting on stay open until you click them. It is off by default.
 
 **Colour-code modules**: every module gets its own header gradient. The colours are assigned, not random: a module has the same gradient every time and on every computer (the editor's modules have a fixed order spread round the colour wheel; a module added later gets a colour from a checksum of its name). Right-click a module's header to pick one of twelve named colours for it, go back to its automatic colour, or turn its colour off. It is off by default.
+
+## Workbench: search suggestions and the Library list
+
+**Search suggestions.** Type in the Workbench search box and EFAS offers what you can say: `rat` offers `rating:`, `rating:>` offers `rating:>=1` to `rating:>=4`, `camera:` offers the cameras your library has, and a plain word such as `canon` offers values that start with it (`camera:"Canon EOS R"`). Each suggestion shows what it means and how many photos it matches. Pick one with the arrow keys and Enter or the mouse; it replaces only the word you were typing, so earlier terms stay, and a leading minus (`-fl`) is kept (`-flag:`). Choosing a field name such as `rating:` opens the list of its values straight away.
+
+**Library list.** The Workbench's left column starts with the same folder list as the editor's Library (they share the same folders: add or remove one in either and the other follows). Click a folder to show only the photos in it and its subfolders. The reset button (the loop icon) in the Library's header clears the choice, so no folder is selected and every photo shows. The folder choice is saved with a smart collection. Settings > General > **Show the Library folder list in the Workbench** turns the list off.
 
 ## Command line
 

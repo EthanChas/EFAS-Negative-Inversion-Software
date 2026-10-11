@@ -1,6 +1,6 @@
 import os
 
-from PyQt6.QtCore import pyqtSignal
+from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtWidgets import QFileDialog, QHBoxLayout, QMessageBox, QWidget
 
 from ..settings_store import qsettings
@@ -28,16 +28,16 @@ class LibraryPanel(CollapsiblePanel):
     folder_selected = pyqtSignal(str)
     folder_double_clicked = pyqtSignal(str)
     root_removed = pyqtSignal(str)
+    root_added = pyqtSignal(str)
 
-    def __init__(self, parent: QWidget | None = None):
+    def __init__(self, parent: QWidget | None = None, workbench: bool = False):
         super().__init__(
             "Library",
             help_text=(
-                "A folder tree of your added root folders, like a film "
-                "library - add one with the + button, click any folder "
-                "(or subfolder) to browse its photos in the Import window. "
-                "Right-click a top-level folder to remove it from the list "
-                "(your photos and edits are not touched)."
+                "A folder tree of your added root folders, like a film library - add one with the + button. "
+                + ("Click any folder (or subfolder) to show only the photos in it; the reset button in this header clears the choice and shows every photo. "
+                   if workbench else "Click any folder (or subfolder) to browse its photos in the Import window. ")
+                + "Right-click a top-level folder to remove it from the list (your photos and edits are not touched)."
             ),
             collapsible=False,
             parent=parent,
@@ -76,6 +76,8 @@ class LibraryPanel(CollapsiblePanel):
             return
         self._tree.add_root(folder)
         self._settings.setValue(ROOTS_SETTINGS_KEY, self._tree.roots())
+        self._settings.sync()
+        self.root_added.emit(folder)
         self.folder_selected.emit(folder)
 
     def _remove_root_folder(self, folder: str) -> None:
@@ -96,10 +98,20 @@ class LibraryPanel(CollapsiblePanel):
     def _tree_refresh(self) -> None:
         self._tree.refresh()
 
+    def clear_selection(self) -> None:
+        """No folder selected (nothing is emitted)."""
+        self._tree.clearSelection()
+        self._tree.setCurrentItem(None)
+
+    def selected_folder(self) -> str:
+        item = self._tree.currentItem()
+        return (item.data(0, Qt.ItemDataRole.UserRole) or "") if item is not None and item.isSelected() else ""
+
     def reveal(self, folder: str) -> None:
         """Show where the open roll is: the tree opens down to its folder and highlights it."""
         self._tree.reveal(folder)
 
     def reload_roots(self) -> None:
-        """Picks up roots added from the other root-list editor (the Import window) since this panel was built."""
+        """Picks up roots added from the other root-list editor (the Import window, the other Library panel) since this panel was built."""
+        self._settings.sync()
         self._tree.set_roots(self._settings.value(ROOTS_SETTINGS_KEY, [], type=list))

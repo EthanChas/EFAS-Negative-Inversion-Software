@@ -378,6 +378,9 @@ class AppWindow(QMainWindow):
         self._lighttable.collection_save_requested.connect(self._on_collection_save)
         self._lighttable.collection_delete_requested.connect(self._on_collection_delete)
         self._lighttable.set_collections(edit_store.list_collections(self.controller._db))
+        self._lighttable.set_library_visible(app_settings.get("workbench_library"))
+        self._lighttable.library_panel.root_removed.connect(self._on_workbench_root_removed)
+        self._lighttable.library_panel.root_added.connect(self._on_workbench_root_added)
         self._lighttable.delete_requested.connect(self.delete_photos)
         self._lighttable.removed_list_requested.connect(self.show_removed_photos)
         self._lighttable.duplicates_requested.connect(self.find_duplicates)
@@ -645,6 +648,7 @@ class AppWindow(QMainWindow):
         self._library_panel.folder_selected.connect(self._on_library_folder_selected)
         self._library_panel.folder_double_clicked.connect(self._on_library_folder_double_clicked)
         self._library_panel.root_removed.connect(self._on_library_root_removed)
+        self._library_panel.root_added.connect(self._on_editor_root_added)
         left_tools_col.addWidget(self._library_panel)
 
         self._masking_tool = MaskingToolPanel()
@@ -1592,6 +1596,7 @@ class AppWindow(QMainWindow):
         changed = dialog.decoding_changed()
         app_settings.save(dialog.values())
         module_style.STYLE.apply(app_settings.load())
+        self._lighttable.set_library_visible(app_settings.get("workbench_library"))
         self.apply_keybinds()
         path = self.controller.state.image_path
         if changed and path:
@@ -1781,9 +1786,26 @@ class AppWindow(QMainWindow):
         if self.lighttable_active():
             self._filmstrip.setVisible(False)
 
+    def _on_workbench_root_added(self, folder: str) -> None:
+        """A root was added in the Workbench's Library: the editor's Library follows, and the new folder is read into the index."""
+        self._library_panel.reload_roots()
+        self.lighttable_refresh(force=True)
+
+    def _on_editor_root_added(self, folder: str) -> None:
+        self._lighttable.library_panel.reload_roots()
+        if self.lighttable_active():
+            self.lighttable_refresh(force=True)
+
+    def _on_workbench_root_removed(self, folder: str) -> None:
+        """A root was taken off in the Workbench's Library: same as in the editor's (index, recent folders), and the editor's list follows."""
+        self._library_panel.reload_roots()
+        self._on_library_root_removed(folder)
+
     def _on_library_root_removed(self, folder: str) -> None:
         """A folder was taken off the Library: forget it in the recents and the Workbench's index (photos and edits stay on disk and in the database)."""
         prefix = library_query.norm(folder).rstrip("\\/") + os.sep
+        self._lighttable.library_panel.reload_roots()
+        self._lighttable.forget_folder_filter(folder)
         recents = self._session.get("recent_folders", [])
         self._session["recent_folders"] = [f for f in recents if not (library_query.norm(f) + os.sep).startswith(prefix)]
         session_store.save(self._session)

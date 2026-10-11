@@ -115,6 +115,12 @@ class SettingsDialog(QDialog):
         col.addWidget(self._scan_quality)
         col.addWidget(_hint("Shows a plain verdict in the Negative tab (good, underexposed, clipped) with how many stops to change. It uses extra memory and a few seconds of "
                             "background work per photo, so turn it off on a slow computer."))
+        self._workbench_library = QCheckBox("Show the Library folder list in the Workbench")
+        self._workbench_library.setChecked(self._initial["workbench_library"])
+        self._workbench_library.setToolTip("A folder tree at the top of the Workbench's left column; click a folder to show only its photos")
+        col.addWidget(self._workbench_library)
+        col.addWidget(_hint("The same folder list as the editor's Library, in the Workbench. Click a folder to show only the photos in it (and its subfolders); the reset button "
+                            "in its header clears the choice and shows every photo again. Turn this off to hide the list."))
         self._hover_modules = QCheckBox("Open modules when the mouse is over them, close them when it leaves")
         self._hover_modules.setChecked(self._initial["hover_modules"])
         self._hover_modules.setToolTip("Hover a module's header to open it; move away and it closes. Click a header to keep it open (click again to close it).")
@@ -452,7 +458,7 @@ class SettingsDialog(QDialog):
         return {
             "raw_demosaic": self._demosaic.currentData(), "raw_auto_bright": self._auto_bright.isChecked(), "auto_advance": self._auto_advance.isChecked(),
             "check_updates": self._check_updates.isChecked(), "scan_quality": self._scan_quality.isChecked(),
-            "hover_modules": self._hover_modules.isChecked(), "module_colours": self._module_colours.isChecked(),
+            "hover_modules": self._hover_modules.isChecked(), "workbench_library": self._workbench_library.isChecked(), "module_colours": self._module_colours.isChecked(),
             "backup_auto": self._backup_auto.isChecked(), "backup_keep": self._backup_keep.value(), "backup_dir": self._backup_dir,
             "keybinds": binds.overrides_from(self._keys),
         }

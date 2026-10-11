@@ -82,7 +82,7 @@ def build_rows(records: list[dict], meta: Meta) -> list[dict]:
         film_iso = int(card.get("iso") or 0) or KNOWN_FILMS.get(str(card.get("film", "")).strip(), (0,))[0] or meta.film_iso.get(key, 0)
         row.update(
             exif_iso=rec["iso"], iso=film_iso, iso_from_film=bool(film_iso),
-            key=key, versions=meta.versions.get(key, 1), rating=meta.ratings.get(key, 0), flag=meta.flags.get(key), edited=key in meta.edited,
+            key=key, folder_key=norm(rec["folder"]), versions=meta.versions.get(key, 1), rating=meta.ratings.get(key, 0), flag=meta.flags.get(key), edited=key in meta.edited,
             film=str(card.get("film", "") or ""), roll=str(card.get("name", "") or ""),
             roll_camera=str(card.get("camera", "") or ""), roll_lens=str(card.get("lens", "") or ""),
             shot_from=str(card.get("shot_from", "") or ""), shot_to=str(card.get("shot_to", "") or ""),
@@ -214,10 +214,11 @@ class Query:
     date_to: str = ""
     sort: str = "taken"
     descending: bool = False
+    under: str = ""
 
     def is_filtering(self) -> bool:
         return bool(self.text.strip() or self.rating_min or self.flags or self.edited is not None or self.camera or self.lens or self.film
-                    or self.folder or self.tag or self.iso or self.date_from or self.date_to)
+                    or self.folder or self.tag or self.iso or self.date_from or self.date_to or self.under)
 
 
 FLAG_FILTERS = {"any": (), "keeper": ("keeper",), "not_rejected": ("keeper", "none"), "rejected": ("rejected",), "none": ("none",)}
@@ -226,7 +227,7 @@ FLAG_FILTERS = {"any": (), "keeper": ("keeper",), "not_rejected": ("keeper", "no
 def default_state() -> dict:
     """The filter panel with nothing set: what a smart collection stores, field for field."""
     return {"text": "", "rating": 0, "flag": "any", "edited": None, "folder": "", "camera": "", "lens": "", "film": "", "iso": 0, "tag": "",
-            "when": "", "date_from": "", "date_to": "", "sort": "taken", "descending": False}
+            "when": "", "date_from": "", "date_to": "", "sort": "taken", "descending": False, "under": ""}
 
 
 def clean_state(data) -> dict:
@@ -271,7 +272,7 @@ def query_from_state(state: dict, today: date | None = None) -> Query:
     date_from, date_to = when_range(s["when"], s["date_from"], s["date_to"], today)
     return Query(
         text=s["text"], rating_min=s["rating"], flags=FLAG_FILTERS[s["flag"]], edited=s["edited"], camera=s["camera"], lens=s["lens"], film=s["film"],
-        folder=s["folder"], tag=s["tag"], iso=s["iso"], date_from=date_from, date_to=date_to, sort=s["sort"], descending=s["descending"],
+        folder=s["folder"], tag=s["tag"], iso=s["iso"], date_from=date_from, date_to=date_to, sort=s["sort"], descending=s["descending"], under=s["under"],
     )
 
 
@@ -284,6 +285,8 @@ def describe_state(state: dict) -> str:
     for key, label in (("folder", "folder"), ("camera", "camera"), ("lens", "lens"), ("film", "film"), ("tag", "tag")):
         if s[key]:
             parts.append(f"{label} {os.path.basename(s[key].rstrip(chr(92) + '/')) if key == 'folder' else s[key]}")
+    if s["under"]:
+        parts.append(f"in folder {os.path.basename(s['under'].rstrip(chr(92) + '/')) or s['under']}")
     if s["iso"]:
         parts.append(f"ISO {s['iso']}")
     if s["rating"]:
@@ -295,6 +298,13 @@ def describe_state(state: dict) -> str:
     if s["when"]:
         parts.append({"today": "today", "7": "last 7 days", "30": "last 30 days", "year": "this year", "custom": f"{s['date_from']} to {s['date_to']}"}.get(s["when"], s["when"]))
     return ", ".join(parts) if parts else "everything"
+
+
+def in_folder(row: dict, folder: str) -> bool:
+    """True when the photo is in `folder` or any folder inside it."""
+    here = row.get("folder_key") or norm(row["folder"])
+    base = norm(folder).rstrip("\\/")
+    return here == base or here.startswith(base + os.sep)
 
 
 def matches(row: dict, q: Query, terms: list | None = None) -> bool:
@@ -317,6 +327,8 @@ def matches(row: dict, q: Query, terms: list | None = None) -> bool:
     if q.film and q.film != row["film"]:
         return False
     if q.folder and q.folder != row["folder"]:
+        return False
+    if q.under and not in_folder(row, q.under):
         return False
     if q.tag and q.tag.casefold() not in (t.casefold() for t in row.get("tags", ())):
         return False
