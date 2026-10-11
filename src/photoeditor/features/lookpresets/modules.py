@@ -62,7 +62,6 @@ MODULES: tuple[ModuleSpec, ...] = (
         FieldSpec("vignette_size", "Vignette size", "float", DEFAULT_VIGNETTE_SIZE, 0.0, 1.0),
         FieldSpec("border", "Border", "float", 0.0, 0.0, BORDER_MAX),
         FieldSpec("border_color", "Border color", "choice", DEFAULT_BORDER_COLOR, choices=tuple((k, k.title()) for k in BORDER_COLORS)),
-        FieldSpec("carrier", "Film carrier look", "bool", False),
     )),
     ModuleSpec("watermark", "Watermark", (
         FieldSpec("wm_film", "Canister", "choice", WATERMARK_OFF, choices=((WATERMARK_OFF, "Off"),) + tuple(FILMS.items())),

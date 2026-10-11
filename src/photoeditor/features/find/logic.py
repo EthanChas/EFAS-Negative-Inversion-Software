@@ -29,7 +29,7 @@ SYNONYMS = {
     "flat field": "vignette vignetting falloff uneven light backlight shading",
     "negative": "invert inversion film base orange mask metering convert",
     "film base": "orange mask rebate border dmin",
-    "finishing": "vignette border frame carrier",
+    "finishing": "vignette border frame",
     "watermark": "logo text signature stamp",
     "export": "save output jpeg tiff png size resize format quality sharpen bit depth",
     "presets": "looks styles apply saved",

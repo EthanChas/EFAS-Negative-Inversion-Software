@@ -1,5 +1,5 @@
 from PyQt6.QtCore import QTimer, pyqtSignal
-from PyQt6.QtWidgets import QCheckBox, QComboBox, QHBoxLayout, QLabel, QWidget
+from PyQt6.QtWidgets import QComboBox, QHBoxLayout, QLabel, QWidget
 
 from ...features.finishing.logic import BORDER_COLORS, BORDER_MAX, DEFAULT_BORDER_COLOR, DEFAULT_VIGNETTE_SIZE
 from ...theme.tokens import THEME
@@ -11,19 +11,19 @@ _SETTLE_DEBOUNCE_MS = 200
 
 
 class FinishingPanel(CollapsiblePanel):
-    """Finishing, in the Watermark tab: a vignette, and a border or film-carrier frame round the picture (features/finishing/logic.py). They are
+    """Finishing, in the Watermark tab: a vignette, and a border round the picture (features/finishing/logic.py). They are
     looks of the print, applied over the finished crop, so they are not in the histogram."""
 
-    changed = pyqtSignal(float, float, float, str, bool)
-    preview_requested = pyqtSignal(float, float, float, str, bool)
+    changed = pyqtSignal(float, float, float, str)
+    preview_requested = pyqtSignal(float, float, float, str)
 
     def __init__(self, parent: QWidget | None = None):
         super().__init__(
             "Finishing",
             help_text=(
                 "Vignette darkens the corners (positive) or lightens them (negative); Size is how far out from the centre the picture is left alone. "
-                "Border adds a frame round the picture, a share of its shorter side, in white, black, grey or warm paper. Film carrier look draws "
-                "the black, slightly ragged frame an unmasked negative carrier prints round the picture. These are applied last, over the finished "
+                "Border adds a frame round the picture, a share of its shorter side, in white, black, grey or warm paper. "
+                "These are applied last, over the finished "
                 "crop, so they are not part of the histogram. Double-click a slider to reset it."
             ),
             collapsible=True,
@@ -52,10 +52,6 @@ class FinishingPanel(CollapsiblePanel):
         self._color.currentIndexChanged.connect(self._on_value_changed)
         color_row.addWidget(self._color, 1)
         body.addLayout(color_row)
-        self._carrier = QCheckBox("Film carrier look")
-        self._carrier.setToolTip("A black, slightly ragged frame, like an unmasked negative carrier. It replaces the border colour.")
-        self._carrier.toggled.connect(self._on_value_changed)
-        body.addWidget(self._carrier)
 
         self._pending: tuple | None = None
         self._preview_timer = QTimer(self)
@@ -67,10 +63,10 @@ class FinishingPanel(CollapsiblePanel):
         self._settle_timer.setInterval(_SETTLE_DEBOUNCE_MS)
         self._settle_timer.timeout.connect(lambda: self.changed.emit(*self.values()))
 
-    def values(self) -> tuple[float, float, float, str, bool]:
-        return (self._vignette.value(), self._size.value(), self._border.value(), self._color.currentData() or DEFAULT_BORDER_COLOR, self._carrier.isChecked())
+    def values(self) -> tuple[float, float, float, str]:
+        return (self._vignette.value(), self._size.value(), self._border.value(), self._color.currentData() or DEFAULT_BORDER_COLOR)
 
-    def set_values(self, vignette: float, size: float, border: float, color: str, carrier: bool) -> None:
+    def set_values(self, vignette: float, size: float, border: float, color: str) -> None:
         """Sync the controls without emitting anything - after a new file or a history revert."""
         self._settle_timer.stop()
         self._pending = None
@@ -80,12 +76,9 @@ class FinishingPanel(CollapsiblePanel):
         self._color.blockSignals(True)
         self._color.setCurrentIndex(max(0, self._color.findData(color)))
         self._color.blockSignals(False)
-        self._carrier.blockSignals(True)
-        self._carrier.setChecked(bool(carrier))
-        self._carrier.blockSignals(False)
 
     def reset(self) -> None:
-        self.set_values(0.0, DEFAULT_VIGNETTE_SIZE, 0.0, DEFAULT_BORDER_COLOR, False)
+        self.set_values(0.0, DEFAULT_VIGNETTE_SIZE, 0.0, DEFAULT_BORDER_COLOR)
 
     def _on_value_changed(self, *_args) -> None:
         values = self.values()

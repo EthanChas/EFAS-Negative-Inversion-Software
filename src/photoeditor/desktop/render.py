@@ -114,7 +114,6 @@ class EditParams:
     vignette_size: float = 0.5
     border: float = 0.0
     border_color: str = "white"
-    carrier: bool = False
     clone_strokes: tuple = ()
     ai_dust: bool = False
     ai_threshold: float = aidust.DEFAULT_THRESHOLD
@@ -175,7 +174,6 @@ class EditParams:
             vignette_size=float(getattr(s, "vignette_size", 0.5)),
             border=float(getattr(s, "border", 0.0)),
             border_color=str(getattr(s, "border_color", "white")),
-            carrier=bool(getattr(s, "carrier", False)),
             clone_strokes=tuple(_freeze(stroke) for stroke in getattr(s, "clone_strokes", ())),
             ai_dust=bool(getattr(s, "ai_dust", False)),
             ai_threshold=float(getattr(s, "ai_threshold", aidust.DEFAULT_THRESHOLD)),
@@ -503,7 +501,7 @@ class Renderer:
                     pixels = apply_channel_lut(pixels, post)
             elif wide:
                 final = apply_tone_curve(ramp, curve)
-                if deep and not (params.sharpen_amount or params.vignette or watermark_active(params.wm_film) or params.marks.active() or params.border > 0 or params.carrier):
+                if deep and not (params.sharpen_amount or params.vignette or watermark_active(params.wm_film) or params.marks.active() or params.border > 0):
                     table = np.clip(np.rint(final[0].T * np.float32(65535.0 / 255.0)), 0, 65535).astype(np.uint16)
                     pixels = np.empty(pixels16.shape, dtype=np.uint16)
                     for c in range(3):
@@ -535,8 +533,8 @@ class Renderer:
                 )
             if params.marks.active():
                 image = apply_marks(image, params.marks)
-            if params.border > 0 or params.carrier:
-                image = apply_border(image, params.border, params.border_color, params.carrier)
+            if params.border > 0:
+                image = apply_border(image, params.border, params.border_color)
             return image, pixels, stats, overlay_rgba
 
 

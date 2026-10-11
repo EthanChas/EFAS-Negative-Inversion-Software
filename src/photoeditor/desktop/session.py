@@ -62,7 +62,6 @@ class HistoryEntry:
     vignette_size: float = 0.5
     border: float = 0.0
     border_color: str = "white"
-    carrier: bool = False
     clone_strokes: list = field(default_factory=list)
     ai_dust: bool = False
     ai_threshold: float = 0.3
@@ -122,7 +121,6 @@ class AppState:
     vignette_size: float = 0.5
     border: float = 0.0
     border_color: str = "white"
-    carrier: bool = False
     metering: Metering = field(default_factory=Metering)
     distortion: float = 0.0
     keystone_v: float = 0.0

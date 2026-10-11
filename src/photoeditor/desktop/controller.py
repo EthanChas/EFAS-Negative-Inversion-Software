@@ -88,7 +88,7 @@ BW_SATURATION = -1.0
 
 LOOK_FIELDS = (
     "exposure_ev", "tone_curve_points", "negative_inverted", "saturation", "temperature", "tint", "shadows", "highlights",
-    "contrast", "local_contrast", "vignette", "vignette_size", "border", "border_color", "carrier", "sharpen_amount", "sharpen_radius", "sharpen_masking", "sharpen_method", "film_type", "invert_r", "invert_g",
+    "contrast", "local_contrast", "vignette", "vignette_size", "border", "border_color", "sharpen_amount", "sharpen_radius", "sharpen_masking", "sharpen_method", "film_type", "invert_r", "invert_g",
     "invert_b", "chroma_denoise", "wm_film", "wm_texture", "wm_size", "wm_position", "wm_info", "wm_camera", "wm_lens",
 )
 
@@ -295,7 +295,6 @@ class AppController(QObject):
         self.state.vignette_size = float(saved.get("vignette_size", 0.5))
         self.state.border = float(saved.get("border", 0.0))
         self.state.border_color = str(saved.get("border_color", "white"))
-        self.state.carrier = bool(saved.get("carrier", False))
         self.state.metering = Metering.from_dict(saved.get("metering"))
         self.state.wm_film = saved["wm_film"]
         self.state.wm_texture = saved["wm_texture"]
@@ -847,21 +846,21 @@ class AppController(QObject):
 
     def _finishing_values(self) -> tuple:
         s = self.state
-        return (round(s.vignette, 4), round(s.vignette_size, 4), round(s.border, 4), s.border_color, s.carrier)
+        return (round(s.vignette, 4), round(s.vignette_size, 4), round(s.border, 4), s.border_color)
 
-    def preview_finishing(self, vignette: float, size: float, border: float, color: str, carrier: bool) -> None:
+    def preview_finishing(self, vignette: float, size: float, border: float, color: str) -> None:
         if self.state.preview_rgb is None:
             return
         s = self.state
-        s.vignette, s.vignette_size, s.border, s.border_color, s.carrier = vignette, size, border, color, bool(carrier)
+        s.vignette, s.vignette_size, s.border, s.border_color = vignette, size, border, color
         self._preview(LIVE_OTHER_METHODS)
 
-    def set_finishing(self, vignette: float, size: float, border: float, color: str, carrier: bool) -> None:
-        """Vignette, border and the film-carrier look (the Finishing panel)."""
+    def set_finishing(self, vignette: float, size: float, border: float, color: str) -> None:
+        """Vignette and border (the Finishing panel)."""
         if self.state.preview_rgb is None:
             return
         s = self.state
-        s.vignette, s.vignette_size, s.border, s.border_color, s.carrier = vignette, size, border, color, bool(carrier)
+        s.vignette, s.vignette_size, s.border, s.border_color = vignette, size, border, color
         self._settle()
         now = self._finishing_values()
         if now != self._last_logged_finish:
@@ -871,8 +870,6 @@ class AppController(QObject):
                 parts.append(f"vignette {s.vignette:+.2f}")
             if s.border > 0:
                 parts.append(f"{s.border_color} border {s.border * 100:.1f}%")
-            if s.carrier:
-                parts.append("film carrier")
             self._log("Finishing: " + (", ".join(parts) or "off"))
 
     def preview_local_contrast(self, amount: float) -> None:
@@ -1848,7 +1845,6 @@ class AppController(QObject):
             vignette_size=s.vignette_size,
             border=s.border,
             border_color=s.border_color,
-            carrier=s.carrier,
         )
         self.state.history.append(entry)
         self.history_changed.emit()
@@ -1914,7 +1910,6 @@ class AppController(QObject):
             "vignette_size": s.vignette_size,
             "border": s.border,
             "border_color": s.border_color,
-            "carrier": s.carrier,
             "metering": s.metering.to_dict(),
             "wm_film": s.wm_film,
             "wm_texture": s.wm_texture,
@@ -1963,7 +1958,7 @@ class AppController(QObject):
         self.state.keystone_v = self.state.keystone_h = 0.0
         self.state.chroma_denoise = 0.0
         self.state.local_contrast = 0.0
-        self.state.vignette, self.state.vignette_size, self.state.border, self.state.border_color, self.state.carrier = 0.0, 0.5, 0.0, "white", False
+        self.state.vignette, self.state.vignette_size, self.state.border, self.state.border_color = 0.0, 0.5, 0.0, "white"
         self.state.metering = Metering()
         self.state.wm_film = "off"
         self.state.wm_texture = wm.DEFAULT_TEXTURE
@@ -2149,7 +2144,7 @@ class AppController(QObject):
         self._last_logged_denoise = entry.chroma_denoise
         s.local_contrast = entry.local_contrast
         self._last_logged_local = entry.local_contrast
-        s.vignette, s.vignette_size, s.border, s.border_color, s.carrier = entry.vignette, entry.vignette_size, entry.border, entry.border_color, entry.carrier
+        s.vignette, s.vignette_size, s.border, s.border_color = entry.vignette, entry.vignette_size, entry.border, entry.border_color
         self._last_logged_finish = self._finishing_values()
         s.metering = entry.metering
         self._last_logged_metering = entry.metering
@@ -2926,7 +2921,7 @@ class AppController(QObject):
             EditParams.from_state(s),
             exposure_ev=0.0, tone_curve_points=tuple(tuple(p) for p in DEFAULT_POINTS), saturation=0.0, temperature=0.0, tint=0.0, shadows=0.0,
             highlights=0.0, sharpen_amount=0.0, dust_auto=False, scratch_lines=(), heal_strokes=(), clone_strokes=(), ai_dust=False, contrast=0.0,
-            chroma_denoise=0.0, local_contrast=0.0, vignette=0.0, border=0.0, carrier=False, wm_film="off", wm_info=False, crop_rect=None,
+            chroma_denoise=0.0, local_contrast=0.0, vignette=0.0, border=0.0, wm_film="off", wm_info=False, crop_rect=None,
             rotation_quarter_turns=0, flip_h=False, flip_v=False, fine_rotation=0.0, distortion=0.0, keystone_v=0.0, keystone_h=0.0,
         )
         scanned = self._negative_base()
@@ -3038,7 +3033,7 @@ class AppController(QObject):
 
     def render_split_before(self):
         """The 'before' of Before & After: the photo right after the negative is inverted (the Negative tab's own settings kept, every edit after it
-        left out), framed exactly like the edit - crop, rotation, border, film carrier - so the two line up under the divider."""
+        left out), framed exactly like the edit - crop, rotation, border - so the two line up under the divider."""
         return self._render_neutral(keep_inversion=True, keep_frame=True)
 
     def _render_neutral(self, keep_inversion: bool, keep_frame: bool = False):
@@ -3051,7 +3046,6 @@ class AppController(QObject):
             saturation=0.0, temperature=0.0, tint=0.0, shadows=0.0, highlights=0.0, sharpen_amount=0.0,
             dust_auto=False, scratch_lines=(), heal_strokes=(), clone_strokes=(), ai_dust=False, contrast=0.0, chroma_denoise=0.0, local_contrast=0.0,
             vignette=0.0, border=0.0 if not keep_frame else EditParams.from_state(self.state).border,
-            carrier=False if not keep_frame else self.state.carrier,
             wm_film="off", wm_info=False,
         )
         if not keep_inversion:

@@ -2081,7 +2081,7 @@ class AppWindow(QMainWindow):
             state.wm_film, state.wm_texture, state.wm_size, state.wm_position, state.wm_info, state.wm_camera, state.wm_lens
         )
         self._watermark_tool.set_marks(state.marks)
-        self._finishing_tool.set_values(state.vignette, state.vignette_size, state.border, state.border_color, state.carrier)
+        self._finishing_tool.set_values(state.vignette, state.vignette_size, state.border, state.border_color)
         self._sync_roll_card()
         self._sharpening_tool.reset()
         self._sharpening_tool.set_values(
@@ -2453,7 +2453,7 @@ class AppWindow(QMainWindow):
             state.wm_film, state.wm_texture, state.wm_size, state.wm_position, state.wm_info, state.wm_camera, state.wm_lens
         )
         self._watermark_tool.set_marks(state.marks)
-        self._finishing_tool.set_values(state.vignette, state.vignette_size, state.border, state.border_color, state.carrier)
+        self._finishing_tool.set_values(state.vignette, state.vignette_size, state.border, state.border_color)
         self._sharpening_tool.set_values(
             state.sharpen_amount, state.sharpen_radius, state.sharpen_masking, state.sharpen_method
         )

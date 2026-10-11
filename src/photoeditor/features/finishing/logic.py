@@ -1,4 +1,4 @@
-"""Finishing - a vignette, and a border or film-carrier frame round the picture."""
+"""Finishing - a vignette, and a border round the picture."""
 
 import numpy as np
 
@@ -8,12 +8,11 @@ BORDER_MAX = 0.2
 BORDER_COLORS = {"white": (255, 255, 255), "black": (0, 0, 0), "grey": (128, 128, 128), "paper": (240, 233, 214)}
 DEFAULT_VIGNETTE_SIZE = 0.5
 DEFAULT_BORDER_COLOR = "white"
-_CARRIER_COLOR = (6, 6, 6)
 _MASK_SIDE = 192
 
 
-def is_active(vignette: float, border: float, carrier: bool) -> bool:
-    return bool(vignette) or border > 0 or bool(carrier)
+def is_active(vignette: float, border: float) -> bool:
+    return bool(vignette) or border > 0
 
 
 def _smoothstep(x: np.ndarray) -> np.ndarray:
@@ -44,37 +43,19 @@ def apply_vignette(image: np.ndarray, amount: float, size: float = DEFAULT_VIGNE
     return np.clip(out + 0.5, 0, 255).astype(np.uint8)
 
 
-def _wobble(n: int, amplitude: float, rng: np.random.Generator) -> np.ndarray:
-    """A slow, irregular offset along one edge: smoothed noise, 0 on average."""
-    import cv2
-
-    raw = rng.normal(0.0, 1.0, max(8, n // 24)).astype(np.float32)
-    raw = cv2.resize(raw[None, :], (n, 1), interpolation=cv2.INTER_CUBIC)[0]
-    raw = cv2.GaussianBlur(raw[None, :], (0, 0), max(1.0, n / 90.0))[0]
-    peak = float(np.abs(raw).max()) or 1.0
-    return raw / peak * amplitude
-
-
-def apply_border(image: np.ndarray, border: float, color: str = DEFAULT_BORDER_COLOR, carrier: bool = False) -> np.ndarray:
+def apply_border(image: np.ndarray, border: float, color: str = DEFAULT_BORDER_COLOR) -> np.ndarray:
     """Surround the picture with a frame `border` (a share of its shorter side) wide, in one of BORDER_COLORS."""
     h, w = image.shape[:2]
-    short = min(h, w)
-    width = int(round(max(0.0, min(border, BORDER_MAX)) * short))
-    if carrier:
-        width = max(width, round(0.02 * short))
-    if width <= 0 and not carrier:
+    width = border_pixels(image.shape, border)
+    if width <= 0:
         return image
-    rgb = _CARRIER_COLOR if carrier else BORDER_COLORS.get(color, BORDER_COLORS[DEFAULT_BORDER_COLOR])
-    picture = image
-    if carrier:
-        rng = np.random.default_rng(h * 100003 + w)
-        reach = max(2.0, 0.012 * short)
-        top, bottom = _wobble(w, reach, rng) + reach, _wobble(w, reach, rng) + reach
-        left, right = _wobble(h, reach, rng) + reach, _wobble(h, reach, rng) + reach
-        yy, xx = np.arange(h)[:, None], np.arange(w)[None, :]
-        inside = (yy >= top[None, :]) & (yy < h - bottom[None, :]) & (xx >= left[:, None]) & (xx < w - right[:, None])
-        picture = np.where(inside[..., None], image, np.array(_CARRIER_COLOR, dtype=np.uint8)).astype(np.uint8)
     out = np.empty((h + 2 * width, w + 2 * width, 3), dtype=np.uint8)
-    out[:] = rgb
-    out[width:width + h, width:width + w] = picture
+    out[:] = BORDER_COLORS.get(color, BORDER_COLORS[DEFAULT_BORDER_COLOR])
+    out[width:width + h, width:width + w] = image
     return out
+
+
+def border_pixels(shape, border: float) -> int:
+    """How wide the frame is, in pixels, for a picture of this shape (the same sum apply_border uses)."""
+    short = min(shape[0], shape[1])
+    return int(round(max(0.0, min(border, BORDER_MAX)) * short))

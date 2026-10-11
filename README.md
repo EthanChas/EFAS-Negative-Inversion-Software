@@ -14,7 +14,7 @@ Built in **Python** with **PyQt6**. Created by Ethan.
 - **Exposure, tone curve, contrast, shadows/highlights, local contrast, sharpening, denoise, flat-field correction**
 - **Dust and scratch removal**: manual spot and curved-scratch tools, a clone tool and AI dust detection
 - **Geometry**: crop with guides, straighten tool, automatic crop by border gradient
-- **Finishing**: vignette, borders and a film-carrier frame; text and logo watermarks
+- **Finishing**: vignette and borders; text and logo watermarks
 - **Library**: a Workbench grid with search by camera, lens, film, ISO, date, roll, rating and flag; stars, flags, tags, snapshots, history
 - **Look presets** and per-module presets, copy and paste of settings between photos
 - **Proofing tools**: test strip, ring-around, split view, contact sheets

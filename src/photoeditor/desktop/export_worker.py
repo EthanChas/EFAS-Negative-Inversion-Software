@@ -88,7 +88,6 @@ def default_edit_state(negative_inverted: bool) -> dict:
         "vignette_size": 0.5,
         "border": 0.0,
         "border_color": "white",
-        "carrier": False,
         "metering": {},
         "wm_film": "off",
         "wm_texture": "plastic",
