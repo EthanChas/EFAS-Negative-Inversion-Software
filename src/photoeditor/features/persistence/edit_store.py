@@ -101,6 +101,15 @@ CREATE TABLE IF NOT EXISTS tags (
 """
 _TAGS_INDEX = "CREATE INDEX IF NOT EXISTS idx_tags_tag ON tags (tag)"
 
+_PHOTO_BASE_SCHEMA = """
+CREATE TABLE IF NOT EXISTS photo_film_base (
+    path TEXT PRIMARY KEY,
+    r INTEGER NOT NULL,
+    g INTEGER NOT NULL,
+    b INTEGER NOT NULL
+)
+"""
+
 _HIDDEN_SCHEMA = """
 CREATE TABLE IF NOT EXISTS hidden_photos (
     path TEXT PRIMARY KEY,
@@ -297,6 +306,7 @@ def connect(db_path: str) -> sqlite3.Connection:
     conn.execute(_TAGS_INDEX)
     conn.execute(_SNAPSHOTS_SCHEMA)
     conn.execute(_HIDDEN_SCHEMA)
+    conn.execute(_PHOTO_BASE_SCHEMA)
     conn.execute(_COLLECTIONS_SCHEMA)
     conn.execute(_VERSIONS_SCHEMA)
     conn.execute(_ACTIVE_VERSION_SCHEMA)
@@ -726,6 +736,27 @@ def touched_paths(conn: sqlite3.Connection, paths: list[str], default_curve) -> 
         if state is not None and not is_untouched(state, default_curve):
             found.add(p)
     return found
+
+
+def get_photo_film_base(conn: sqlite3.Connection, path: str) -> tuple[int, int, int] | None:
+    """A film base measured for this one photo (display RGB), if it has its own; otherwise it uses its roll's."""
+    row = conn.execute("SELECT r, g, b FROM photo_film_base WHERE path = ?", (path,)).fetchone()
+    return (int(row[0]), int(row[1]), int(row[2])) if row else None
+
+
+def set_photo_film_base(conn: sqlite3.Connection, path: str, rgb) -> None:
+    """Give a photo its own film base, or None to go back to its roll's."""
+    if rgb is None:
+        conn.execute("DELETE FROM photo_film_base WHERE path = ?", (path,))
+    else:
+        conn.execute("INSERT INTO photo_film_base (path, r, g, b) VALUES (?, ?, ?, ?) ON CONFLICT(path) DO UPDATE SET r=excluded.r, g=excluded.g, b=excluded.b",
+                     (path, int(rgb[0]), int(rgb[1]), int(rgb[2])))
+    conn.commit()
+
+
+def effective_film_base(conn: sqlite3.Connection, path: str) -> tuple[int, int, int] | None:
+    """The film base a photo is converted with: its own if it has one, else its roll's."""
+    return get_photo_film_base(conn, path) or get_folder_base(conn, folder_key(path))
 
 
 def get_folder_base(conn: sqlite3.Connection, folder: str) -> tuple[int, int, int] | None:

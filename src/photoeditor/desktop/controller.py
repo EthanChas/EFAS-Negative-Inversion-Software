@@ -48,7 +48,7 @@ from ..features.open_image.logic import is_raw
 from ..features.open_image.processor import load_image_rgb, make_preview_rgb, to_uint8
 from ..features.library import removal as photo_removal
 from ..features.library.index import LibraryIndex
-from ..features.persistence import edit_store
+from ..features.persistence import edit_store, roll_undo
 from ..features.persistence import export as data_export
 from ..features.persistence.consolidate import ensure_ready as ensure_data_ready
 from ..features.proofs import logic as proof_logic
@@ -135,6 +135,7 @@ class AppController(QObject):
     rating_changed = pyqtSignal(str, int)
     snapshots_changed = pyqtSignal(str)
     versions_changed = pyqtSignal(str)
+    roll_undo_changed = pyqtSignal()
     tags_changed = pyqtSignal(list)
 
     def __init__(self):
@@ -2422,6 +2423,7 @@ class AppController(QObject):
         if not look:
             return 0
         done = 0
+        by_folder: dict[str, list] = {}
         for path in paths:
             if path == self.state.image_path:
                 done += 1 if self.apply_look(look, "Pasted settings") else 0
@@ -2431,11 +2433,16 @@ class AppController(QObject):
                 saved = default_edit_state(look.get("negative_inverted", True))
                 saved["metadata"] = {}
             state = {**saved, **copy.deepcopy(look)}
+            by_folder.setdefault(os.path.dirname(path), []).append(roll_undo.fields_op(path, {k: saved.get(k) for k in look}, {k: state.get(k) for k in look}))
             edit_store.save_edit_state(self._db, path, state)
             if state["crop_rect"] is None:
                 xmp.write_sidecar(path, state, (1, 1))
             done += 1
         self.notice.emit(f"Pasted settings on {done} photo{'s' if done != 1 else ''}")
+        for folder, ops in by_folder.items():
+            roll_undo.record(self._db, folder, "Pasted settings", ops)
+        if by_folder:
+            self.roll_undo_changed.emit()
         return done
 
     def paste_settings_to_folder(self, look: dict | None = None, label: str = "Pasted settings") -> int:
@@ -2451,6 +2458,7 @@ class AppController(QObject):
             return 0
         current = self.state.image_path
         done = 1 if self.apply_look(look, label) else 0
+        ops: list = []
         for path in list_images_in_folder(os.path.dirname(current)):
             if os.path.normcase(path) == os.path.normcase(current):
                 continue
@@ -2459,13 +2467,33 @@ class AppController(QObject):
                 saved = default_edit_state(look.get("negative_inverted", True))
                 saved["metadata"] = {}
             state = {**saved, **copy.deepcopy(look)}
+            ops.append(roll_undo.fields_op(path, {k: saved.get(k) for k in look}, {k: state.get(k) for k in look}))
             edit_store.save_edit_state(self._db, path, state)
             if state["crop_rect"] is None:
                 xmp.write_sidecar(path, state, (1, 1))
             done += 1
+        roll_undo.record(self._db, os.path.dirname(current), label, ops)
+        self.roll_undo_changed.emit()
         folder = os.path.basename(os.path.dirname(current))
         self.notice.emit(f"{label} on {done} photo{'s' if done != 1 else ''} in {folder}")
         return done
+
+    def roll_undo_entry(self, folder: str | None):
+        """The last whole-roll action in this folder that can still be undone (None if there is none)."""
+        return roll_undo.latest(self._db, folder) if folder else None
+
+    def record_roll_action(self, folder: str, label: str, ops: list) -> None:
+        roll_undo.record(self._db, folder, label, ops)
+        self.roll_undo_changed.emit()
+
+    def undo_roll_action(self, folder: str):
+        """Undo the last whole-roll action in `folder` on every photo it changed that has not been edited since (the open photo is left to Ctrl+Z). Returns the result, or None."""
+        entry = self.roll_undo_entry(folder)
+        if entry is None:
+            return None
+        result = roll_undo.undo(self._db, entry, {self.state.image_path} if self.state.image_path else None)
+        self.roll_undo_changed.emit()
+        return entry, result
 
     def set_film_base(self, rgb: tuple[int, int, int] | None, pick: tuple[int, int] | None = None, radius: int = 6) -> None:
         """Calibrate the roll to the film base measured on its rebate: every photo in the open photo's folder inverts against it instead

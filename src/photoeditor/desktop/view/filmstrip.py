@@ -58,6 +58,7 @@ class Filmstrip(QWidget):
     delete_requested = pyqtSignal(list)
     crop_roll_requested = pyqtSignal()
     reset_crops_requested = pyqtSignal()
+    undo_roll_requested = pyqtSignal()
 
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
@@ -84,6 +85,10 @@ class Filmstrip(QWidget):
         self._reset_crops_btn.setToolTip("Take the crop off every photo of this roll. Rotation, straightening and every other edit stay. You are asked first.")
         self._reset_crops_btn.clicked.connect(self.reset_crops_requested)
         bar.addWidget(self._reset_crops_btn)
+        self._undo_roll_btn = QPushButton("Undo")
+        self._undo_roll_btn.setEnabled(False)
+        self._undo_roll_btn.clicked.connect(self.undo_roll_requested)
+        bar.addWidget(self._undo_roll_btn)
         self._bulk_progress = QProgressBar()
         self._bulk_progress.setFixedWidth(170)
         self._bulk_progress.setTextVisible(True)
@@ -127,6 +132,12 @@ class Filmstrip(QWidget):
         self._bulk_progress.setVisible(busy)
         if busy:
             self.set_bulk_progress(0, 1, "Starting...")
+
+    def set_roll_undo(self, label: str | None, detail: str = "") -> None:
+        """The Undo button for the last whole-roll action in this folder (disabled when there is none)."""
+        self._undo_roll_btn.setEnabled(bool(label))
+        self._undo_roll_btn.setText(f"Undo {label}" if label else "Undo")
+        self._undo_roll_btn.setToolTip(detail if label else "Nothing to undo: the last Crop Roll, Reset Crops or paste to folder can be undone here.")
 
     def set_bulk_progress(self, done: int, total: int, text: str = "") -> None:
         self._bulk_progress.setRange(0, max(1, total))

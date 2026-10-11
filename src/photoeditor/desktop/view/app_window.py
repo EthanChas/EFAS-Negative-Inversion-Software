@@ -407,6 +407,8 @@ class AppWindow(QMainWindow):
         self._filmstrip.remove_requested.connect(self.remove_photos)
         self._filmstrip.crop_roll_requested.connect(lambda: self.bulk_crop("auto"))
         self._filmstrip.reset_crops_requested.connect(lambda: self.bulk_crop("reset"))
+        self._filmstrip.undo_roll_requested.connect(self.undo_roll_action)
+        self.controller.roll_undo_changed.connect(self._refresh_roll_undo)
         self._bulk_worker = None
         self._filmstrip.delete_requested.connect(self.delete_photos)
         self.controller.flag_changed.connect(self._filmstrip.set_flag)
@@ -1366,6 +1368,8 @@ class AppWindow(QMainWindow):
             elif c.state.crop_rect:
                 self._on_crop_cleared()
                 done += 1
+        if summary.get("ops"):
+            self.controller.record_roll_action(self._filmstrip_folder, "Crop Roll" if mode == "auto" else "Reset Crops", summary["ops"])
         for p in summary["done"]:
             self._filmstrip.mark_edited(p)
             self._lighttable.thumbnail_changed(p)
@@ -1384,6 +1388,47 @@ class AppWindow(QMainWindow):
         self._coord_label.setText("; ".join(parts) + ".")
         self._lighttable_reload_rows()
         self._show_bulk_crop_result(mode, done, kept, none, summary)
+
+    def _refresh_roll_undo(self) -> None:
+        entry = self.controller.roll_undo_entry(self._filmstrip_folder)
+        if entry is None:
+            self._filmstrip.set_roll_undo(None)
+        else:
+            n = len(entry.ops)
+            self._filmstrip.set_roll_undo(entry.label, f"Undo {entry.label} ({n} photo{'s' if n != 1 else ''}, {entry.created}). Photos edited since are left alone. "
+                                                      "The photo open in the editor is undone with Ctrl+Z.")
+
+    def _ask_undo_roll(self, label: str, n: int) -> bool:
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Icon.Question)
+        box.setWindowTitle(f"Undo {label}")
+        box.setText(f"Undo {label} on {n} photo{'s' if n != 1 else ''}?")
+        box.setInformativeText("Their edits go back to how they were before. A photo you have edited since is left as it is. The photo open in the editor is not changed here (use Ctrl+Z).")
+        go = box.addButton("Undo", QMessageBox.ButtonRole.AcceptRole)
+        box.addButton("Cancel", QMessageBox.ButtonRole.RejectRole)
+        box.exec()
+        return box.clickedButton() is go
+
+    def undo_roll_action(self) -> None:
+        """The filmstrip's Undo button: the last whole-roll action in this folder, undone in one step."""
+        entry = self.controller.roll_undo_entry(self._filmstrip_folder)
+        if entry is None or not self._ask_undo_roll(entry.label, len(entry.ops)):
+            return
+        _entry, result = self.controller.undo_roll_action(self._filmstrip_folder)
+        from ...features.browse.processor import forget_edited_thumbnail
+
+        for p in result.restored:
+            forget_edited_thumbnail(thumbnail_cache_dir(), p)
+            self._lighttable.thumbnail_changed(p)
+            self._filmstrip.mark_edited(p)
+        self._filmstrip.reload_tiles(result.restored)
+        self._lighttable_reload_rows()
+        lines = [f"Undid {entry.label} on {len(result.restored)} photo{'s' if len(result.restored) != 1 else ''}."]
+        if result.skipped:
+            lines.append(f"{len(result.skipped)} left as they are, because they were edited since: " + ", ".join(os.path.basename(p) for p, _w in result.skipped[:8])
+                         + ("..." if len(result.skipped) > 8 else ""))
+        self._coord_label.setText(lines[0])
+        QMessageBox.information(self, f"Undo {entry.label}", "\n\n".join(lines))
 
     def _show_bulk_crop_result(self, mode: str, done: int, kept: int, none: int, summary: dict) -> None:
         """A plain account of what a whole-roll crop did, so it is never a guess whether it worked."""
@@ -1800,6 +1845,7 @@ class AppWindow(QMainWindow):
             paths, edit_store.get_flags(db, paths), edit_store.get_ratings(db, paths), edit_store.touched_paths(db, paths, DEFAULT_POINTS)
         )
         self._library_panel.reveal(folder)
+        self._refresh_roll_undo()
         if self.lighttable_active():
             self._filmstrip.setVisible(False)
 
