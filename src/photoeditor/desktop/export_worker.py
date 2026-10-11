@@ -78,6 +78,8 @@ def default_edit_state(negative_inverted: bool) -> dict:
         "contrast": 0.0,
         "fine_rotation": 0.0,
         "distortion": 0.0,
+        "keystone_v": 0.0,
+        "keystone_h": 0.0,
         "chroma_denoise": 0.0,
         "local_contrast": 0.0,
         "vignette": 0.0,

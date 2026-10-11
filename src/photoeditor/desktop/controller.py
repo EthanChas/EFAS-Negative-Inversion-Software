@@ -151,6 +151,7 @@ class AppController(QObject):
         self._last_logged_contrast = 0.0
         self._last_logged_fine_rotation = 0.0
         self._last_logged_distortion = 0.0
+        self._last_logged_keystone = (0.0, 0.0)
         self._last_logged_denoise = 0.0
         self._last_logged_local = 0.0
         self._last_logged_ai = (False, 0.3, 1)
@@ -282,6 +283,8 @@ class AppController(QObject):
         self.state.contrast = saved["contrast"]
         self.state.fine_rotation = saved["fine_rotation"]
         self.state.distortion = saved["distortion"]
+        self.state.keystone_v = saved.get("keystone_v", 0.0)
+        self.state.keystone_h = saved.get("keystone_h", 0.0)
         self.state.chroma_denoise = saved["chroma_denoise"]
         self.state.local_contrast = saved.get("local_contrast", 0.0)
         self.state.vignette = float(saved.get("vignette", 0.0))
@@ -400,6 +403,7 @@ class AppController(QObject):
         self._last_logged_contrast = self.state.contrast
         self._last_logged_fine_rotation = self.state.fine_rotation
         self._last_logged_distortion = self.state.distortion
+        self._last_logged_keystone = (self.state.keystone_v, self.state.keystone_h)
         self._last_logged_denoise = self.state.chroma_denoise
         self._last_logged_local = self.state.local_contrast
         self._last_logged_finish = self._finishing_values()
@@ -654,6 +658,34 @@ class AppController(QObject):
         if k1 != self._last_logged_distortion:
             self._last_logged_distortion = k1
             self._log(f"Distortion correction {k1:+.3f}")
+
+    def preview_keystone(self, v: float, h: float) -> None:
+        if self.state.preview_rgb is None:
+            return
+        self.state.keystone_v, self.state.keystone_h = v, h
+        self._preview(LIVE_OTHER_METHODS)
+
+    def set_keystone(self, v: float, h: float) -> None:
+        """Correct converging verticals (v) and horizontals (h), each -1 to 1."""
+        if self.state.preview_rgb is None:
+            return
+        self.state.keystone_v, self.state.keystone_h = v, h
+        self._settle()
+        if (v, h) != self._last_logged_keystone:
+            self._last_logged_keystone = (v, h)
+            self._log(f"Keystone correction vertical {v:+.2f}, horizontal {h:+.2f}")
+
+    def suggest_keystone(self):
+        """Look for converging lines in the open scan and suggest a correction (nothing is applied). None when no photo is open."""
+        s = self.state
+        if s.preview_rgb is None:
+            return None
+        import cv2
+
+        from ..features.geometry import keystone_detect
+
+        gray = cv2.cvtColor(np.ascontiguousarray(to_uint8(s.preview_rgb)), cv2.COLOR_RGB2GRAY)
+        return keystone_detect.suggest_keystone(gray)
 
     def preview_chroma_denoise(self, amount: float) -> None:
         if self.state.preview_rgb is None:
@@ -1106,7 +1138,7 @@ class AppController(QObject):
         h_img, w_img = s.image_rgb.shape[:2]
         return map_display_to_raw(
             (x + 0.5) / w_img, (y + 0.5) / h_img, s.crop_rect, self._current_frame_size(),
-            s.rotation_quarter_turns, s.flip_h, s.flip_v, s.fine_rotation, s.distortion,
+            s.rotation_quarter_turns, s.flip_h, s.flip_v, s.fine_rotation, s.distortion, s.keystone_v, s.keystone_h,
         )
 
     def brush_scale(self) -> float:
@@ -1543,6 +1575,8 @@ class AppController(QObject):
             parts.append(f"straightened {self.state.fine_rotation:+.1f}°")
         if self.state.distortion:
             parts.append(f"distortion {self.state.distortion:+.3f}")
+        if self.state.keystone_v or self.state.keystone_h:
+            parts.append("keystone corrected")
         if self.state.chroma_denoise:
             parts.append("chroma denoise")
         if self.state.local_contrast:
@@ -1671,6 +1705,8 @@ class AppController(QObject):
             contrast=s.contrast,
             fine_rotation=s.fine_rotation,
             distortion=s.distortion,
+            keystone_v=s.keystone_v,
+            keystone_h=s.keystone_h,
             chroma_denoise=s.chroma_denoise,
             wm_film=s.wm_film,
             wm_texture=s.wm_texture,
@@ -1743,6 +1779,8 @@ class AppController(QObject):
             "contrast": s.contrast,
             "fine_rotation": s.fine_rotation,
             "distortion": s.distortion,
+            "keystone_v": s.keystone_v,
+            "keystone_h": s.keystone_h,
             "chroma_denoise": s.chroma_denoise,
             "local_contrast": s.local_contrast,
             "vignette": s.vignette,
@@ -1795,6 +1833,7 @@ class AppController(QObject):
         self.state.contrast = 0.0
         self.state.fine_rotation = 0.0
         self.state.distortion = 0.0
+        self.state.keystone_v = self.state.keystone_h = 0.0
         self.state.chroma_denoise = 0.0
         self.state.local_contrast = 0.0
         self.state.vignette, self.state.vignette_size, self.state.border, self.state.border_color, self.state.carrier = 0.0, 0.5, 0.0, "white", False
@@ -1977,6 +2016,8 @@ class AppController(QObject):
         self._last_logged_fine_rotation = entry.fine_rotation
         s.distortion = entry.distortion
         self._last_logged_distortion = entry.distortion
+        s.keystone_v, s.keystone_h = entry.keystone_v, entry.keystone_h
+        self._last_logged_keystone = (entry.keystone_v, entry.keystone_h)
         s.chroma_denoise = entry.chroma_denoise
         self._last_logged_denoise = entry.chroma_denoise
         s.local_contrast = entry.local_contrast
@@ -2715,7 +2756,7 @@ class AppController(QObject):
             exposure_ev=0.0, tone_curve_points=tuple(tuple(p) for p in DEFAULT_POINTS), saturation=0.0, temperature=0.0, tint=0.0, shadows=0.0,
             highlights=0.0, sharpen_amount=0.0, dust_auto=False, scratch_lines=(), heal_strokes=(), clone_strokes=(), ai_dust=False, contrast=0.0,
             chroma_denoise=0.0, local_contrast=0.0, vignette=0.0, border=0.0, carrier=False, wm_film="off", wm_info=False, crop_rect=None,
-            rotation_quarter_turns=0, flip_h=False, flip_v=False, fine_rotation=0.0, distortion=0.0,
+            rotation_quarter_turns=0, flip_h=False, flip_v=False, fine_rotation=0.0, distortion=0.0, keystone_v=0.0, keystone_h=0.0,
         )
         scanned = self._negative_base()
         renderer = Renderer()
@@ -2843,7 +2884,7 @@ class AppController(QObject):
             wm_film="off", wm_info=False,
         )
         if not keep_inversion:
-            params = dataclasses.replace(params, negative_inverted=False, film_type="auto", invert_r=0.0, invert_g=0.0, invert_b=0.0, crop_rect=None, distortion=0.0)
+            params = dataclasses.replace(params, negative_inverted=False, film_type="auto", invert_r=0.0, invert_g=0.0, invert_b=0.0, crop_rect=None, distortion=0.0, keystone_v=0.0, keystone_h=0.0)
         image, _pre, _stats, _overlay = self._renderer.render(
             base, params, ("original" if keep_inversion else "raw", keep_frame, self._token()), base.shape[1], None, want_stats=False, overlay=False, flatfield=None
         )

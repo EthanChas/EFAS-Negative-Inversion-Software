@@ -198,6 +198,49 @@ def undistort_point(px: float, py: float, k1: float, w: int, h: int) -> tuple[fl
     return (cx + x * f) / (w - 1), (cy + y * f) / (h - 1)
 
 
+KEYSTONE_MAX_INSET = 0.30
+_KEYSTONE_EPS = 1e-4
+
+
+def keystone_quad(v: float, h: float) -> np.ndarray:
+    """The four corners (top-left, top-right, bottom-right, bottom-left, as 0..1 fractions of the frame) that the keystone correction stretches back to a rectangle.
+
+    v > 0 widens the top of the picture (use it when the tops of vertical lines lean in, from tilting the camera up); v < 0 widens the bottom. h > 0
+    makes the left side taller; h < 0 the right. Each runs from -1 to 1. The corrected picture is cut from inside the frame, so it never shows empty corners."""
+    v, h = max(-1.0, min(1.0, v)), max(-1.0, min(1.0, h))
+    top, bottom = max(v, 0.0) * KEYSTONE_MAX_INSET, max(-v, 0.0) * KEYSTONE_MAX_INSET
+    left, right = max(h, 0.0) * KEYSTONE_MAX_INSET, max(-h, 0.0) * KEYSTONE_MAX_INSET
+    return np.array([[top, left], [1.0 - top, right], [1.0 - bottom, 1.0 - right], [bottom, 1.0 - left]], dtype=np.float64)
+
+
+def _keystone_matrix(v: float, h: float, w: int, hgt: int) -> np.ndarray:
+    import cv2
+
+    scale = np.array([w - 1, hgt - 1], dtype=np.float64)
+    dst = np.array([[0, 0], [1, 0], [1, 1], [0, 1]], dtype=np.float64) * scale
+    return cv2.getPerspectiveTransform((keystone_quad(v, h) * scale).astype(np.float32), dst.astype(np.float32))
+
+
+def keystone(pixels: np.ndarray, v: float, h: float, nearest: bool = False) -> np.ndarray:
+    """Correct converging verticals (v) and horizontals (h); the frame keeps its size."""
+    if abs(v) < _KEYSTONE_EPS and abs(h) < _KEYSTONE_EPS:
+        return pixels
+    import cv2
+
+    hgt, w = pixels.shape[:2]
+    flags = cv2.INTER_NEAREST if nearest else cv2.INTER_LINEAR
+    return cv2.warpPerspective(np.ascontiguousarray(pixels), _keystone_matrix(v, h, w, hgt), (w, hgt), flags=flags, borderMode=cv2.BORDER_REPLICATE)
+
+
+def unkeystone_point(px: float, py: float, v: float, h: float, w: int, hgt: int) -> tuple[float, float]:
+    """A point in the corrected frame (0..1 fractions) -> where it came from in the uncorrected one."""
+    if abs(v) < _KEYSTONE_EPS and abs(h) < _KEYSTONE_EPS:
+        return px, py
+    inv = np.linalg.inv(_keystone_matrix(v, h, w, hgt))
+    x, y, z = inv @ np.array([px * (w - 1), py * (hgt - 1), 1.0])
+    return float(x / z / (w - 1)), float(y / z / (hgt - 1))
+
+
 def map_display_to_raw(
     u: float,
     v: float,
@@ -208,12 +251,14 @@ def map_display_to_raw(
     flip_v: bool,
     fine_rotation: float = 0.0,
     distortion: float = 0.0,
+    keystone_v: float = 0.0,
+    keystone_h: float = 0.0,
 ) -> tuple[float, float]:
     """A point in the displayed (cropped, rotated, flipped) image, as 0..1
     fractions (u, v), -> the same point in the untouched raw scan's own 0..1
     frame. frame_size is (height, width) of the pre-crop frame crop_rect is
     expressed in. Undoes the pipeline in reverse: crop, flips, quarter turns,
-    then the fine rotation."""
+    then the keystone and distortion corrections and the fine rotation."""
     h, w = frame_size
     if crop_rect is not None:
         x1, y1, x2, y2 = crop_rect
@@ -227,6 +272,8 @@ def map_display_to_raw(
     for _ in range(rotation_quarter_turns % 4):
         px, py = py, 1.0 - px
     raw_h, raw_w = (w, h) if rotation_quarter_turns % 2 else (h, w)
+    if keystone_v or keystone_h:
+        px, py = unkeystone_point(px, py, keystone_v, keystone_h, raw_w, raw_h)
     if distortion:
         px, py = undistort_point(px, py, distortion, raw_w, raw_h)
     if fine_rotation:

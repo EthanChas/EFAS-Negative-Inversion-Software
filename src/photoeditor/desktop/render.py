@@ -31,6 +31,7 @@ from ..features.geometry.logic import (
     fine_rotate,
     flip_horizontal,
     flip_vertical,
+    keystone,
     radial_distort,
     rotate_quarter_turns,
 )
@@ -120,6 +121,8 @@ class EditParams:
     ai_grow: int = aidust.DEFAULT_GROW
     marks: Marks = Marks()
     metering: Metering = Metering()
+    keystone_v: float = 0.0
+    keystone_h: float = 0.0
 
     @classmethod
     def from_dict(cls, d: dict) -> "EditParams":
@@ -179,6 +182,8 @@ class EditParams:
             ai_grow=int(getattr(s, "ai_grow", aidust.DEFAULT_GROW)),
             marks=Marks.from_dict(getattr(s, "marks", None)),
             metering=Metering.from_dict(getattr(s, "metering", None)),
+            keystone_v=float(getattr(s, "keystone_v", 0.0)),
+            keystone_h=float(getattr(s, "keystone_h", 0.0)),
         )
 
 
@@ -374,6 +379,7 @@ class Renderer:
     def _geometry(arr: np.ndarray, params: EditParams):
         arr = fine_rotate(arr, params.fine_rotation, nearest=True)
         arr = radial_distort(arr, params.distortion, nearest=True)
+        arr = keystone(arr, params.keystone_v, params.keystone_h, nearest=True)
         if params.rotation_quarter_turns:
             arr = rotate_quarter_turns(arr, params.rotation_quarter_turns)
         if params.flip_h:
@@ -450,6 +456,7 @@ class Renderer:
                 geometry(monochrome)
             geometry(fine_rotate, params.fine_rotation)
             geometry(radial_distort, params.distortion)
+            geometry(keystone, params.keystone_v, params.keystone_h)
 
             if params.rotation_quarter_turns:
                 geometry(rotate_quarter_turns, params.rotation_quarter_turns)

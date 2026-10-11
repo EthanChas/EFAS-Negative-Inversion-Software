@@ -55,6 +55,8 @@ class HistoryEntry:
     wm_camera: str
     wm_lens: str
     local_contrast: float = 0.0
+    keystone_v: float = 0.0
+    keystone_h: float = 0.0
     metering: Metering = field(default_factory=Metering)
     vignette: float = 0.0
     vignette_size: float = 0.5
@@ -123,6 +125,8 @@ class AppState:
     carrier: bool = False
     metering: Metering = field(default_factory=Metering)
     distortion: float = 0.0
+    keystone_v: float = 0.0
+    keystone_h: float = 0.0
     fine_rotation: float = 0.0
     wm_film: str = "off"
     wm_texture: str = "plastic"

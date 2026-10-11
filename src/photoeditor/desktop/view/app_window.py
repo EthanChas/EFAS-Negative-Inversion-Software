@@ -947,6 +947,9 @@ class AppWindow(QMainWindow):
         self._crop_tool.fine_rotation_preview.connect(self.controller.preview_fine_rotation)
         self._crop_tool.distortion_changed.connect(self.controller.set_distortion)
         self._crop_tool.distortion_preview.connect(self.controller.preview_distortion)
+        self._crop_tool.keystone_changed.connect(self.controller.set_keystone)
+        self._crop_tool.keystone_preview.connect(self.controller.preview_keystone)
+        self._crop_tool.auto_keystone_requested.connect(self._on_auto_keystone)
         self._image_view.set_crop_guide(*self._crop_tool.current_guide())
         self._image_view.crop_requested.connect(self._on_crop_requested)
         self._color_tool = ColorToolPanel()
@@ -1714,6 +1717,7 @@ class AppWindow(QMainWindow):
         self._crop_tool.set_flips(state.flip_h, state.flip_v)
         self._crop_tool.set_fine_rotation(state.fine_rotation)
         self._crop_tool.set_distortion(state.distortion)
+        self._crop_tool.set_keystone(state.keystone_v, state.keystone_h)
         self._image_view.reset_crop_mode()
         self._negative_tool.reset()
         if state.detected_mode is not None:
@@ -2014,6 +2018,7 @@ class AppWindow(QMainWindow):
         self._crop_tool.set_flips(state.flip_h, state.flip_v)
         self._crop_tool.set_fine_rotation(state.fine_rotation)
         self._crop_tool.set_distortion(state.distortion)
+        self._crop_tool.set_keystone(state.keystone_v, state.keystone_h)
         self._color_tool.set_values(state.saturation, state.temperature, state.tint)
         self._shadows_highlights_tool.set_values(state.shadows, state.highlights)
         self._denoise_tool.set_value(state.chroma_denoise)
@@ -2131,6 +2136,18 @@ class AppWindow(QMainWindow):
         dlg = SetupsDialog(self.controller, self)
         dlg.changed.connect(self._sync_inversion)
         dlg.exec()
+
+    def _on_auto_keystone(self) -> None:
+        """Suggest a keystone correction from the straight lines in the open scan and apply it as one undoable step; the sliders can be adjusted after."""
+        found = self.controller.suggest_keystone()
+        if found is None:
+            self._coord_label.setText("Open a photo first.")
+            return
+        if not found.found():
+            QMessageBox.information(self, "Auto Keystone", " ".join(found.notes) or "No converging lines were found.")
+            return
+        self._crop_tool.apply_keystone(found.v, found.h)
+        self._coord_label.setText(f"Auto Keystone: vertical {found.v:+.2f}, horizontal {found.h:+.2f}. Adjust the sliders if it is not quite right.")
 
     def _on_auto_base_requested(self) -> None:
         """Offer the film border EFAS found, with a preview, and use it only if the user confirms."""

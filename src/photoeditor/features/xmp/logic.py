@@ -119,6 +119,8 @@ def apply_edits_to_document(root: ET.Element, state: dict, frame_size: tuple[int
     pe("Contrast", _fmt(state["contrast"]))
     pe("FineRotation", _fmt(state["fine_rotation"]))
     pe("Distortion", _fmt(state["distortion"]))
+    pe("KeystoneV", _fmt(state.get("keystone_v", 0.0)))
+    pe("KeystoneH", _fmt(state.get("keystone_h", 0.0)))
     pe("ChromaDenoise", _fmt(state["chroma_denoise"]))
     pe("LocalContrast", _fmt(state.get("local_contrast", 0.0)))
     pe("Metering", json.dumps(state.get("metering", {})))
@@ -238,6 +240,8 @@ def read_sidecar(image_path: str) -> dict | None:
             "contrast": float(get("Contrast") or 0.0),
             "fine_rotation": float(get("FineRotation") or 0.0),
             "distortion": float(get("Distortion") or 0.0),
+            "keystone_v": float(get("KeystoneV") or 0.0),
+            "keystone_h": float(get("KeystoneH") or 0.0),
             "chroma_denoise": float(get("ChromaDenoise") or 0.0),
             "local_contrast": float(get("LocalContrast") or 0.0),
             "metering": json.loads(get("Metering") or "{}"),

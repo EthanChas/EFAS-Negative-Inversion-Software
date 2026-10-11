@@ -54,6 +54,9 @@ class CropToolPanel(CollapsiblePanel):
     fine_rotation_preview = pyqtSignal(float)
     distortion_changed = pyqtSignal(float)
     distortion_preview = pyqtSignal(float)
+    keystone_changed = pyqtSignal(float, float)
+    keystone_preview = pyqtSignal(float, float)
+    auto_keystone_requested = pyqtSignal()
 
     def __init__(self, parent: QWidget | None = None):
         super().__init__(
@@ -72,6 +75,8 @@ class CropToolPanel(CollapsiblePanel):
                 "Distortion Correction: radial lens distortion - positive corrects barrel, "
                 "negative corrects pincushion; use the film rebate as a straight reference. "
                 "Double-click the slider to reset it.\n\n"
+                "Keystone: corrects lines that lean towards each other because the camera was tilted. Vertical widens the top of the picture (positive) "
+                "or the bottom (negative); Horizontal does the same for the left and right. Auto Keystone suggests values from the straight lines it finds.\n\n"
                 "Ratio holds the crop to a shape (it turns to landscape or "
                 "portrait with your drag); Original keeps the frame's own shape. "
                 "Guide picks the composition overlay drawn inside the crop."
@@ -231,6 +236,30 @@ class CropToolPanel(CollapsiblePanel):
         self._distortion_settle_timer.setInterval(_SETTLE_DEBOUNCE_MS)
         self._distortion_settle_timer.timeout.connect(lambda: self.distortion_changed.emit(self._distortion.value()))
 
+        keystone = QLabel("KEYSTONE")
+        keystone.setProperty("role", "subtitle")
+        body.addWidget(keystone)
+        self._keystone_v = SliderRow("Vertical", min_value=-1.0, max_value=1.0, reset_value=0.0, decimals=2, step=0.01)
+        self._keystone_v.setToolTip("Corrects vertical lines that lean in. Positive widens the top of the picture, negative the bottom.\nDouble-click to reset")
+        self._keystone_h = SliderRow("Horizontal", min_value=-1.0, max_value=1.0, reset_value=0.0, decimals=2, step=0.01)
+        self._keystone_h.setToolTip("Corrects horizontal lines that converge. Positive makes the left side taller, negative the right.\nDouble-click to reset")
+        for row in (self._keystone_v, self._keystone_h):
+            row.value_changed.connect(self._on_keystone_changed)
+            body.addWidget(row)
+        self._auto_keystone_btn = QPushButton("Auto Keystone")
+        self._auto_keystone_btn.setToolTip("Look for converging straight lines (film borders, frame edges, walls) and set the sliders to straighten them. Check the result.")
+        self._auto_keystone_btn.clicked.connect(self.auto_keystone_requested)
+        body.addWidget(self._auto_keystone_btn)
+        self._pending_keystone: tuple[float, float] | None = None
+        self._keystone_preview_timer = QTimer(self)
+        self._keystone_preview_timer.setSingleShot(True)
+        self._keystone_preview_timer.setInterval(_PREVIEW_THROTTLE_MS)
+        self._keystone_preview_timer.timeout.connect(self._flush_keystone_preview)
+        self._keystone_settle_timer = QTimer(self)
+        self._keystone_settle_timer.setSingleShot(True)
+        self._keystone_settle_timer.setInterval(_SETTLE_DEBOUNCE_MS)
+        self._keystone_settle_timer.timeout.connect(lambda: self.keystone_changed.emit(self._keystone_v.value(), self._keystone_h.value()))
+
     def set_auto_adjust_enabled(self, enabled: bool) -> None:
         """The two adjusters work on the last auto crop: off (and back at 0) until one has been run, and again once the crop or rotation is changed
         some other way. Never emits."""
@@ -254,6 +283,33 @@ class CropToolPanel(CollapsiblePanel):
             value, self._pending_distortion = self._pending_distortion, None
             self.distortion_preview.emit(value)
             self._distortion_preview_timer.start()
+
+    def _on_keystone_changed(self, _value: float) -> None:
+        pair = (self._keystone_v.value(), self._keystone_h.value())
+        if self._keystone_preview_timer.isActive():
+            self._pending_keystone = pair
+        else:
+            self.keystone_preview.emit(*pair)
+            self._keystone_preview_timer.start()
+        self._keystone_settle_timer.start()
+
+    def _flush_keystone_preview(self) -> None:
+        if self._pending_keystone is not None:
+            pair, self._pending_keystone = self._pending_keystone, None
+            self.keystone_preview.emit(*pair)
+            self._keystone_preview_timer.start()
+
+    def set_keystone(self, v: float, h: float) -> None:
+        """Sync the sliders without emitting anything."""
+        for row, value in ((self._keystone_v, v), (self._keystone_h, h)):
+            row.blockSignals(True)
+            row.set_value(value)
+            row.blockSignals(False)
+
+    def apply_keystone(self, v: float, h: float) -> None:
+        """Set the sliders and tell the editor (used by Auto Keystone)."""
+        self.set_keystone(v, h)
+        self.keystone_changed.emit(v, h)
 
     def set_distortion(self, k1: float) -> None:
         """Sync the slider without emitting anything."""
@@ -333,6 +389,9 @@ class CropToolPanel(CollapsiblePanel):
         self._distortion_settle_timer.stop()
         self._pending_distortion = None
         self.set_distortion(0.0)
+        self._keystone_settle_timer.stop()
+        self._pending_keystone = None
+        self.set_keystone(0.0, 0.0)
         self.set_auto_adjust_enabled(False)
 
     def set_flips(self, flip_h: bool, flip_v: bool) -> None:

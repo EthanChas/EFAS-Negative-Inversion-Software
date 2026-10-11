@@ -7,7 +7,7 @@ sub-8-bit precision instead of rounding to 8 bits, and leaves out exposure, tone
 import numpy as np
 
 from ..features.densitometry.linear import LinearScan
-from ..features.geometry.logic import apply_crop, fine_rotate, flip_horizontal, flip_vertical, radial_distort, rotate_quarter_turns
+from ..features.geometry.logic import apply_crop, fine_rotate, flip_horizontal, flip_vertical, keystone, radial_distort, rotate_quarter_turns
 from ..features.negative.logic import apply_channel_offsets, compute_invert_lut, monochrome
 from .render import _scale_rect
 
@@ -18,6 +18,7 @@ def _frame(pixels: np.ndarray, params) -> np.ndarray:
     """The editor's geometry, in its order and with its interpolation."""
     pixels = fine_rotate(pixels, params.fine_rotation)
     pixels = radial_distort(pixels, params.distortion)
+    pixels = keystone(pixels, params.keystone_v, params.keystone_h)
     if params.rotation_quarter_turns:
         pixels = rotate_quarter_turns(pixels, params.rotation_quarter_turns)
     if params.flip_h:
