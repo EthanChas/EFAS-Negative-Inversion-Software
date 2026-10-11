@@ -3,6 +3,7 @@
 import os
 import re
 from collections import Counter
+from datetime import date, timedelta
 from dataclasses import dataclass, field
 from typing import Any, Optional
 
@@ -217,6 +218,83 @@ class Query:
     def is_filtering(self) -> bool:
         return bool(self.text.strip() or self.rating_min or self.flags or self.edited is not None or self.camera or self.lens or self.film
                     or self.folder or self.tag or self.iso or self.date_from or self.date_to)
+
+
+FLAG_FILTERS = {"any": (), "keeper": ("keeper",), "not_rejected": ("keeper", "none"), "rejected": ("rejected",), "none": ("none",)}
+
+
+def default_state() -> dict:
+    """The filter panel with nothing set: what a smart collection stores, field for field."""
+    return {"text": "", "rating": 0, "flag": "any", "edited": None, "folder": "", "camera": "", "lens": "", "film": "", "iso": 0, "tag": "",
+            "when": "", "date_from": "", "date_to": "", "sort": "taken", "descending": False}
+
+
+def clean_state(data) -> dict:
+    """A stored filter state made safe to use: unknown keys dropped, missing ones defaulted, wrong types replaced."""
+    base = default_state()
+    if not isinstance(data, dict):
+        return base
+    out = dict(base)
+    for key, default in base.items():
+        value = data.get(key, default)
+        if key == "edited":
+            out[key] = value if value is None or isinstance(value, bool) else None
+        elif isinstance(default, bool):
+            out[key] = bool(value) if isinstance(value, bool) else default
+        elif isinstance(default, int):
+            out[key] = int(value) if isinstance(value, (int, float)) and not isinstance(value, bool) else default
+        else:
+            out[key] = str(value) if isinstance(value, str) else default
+    if out["flag"] not in FLAG_FILTERS:
+        out["flag"] = "any"
+    if out["sort"] not in SORT_KEYS:
+        out["sort"] = "taken"
+    return out
+
+
+def when_range(when: str, date_from: str = "", date_to: str = "", today: date | None = None) -> tuple[str, str]:
+    """The dates a relative choice (today, last 7 or 30 days, this year, a custom range) means on `today`."""
+    today = today or date.today()
+    if when == "today":
+        return today.isoformat(), today.isoformat()
+    if when in ("7", "30"):
+        return (today - timedelta(days=int(when))).isoformat(), today.isoformat()
+    if when == "year":
+        return f"{today.year}-01-01", f"{today.year}-12-31"
+    if when == "custom":
+        return date_from, date_to
+    return "", ""
+
+
+def query_from_state(state: dict, today: date | None = None) -> Query:
+    s = clean_state(state)
+    date_from, date_to = when_range(s["when"], s["date_from"], s["date_to"], today)
+    return Query(
+        text=s["text"], rating_min=s["rating"], flags=FLAG_FILTERS[s["flag"]], edited=s["edited"], camera=s["camera"], lens=s["lens"], film=s["film"],
+        folder=s["folder"], tag=s["tag"], iso=s["iso"], date_from=date_from, date_to=date_to, sort=s["sort"], descending=s["descending"],
+    )
+
+
+def describe_state(state: dict) -> str:
+    """The filters a collection holds, in words, for its tooltip."""
+    s = clean_state(state)
+    parts = []
+    if s["text"].strip():
+        parts.append(f"search \"{s['text'].strip()}\"")
+    for key, label in (("folder", "folder"), ("camera", "camera"), ("lens", "lens"), ("film", "film"), ("tag", "tag")):
+        if s[key]:
+            parts.append(f"{label} {os.path.basename(s[key].rstrip(chr(92) + '/')) if key == 'folder' else s[key]}")
+    if s["iso"]:
+        parts.append(f"ISO {s['iso']}")
+    if s["rating"]:
+        parts.append(f"{s['rating']}+ stars")
+    if s["flag"] != "any":
+        parts.append(f"flag: {s['flag'].replace('_', ' ')}")
+    if s["edited"] is not None:
+        parts.append("edited" if s["edited"] else "not edited")
+    if s["when"]:
+        parts.append({"today": "today", "7": "last 7 days", "30": "last 30 days", "year": "this year", "custom": f"{s['date_from']} to {s['date_to']}"}.get(s["when"], s["when"]))
+    return ", ".join(parts) if parts else "everything"
 
 
 def matches(row: dict, q: Query, terms: list | None = None) -> bool:

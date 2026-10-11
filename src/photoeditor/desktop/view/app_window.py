@@ -368,6 +368,9 @@ class AppWindow(QMainWindow):
         self._lighttable.reveal_requested.connect(self._reveal_in_folder)
         self._lighttable.remove_requested.connect(self.remove_photos)
         self._lighttable.copy_requested.connect(self.make_virtual_copies)
+        self._lighttable.collection_save_requested.connect(self._on_collection_save)
+        self._lighttable.collection_delete_requested.connect(self._on_collection_delete)
+        self._lighttable.set_collections(edit_store.list_collections(self.controller._db))
         self._lighttable.delete_requested.connect(self.delete_photos)
         self._lighttable.removed_list_requested.connect(self.show_removed_photos)
         self.controller.rating_changed.connect(lambda path, stars: self._lighttable.update_item(library_query.norm(path), rating=stars))
@@ -1256,6 +1259,17 @@ class AppWindow(QMainWindow):
         self._lighttable_reload_rows()
         self._lighttable.set_index_status(message)
         self._coord_label.setText(message)
+
+    def _on_collection_save(self, name: str, state: dict) -> None:
+        edit_store.save_collection(self.controller._db, name, state)
+        self._lighttable.set_collections(edit_store.list_collections(self.controller._db), select=name)
+        self._lighttable.set_index_status(f"Saved smart collection '{name}'")
+
+    def _on_collection_delete(self, name: str) -> None:
+        if QMessageBox.question(self, "Delete smart collection", f"Delete the smart collection '{name}'? Your photos are not touched.") != QMessageBox.StandardButton.Yes:
+            return
+        edit_store.delete_collection(self.controller._db, name)
+        self._lighttable.set_collections(edit_store.list_collections(self.controller._db))
 
     def _on_versions_changed(self, path: str) -> None:
         """The open photo's versions changed (or a photo opened): the panel and the Workbench's x2 badges follow."""

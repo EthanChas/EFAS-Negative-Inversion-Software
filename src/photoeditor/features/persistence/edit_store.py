@@ -126,6 +126,14 @@ CREATE TABLE IF NOT EXISTS photo_active_version (
 )
 """
 
+_COLLECTIONS_SCHEMA = """
+CREATE TABLE IF NOT EXISTS smart_collections (
+    name TEXT PRIMARY KEY COLLATE NOCASE,
+    data TEXT NOT NULL,
+    created TEXT NOT NULL
+)
+"""
+
 _SNAPSHOTS_SCHEMA = """
 CREATE TABLE IF NOT EXISTS snapshots (
     path TEXT NOT NULL,
@@ -289,6 +297,7 @@ def connect(db_path: str) -> sqlite3.Connection:
     conn.execute(_TAGS_INDEX)
     conn.execute(_SNAPSHOTS_SCHEMA)
     conn.execute(_HIDDEN_SCHEMA)
+    conn.execute(_COLLECTIONS_SCHEMA)
     conn.execute(_VERSIONS_SCHEMA)
     conn.execute(_ACTIVE_VERSION_SCHEMA)
     _migrate(conn)
@@ -570,6 +579,40 @@ def add_tags(conn: sqlite3.Connection, paths: list[str], tags: list[str]) -> Non
 def remove_tags(conn: sqlite3.Connection, paths: list[str], tags: list[str]) -> None:
     conn.executemany("DELETE FROM tags WHERE path = ? AND tag = ?", [(p, t) for p in paths for t in tags])
     conn.commit()
+
+
+def save_collection(conn: sqlite3.Connection, name: str, state: dict) -> None:
+    """Keep the Workbench's filters under a name (replacing a collection of that name)."""
+    conn.execute(
+        "INSERT INTO smart_collections (name, data, created) VALUES (?, ?, datetime('now', 'localtime')) ON CONFLICT(name) DO UPDATE SET data = excluded.data",
+        (name, json.dumps(state)),
+    )
+    conn.commit()
+
+
+def list_collections(conn: sqlite3.Connection) -> list[tuple[str, dict]]:
+    out = []
+    for name, data in conn.execute("SELECT name, data FROM smart_collections ORDER BY name COLLATE NOCASE"):
+        try:
+            out.append((name, json.loads(data)))
+        except ValueError:
+            continue
+    return out
+
+
+def delete_collection(conn: sqlite3.Connection, name: str) -> bool:
+    cur = conn.execute("DELETE FROM smart_collections WHERE name = ?", (name,))
+    conn.commit()
+    return cur.rowcount > 0
+
+
+def rename_collection(conn: sqlite3.Connection, old: str, new: str) -> bool:
+    try:
+        cur = conn.execute("UPDATE smart_collections SET name = ? WHERE name = ?", (new, old))
+    except sqlite3.IntegrityError:
+        return False
+    conn.commit()
+    return cur.rowcount > 0
 
 
 ORIGINAL_VERSION = "Original"

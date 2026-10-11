@@ -6,9 +6,9 @@ one in the editor with a double-click or Enter."""
 
 import os
 from collections import OrderedDict
-from datetime import date, timedelta
+from datetime import date
 
-from PyQt6.QtCore import QAbstractListModel, QModelIndex, QPointF, QRect, QSize, Qt, QTimer, pyqtSignal
+from PyQt6.QtCore import QAbstractListModel, QDate, QModelIndex, QPointF, QRect, QSize, Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QAction, QColor, QFontMetrics, QKeyEvent, QPainter, QPen, QPolygonF
 from PyQt6.QtWidgets import (
     QAbstractItemView, QComboBox, QDateEdit, QFrame, QHBoxLayout, QLabel, QLineEdit, QListView, QProgressBar, QPushButton, QScrollArea, QSlider,
@@ -32,7 +32,6 @@ _PANEL_W = 270
 _RIGHT_W = 250
 _STAR_R = 4.5
 _GOLD = QColor(THEME.status_warning)
-_FLAG_FILTERS = {"any": (), "keeper": ("keeper",), "not_rejected": ("keeper", "none"), "rejected": ("rejected",), "none": ("none",)}
 _FLAG_COLORS = {"keeper": QColor(76, 175, 80), "rejected": QColor(224, 96, 92)}
 
 
@@ -265,6 +264,8 @@ class LighttableView(QWidget):
     remove_requested = pyqtSignal(list)
     delete_requested = pyqtSignal(list)
     copy_requested = pyqtSignal(list)
+    collection_save_requested = pyqtSignal(str, dict)
+    collection_delete_requested = pyqtSignal(str)
     removed_list_requested = pyqtSignal()
 
     def __init__(self, cache_dir: str | None, parent: QWidget | None = None):
@@ -342,6 +343,28 @@ class LighttableView(QWidget):
         col = QVBoxLayout(host)
         col.setContentsMargins(THEME.space_md, THEME.space_md, 2, THEME.space_md)
         col.setSpacing(THEME.space_sm)
+
+        body = self._section(
+            col, "Smart Collections",
+            "A smart collection is a saved set of filters (the search words, the Collection, Date, Rating and Sort settings below) under a name. Pick one to apply it. "
+            "It is not a list of photos: it re-runs on the whole library each time, so new photos that fit it appear in it by themselves. Save Current stores what "
+            "the panel shows now; choose a collection and Save Current again with the same name to replace it.",
+        )
+        self._collections: list[tuple[str, dict]] = []
+        self._collection_box = QComboBox()
+        self._collection_box.currentIndexChanged.connect(self._on_collection_picked)
+        body.addWidget(self._collection_box)
+        row = QHBoxLayout()
+        row.setSpacing(THEME.space_sm)
+        self._collection_save = QPushButton("Save Current...")
+        self._collection_save.setToolTip("Save the filters as they are now as a smart collection")
+        self._collection_save.clicked.connect(self._save_collection)
+        self._collection_delete = QPushButton("Delete")
+        self._collection_delete.clicked.connect(self._delete_collection)
+        row.addWidget(self._collection_save)
+        row.addWidget(self._collection_delete)
+        body.addLayout(row)
+        self.set_collections([])
 
         body = self._section(
             col, "Search",
@@ -579,6 +602,58 @@ class LighttableView(QWidget):
         self._on_selection()
         return self._scroll(host, _RIGHT_W)
 
+    def set_collections(self, collections: list[tuple[str, dict]], select: str | None = None) -> None:
+        """The saved smart collections as (name, filter state), each shown with how many photos it holds now."""
+        self._collections = [(n, Q.clean_state(s)) for n, s in collections]
+        self._collection_box.blockSignals(True)
+        self._collection_box.clear()
+        self._collection_box.addItem("Choose a collection..." if self._collections else "No collections yet", None)
+        for name, state in self._collections:
+            self._collection_box.addItem(name, name)
+            self._collection_box.setItemData(self._collection_box.count() - 1, "Filters: " + Q.describe_state(state), Qt.ItemDataRole.ToolTipRole)
+        i = self._collection_box.findData(select) if select else 0
+        self._collection_box.setCurrentIndex(max(0, i))
+        self._collection_box.blockSignals(False)
+        self._collection_delete.setEnabled(self._collection_box.currentData() is not None)
+        self._refresh_collection_counts()
+
+    def _refresh_collection_counts(self) -> None:
+        if not hasattr(self, "_collection_box"):
+            return
+        for i in range(1, self._collection_box.count()):
+            name = self._collection_box.itemData(i)
+            state = dict(self._collections).get(name)
+            if state is not None:
+                n = len(Q.filter_rows(self._rows, Q.query_from_state(state)))
+                self._collection_box.setItemText(i, f"{name}  ({n:,})")
+
+    def _on_collection_picked(self, _index: int) -> None:
+        name = self._collection_box.currentData()
+        self._collection_delete.setEnabled(name is not None)
+        state = dict(self._collections).get(name)
+        if state is not None:
+            self.set_filter_state(state)
+
+    def _save_collection(self) -> None:
+        from PyQt6.QtWidgets import QInputDialog
+
+        current = self._collection_box.currentData() or ""
+        name, ok = QInputDialog.getText(self, "Save smart collection", "Name for these filters:", text=current)
+        name = " ".join(name.split())[:60] if ok else ""
+        if not name:
+            return
+        if any(n.casefold() == name.casefold() for n, _s in self._collections) and name.casefold() != current.casefold():
+            from PyQt6.QtWidgets import QMessageBox
+
+            if QMessageBox.question(self, "Save smart collection", f"Replace the collection '{name}' with the filters shown now?") != QMessageBox.StandardButton.Yes:
+                return
+        self.collection_save_requested.emit(name, self.filter_state())
+
+    def _delete_collection(self) -> None:
+        name = self._collection_box.currentData()
+        if name is not None:
+            self.collection_delete_requested.emit(name)
+
     def set_rows(self, rows: list[dict]) -> None:
         """All the photos of the library (see query.build_rows); the filters decide which are shown."""
         self._rows = rows
@@ -595,8 +670,12 @@ class LighttableView(QWidget):
             for value, label, n in f[key]:
                 combo.addItem(f"{label}  ({n})", value)
             i = combo.findData(keep)
+            if i < 0 and keep not in (None, "", 0, any_value):
+                combo.addItem(f"{keep}  (0)", keep)
+                i = combo.count() - 1
             combo.setCurrentIndex(max(0, i))
         self._loading = False
+        self._refresh_collection_counts()
 
     def set_index_status(self, text: str, done: int = 0, total: int = 0) -> None:
         self._index_status.setText(text)
@@ -621,22 +700,51 @@ class LighttableView(QWidget):
         self._pool.request(path)
 
     def current_query(self) -> Q.Query:
-        when = self._when.currentData()
-        date_from = date_to = ""
-        today = date.today()
-        if when == "today":
-            date_from = date_to = today.isoformat()
-        elif when in ("7", "30"):
-            date_from, date_to = (today - timedelta(days=int(when))).isoformat(), today.isoformat()
-        elif when == "year":
-            date_from, date_to = f"{today.year}-01-01", f"{today.year}-12-31"
-        elif when == "custom":
-            date_from, date_to = self._from.date().toString("yyyy-MM-dd"), self._to.date().toString("yyyy-MM-dd")
+        date_from, date_to = Q.when_range(self._when.currentData() or "", self._from.date().toString("yyyy-MM-dd"), self._to.date().toString("yyyy-MM-dd"))
         return Q.Query(
-            text=self._search.text(), rating_min=self._rating.currentData(), flags=_FLAG_FILTERS.get(self._flag.currentData() or "any", ()), edited=self._edited.currentData(),
+            text=self._search.text(), rating_min=self._rating.currentData(), flags=Q.FLAG_FILTERS.get(self._flag.currentData() or "any", ()), edited=self._edited.currentData(),
             camera=self._camera.currentData(), lens=self._lens.currentData(), film=self._film.currentData(), folder=self._folder.currentData(), tag=self._tag.currentData(),
             iso=self._iso.currentData(), date_from=date_from, date_to=date_to, sort=self._sort.currentData(), descending=self._order.isChecked(),
         )
+
+    def filter_state(self) -> dict:
+        """The filter panel as plain data (what a smart collection stores)."""
+        return {
+            "text": self._search.text(), "rating": self._rating.currentData() or 0, "flag": self._flag.currentData() or "any", "edited": self._edited.currentData(),
+            "folder": self._folder.currentData() or "", "camera": self._camera.currentData() or "", "lens": self._lens.currentData() or "", "film": self._film.currentData() or "",
+            "iso": self._iso.currentData() or 0, "tag": self._tag.currentData() or "", "when": self._when.currentData() or "",
+            "date_from": self._from.date().toString("yyyy-MM-dd"), "date_to": self._to.date().toString("yyyy-MM-dd"), "sort": self._sort.currentData() or "taken",
+            "descending": self._order.isChecked(),
+        }
+
+    def set_filter_state(self, state: dict) -> None:
+        """Put the filter panel into a stored state and apply it. A folder, camera, lens, film or tag the library does not have right now is kept (and matches nothing)."""
+        s = Q.clean_state(state)
+        self._loading = True
+        self._search.setText(s["text"])
+        for combo, key in ((self._folder, "folder"), (self._camera, "camera"), (self._lens, "lens"), (self._film, "film"), (self._iso, "iso"), (self._tag, "tag"),
+                           (self._rating, "rating"), (self._flag, "flag"), (self._edited, "edited"), (self._when, "when"), (self._sort, "sort")):
+            self._select_data(combo, s[key])
+        for edit, key in ((self._from, "date_from"), (self._to, "date_to")):
+            parsed = QDate.fromString(s[key], "yyyy-MM-dd")
+            if parsed.isValid():
+                edit.setDate(parsed)
+        self._order.setChecked(s["descending"])
+        self._order.setText("Descending" if s["descending"] else "Ascending")
+        self._loading = False
+        custom = s["when"] == "custom"
+        self._from.setEnabled(custom)
+        self._to.setEnabled(custom)
+        self._text_timer.stop()
+        self.apply_filters()
+
+    @staticmethod
+    def _select_data(combo: QComboBox, value) -> None:
+        i = combo.findData(value)
+        if i < 0:
+            combo.addItem(f"{value}  (0)", value)
+            i = combo.count() - 1
+        combo.setCurrentIndex(i)
 
     def _changed(self, *_args) -> None:
         if not self._loading:
