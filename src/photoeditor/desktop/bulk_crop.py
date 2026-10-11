@@ -94,7 +94,7 @@ def count_cropped(conn, paths: list[str]) -> int:
     return n
 
 
-def run(mode: str, paths: list[str], db_path: str, replace_existing: bool = False, progress=None, cancelled=None) -> dict:
+def run(mode: str, paths: list[str], db_path: str, replace_existing: bool = False, progress=None, cancelled=None, photo_done=None) -> dict:
     """`mode` is 'auto' or 'reset'. Returns {'done': [...], 'skipped': [(path, why)], 'failed': [(path, reason)], 'cancelled': bool}."""
     summary = {"done": [], "skipped": [], "failed": [], "cancelled": False, "ops": []}
     conn = edit_store.connect(db_path)
@@ -112,6 +112,8 @@ def run(mode: str, paths: list[str], db_path: str, replace_existing: bool = Fals
                 applog.logger().warning("Bulk crop failed for %s: %s", os.path.basename(path), exc)
                 continue
             (summary["done"] if result == DONE else summary["skipped"]).append(path if result == DONE else (path, result))
+            if result == DONE and photo_done is not None:
+                photo_done(path)
     finally:
         conn.close()
     return summary
@@ -120,6 +122,7 @@ def run(mode: str, paths: list[str], db_path: str, replace_existing: bool = Fals
 class BulkCropWorker(QThread):
     progress = pyqtSignal(int, int, str)
     finished_all = pyqtSignal(object)
+    photo_done = pyqtSignal(str)
 
     def __init__(self, mode: str, paths: list[str], db_path: str, replace_existing: bool = False):
         super().__init__()
@@ -131,4 +134,4 @@ class BulkCropWorker(QThread):
 
     def run(self) -> None:
         mode, paths, db_path, replace = self._args
-        self.finished_all.emit(run(mode, paths, db_path, replace, self.progress.emit, lambda: self._cancel))
+        self.finished_all.emit(run(mode, paths, db_path, replace, self.progress.emit, lambda: self._cancel, self.photo_done.emit))

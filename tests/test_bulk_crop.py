@@ -63,7 +63,11 @@ _SCRIPT = textwrap.dedent(r'''
 
     # Crop Roll: the open photo (f0) through the editor, the others to the database; f2 keeps its crop; f3 has no border; f4 is broken
     answer["go"] = True
+    refreshed = []
+    real_refresh = win._refresh_photo_tiles
+    win._refresh_photo_tiles = lambda p: (refreshed.append(p), real_refresh(p))
     win.bulk_crop("auto"); finish()
+    assert paths[1] in refreshed and paths[2] not in refreshed and paths[4] not in refreshed, "each tile updates as its own photo is cropped"
     r1 = saved(paths[1])["crop_rect"]
     assert r1 is not None and abs(r1[0] - 60) < 12 and abs(r1[1] - 40) < 12 and abs(r1[2] - 300) < 12 and abs(r1[3] - 200) < 12, r1
     assert saved(paths[2])["crop_rect"] == (10, 10, 100, 100)

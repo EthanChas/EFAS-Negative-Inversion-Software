@@ -1367,6 +1367,7 @@ class AppWindow(QMainWindow):
         self._bulk_worker = worker = BulkCropWorker(mode, others, c.db_path, replace)
         worker.progress.connect(lambda i, n, name: (self._filmstrip.set_bulk_progress(i, n + (1 if in_roll else 0), name),
                                                      self._coord_label.setText(f"{'Cropping' if mode == 'auto' else 'Resetting crops'}: {i + 1} of {n}  {name}")))
+        worker.photo_done.connect(self._refresh_photo_tiles)
         worker.finished_all.connect(self._on_bulk_crop_finished)
         self._filmstrip.set_bulk_busy(True)
         worker.start()
@@ -1410,6 +1411,12 @@ class AppWindow(QMainWindow):
         self._coord_label.setText("; ".join(parts) + ".")
         self._lighttable_reload_rows()
         self._show_bulk_crop_result(mode, done, kept, none, summary)
+
+    def _refresh_photo_tiles(self, path: str) -> None:
+        """One photo's crop (or other saved edit) changed behind the editor's back: its tile in the filmstrip and the Workbench show it straight away."""
+        self._filmstrip.reload_tiles([path])
+        self._filmstrip.mark_edited(path)
+        self._lighttable.thumbnail_changed(path)
 
     def _refresh_roll_undo(self) -> None:
         entry = self.controller.roll_undo_entry(self._filmstrip_folder)
@@ -2255,7 +2262,17 @@ class AppWindow(QMainWindow):
         if self._crop_tool.is_crop_active():
             self._crop_tool.set_crop_mode(False)
             self._on_crop_mode_toggled(False)
-        self.controller.auto_crop(method=method if isinstance(method, str) else "color")
+        if self.controller.auto_crop(method=method if isinstance(method, str) else "color"):
+            self._update_open_thumbnail()
+
+    def _update_open_thumbnail(self) -> None:
+        """Show the open photo's new look in its filmstrip tile and its Workbench tile at once, without waiting for the edit to settle."""
+        state = self.controller.state
+        if state.image_rgb is None or state.image_path is None:
+            return
+        self._filmstrip.update_active_thumbnail(state.image_rgb)
+        self.controller._save_edit_state()
+        self._lighttable.thumbnail_changed(state.image_path)
 
     def _on_gradient_crop(self) -> None:
         self._on_auto_crop("gradient")
