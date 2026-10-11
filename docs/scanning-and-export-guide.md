@@ -114,6 +114,29 @@ EFAS keeps a small log of what it reports, including errors that would otherwise
 
 **Colour-code modules**: every module gets its own header gradient. The colours are assigned, not random: a module has the same gradient every time and on every computer (the editor's modules have a fixed order spread round the colour wheel; a module added later gets a colour from a checksum of its name). Right-click a module's header to pick one of twelve named colours for it, go back to its automatic colour, or turn its colour off. It is off by default.
 
+## Undo for whole-roll actions
+
+Crop Roll, Reset Crops, Paste to Folder / Paste to Selected and Even Out Roll each leave a record of what they changed, and the **Undo** button beside Reset Crops (above the filmstrip) undoes the last one in this folder, naming it ("Undo Crop Roll"). It puts back only what the action changed, and only on photos that still hold what the action wrote: a photo you have edited since is left alone and listed. Other edits you made to a photo afterwards (say exposure) are kept when its crop is undone. The photo open in the editor is undone with Ctrl+Z, as before, except for a film-base change from Even Out Roll, which Undo reverts on every photo. The last five actions per folder are kept, and they survive closing the program.
+
+## Find (Ctrl+K)
+
+**Edit > Find a Control or Action** (Ctrl+K) opens a small search box. Type a name or what a control does and it lists the matching modules, sliders, buttons and menu actions: `brightness` finds Exposure, `straighten` finds Angle and Auto Crop & Straighten, `vignette` finds Flat Field, `perspective` finds the Keystone sliders. Up and Down choose, Enter goes there. For a module or control it switches between the Workbench and the editor if needed, opens the module and its tab, scrolls to it and flashes it; for a menu action it runs it. Every word you type must match. The key can be changed in Settings > Keybinds.
+
+## Export: safety, output sharpening and 16-bit
+
+- **Nothing is overwritten by accident.** An export never writes over one of its own source photos or over another photo exported in the same batch (two photos called `x.jpg` from different folders become `x.jpg` and `x_1.jpg`), even when the destination setting says to overwrite files from earlier exports. One photo failing does not stop the batch.
+- **Unedited photos are flagged.** Exporting a folder, a selection or the keepers when some photos have no saved edits asks first: export all, only the edited ones, or cancel. Exporting the open photo, or "photos with saved edits", does not ask.
+- **Output sharpening** (Export panel, 0 to 100) sharpens the finished picture at its final size, after any resize. The Sharpening module works at the editing size, which a resize then softens. Faint noise is not amplified, and flat areas are untouched. Try 20 to 40 for a resized picture.
+- **16-bit TIFF.** With Format TIFF and Bit depth 16-bit, a photo with a 16-bit source and only tone edits (inversion, colour balance, exposure, contrast, tone curve, crop and rotation) is written as a 16-bit TIFF tagged sRGB, which keeps the full precision of the scan for grading elsewhere. A photo with an 8-bit-only edit switched on (sharpening, shadows/highlights, saturation, denoise, local contrast, vignette, border, watermark) or an 8-bit source is saved as 8-bit, and the export says how many. On the command line: `--sharpen 30 --bit-depth 16`.
+
+## Check Flat Field
+
+In the Flat Field module, **Check Flat Field** measures how even a picture of the light is: the smooth shading in stops (what the correction is for), blotchiness (dust, marks on the light, picture content), colour shading, and how much is clipped white or too dark. It can check the open photo (after the folder's flat field, if one is on, to show what is left), or any file as a reference. A reference is checked before it is saved: if it is clipped or blotchy you see why and choose to use it anyway or cancel, because a correction made from it would copy those marks into every frame. After Auto (Roll) builds a correction, it also reports whether the correction is strong or capped.
+
+## Even Out Roll
+
+In **Check Roll Consistency**, **Even Out Differing Frames** converts each frame the check found different against its own film base (its clear border, read as the picture shows it) instead of the roll's, so it matches the rest. Only frames whose border EFAS is sure about (high confidence) are touched, and a border that is not a uniform patch in the picture is skipped. The roll's film base and your other edits are not changed. It is undone with the Undo button above the filmstrip, or for the whole roll with **Use the Roll's Film Base Again**. Setting the roll's film base while a photo is open removes that photo's own film base.
+
 ## Workbench: search suggestions and the Library list
 
 **Search suggestions.** Type in the Workbench search box and EFAS offers what you can say: `rat` offers `rating:`, `rating:>` offers `rating:>=1` to `rating:>=4`, `camera:` offers the cameras your library has, and a plain word such as `canon` offers values that start with it (`camera:"Canon EOS R"`). Each suggestion shows what it means and how many photos it matches. Pick one with the arrow keys and Enter or the mouse; it replaces only the word you were typing, so earlier terms stay, and a leading minus (`-fl`) is kept (`-flag:`). Choosing a field name such as `rating:` opens the list of its values straight away.

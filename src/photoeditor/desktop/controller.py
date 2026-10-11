@@ -526,7 +526,7 @@ class AppController(QObject):
         self._renderer.reset()
         self._load_flatfield(path)
         self._load_roll(path)
-        self.state.film_base = edit_store.get_folder_base(self._db, edit_store.folder_key(path))
+        self.state.film_base = edit_store.effective_film_base(self._db, path)
         self._load_linear_refs(path)
         self.state.history = []
         flag = edit_store.get_flag(self._db, path)
@@ -2498,6 +2498,21 @@ class AppController(QObject):
         self.notice.emit(f"{label} on {done} photo{'s' if done != 1 else ''} in {folder}")
         return done
 
+    def refresh_film_base(self) -> None:
+        """The open photo's film base may have changed behind the editor's back (evening out a roll, an undo): read it again and redraw."""
+        path = self.state.image_path
+        if path is None or self.state.preview_rgb is None:
+            return
+        base = edit_store.effective_film_base(self._db, path)
+        if base != self.state.film_base:
+            self.state.film_base = base
+            self._recompute_image()
+            self.image_adjusted.emit()
+            self.film_base_changed.emit()
+
+    def has_own_film_base(self, path: str) -> bool:
+        return edit_store.get_photo_film_base(self._db, path) is not None
+
     def roll_undo_entry(self, folder: str | None):
         """The last whole-roll action in this folder that can still be undone (None if there is none)."""
         return roll_undo.latest(self._db, folder) if folder else None
@@ -2512,6 +2527,7 @@ class AppController(QObject):
         if entry is None:
             return None
         result = roll_undo.undo(self._db, entry, {self.state.image_path} if self.state.image_path else None)
+        self.refresh_film_base()
         self.roll_undo_changed.emit()
         return entry, result
 
@@ -2523,6 +2539,7 @@ class AppController(QObject):
         if path is None or self.state.preview_rgb is None:
             return
         key = edit_store.folder_key(path)
+        edit_store.set_photo_film_base(self._db, path, None)
         if rgb is None:
             edit_store.delete_folder_base(self._db, key)
             self.state.film_base = None

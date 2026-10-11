@@ -92,14 +92,14 @@ def _current_fields(state: dict, names) -> dict:
 
 
 def undo(conn: sqlite3.Connection, entry: Entry, skip_paths: set[str] | None = None) -> UndoResult:
-    """Put the entry's "before" values back wherever the photo still holds the "after" values. `skip_paths` are photos the caller deals with itself (the open one)."""
+    """Put the entry's "before" values back wherever the photo still holds the "after" values. `skip_paths` are photos whose edits the caller deals with itself (the open one, which has its own Ctrl+Z); a film-base change is not an edit step, so it is undone for every photo."""
     from ..xmp import logic as xmp
 
     result = UndoResult()
     skip = {os.path.normcase(os.path.abspath(p)) for p in (skip_paths or ())}
     for op in entry.ops:
         path = op["path"]
-        if os.path.normcase(os.path.abspath(path)) in skip:
+        if op["kind"] != "film_base" and os.path.normcase(os.path.abspath(path)) in skip:
             continue
         if op["kind"] == "film_base":
             current = edit_store.get_photo_film_base(conn, path)

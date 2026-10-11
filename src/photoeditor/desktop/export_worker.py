@@ -121,7 +121,7 @@ def _edits_for(path: str, conn, preview, state: dict | None = None) -> tuple:
     and measured film base laid in. preview is the picture the saved crop rectangle is measured on."""
     saved = state if state is not None else saved_or_default_state(path, conn, preview)
     roll = load_roll(path, conn)
-    base = edit_store.get_folder_base(conn, edit_store.folder_key(path))
+    base = edit_store.effective_film_base(conn, path)
     params = EditParams.from_dict(
         {**saved, "roll_camera": roll.camera.strip(), "roll_lens": roll.lens.strip(), "film_base": base}
     )
@@ -204,7 +204,7 @@ def conversion_record(path: str, conn, dest: str, options, kind: str, notes: lis
             profile = {"id": inv["profile_id"], "error": "the profile could not be read"}
     base = edit_store.get_linear_ref(conn, folder, "base")
     clear = edit_store.get_linear_ref(conn, folder, "clear")
-    film_base = {"display_rgb": edit_store.get_folder_base(conn, folder), "linear": list(base[0]) if base else None, "clear_light_linear": list(clear[0]) if clear else None}
+    film_base = {"display_rgb": edit_store.effective_film_base(conn, path), "own_to_this_photo": edit_store.get_photo_film_base(conn, path) is not None, "linear": list(base[0]) if base else None, "clear_light_linear": list(clear[0]) if clear else None}
     scan = None
     if is_raw(path):
         try:

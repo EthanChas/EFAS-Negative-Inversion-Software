@@ -28,6 +28,9 @@ class FrameStats:
     base: tuple[float, float, float]
     source: str
     clipped: float
+    path: str = ""
+    confidence: str = ""
+    rect_frac: tuple | None = None
 
 
 @dataclass(frozen=True)
@@ -39,6 +42,9 @@ class FrameCheck:
     source: str
     level: str
     notes: tuple[str, ...]
+    path: str = ""
+    confidence: str = ""
+    rect_frac: tuple | None = None
 
 
 @dataclass(frozen=True)
@@ -51,7 +57,7 @@ class RollReport:
     reference_source: str
 
 
-def frame_stats(label: str, rgb: np.ndarray, info: ScanInfo) -> FrameStats:
+def frame_stats(label: str, rgb: np.ndarray, info: ScanInfo, path: str = "") -> FrameStats:
     """The film base of one frame (from its clear border when found, else estimated) and how much of it is clipped."""
     floor = info.floor()
     h, w = rgb.shape[:2]
@@ -62,8 +68,10 @@ def frame_stats(label: str, rgb: np.ndarray, info: ScanInfo) -> FrameStats:
     clipped = float((centre >= 0.999).any(axis=2).mean())
     found = rebate_mod.find_rebate(rgb, floor)
     if found is not None and found.confidence in ("high", "medium"):
-        return FrameStats(label, tuple(float(x) for x in found.v), "border", clipped)
-    return FrameStats(label, base_mod.estimate_base(centre, floor).v, "estimated", clipped)
+        x1, y1, x2, y2 = found.rect
+        frac = (x1 / w, y1 / h, x2 / w, y2 / h)
+        return FrameStats(label, tuple(float(x) for x in found.v), "border", clipped, path, found.confidence, frac)
+    return FrameStats(label, base_mod.estimate_base(centre, floor).v, "estimated", clipped, path)
 
 
 def _log2(x: float) -> float:
@@ -114,7 +122,7 @@ def compare(frames: list[FrameStats], reference=None) -> RollReport:
             raise_to("warning")
         if f.source == "estimated" and level != "ok":
             notes.append("This frame has no clear border, so its film base was estimated from the picture: the difference may be the scene rather than the scan.")
-        out.append(FrameCheck(f.label, stops, tr, tb, f.source, level, tuple(notes)))
+        out.append(FrameCheck(f.label, stops, tr, tb, f.source, level, tuple(notes), f.path, f.confidence, f.rect_frac))
     bad = [c for c in out if c.level == "warning"]
     mild = [c for c in out if c.level == "note"]
     if bad:

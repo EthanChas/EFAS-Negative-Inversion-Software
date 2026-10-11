@@ -20,5 +20,5 @@ def run(paths: list[str], reference=None, progress=None) -> rollcheck.RollReport
             scan = decode_linear_raw(p, half_size=True)
         except Exception:
             continue
-        stats.append(rollcheck.frame_stats(os.path.basename(p), scan.rgb, scan.info))
+        stats.append(rollcheck.frame_stats(os.path.basename(p), scan.rgb, scan.info, p))
     return rollcheck.compare(stats, reference)

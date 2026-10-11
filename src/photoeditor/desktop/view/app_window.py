@@ -1154,9 +1154,19 @@ class AppWindow(QMainWindow):
         if path:
             self.controller.open_file(path)
 
+    def _after_film_base_change(self, paths: list[str]) -> None:
+        """Photos were given (or lost) their own film base: their thumbnails are stale."""
+        from ...features.browse.processor import forget_edited_thumbnail
+
+        for p in paths:
+            forget_edited_thumbnail(thumbnail_cache_dir(), p)
+            self._lighttable.thumbnail_changed(p)
+        self._filmstrip.reload_tiles(paths)
+        self._lighttable_reload_rows()
+
     def _on_roll_check(self) -> None:
         paths, reference = self.controller.roll_check_inputs()
-        RollCheckDialog(paths, reference, self).exec()
+        RollCheckDialog(paths, reference, self, controller=self.controller, on_changed=self._after_film_base_change).exec()
 
     def _on_merge_scans(self) -> None:
         dlg = MergeDialog(self)
