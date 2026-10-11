@@ -50,9 +50,9 @@ _SYNTH = textwrap.dedent(r'''
         assert pump(lambda: c.scan_quality().level == level), (name, c.scan_quality())
         assert pump(lambda: nt._quality_head.isVisibleTo(nt) or True)
         return c.scan_quality()
-    q = check("good", "good");  assert "good" in nt._quality_head.text().lower() and "6bdc6b" in nt._quality_head.text()
-    q = check("under", "underexposed"); assert "stops" in nt._quality_head.text() and "Merge Scans" in nt._quality_detail.text()
-    q = check("clip", "clipped"); assert "clipped" in nt._quality_head.text().lower() and "ff6b6b" in nt._quality_head.text()
+    q = check("good", "good");  assert pump(lambda: "good" in nt._quality_head.text().lower() and "6bdc6b" in nt._quality_head.text()), nt._quality_head.text()
+    q = check("under", "underexposed"); assert pump(lambda: "stops" in nt._quality_head.text() and "Merge Scans" in nt._quality_detail.text()), nt._quality_head.text()
+    q = check("clip", "clipped"); assert pump(lambda: "clipped" in nt._quality_head.text().lower() and "ff6b6b" in nt._quality_head.text()), nt._quality_head.text()
     # switched off: nothing is read in the background
     S.save({"scan_quality": False})
     c.open_file(os.path.join(work, "good.png")); QCoreApplication.processEvents(); time.sleep(0.5); QCoreApplication.processEvents()
