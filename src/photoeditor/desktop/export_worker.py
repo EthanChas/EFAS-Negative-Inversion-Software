@@ -267,6 +267,75 @@ def load_metadata(path: str, conn, folder_cache: dict | None = None) -> Metadata
     return compose(frame, roll, index, len(images))
 
 
+def export_photos(paths: list[str], jobs: list, db_path: str, progress=None, cancelled=None) -> dict:
+    """Render and write every photo for every job (see ExportWorker). `progress(done, total, text)` and `cancelled()` are optional; returns the summary
+    {"done": [paths written], "skipped": [...], "failed": [(path, reason)], "cancelled": bool}."""
+    def report(*args):
+        if progress is not None:
+            progress(*args)
+
+    summary = {"done": [], "skipped": [], "failed": [], "cancelled": False}
+    conn = edit_store.connect(db_path)
+    try:
+        photos = len(paths)
+        folder_cache: dict = {}
+        total = photos * (1 + len(jobs))
+        done = 0
+        for i, path in enumerate(paths):
+            if cancelled is not None and cancelled():
+                summary["cancelled"] = True
+                break
+            try:
+                pixels = exif = None
+                if any(o.output_kind == "standard" for _n, o in jobs):
+                    pixels, exif = render_full_resolution(path, conn)
+                alternates: dict = {}
+                metadata = load_metadata(path, conn, folder_cache)
+                done += 1
+                report(done, total, f"{os.path.basename(path)} ({i + 1} of {photos})")
+                for name, options in jobs:
+                    try:
+                        kind = options.output_kind
+                        notes: list[str] = []
+                        if kind == "standard":
+                            data = pixels
+                        else:
+                            if kind not in alternates:
+                                alternates[kind] = render_alternate(path, conn, kind)
+                            data, notes = alternates[kind]
+                        h, w = data.shape[:2]
+                        dest = resolve_output_path(
+                            path, i + 1, target_size(w, h, options), options, name, roll=metadata.capture_roll, frame=metadata.capture_frame
+                        )
+                        if dest is None:
+                            summary["skipped"].append(path)
+                        else:
+                            if kind == "standard":
+                                save_image(data, dest, options, exif)
+                                try:
+                                    embed_into_file(dest, metadata, path, options.copy_exif, int(options.dpi))
+                                except Exception as exc:
+                                    summary["failed"].append((path, f"{name}: metadata not written ({type(exc).__name__}: {exc})"))
+                                embed_keywords(dest, edit_store.get_tags(conn, [path]).get(path, []))
+                            else:
+                                out = export_kinds.resize16(data, target_size(w, h, options), options.resample)
+                                export_kinds.write_tiff16(out, dest, options.tiff_compression, int(options.dpi))
+                            if options.write_record:
+                                write_record(dest, conversion_record(path, conn, dest, options, kind, notes))
+                            summary["done"].append(dest)
+                    except Exception as exc:
+                        summary["failed"].append((path, f"{name}: {type(exc).__name__}: {exc}"))
+                    done += 1
+                    report(done, total, f"{os.path.basename(path)} ({i + 1} of {photos})")
+            except Exception as exc:
+                summary["failed"].append((path, f"{type(exc).__name__}: {exc}"))
+            done = (i + 1) * (1 + len(jobs))
+            report(done, total, f"{os.path.basename(path)} ({i + 1} of {photos})")
+    finally:
+        conn.close()
+    return summary
+
+
 class ExportWorker(QThread):
     """jobs is a list of (preset name, ExportOptions): each photo is rendered once, then written once per job."""
 
@@ -284,63 +353,4 @@ class ExportWorker(QThread):
         self._cancel = True
 
     def run(self) -> None:
-        summary = {"done": [], "skipped": [], "failed": [], "cancelled": False}
-        conn = edit_store.connect(self._db_path)
-        try:
-            photos = len(self._paths)
-            folder_cache: dict = {}
-            total = photos * (1 + len(self._jobs))
-            done = 0
-            for i, path in enumerate(self._paths):
-                if self._cancel:
-                    summary["cancelled"] = True
-                    break
-                try:
-                    pixels = exif = None
-                    if any(o.output_kind == "standard" for _n, o in self._jobs):
-                        pixels, exif = render_full_resolution(path, conn)
-                    alternates: dict = {}
-                    metadata = load_metadata(path, conn, folder_cache)
-                    done += 1
-                    self.progress.emit(done, total, f"{os.path.basename(path)} ({i + 1} of {photos})")
-                    for name, options in self._jobs:
-                        try:
-                            kind = options.output_kind
-                            notes: list[str] = []
-                            if kind == "standard":
-                                data = pixels
-                            else:
-                                if kind not in alternates:
-                                    alternates[kind] = render_alternate(path, conn, kind)
-                                data, notes = alternates[kind]
-                            h, w = data.shape[:2]
-                            dest = resolve_output_path(
-                                path, i + 1, target_size(w, h, options), options, name, roll=metadata.capture_roll, frame=metadata.capture_frame
-                            )
-                            if dest is None:
-                                summary["skipped"].append(path)
-                            else:
-                                if kind == "standard":
-                                    save_image(data, dest, options, exif)
-                                    try:
-                                        embed_into_file(dest, metadata, path, options.copy_exif, int(options.dpi))
-                                    except Exception as exc:
-                                        summary["failed"].append((path, f"{name}: metadata not written ({type(exc).__name__}: {exc})"))
-                                    embed_keywords(dest, edit_store.get_tags(conn, [path]).get(path, []))
-                                else:
-                                    out = export_kinds.resize16(data, target_size(w, h, options), options.resample)
-                                    export_kinds.write_tiff16(out, dest, options.tiff_compression, int(options.dpi))
-                                if options.write_record:
-                                    write_record(dest, conversion_record(path, conn, dest, options, kind, notes))
-                                summary["done"].append(dest)
-                        except Exception as exc:
-                            summary["failed"].append((path, f"{name}: {type(exc).__name__}: {exc}"))
-                        done += 1
-                        self.progress.emit(done, total, f"{os.path.basename(path)} ({i + 1} of {photos})")
-                except Exception as exc:
-                    summary["failed"].append((path, f"{type(exc).__name__}: {exc}"))
-                done = (i + 1) * (1 + len(self._jobs))
-                self.progress.emit(done, total, f"{os.path.basename(path)} ({i + 1} of {photos})")
-        finally:
-            conn.close()
-        self.finished_all.emit(summary)
+        self.finished_all.emit(export_photos(self._paths, self._jobs, self._db_path, self.progress.emit, lambda: self._cancel))

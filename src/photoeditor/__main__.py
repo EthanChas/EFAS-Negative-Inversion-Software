@@ -4,12 +4,15 @@ from PyQt6 import sip
 from PyQt6.QtGui import QColor, QFont, QPalette
 from PyQt6.QtWidgets import QApplication
 
+from . import cli
 from .desktop.view.app_window import AppWindow
 from .theme.build_qss import load_stylesheet
 from .theme.tokens import THEME
 
 
 def main() -> None:
+    if [a for a in sys.argv[1:] if not a.startswith("-psn")]:
+        sys.exit(cli.main(sys.argv[1:]))
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
     app.setFont(QFont(THEME.font_family, THEME.font_size_base))
