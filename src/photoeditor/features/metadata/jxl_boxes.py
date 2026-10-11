@@ -48,9 +48,9 @@ def _box_payload(data: bytes, wanted: bytes) -> Optional[bytes]:
         if btype == wanted:
             return data[start:end]
         if btype == b"brob" and data[start : start + 4] == wanted:
-            import imagecodecs
-
             try:
+                import imagecodecs
+
                 return bytes(imagecodecs.brotli_decode(data[start + 4 : end]))
             except Exception:
                 return None

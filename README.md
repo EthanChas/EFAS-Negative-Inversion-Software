@@ -70,7 +70,7 @@ Also built on [PyQt6](https://pypi.org/project/PyQt6/), [Pillow](https://python-
 ## Requirements
 
 - **Python 3.10 or newer** (developed and tested on 3.13)
-- Dependencies: PyQt6 >= 6.6, Pillow >= 10, rawpy >= 0.19, numpy >= 1.26, opencv-python-headless >= 4.8, onnxruntime >= 1.17
+- Dependencies: PyQt6 >= 6.6, Pillow >= 10, rawpy >= 0.19, numpy >= 1.26, opencv-python-headless >= 4.8, onnxruntime >= 1.17, piexif >= 1.1, tifffile >= 2023.1
 
 ## Supported systems
 
@@ -91,7 +91,7 @@ Grab the single-file `.exe` from the [Releases](../../releases) page. There is n
 ```bash
 git clone https://github.com/EthanChas/EFAS-Negative-Inversion-Software.git
 cd EFAS-Negative-Inversion-Software
-python -m pip install PyQt6 Pillow rawpy numpy opencv-python-headless onnxruntime
+python -m pip install PyQt6 Pillow rawpy numpy opencv-python-headless onnxruntime piexif tifffile
 ```
 
 On Linux and macOS also install `send2trash` (needed to move deleted photos to the Trash). On Linux, Qt needs a few system libraries; on Debian or Ubuntu: `sudo apt install libegl1 libxkbcommon-x11-0 libxcb-cursor0 libxcb-icccm4 libxcb-keysyms1 libxcb-shape0`.

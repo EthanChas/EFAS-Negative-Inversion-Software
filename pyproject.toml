@@ -12,6 +12,8 @@ dependencies = [
     "numpy>=1.26",
     "opencv-python-headless>=4.8",
     "onnxruntime>=1.17",
+    "piexif>=1.1",
+    "tifffile>=2023.1",
     "send2trash>=1.8; sys_platform != 'win32'",
 ]
 
