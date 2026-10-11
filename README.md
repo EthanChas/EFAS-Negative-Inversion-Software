@@ -2,7 +2,7 @@
 
 **Notice: this software is heavily under development and may have issues and bugs. Back up your photos and use it at your own risk.**
 
-**AI-generated text:** the changelogs, release notes, README and guides in this project are written by AI (Claude, by Anthropic), not by hand. Ethan, the author, would rather spend their time on the software than on writing changelogs, and an AI keeps them more consistent and better organised. The code is also developed with AI assistance (see *How it was made* below). Ethan decides what gets built and how it should work. If something in the text is wrong or unclear, please open an issue.
+**AI Generated DESCRIPTION:** the changelogs, release notes, README and guides in this project are written by AI (Claude, by Anthropic), not by hand. Ethan, the author, would rather spend their time on the software than on writing changelogs, and an AI keeps them more consistent and better organised. MINOR Code correction. Ethan decides what gets built and how it should work. If something in the text is wrong or unclear, please open an issue.
 
 A desktop editor for turning scanned or camera-scanned film negatives into finished positives. Open a negative (RAW, TIFF, PNG or JPEG), invert it, balance the colour and tone, retouch dust and scratches, then export, all non-destructively, with every edit stored per photo in a local database.
 
