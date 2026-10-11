@@ -31,7 +31,8 @@ from ..features.geometry.logic import (
     transform_rect_rotate_left,
     transform_rect_rotate_right,
 )
-from ..features.flatfield.logic import gain_token
+from ..features.flatfield import check as flat_check
+from ..features.flatfield.logic import apply_flatfield, gain_token
 from ..features.flatfield.processor import gain_from_reference
 from ..features.lookpresets import module_store
 from ..features.lookpresets import store as look_store
@@ -126,6 +127,7 @@ class AppController(QObject):
     inversion_changed = pyqtSignal()
     roll_changed = pyqtSignal()
     flatfield_changed = pyqtSignal()
+    flatfield_checked = pyqtSignal(object)
     flatfield_progress = pyqtSignal(int, int, str)
     flatfield_busy_changed = pyqtSignal(bool)
     hq_busy_changed = pyqtSignal(bool)
@@ -1075,6 +1077,23 @@ class AppController(QObject):
             self._load_flatfield(path)
             self._settle()
 
+    def check_flatfield(self, path: str | None = None):
+        """How even a picture of the light is. With no path: the open photo, after the folder's flat field if one is active (what is left), else as it is. With a path:
+        that file as a flat-field reference. Returns (FlatCheck, text saying what was checked)."""
+        if path:
+            def read():
+                return to_uint8(make_preview_rgb(load_image_rgb(path)))
+
+            return flat_check.check_picture(run_blocking(read)), os.path.basename(path)
+        s = self.state
+        if s.image_path is None or s.preview_rgb is None:
+            return None
+        picture = np.ascontiguousarray(s.preview_rgb)
+        corrected = self._ff is not None
+        if corrected:
+            picture = apply_flatfield(picture, self._ff[1])
+        return flat_check.check_picture(picture, corrected=corrected), os.path.basename(s.image_path) + (" with this folder's flat field applied" if corrected else "")
+
     def set_folder_flatfield_from_reference(self, reference_path: str) -> None:
         """Bakes one reference shot (a scan of the bare light) into this
         folder's flat-field: it then applies to every photo in the folder."""
@@ -1126,6 +1145,7 @@ class AppController(QObject):
             return
         self._store_folder_flatfield(folder, gain, "Auto (Roll)")
         self.notice.emit(f"Flat field built from the roll in {os.path.basename(folder)}")
+        self.flatfield_checked.emit(flat_check.check_gain(gain))
 
     def _on_roll_flatfield_failed(self, message: str) -> None:
         self._finish_roll_worker()

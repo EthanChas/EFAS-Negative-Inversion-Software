@@ -954,7 +954,9 @@ class AppWindow(QMainWindow):
         self._sync_inversion()
 
         self._flatfield_tool = FlatFieldPanel()
-        self._flatfield_tool.reference_picked.connect(self.controller.set_folder_flatfield_from_reference)
+        self._flatfield_tool.reference_picked.connect(self._on_flatfield_reference_picked)
+        self._flatfield_tool.check_requested.connect(self._on_flatfield_check)
+        self.controller.flatfield_checked.connect(self._on_flatfield_gain_checked)
         self._flatfield_tool.roll_requested.connect(self.controller.start_roll_flatfield)
         self._flatfield_tool.cancel_requested.connect(self.controller.cancel_roll_flatfield)
         self._flatfield_tool.remove_requested.connect(self.controller.clear_folder_flatfield)
@@ -1996,6 +1998,47 @@ class AppWindow(QMainWindow):
         self._negative_tool.set_inverted(state.negative_inverted)
         self._negative_tool.set_rgb(state.invert_r, state.invert_g, state.invert_b)
         self._negative_tool.set_metering(state.metering)
+
+    def _show_flat_check(self, result, what: str, ask: bool = False) -> bool:
+        """Show a flat-field check. With ask=True it is a question (use it anyway?) and returns the answer; otherwise it just informs."""
+        icon = {"good": QMessageBox.Icon.Information, "fair": QMessageBox.Icon.Warning, "poor": QMessageBox.Icon.Warning}[result.level]
+        box = QMessageBox(icon, "Check Flat Field", f"{what}\n\n{result.headline}", parent=self)
+        if result.findings:
+            box.setInformativeText("\n\n".join(result.findings))
+        if not ask:
+            box.exec()
+            return True
+        use = box.addButton("Use It Anyway", QMessageBox.ButtonRole.AcceptRole)
+        box.addButton("Cancel", QMessageBox.ButtonRole.RejectRole)
+        box.exec()
+        return box.clickedButton() is use
+
+    def _on_flatfield_check(self, path: str) -> None:
+        found = self.controller.check_flatfield(path or None)
+        if found is None:
+            self._coord_label.setText("Open a photo first.")
+            return
+        result, what = found
+        self._flatfield_tool.show_message(result.headline)
+        self._show_flat_check(result, what)
+
+    def _on_flatfield_reference_picked(self, path: str) -> None:
+        """Check a reference before it is saved: a reference that is clipped or dusty would be copied into every frame, so the problems are shown first."""
+        try:
+            result, what = self.controller.check_flatfield(path)
+        except Exception:
+            result = None
+        if result is not None and not result.ok and not self._show_flat_check(result, os.path.basename(path), ask=True):
+            self._flatfield_tool.show_message("Not used.")
+            return
+        self.controller.set_folder_flatfield_from_reference(path)
+        if result is not None and result.ok:
+            self._flatfield_tool.show_message(result.headline)
+
+    def _on_flatfield_gain_checked(self, result) -> None:
+        self._flatfield_tool.show_message(result.headline)
+        if not result.ok:
+            self._show_flat_check(result, "The flat field built from this roll")
 
     def _refresh_flatfield_panel(self) -> None:
         self._flatfield_tool.refresh(self.controller.flatfield_info())

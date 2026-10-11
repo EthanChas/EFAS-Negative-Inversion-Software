@@ -1,5 +1,5 @@
 from PyQt6.QtCore import pyqtSignal
-from PyQt6.QtWidgets import QCheckBox, QFileDialog, QHBoxLayout, QLabel, QProgressBar, QPushButton, QWidget
+from PyQt6.QtWidgets import QCheckBox, QFileDialog, QHBoxLayout, QLabel, QMenu, QProgressBar, QPushButton, QWidget
 
 from ...features.open_image.logic import file_dialog_filter
 from ...theme.tokens import THEME
@@ -19,6 +19,7 @@ class FlatFieldPanel(CollapsiblePanel):
     cancel_requested = pyqtSignal()
     remove_requested = pyqtSignal()
     enabled_toggled = pyqtSignal(bool)
+    check_requested = pyqtSignal(str)
 
     def __init__(self, parent: QWidget | None = None):
         super().__init__(
@@ -64,6 +65,14 @@ class FlatFieldPanel(CollapsiblePanel):
         row.addWidget(self._remove_btn)
         body.addLayout(row)
 
+        self._check_btn = QPushButton("Check Flat Field")
+        self._check_btn.setToolTip("See how even the light is: smooth falloff is what the correction is for; clipping, dust and marks are what ruin a reference.")
+        menu = QMenu(self._check_btn)
+        menu.addAction("Check the Open Photo", lambda: self.check_requested.emit(""))
+        menu.addAction("Check a File as a Reference...", self._on_check_file)
+        self._check_btn.setMenu(menu)
+        body.addWidget(self._check_btn)
+
         self._progress = QProgressBar()
         self._progress.setFormat("%p% done")
         self._progress.hide()
@@ -78,6 +87,11 @@ class FlatFieldPanel(CollapsiblePanel):
         body.addWidget(self._status)
 
         self.refresh({"has": False, "enabled": False, "source": "", "folder": "", "open": False, "busy": False})
+
+    def _on_check_file(self) -> None:
+        path, _ = QFileDialog.getOpenFileName(self, "Picture of the light to check", self._folder_path, file_dialog_filter())
+        if path:
+            self.check_requested.emit(path)
 
     def _on_pick(self) -> None:
         path, _ = QFileDialog.getOpenFileName(
@@ -104,6 +118,7 @@ class FlatFieldPanel(CollapsiblePanel):
         self._enable.blockSignals(False)
         self._enable.setEnabled(has and not busy)
         self._reference_btn.setEnabled(opened and not busy)
+        self._check_btn.setEnabled(not busy)
         self._roll_btn.setEnabled(opened and not busy)
         self._remove_btn.setEnabled(has and not busy)
         self._progress.setVisible(busy)
