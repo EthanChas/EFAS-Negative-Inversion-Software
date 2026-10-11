@@ -72,6 +72,12 @@ Two different actions, kept apart on purpose.
 - Your saved edits, rating and tags stay, so a photo restored from the Recycle Bin comes back with its look.
 - If the deleted photo is open in the editor, the editor moves to the next photo in the filmstrip.
 
+## Crop Roll and Reset Crops (filmstrip)
+
+Beside the photo count above the filmstrip, **Crop Roll** auto-crops every photo of the roll the way the editor's Auto Crop & Straighten button does for one: it finds the picture inside the scan's border and crops to it, straightening it first if it is slightly tilted. A small confirmation shows how many photos will be cropped. Photos that already have a crop are left alone unless you tick "Also replace the crops already made", and photos with no clear border are left as they are. **Reset Crops** takes the crop off every photo of the roll that has one (it says how many); rotation, straightening, tone and every other edit stay.
+
+The photo open in the editor goes through the editor, so that one can be undone with Ctrl+Z. The others are saved directly, so a whole-roll crop cannot be undone in one step (the confirmation says so). The button turns into **Stop** while a roll is being cropped.
+
 ## Keystone correction (Crop & Rotate)
 
 When the camera is tilted over a copy stand, or the film is not flat, straight lines lean towards each other. The **Keystone** sliders in Crop & Rotate fix that: **Vertical** widens the top of the picture (positive) or the bottom (negative), **Horizontal** does the same for the left and right. **Auto Keystone** looks for the long straight lines in the scan (film borders, frame edges, sprocket holes, walls), measures how they lean and sets the sliders; it then refines the result by correcting the picture and measuring again. It says so, and changes nothing, when the lines are already parallel, too few, or do not agree with each other. It is a suggestion to check, not a verdict: a picture whose straight lines are not meant to be parallel can fool it.

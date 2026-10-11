@@ -8,6 +8,7 @@ from PyQt6 import sip
 from PyQt6.QtCore import QEvent, QObject, QSize, Qt, QTimer, QUrl, pyqtSignal
 from PyQt6.QtGui import QAction, QCursor, QDesktopServices, QKeySequence
 from PyQt6.QtWidgets import (
+    QCheckBox,
     QStackedWidget, QAbstractItemView, QAbstractSlider, QAbstractSpinBox, QApplication, QButtonGroup, QComboBox, QDialog, QFileDialog, QHBoxLayout, QLabel, QMainWindow,
     QLineEdit, QMenu, QPlainTextEdit, QTextEdit, QMenuBar, QMessageBox, QProgressDialog, QPushButton, QScrollArea, QSizePolicy, QSplitter, QVBoxLayout, QWidget,
 )
@@ -86,6 +87,7 @@ from .scientific_panel import AdvancedPanels
 from .merge_dialog import MergeDialog
 from .removal_dialogs import RemovedPhotosDialog, confirm_delete_from_disk
 from .bug_report_dialog import BugReportDialog
+from ..bulk_crop import BulkCropWorker, count_cropped
 from .duplicates_dialog import DuplicatesDialog
 from ...features.library import duplicates as photo_duplicates
 from ...features import platform
@@ -398,6 +400,9 @@ class AppWindow(QMainWindow):
         self._filmstrip = Filmstrip()
         self._filmstrip.image_selected.connect(self.controller.open_file)
         self._filmstrip.remove_requested.connect(self.remove_photos)
+        self._filmstrip.crop_roll_requested.connect(lambda: self.bulk_crop("auto"))
+        self._filmstrip.reset_crops_requested.connect(lambda: self.bulk_crop("reset"))
+        self._bulk_worker = None
         self._filmstrip.delete_requested.connect(self.delete_photos)
         self.controller.flag_changed.connect(self._filmstrip.set_flag)
         self.controller.rating_changed.connect(self._filmstrip.set_rating)
@@ -1282,6 +1287,96 @@ class AppWindow(QMainWindow):
             return
         edit_store.delete_collection(self.controller._db, name)
         self._lighttable.set_collections(edit_store.list_collections(self.controller._db))
+
+    def _ask_bulk_crop(self, mode: str, n: int, cropped: int) -> tuple[bool, bool]:
+        """The small confirmation before a whole-roll crop. Returns (go ahead, also replace crops that already exist)."""
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Icon.Question)
+        replace = None
+        if mode == "auto":
+            box.setWindowTitle("Crop Roll")
+            box.setText(f"Auto-crop {n} photo{'s' if n != 1 else ''} in this roll?")
+            box.setInformativeText("Each photo is cropped to the picture inside its scan border, and straightened if slightly tilted. Photos with no clear border are left as they "
+                                   "are. This cannot be undone in one step.")
+            if cropped:
+                replace = QCheckBox(f"Also replace the {cropped} crop{'s' if cropped != 1 else ''} already made")
+                box.setCheckBox(replace)
+            go = box.addButton(f"Crop {n} Photo{'s' if n != 1 else ''}", QMessageBox.ButtonRole.AcceptRole)
+        else:
+            box.setWindowTitle("Reset Crops")
+            box.setText(f"Remove the crop from {cropped} photo{'s' if cropped != 1 else ''}?")
+            box.setInformativeText("Only crops are removed. Rotation, straightening, tone, colour and every other edit stay. This cannot be undone in one step.")
+            go = box.addButton("Reset Crops", QMessageBox.ButtonRole.AcceptRole)
+        box.addButton("Cancel", QMessageBox.ButtonRole.RejectRole)
+        box.exec()
+        return box.clickedButton() is go, bool(replace is not None and replace.isChecked())
+
+    def bulk_crop(self, mode: str) -> None:
+        """Crop Roll / Reset Crops: every photo in the filmstrip. The open photo goes through the editor (so it can be undone); the rest are saved straight to the database."""
+        if self._bulk_worker is not None and self._bulk_worker.isRunning():
+            self._bulk_worker.cancel()
+            return
+        paths = self._filmstrip.paths()
+        if not paths:
+            self._coord_label.setText("Open a roll first (click a folder in the Library).")
+            return
+        c = self.controller
+        open_path = c.state.image_path
+        open_key = library_query.norm(open_path) if open_path else None
+        others = [p for p in paths if library_query.norm(p) != open_key]
+        in_roll = len(others) != len(paths)
+        cropped = count_cropped(c._db, others) + (1 if in_roll and c.state.crop_rect else 0)
+        if mode == "reset" and not cropped:
+            QMessageBox.information(self, "Reset Crops", "None of the photos in this roll have a crop.")
+            return
+        go, replace = self._ask_bulk_crop(mode, len(paths), cropped)
+        if not go:
+            return
+        c._save_edit_state() if open_path else None
+        self._bulk_open = (mode, replace, in_roll)
+        self._bulk_worker = worker = BulkCropWorker(mode, others, c.db_path, replace)
+        worker.progress.connect(lambda i, n, name: self._coord_label.setText(f"{'Cropping' if mode == 'auto' else 'Resetting crops'}: {i + 1} of {n}  {name}"))
+        worker.finished_all.connect(self._on_bulk_crop_finished)
+        self._filmstrip.set_bulk_busy(True)
+        worker.start()
+
+    def _on_bulk_crop_finished(self, summary: dict) -> None:
+        mode, replace, in_roll = self._bulk_open
+        self._bulk_worker = None
+        self._filmstrip.set_bulk_busy(False)
+        c = self.controller
+        done = len(summary["done"])
+        skipped = summary["skipped"]
+        if in_roll and not summary["cancelled"]:
+            if mode == "auto":
+                if replace or not c.state.crop_rect:
+                    if c.auto_crop():
+                        done += 1
+                    else:
+                        skipped.append((c.state.image_path, "no clear border found"))
+                else:
+                    skipped.append((c.state.image_path, "has a crop"))
+            elif c.state.crop_rect:
+                self._on_crop_cleared()
+                done += 1
+        for p in summary["done"]:
+            self._filmstrip.mark_edited(p)
+        parts = [f"{'Cropped' if mode == 'auto' else 'Reset the crop on'} {done} photo{'s' if done != 1 else ''}"]
+        kept = sum(1 for _p, why in skipped if why == "has a crop")
+        none = sum(1 for _p, why in skipped if why == "no clear border found")
+        if kept:
+            parts.append(f"{kept} already had a crop")
+        if none:
+            parts.append(f"{none} had no clear border")
+        if summary["failed"]:
+            parts.append(f"{len(summary['failed'])} failed")
+        if summary["cancelled"]:
+            parts.append("stopped early")
+        self._coord_label.setText("; ".join(parts) + ".")
+        self._lighttable_reload_rows()
+        if summary["failed"]:
+            lines = "\n".join(f"{os.path.basename(p)}: {why}" for p, why in summary["failed"][:10])
+            QMessageBox.warning(self, "Crop Roll", f"{len(summary['failed'])} photo(s) could not be changed:\n\n{lines}")
 
     def _on_versions_changed(self, path: str) -> None:
         """The open photo's versions changed (or a photo opened): the panel and the Workbench's x2 badges follow."""

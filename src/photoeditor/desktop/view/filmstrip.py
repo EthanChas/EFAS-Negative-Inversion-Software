@@ -3,7 +3,7 @@ import os
 import numpy as np
 from PyQt6.QtCore import QSize, Qt, pyqtSignal
 from PyQt6.QtGui import QIcon, QImage, QPixmap, QWheelEvent
-from PyQt6.QtWidgets import QComboBox, QHBoxLayout, QLabel, QListView, QListWidget, QListWidgetItem, QMenu, QVBoxLayout, QWidget
+from PyQt6.QtWidgets import QComboBox, QHBoxLayout, QLabel, QListView, QListWidget, QListWidgetItem, QMenu, QPushButton, QVBoxLayout, QWidget
 
 from ...theme.tokens import THEME
 from ...features.browse.processor import save_edited_thumbnail
@@ -56,6 +56,8 @@ class Filmstrip(QWidget):
     filter_changed = pyqtSignal(str)
     remove_requested = pyqtSignal(list)
     delete_requested = pyqtSignal(list)
+    crop_roll_requested = pyqtSignal()
+    reset_crops_requested = pyqtSignal()
 
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
@@ -74,6 +76,14 @@ class Filmstrip(QWidget):
         bar.addWidget(self._filter)
         self._count = QLabel("")
         bar.addWidget(self._count)
+        self._crop_roll_btn = QPushButton("Crop Roll")
+        self._crop_roll_btn.setToolTip("Auto-crop every photo of this roll to the picture inside its scan border (and straighten it if slightly tilted). You are asked first.")
+        self._crop_roll_btn.clicked.connect(self.crop_roll_requested)
+        bar.addWidget(self._crop_roll_btn)
+        self._reset_crops_btn = QPushButton("Reset Crops")
+        self._reset_crops_btn.setToolTip("Take the crop off every photo of this roll. Rotation, straightening and every other edit stay. You are asked first.")
+        self._reset_crops_btn.clicked.connect(self.reset_crops_requested)
+        bar.addWidget(self._reset_crops_btn)
         bar.addStretch(1)
         layout.addLayout(bar)
 
@@ -102,6 +112,11 @@ class Filmstrip(QWidget):
         self._edited: set[str] = set()
         self._panels_hidden = False
         self.setVisible(False)
+
+    def set_bulk_busy(self, busy: bool) -> None:
+        """While a whole-roll crop runs: Crop Roll becomes Stop and Reset Crops is off."""
+        self._crop_roll_btn.setText("Stop" if busy else "Crop Roll")
+        self._reset_crops_btn.setEnabled(not busy)
 
     def paths(self) -> list[str]:
         """The folder currently loaded into the strip."""
