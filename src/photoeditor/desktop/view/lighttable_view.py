@@ -156,6 +156,13 @@ class LighttableDelegate(QStyledItemDelegate):
                 painter.setPen(QPen(_FLAG_COLORS["rejected"], 2))
                 painter.drawLine(pic.left() + 4, pic.top() + 4, pic.left() + 13, pic.top() + 13)
                 painter.drawLine(pic.left() + 13, pic.top() + 4, pic.left() + 4, pic.top() + 13)
+        if row.get("versions", 1) > 1:
+            painter.setPen(QColor(THEME.text_primary))
+            f = painter.font()
+            f.setPointSize(max(6, THEME.font_size_small))
+            f.setBold(True)
+            painter.setFont(f)
+            painter.drawText(QRect(pic.right() - 34, pic.bottom() - 16, 32, 14), int(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter), f"x{row['versions']}")
         if row["edited"]:
             painter.setPen(QPen(QColor(0, 0, 0, 180), 1))
             painter.setBrush(QColor(THEME.accent_hover))
@@ -257,6 +264,7 @@ class LighttableView(QWidget):
     reveal_requested = pyqtSignal(str)
     remove_requested = pyqtSignal(list)
     delete_requested = pyqtSignal(list)
+    copy_requested = pyqtSignal(list)
     removed_list_requested = pyqtSignal()
 
     def __init__(self, cache_dir: str | None, parent: QWidget | None = None):
@@ -554,6 +562,10 @@ class LighttableView(QWidget):
         self._reveal_btn = QPushButton("Show in Folder")
         self._reveal_btn.clicked.connect(self._emit_reveal)
         body.addWidget(self._reveal_btn)
+        self._copy_version_btn = QPushButton("Make Virtual Copy")
+        self._copy_version_btn.setToolTip("Add another version of each selected photo, starting from its current edit. Switch between versions in the editor's Versions panel; Export can include them.")
+        self._copy_version_btn.clicked.connect(self._emit_copy_version)
+        body.addWidget(self._copy_version_btn)
         self._remove_btn = QPushButton("Remove from Workbench")
         self._remove_btn.setToolTip("Take the selected photos off the Workbench and the filmstrip. The files stay on disk, and you can restore them from Removed Photos. (Delete key)")
         self._remove_btn.clicked.connect(self._emit_remove)
@@ -718,6 +730,7 @@ class LighttableView(QWidget):
             b.setEnabled(n >= 1 or self._current_row() is not None)
         self._export_btn.setEnabled(n >= 1)
         self._remove_btn.setEnabled(n >= 1)
+        self._copy_version_btn.setEnabled(n >= 1)
         self._delete_btn.setEnabled(n >= 1)
         self._refresh_tag_editor(rows)
         self._copy_btn.setEnabled(n == 1)
@@ -765,6 +778,8 @@ class LighttableView(QWidget):
             lines += ["", f"Note: {r['note']}" if r["note"] else "", f"Place: {r['place']}" if r["place"] else ""]
         if r.get("tags"):
             lines += ["", "Tags: " + ", ".join(r["tags"])]
+        if r.get("versions", 1) > 1:
+            lines += ["", f"{r['versions']} versions (virtual copies)"]
         status = [("*" * r["rating"]) if r["rating"] else "", r["flag"] or "", "edited" if r["edited"] else ""]
         if any(status):
             lines += ["", "  ".join(s for s in status if s)]
@@ -799,6 +814,11 @@ class LighttableView(QWidget):
         if row:
             self.reveal_requested.emit(row["path"])
 
+    def _emit_copy_version(self) -> None:
+        paths = self.selected_paths()
+        if paths:
+            self.copy_requested.emit(paths)
+
     def _emit_remove(self) -> None:
         paths = self.selected_paths()
         if paths:
@@ -818,6 +838,7 @@ class LighttableView(QWidget):
         what = "this photo" if n == 1 else f"{n} photos"
         menu.addAction("Open in Editor", self._emit_open)
         menu.addAction("Show in Folder", self._emit_reveal)
+        menu.addAction("Make Virtual Copy", self._emit_copy_version)
         menu.addSeparator()
         menu.addAction(f"Remove {what} from Workbench", self._emit_remove)
         delete = menu.addAction(f"Delete {what} from Disk...", self._emit_delete)

@@ -87,6 +87,7 @@ class ExportOptions:
     prefix: str = ""
     output_kind: str = "standard"
     write_record: bool = False
+    include_versions: bool = False
 
     def to_dict(self) -> dict:
         return asdict(self)

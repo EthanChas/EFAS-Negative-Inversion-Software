@@ -108,6 +108,24 @@ CREATE TABLE IF NOT EXISTS hidden_photos (
 )
 """
 
+# Virtual copies ("versions"). The photo's row in `edits` always holds the version being edited (named in photo_active_version, "Original" when there
+# is none); every other version is kept here.
+_VERSIONS_SCHEMA = """
+CREATE TABLE IF NOT EXISTS photo_versions (
+    path TEXT NOT NULL,
+    name TEXT NOT NULL COLLATE NOCASE,
+    state TEXT NOT NULL,
+    created TEXT NOT NULL,
+    PRIMARY KEY (path, name)
+)
+"""
+_ACTIVE_VERSION_SCHEMA = """
+CREATE TABLE IF NOT EXISTS photo_active_version (
+    path TEXT PRIMARY KEY,
+    name TEXT NOT NULL
+)
+"""
+
 _SNAPSHOTS_SCHEMA = """
 CREATE TABLE IF NOT EXISTS snapshots (
     path TEXT NOT NULL,
@@ -271,6 +289,8 @@ def connect(db_path: str) -> sqlite3.Connection:
     conn.execute(_TAGS_INDEX)
     conn.execute(_SNAPSHOTS_SCHEMA)
     conn.execute(_HIDDEN_SCHEMA)
+    conn.execute(_VERSIONS_SCHEMA)
+    conn.execute(_ACTIVE_VERSION_SCHEMA)
     _migrate(conn)
     conn.commit()
     return conn
@@ -550,6 +570,68 @@ def add_tags(conn: sqlite3.Connection, paths: list[str], tags: list[str]) -> Non
 def remove_tags(conn: sqlite3.Connection, paths: list[str], tags: list[str]) -> None:
     conn.executemany("DELETE FROM tags WHERE path = ? AND tag = ?", [(p, t) for p in paths for t in tags])
     conn.commit()
+
+
+ORIGINAL_VERSION = "Original"
+
+
+def active_version(conn: sqlite3.Connection, path: str) -> str:
+    row = conn.execute("SELECT name FROM photo_active_version WHERE path = ?", (path,)).fetchone()
+    return row[0] if row else ORIGINAL_VERSION
+
+
+def set_active_version(conn: sqlite3.Connection, path: str, name: str) -> None:
+    if name.casefold() == ORIGINAL_VERSION.casefold():
+        conn.execute("DELETE FROM photo_active_version WHERE path = ?", (path,))
+    else:
+        conn.execute("INSERT INTO photo_active_version (path, name) VALUES (?, ?) ON CONFLICT(path) DO UPDATE SET name = excluded.name", (path, name))
+    conn.commit()
+
+
+def stored_versions(conn: sqlite3.Connection, path: str) -> list[tuple[str, str]]:
+    """The versions of a photo that are not being edited: (name, created), oldest first."""
+    return conn.execute("SELECT name, created FROM photo_versions WHERE path = ? ORDER BY created, name COLLATE NOCASE", (path,)).fetchall()
+
+
+def version_names(conn: sqlite3.Connection, path: str) -> list[str]:
+    """Every version of a photo, the one being edited included, in a steady order: Original first, then the others by name."""
+    names = {n for n, _c in stored_versions(conn, path)} | {active_version(conn, path)}
+    return sorted(names, key=lambda n: (n.casefold() != ORIGINAL_VERSION.casefold(), n.casefold()))
+
+
+def version_counts(conn: sqlite3.Connection) -> dict[str, int]:
+    """For every photo that has virtual copies, how many versions it has in all."""
+    return {p: n + 1 for p, n in conn.execute("SELECT path, COUNT(*) FROM photo_versions GROUP BY path")}
+
+
+def get_version_state(conn: sqlite3.Connection, path: str, name: str) -> dict | None:
+    row = conn.execute("SELECT state FROM photo_versions WHERE path = ? AND name = ?", (path, name)).fetchone()
+    return state_from_json(row[0]) if row else None
+
+
+def put_version(conn: sqlite3.Connection, path: str, name: str, state: dict) -> None:
+    conn.execute(
+        "INSERT INTO photo_versions (path, name, state, created) VALUES (?, ?, ?, datetime('now', 'localtime')) "
+        "ON CONFLICT(path, name) DO UPDATE SET state = excluded.state",
+        (path, name, state_to_json(state)),
+    )
+    conn.commit()
+
+
+def delete_version(conn: sqlite3.Connection, path: str, name: str) -> bool:
+    cur = conn.execute("DELETE FROM photo_versions WHERE path = ? AND name = ?", (path, name))
+    conn.commit()
+    return cur.rowcount > 0
+
+
+def rename_version(conn: sqlite3.Connection, path: str, old: str, new: str) -> bool:
+    """Rename a stored version, or the one being edited (only its name changes)."""
+    if old.casefold() == active_version(conn, path).casefold():
+        set_active_version(conn, path, new)
+        return True
+    cur = conn.execute("UPDATE photo_versions SET name = ? WHERE path = ? AND name = ?", (new, path, old))
+    conn.commit()
+    return cur.rowcount > 0
 
 
 def hide_photos(conn: sqlite3.Connection, paths: list[str]) -> None:

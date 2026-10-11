@@ -27,6 +27,7 @@ class Meta:
     notes: dict[str, tuple[str, str]] = field(default_factory=dict)
     tags: dict[str, list[str]] = field(default_factory=dict)
     film_iso: dict[str, int] = field(default_factory=dict)
+    versions: dict[str, int] = field(default_factory=dict)
 
 
 def load_meta(conn, records: list[dict]) -> Meta:
@@ -43,6 +44,8 @@ def load_meta(conn, records: list[dict]) -> Meta:
     meta.edited = {norm(p) for p in edit_store.touched_paths(conn, paths, DEFAULT_POINTS)}
     for p, tags in edit_store.all_tagged(conn).items():
         meta.tags[norm(p)] = tags
+    for p, n in edit_store.version_counts(conn).items():
+        meta.versions[norm(p)] = n
     for folder in {r["folder"] for r in records}:
         card = edit_store.get_folder_roll(conn, edit_store.folder_key(folder, is_file=False))
         if card:
@@ -78,7 +81,7 @@ def build_rows(records: list[dict], meta: Meta) -> list[dict]:
         film_iso = int(card.get("iso") or 0) or KNOWN_FILMS.get(str(card.get("film", "")).strip(), (0,))[0] or meta.film_iso.get(key, 0)
         row.update(
             exif_iso=rec["iso"], iso=film_iso, iso_from_film=bool(film_iso),
-            key=key, rating=meta.ratings.get(key, 0), flag=meta.flags.get(key), edited=key in meta.edited,
+            key=key, versions=meta.versions.get(key, 1), rating=meta.ratings.get(key, 0), flag=meta.flags.get(key), edited=key in meta.edited,
             film=str(card.get("film", "") or ""), roll=str(card.get("name", "") or ""),
             roll_camera=str(card.get("camera", "") or ""), roll_lens=str(card.get("lens", "") or ""),
             shot_from=str(card.get("shot_from", "") or ""), shot_to=str(card.get("shot_to", "") or ""),
@@ -94,7 +97,7 @@ def build_rows(records: list[dict], meta: Meta) -> list[dict]:
 
 _TOKEN = re.compile(r'(-?)(?:([a-zA-Z]+):)?(?:"([^"]*)"|(\S+))')
 _DATE_KEYS = ("date", "taken", "shot")
-_NUM_KEYS = {"iso": "iso", "focal": "focal", "aperture": "aperture", "fnumber": "aperture", "f": "aperture", "rating": "rating", "stars": "rating"}
+_NUM_KEYS = {"iso": "iso", "focal": "focal", "aperture": "aperture", "fnumber": "aperture", "f": "aperture", "rating": "rating", "stars": "rating", "versions": "versions", "copies": "versions"}
 _TEXT_KEYS = {
     "camera": ("camera", "roll_camera"), "cam": ("camera", "roll_camera"), "make": ("make",), "lens": ("lens", "roll_lens"), "film": ("film",),
     "roll": ("roll",), "folder": ("folder_name", "folder"), "name": ("name",), "file": ("name",), "note": ("note",), "place": ("place",), "ext": ("ext",),

@@ -261,6 +261,10 @@ class ExportPanel(CollapsiblePanel):
                                 "settings) beside it, so the conversion can be reproduced or audited later.")
         self._record.toggled.connect(self._on_changed)
         body.addWidget(self._record)
+        self._versions = QCheckBox("Also export virtual copies")
+        self._versions.setToolTip("Photos with virtual copies (Versions panel) export every version. The copy's name is added to its file name.")
+        self._versions.toggled.connect(self._on_changed)
+        body.addWidget(self._versions)
         self._exif = QCheckBox("Copy EXIF from the original")
         self._exif.setToolTip("Camera data from standard-format originals (not RAW files).")
         self._exif.toggled.connect(self._on_changed)
@@ -424,6 +428,7 @@ class ExportPanel(CollapsiblePanel):
             prefix=self._prefix.text(),
             output_kind=self._kind.currentData(),
             write_record=self._record.isChecked(),
+            include_versions=self._versions.isChecked(),
             dest_mode=self._dest_mode.currentData(),
             folder=self._folder.text().strip(),
             subfolder=self._subfolder.text(),
@@ -463,6 +468,7 @@ class ExportPanel(CollapsiblePanel):
         self._dpi.setValue(int(o.dpi))
         pick(self._kind, o.output_kind)
         self._record.setChecked(o.write_record)
+        self._versions.setChecked(o.include_versions)
         self._srgb.setChecked(o.embed_srgb)
         self._gray.setChecked(o.grayscale)
         self._exif.setChecked(o.copy_exif)

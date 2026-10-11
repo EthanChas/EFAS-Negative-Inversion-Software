@@ -134,6 +134,7 @@ class AppController(QObject):
     look_presets_changed = pyqtSignal(str)
     rating_changed = pyqtSignal(str, int)
     snapshots_changed = pyqtSignal(str)
+    versions_changed = pyqtSignal(str)
     tags_changed = pyqtSignal(list)
 
     def __init__(self):
@@ -301,6 +302,110 @@ class AppController(QObject):
         self.state.wm_camera = saved["wm_camera"]
         self.state.wm_lens = saved["wm_lens"]
 
+    # --- virtual copies (versions) -----------------------------------------------------------------------------------------------------
+    def version_list(self) -> list[tuple[str, bool]]:
+        """The open photo's versions as (name, is the one being edited)."""
+        path = self.state.image_path
+        if path is None:
+            return []
+        active = edit_store.active_version(self._db, path)
+        return [(n, n.casefold() == active.casefold()) for n in edit_store.version_names(self._db, path)]
+
+    def _unique_version_name(self, path: str, wanted: str = "") -> str:
+        taken = {n.casefold() for n in edit_store.version_names(self._db, path)}
+        wanted = " ".join(wanted.split())[:60]
+        if wanted and wanted.casefold() not in taken:
+            return wanted
+        n = len(taken) + 1
+        while (f"{wanted} {n}" if wanted else f"Copy {n}").casefold() in taken:
+            n += 1
+        return f"{wanted} {n}" if wanted else f"Copy {n}"
+
+    def new_version(self, name: str = "") -> str | None:
+        """Make a virtual copy of the open photo's edit and switch to it: the version you were on is kept, and from here your edits go to the copy."""
+        path = self.state.image_path
+        if path is None or self.state.preview_rgb is None:
+            return None
+        self._save_edit_state()
+        leaving = edit_store.active_version(self._db, path)
+        edit_store.put_version(self._db, path, leaving, self._edit_state_dict())
+        name = self._unique_version_name(path, name)
+        edit_store.set_active_version(self._db, path, name)
+        self.versions_changed.emit(path)
+        self.notice.emit(f"Virtual copy '{name}' made; you are editing it now")
+        return name
+
+    def new_version_for_path(self, path: str, name: str = "") -> str | None:
+        """Make a virtual copy of any photo's saved edit without opening it (the Workbench's button); the version being edited does not change."""
+        if path == self.state.image_path:
+            return self.new_version(name)
+        from .export_worker import saved_or_default_state
+
+        saved = edit_store.load_edit_state(self._db, path)
+        if saved is None:
+            try:
+                saved = saved_or_default_state(path, self._db, to_uint8(make_preview_rgb(load_image_rgb(path))))
+            except Exception:
+                return None
+        name = self._unique_version_name(path, name)
+        edit_store.put_version(self._db, path, name, saved)
+        self.versions_changed.emit(path)
+        return name
+
+    def switch_version(self, name: str) -> bool:
+        """Go to another version of the open photo. The one you leave keeps its edits."""
+        path, s = self.state.image_path, self.state
+        if path is None or s.preview_rgb is None:
+            return False
+        active = edit_store.active_version(self._db, path)
+        if name.casefold() == active.casefold():
+            return False
+        target = edit_store.get_version_state(self._db, path, name)
+        if target is None:
+            return False
+        self._save_edit_state()
+        edit_store.put_version(self._db, path, active, self._edit_state_dict())
+        edit_store.delete_version(self._db, path, name)
+        edit_store.set_active_version(self._db, path, name)
+        merged = {**self._edit_state_dict(), **target}
+        for key in [k for (p, k) in self._module_preset_in_use if p == path]:
+            del self._module_preset_in_use[(path, key)]
+        self._apply_saved_state(merged, path)
+        s.metadata = metadata_store.from_dict(merged.get("metadata"))
+        self._log(f"Version '{name}'")
+        self._restore_entry(s.history[-1])
+        self._finish_restore()
+        self.versions_changed.emit(path)
+        self.notice.emit(f"Editing version '{name}'")
+        return True
+
+    def rename_version(self, old: str, new: str) -> bool:
+        path = self.state.image_path
+        new = " ".join(new.split())[:60]
+        if path is None or not new:
+            return False
+        if new.casefold() != old.casefold() and new.casefold() in {n.casefold() for n in edit_store.version_names(self._db, path)}:
+            self.notice.emit(f"There is already a version called '{new}'")
+            return False
+        if not edit_store.rename_version(self._db, path, old, new):
+            return False
+        self.versions_changed.emit(path)
+        return True
+
+    def delete_version(self, name: str) -> bool:
+        """Delete a version you are not editing (switch away first to delete the one you are on)."""
+        path = self.state.image_path
+        if path is None:
+            return False
+        if name.casefold() == edit_store.active_version(self._db, path).casefold():
+            self.notice.emit("Switch to another version first, then delete this one")
+            return False
+        if not edit_store.delete_version(self._db, path, name):
+            return False
+        self.versions_changed.emit(path)
+        self.notice.emit(f"Version '{name}' deleted")
+        return True
+
     def snapshot_list(self) -> list[tuple[str, str]]:
         path = self.state.image_path
         return edit_store.list_snapshots(self._db, path) if path is not None else []
@@ -440,6 +545,7 @@ class AppController(QObject):
         self._recompute_image()
         self.tags_changed.emit([path])
         self.snapshots_changed.emit("")
+        self.versions_changed.emit(path)
         self._log(f"Opened {os.path.basename(path)}")
         if saved is not None:
             self._log(f"Restored saved edits: {self._describe_edit_state()}")

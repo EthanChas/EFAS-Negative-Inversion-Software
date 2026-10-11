@@ -43,6 +43,7 @@ from ..keybinds import KeyMap
 from ...features.persistence.consolidate import ensure_ready as ensure_data_ready
 from .settings_dialog import SettingsDialog
 from .snapshots_panel import SnapshotsPanel
+from .versions_panel import VersionsPanel
 from .tags_panel import TagsPanel
 from .shortcuts_dialog import ShortcutsDialog
 from ..contactsheet_worker import ContactSheetWorker
@@ -366,6 +367,7 @@ class AppWindow(QMainWindow):
         self._lighttable.refresh_requested.connect(lambda: self.lighttable_refresh(force=True))
         self._lighttable.reveal_requested.connect(self._reveal_in_folder)
         self._lighttable.remove_requested.connect(self.remove_photos)
+        self._lighttable.copy_requested.connect(self.make_virtual_copies)
         self._lighttable.delete_requested.connect(self.delete_photos)
         self._lighttable.removed_list_requested.connect(self.show_removed_photos)
         self.controller.rating_changed.connect(lambda path, stars: self._lighttable.update_item(library_query.norm(path), rating=stars))
@@ -648,6 +650,13 @@ class AppWindow(QMainWindow):
             lambda select: self._snapshots_panel.set_snapshots(self.controller.snapshot_list(), select or None)
         )
         left_tools_col.addWidget(self._snapshots_panel)
+        self._versions_panel = VersionsPanel()
+        self._versions_panel.new_requested.connect(self.controller.new_version)
+        self._versions_panel.switch_requested.connect(self.controller.switch_version)
+        self._versions_panel.rename_requested.connect(self.controller.rename_version)
+        self._versions_panel.delete_requested.connect(self.controller.delete_version)
+        self.controller.versions_changed.connect(self._on_versions_changed)
+        left_tools_col.addWidget(self._versions_panel)
 
         self._export_panel = ExportPanel()
         self._export_panel.export_requested.connect(self._on_export_requested)
@@ -1248,6 +1257,20 @@ class AppWindow(QMainWindow):
         self._lighttable.set_index_status(message)
         self._coord_label.setText(message)
 
+    def _on_versions_changed(self, path: str) -> None:
+        """The open photo's versions changed (or a photo opened): the panel and the Workbench's x2 badges follow."""
+        if path == self.controller.state.image_path:
+            self._versions_panel.set_versions(self.controller.version_list(), next((n for n, a in self.controller.version_list() if a), None))
+        if self.lighttable_active():
+            self._lighttable_reload_rows()
+
+    def make_virtual_copies(self, paths: list[str]) -> None:
+        """The Workbench's Make Virtual Copy: another version of each selected photo, starting from its saved edit."""
+        made = [p for p in paths if p and self.controller.new_version_for_path(p)]
+        if made:
+            self._lighttable.set_index_status(f"Made {len(made)} virtual cop{'ies' if len(made) != 1 else 'y'}")
+        self._lighttable_reload_rows()
+
     def remove_photos(self, paths: list[str]) -> None:
         """Take photos off the Workbench and the filmstrip. Nothing on disk changes."""
         paths = [p for p in dict.fromkeys(paths) if p]
@@ -1657,6 +1680,7 @@ class AppWindow(QMainWindow):
         state = self.controller.state
         self._presets_panel.set_has_photo(state.image_path is not None)
         self._snapshots_panel.set_has_photo(state.image_path is not None)
+        self._versions_panel.set_has_photo(state.image_path is not None)
         self._peaking_levels = None
         self._image_view.set_peaking_overlay(None)
         self._queue_peaking()

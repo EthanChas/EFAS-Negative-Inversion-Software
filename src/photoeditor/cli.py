@@ -95,6 +95,8 @@ def build_jobs(args) -> list:
             o.output_kind = args.kind
         if args.record:
             o.write_record = True
+        if args.versions:
+            o.include_versions = True
         if args.out:
             o.dest_mode, o.folder = "folder", os.path.abspath(args.out)
         else:
@@ -252,6 +254,7 @@ def build_parser() -> argparse.ArgumentParser:
     c.add_argument("--long-edge", type=int, help="shrink so the long edge is this many pixels")
     c.add_argument("--kind", choices=["standard", "flat", "linear", "density"], help="export the conversion alone as a 16-bit TIFF")
     c.add_argument("--record", action="store_true", help="also write a conversion record (.json)")
+    c.add_argument("--versions", action="store_true", help="also export each photo's virtual copies")
     mode = c.add_mutually_exclusive_group()
     mode.add_argument("--overwrite", action="store_true", help="replace files that already exist")
     mode.add_argument("--skip-existing", action="store_true", help="leave files that already exist")

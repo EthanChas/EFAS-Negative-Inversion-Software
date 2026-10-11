@@ -6,6 +6,7 @@ import dataclasses
 import hashlib
 import json
 import os
+import re
 
 import numpy as np
 from PyQt6.QtCore import QThread, pyqtSignal
@@ -99,9 +100,8 @@ def default_edit_state(negative_inverted: bool) -> dict:
     }
 
 
-def _edits_for(path: str, conn, preview) -> tuple:
-    """-> (EditParams, flatfield) for a photo: its saved edits (database row, else sidecar, else a neutral start), with the roll's camera/lens
-    and measured film base laid in. preview is the picture the saved crop rectangle is measured on."""
+def saved_or_default_state(path: str, conn, preview) -> dict:
+    """A photo's edit state as the editor would open it: the database row, else the sidecar, else a neutral start. preview is the picture a sidecar's crop is measured on."""
     saved = edit_store.load_edit_state(conn, path)
     if saved is None:
         sidecar = xmp.read_sidecar(path)
@@ -112,6 +112,13 @@ def _edits_for(path: str, conn, preview) -> tuple:
             saved = sidecar
     if saved is None:
         saved = default_edit_state(detect_process_mode(preview) != ProcessMode.E6)
+    return saved
+
+
+def _edits_for(path: str, conn, preview, state: dict | None = None) -> tuple:
+    """-> (EditParams, flatfield) for a photo: its saved edits (or `state`, a virtual copy's), with the roll's camera/lens
+    and measured film base laid in. preview is the picture the saved crop rectangle is measured on."""
+    saved = state if state is not None else saved_or_default_state(path, conn, preview)
     roll = load_roll(path, conn)
     base = edit_store.get_folder_base(conn, edit_store.folder_key(path))
     params = EditParams.from_dict(
@@ -138,14 +145,14 @@ def _curve_source(path: str, conn, full, params, flatfield):
     return curve_engine.full_positive(path, setup, row["white"]), dataclasses.replace(params, negative_inverted=False), None
 
 
-def render_alternate(path: str, conn, kind: str):
+def render_alternate(path: str, conn, kind: str, state: dict | None = None):
     """-> (16-bit picture, notes) for the flat, linear and density exports: the conversion alone, in the editor's framing and crop."""
     notes: list[str] = []
     if kind == "density":
-        return _render_density(path, conn, notes), notes
+        return _render_density(path, conn, notes, state), notes
     full = load_image_rgb(path)
     preview = make_preview_rgb(full)
-    params, flatfield = _edits_for(path, conn, to_uint8(preview))
+    params, flatfield = _edits_for(path, conn, to_uint8(preview), state)
     scanned = full
     full, params, flatfield = _curve_source(path, conn, full, params, flatfield)
     positive = full is not scanned
@@ -160,7 +167,7 @@ def render_alternate(path: str, conn, kind: str):
     return flat, notes
 
 
-def _render_density(path: str, conn, notes: list[str]) -> np.ndarray:
+def _render_density(path: str, conn, notes: list[str], state: dict | None = None) -> np.ndarray:
     """Density above the film base at the original resolution, from the linear scan; the film base is the roll's sampled one or, failing that, an estimate."""
     scan = dens_processor.decode_linear(path)
     if scan is None:
@@ -177,11 +184,11 @@ def _render_density(path: str, conn, notes: list[str]) -> np.ndarray:
     display = load_image_rgb(path)
     preview8 = to_uint8(make_preview_rgb(display))
     del display
-    params, _ff = _edits_for(path, conn, preview8)
+    params, _ff = _edits_for(path, conn, preview8, state)
     return alt_export.density16(scan, v_base, params, preview8.shape[1])
 
 
-def conversion_record(path: str, conn, dest: str, options, kind: str, notes: list[str]) -> dict:
+def conversion_record(path: str, conn, dest: str, options, kind: str, notes: list[str], state: dict | None = None, version: str = "") -> dict:
     """What produced `dest`, from the database and the files (see features/export/record.py)."""
     data_dir = curve_engine.data_dir_of(conn)
     folder = edit_store.folder_key(path)
@@ -206,14 +213,16 @@ def conversion_record(path: str, conn, dest: str, options, kind: str, notes: lis
                 scan = {"black_level_per_channel": list(raw.black_level_per_channel), "white_level": raw.white_level, "camera_white_level_per_channel": raw.camera_white_level_per_channel}
         except Exception:
             scan = None
-    return build_record(photoeditor.__version__, path, dest, kind, options.to_dict(), edit_store.load_edit_state(conn, path), inv, film_base, profile, scan, notes)
+    if version:
+        notes = [*notes, f"This is the virtual copy '{version}' of the photo."]
+    return build_record(photoeditor.__version__, path, dest, kind, options.to_dict(), state if state is not None else edit_store.load_edit_state(conn, path), inv, film_base, profile, scan, notes)
 
 
-def render_full_resolution(path: str, conn) -> "tuple":
-    """-> (pixels at the original resolution with the photo's saved edits applied, EXIF bytes or None)."""
+def render_full_resolution(path: str, conn, state: dict | None = None) -> "tuple":
+    """-> (pixels at the original resolution with the photo's saved edits (or the given virtual copy's) applied, EXIF bytes or None)."""
     full = load_image_rgb(path)
     preview = make_preview_rgb(full)
-    params, flatfield = _edits_for(path, conn, to_uint8(preview))
+    params, flatfield = _edits_for(path, conn, to_uint8(preview), state)
     full, params, flatfield = _curve_source(path, conn, full, params, flatfield)
     renderer = Renderer()
     if params.ai_dust:
@@ -245,11 +254,11 @@ def load_roll(path: str, conn) -> RollCard:
     return RollCard.from_dict(edit_store.get_folder_roll(conn, edit_store.folder_key(path)))
 
 
-def load_metadata(path: str, conn, folder_cache: dict | None = None) -> MetadataConfig:
+def load_metadata(path: str, conn, folder_cache: dict | None = None, state: dict | None = None) -> MetadataConfig:
     """What this photo's export carries: its own saved details (database row, else sidecar) with its folder's Roll Card laid over
     them, and its place on the roll (the folder's filmstrip order) as the frame number. folder_cache keeps one listing per folder
     across a batch."""
-    saved = edit_store.load_edit_state(conn, path)
+    saved = state if state is not None else edit_store.load_edit_state(conn, path)
     if saved is None:
         saved = xmp.read_sidecar(path)
     frame = metadata_store.from_dict(saved.get("metadata") if saved else None)
@@ -267,9 +276,28 @@ def load_metadata(path: str, conn, folder_cache: dict | None = None) -> Metadata
     return compose(frame, roll, index, len(images))
 
 
+def _version_suffix(options, label: str):
+    """The options for exporting a virtual copy: its name is added to the file name, after any suffix the preset already adds."""
+    safe = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", label).strip() or "copy"
+    return dataclasses.replace(options, suffix=(options.suffix or export_kinds.SUFFIX.get(options.output_kind, "")) + "_" + safe)
+
+
+def _units(path: str, conn, jobs: list) -> list:
+    """What to render for one photo: [(label, state or None, jobs)]. The version being edited comes first with every job; each other version
+    (only when a job asks for virtual copies) follows with just those jobs."""
+    units = [("", None, list(jobs))]
+    wanting = [(n, o) for n, o in jobs if o.include_versions]
+    if wanting:
+        for name, _created in edit_store.stored_versions(conn, path):
+            state = edit_store.get_version_state(conn, path, name)
+            if state is not None:
+                units.append((name, state, [(f"{n} ({name})", _version_suffix(o, name)) for n, o in wanting]))
+    return units
+
+
 def export_photos(paths: list[str], jobs: list, db_path: str, progress=None, cancelled=None) -> dict:
     """Render and write every photo for every job (see ExportWorker). `progress(done, total, text)` and `cancelled()` are optional; returns the summary
-    {"done": [paths written], "skipped": [...], "failed": [(path, reason)], "cancelled": bool}."""
+    {"done": [paths written], "skipped": [...], "failed": [(path, reason)], "cancelled": bool}. A job with include_versions also writes the photo's virtual copies."""
     def report(*args):
         if progress is not None:
             progress(*args)
@@ -279,58 +307,59 @@ def export_photos(paths: list[str], jobs: list, db_path: str, progress=None, can
     try:
         photos = len(paths)
         folder_cache: dict = {}
-        total = photos * (1 + len(jobs))
+        plan = [(i, path, _units(path, conn, jobs)) for i, path in enumerate(paths)]
+        total = sum(1 + len(u_jobs) for _i, _p, units in plan for _l, _s, u_jobs in units)
         done = 0
-        for i, path in enumerate(paths):
+        for i, path, units in plan:
             if cancelled is not None and cancelled():
                 summary["cancelled"] = True
                 break
-            try:
-                pixels = exif = None
-                if any(o.output_kind == "standard" for _n, o in jobs):
-                    pixels, exif = render_full_resolution(path, conn)
-                alternates: dict = {}
-                metadata = load_metadata(path, conn, folder_cache)
-                done += 1
-                report(done, total, f"{os.path.basename(path)} ({i + 1} of {photos})")
-                for name, options in jobs:
-                    try:
-                        kind = options.output_kind
-                        notes: list[str] = []
-                        if kind == "standard":
-                            data = pixels
-                        else:
-                            if kind not in alternates:
-                                alternates[kind] = render_alternate(path, conn, kind)
-                            data, notes = alternates[kind]
-                        h, w = data.shape[:2]
-                        dest = resolve_output_path(
-                            path, i + 1, target_size(w, h, options), options, name, roll=metadata.capture_roll, frame=metadata.capture_frame
-                        )
-                        if dest is None:
-                            summary["skipped"].append(path)
-                        else:
-                            if kind == "standard":
-                                save_image(data, dest, options, exif)
-                                try:
-                                    embed_into_file(dest, metadata, path, options.copy_exif, int(options.dpi))
-                                except Exception as exc:
-                                    summary["failed"].append((path, f"{name}: metadata not written ({type(exc).__name__}: {exc})"))
-                                embed_keywords(dest, edit_store.get_tags(conn, [path]).get(path, []))
-                            else:
-                                out = export_kinds.resize16(data, target_size(w, h, options), options.resample)
-                                export_kinds.write_tiff16(out, dest, options.tiff_compression, int(options.dpi))
-                            if options.write_record:
-                                write_record(dest, conversion_record(path, conn, dest, options, kind, notes))
-                            summary["done"].append(dest)
-                    except Exception as exc:
-                        summary["failed"].append((path, f"{name}: {type(exc).__name__}: {exc}"))
+            for label, state, unit_jobs in units:
+                try:
+                    pixels = exif = None
+                    if any(o.output_kind == "standard" for _n, o in unit_jobs):
+                        pixels, exif = render_full_resolution(path, conn, state)
+                    alternates: dict = {}
+                    metadata = load_metadata(path, conn, folder_cache, state)
                     done += 1
-                    report(done, total, f"{os.path.basename(path)} ({i + 1} of {photos})")
-            except Exception as exc:
-                summary["failed"].append((path, f"{type(exc).__name__}: {exc}"))
-            done = (i + 1) * (1 + len(jobs))
-            report(done, total, f"{os.path.basename(path)} ({i + 1} of {photos})")
+                    report(done, total, f"{os.path.basename(path)}{' (' + label + ')' if label else ''} ({i + 1} of {photos})")
+                    for name, options in unit_jobs:
+                        try:
+                            kind = options.output_kind
+                            notes: list[str] = []
+                            if kind == "standard":
+                                data = pixels
+                            else:
+                                if kind not in alternates:
+                                    alternates[kind] = render_alternate(path, conn, kind, state)
+                                data, notes = alternates[kind]
+                            h, w = data.shape[:2]
+                            dest = resolve_output_path(
+                                path, i + 1, target_size(w, h, options), options, name, roll=metadata.capture_roll, frame=metadata.capture_frame
+                            )
+                            if dest is None:
+                                summary["skipped"].append(path)
+                            else:
+                                if kind == "standard":
+                                    save_image(data, dest, options, exif)
+                                    try:
+                                        embed_into_file(dest, metadata, path, options.copy_exif, int(options.dpi))
+                                    except Exception as exc:
+                                        summary["failed"].append((path, f"{name}: metadata not written ({type(exc).__name__}: {exc})"))
+                                    embed_keywords(dest, edit_store.get_tags(conn, [path]).get(path, []))
+                                else:
+                                    out = export_kinds.resize16(data, target_size(w, h, options), options.resample)
+                                    export_kinds.write_tiff16(out, dest, options.tiff_compression, int(options.dpi))
+                                if options.write_record:
+                                    write_record(dest, conversion_record(path, conn, dest, options, kind, notes, state, label))
+                                summary["done"].append(dest)
+                        except Exception as exc:
+                            summary["failed"].append((path, f"{name}: {type(exc).__name__}: {exc}"))
+                        done += 1
+                        report(done, total, f"{os.path.basename(path)}{' (' + label + ')' if label else ''} ({i + 1} of {photos})")
+                except Exception as exc:
+                    summary["failed"].append((path, f"{label + ': ' if label else ''}{type(exc).__name__}: {exc}"))
+                    done += 1
     finally:
         conn.close()
     return summary
