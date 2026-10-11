@@ -85,6 +85,7 @@ from .negative_tool_panel import NegativeToolPanel
 from .scientific_panel import AdvancedPanels
 from .merge_dialog import MergeDialog
 from .removal_dialogs import RemovedPhotosDialog, confirm_delete_from_disk
+from .bug_report_dialog import BugReportDialog
 from .duplicates_dialog import DuplicatesDialog
 from ...features.library import duplicates as photo_duplicates
 from ...features import platform
@@ -568,6 +569,10 @@ class AppWindow(QMainWindow):
         version_action.setToolTip("The installed version, and a check for a newer one")
         version_action.triggered.connect(self.show_version)
         info_menu.addAction(version_action)
+        report_action = QAction("Report a Problem...", self)
+        report_action.setToolTip("Prepare a problem report (nothing is sent) and open a GitHub issue to attach it to")
+        report_action.triggered.connect(lambda: BugReportDialog(__version__, self).exec())
+        info_menu.addAction(report_action)
         update_action = QAction("Check for Updates...", self)
         update_action.triggered.connect(lambda: self.show_version(check=True))
         info_menu.addAction(update_action)

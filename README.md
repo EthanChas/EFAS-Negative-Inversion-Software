@@ -22,6 +22,9 @@ Built in **Python** with **PyQt6**. Created by Ethan.
 - **Scanning quality and merging**: a plain scan-quality verdict, automatic film-border finding (confirmed before use), bracketed-exposure and one-light-per-colour scan merging into a measured 16-bit linear scan, roll consistency checks, and an optional colour-target accuracy fit. See the [scanning guide](docs/scanning-and-export-guide.md)
 - **Flat exports**: flat, linear-light and density 16-bit TIFF outputs for grading elsewhere, with an optional conversion record
 - **Shareable film profiles**: `.efasprofile` bundles that are checksummed, sanity-checked and imported as received, never as your own measurement
+- **Keystone correction** with an automatic suggestion from straight lines, **virtual copies** (several edits of one scan), **smart collections** and a **duplicate finder** in the Workbench
+- **Command line**: `python -m photoeditor convert|presets|info|check-roll|merge`, using the editor's own data folder
+- **Report a problem**: a redacted report you can read, save and attach to a GitHub issue; nothing is sent automatically
 - **Updates**: Info > Version, with a startup notice when a new version is out (see Updates below)
 - **Data safety**: automatic backups, startup health check with restore, and full data export/import (Settings > Data & backup)
 

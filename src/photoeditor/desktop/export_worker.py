@@ -34,6 +34,7 @@ from ..features.densitometry import film_profile
 from ..features.densitometry import processor as dens_processor
 from ..features.densitometry.linear import from_display_referred
 from ..features.export import kinds as export_kinds
+from ..features.support import applog
 from ..features.export.record import build_record, write_record
 from ..features.settings import logic as app_settings
 from . import alt_export, curve_engine
@@ -362,6 +363,8 @@ def export_photos(paths: list[str], jobs: list, db_path: str, progress=None, can
                     done += 1
     finally:
         conn.close()
+    for failed_path, why in summary["failed"]:
+        applog.logger().warning("Export failed for %s: %s", os.path.basename(failed_path), why)
     return summary
 
 

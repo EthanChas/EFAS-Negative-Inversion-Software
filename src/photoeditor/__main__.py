@@ -13,6 +13,10 @@ from .theme.tokens import THEME
 def main() -> None:
     if [a for a in sys.argv[1:] if not a.startswith("-psn")]:
         sys.exit(cli.main(sys.argv[1:]))
+    from . import __version__
+    from .features.support import applog
+
+    applog.install(__version__)
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
     app.setFont(QFont(THEME.font_family, THEME.font_size_base))

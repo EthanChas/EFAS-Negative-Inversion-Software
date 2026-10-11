@@ -72,6 +72,49 @@ Two different actions, kept apart on purpose.
 - Your saved edits, rating and tags stay, so a photo restored from the Recycle Bin comes back with its look.
 - If the deleted photo is open in the editor, the editor moves to the next photo in the filmstrip.
 
+## Keystone correction (Crop & Rotate)
+
+When the camera is tilted over a copy stand, or the film is not flat, straight lines lean towards each other. The **Keystone** sliders in Crop & Rotate fix that: **Vertical** widens the top of the picture (positive) or the bottom (negative), **Horizontal** does the same for the left and right. **Auto Keystone** looks for the long straight lines in the scan (film borders, frame edges, sprocket holes, walls), measures how they lean and sets the sliders; it then refines the result by correcting the picture and measuring again. It says so, and changes nothing, when the lines are already parallel, too few, or do not agree with each other. It is a suggestion to check, not a verdict: a picture whose straight lines are not meant to be parallel can fool it.
+
+The correction cuts the corrected picture from inside the frame, so there are no empty corners, and it is stored with the photo like any other edit (and undoes like one). Spots and clone strokes you painted follow the correction. It is not part of copied or pasted looks, because it belongs to one scan.
+
+## Virtual copies (Versions)
+
+A virtual copy is another complete edit of the same scan, with no second file. In the editor's **Versions** panel, **Make Virtual Copy** starts a new version from the edit you have now and switches to it; the version you were on stays exactly as it was. Switch between versions by double-clicking. From the Workbench, **Make Virtual Copy** adds a version to each selected photo without opening it. Photos with copies show **x2** on their tile, and `versions:>1` finds them. In an export preset, **Also export virtual copies** writes every version; the copy's name is added to its file name (`photo_Black and white.jpg`).
+
+Ratings, flags and tags belong to the photo, so all its versions share them, and so does the choice of inversion method. Thumbnails show the version you were last editing.
+
+## Smart collections (Workbench)
+
+The **Smart Collections** section saves the Workbench's filters (the search words, Collection, Date, Rating & Status and Sort settings) under a name. Choosing a collection applies them. It is not a list of photos: it re-runs on the whole library each time, so new photos that fit appear by themselves, and relative dates such as "Last 7 days" stay relative. Each collection shows how many photos it holds now. Save with the same name to replace one. A collection that names a camera, film or folder the library does not have right now keeps it, and shows no photos until one appears.
+
+## Find duplicates
+
+**Find Duplicates** (Workbench top bar, or File menu) looks through the photos in the Workbench. *Identical files* have exactly the same contents; only files of the same size are read, so it is fast. *Look-alikes* are found with a small fingerprint of each picture, so re-saved, resized and re-exported copies match. A fingerprint cannot tell a copy from another exposure of the same frame or the next frame of a burst, which is why look-alikes are listed for you to judge, not removed. Each photo is in one group only. In every group one photo is marked **keep (suggested)**: the highest rated, then edited, then with copies or tags, then the largest picture and file. The others are ticked.
+
+**Remove Ticked from Workbench** takes them off the Workbench (the files stay), and **Delete Ticked from Disk** uses the same Recycle Bin deletion and confirmation as everywhere else. If every photo of a group is ticked, nothing happens until you untick one.
+
+## Reporting a problem (Info > Report a Problem)
+
+EFAS keeps a small log of what it reports, including errors that would otherwise vanish in a window with no console (`logs/efas.log` in the data folder). **Report a Problem** asks what happened and how to repeat it, then shows exactly what the report holds: the versions of the program and its libraries, your system, your preference switches, the sizes of the data files and the latest lines of the log, with folders stripped from every path and e-mail addresses blanked. Photos, edits, tags, notes, roll cards and folder names are never included.
+
+**Nothing is sent by EFAS.** *Save Report File* writes a zip. *Open GitHub Issue* saves the file, then opens your browser at the project's new-issue page with your text filled in; you read it, press Submit (a GitHub account is needed) and drag the zip into the description to attach it.
+
+## Command line
+
+The same conversion without a window, for batches and scripts (from a source install; the packaged Windows app has no console):
+
+```
+python -m photoeditor convert ROLL_FOLDER --preset "Print" --out OUT_FOLDER
+python -m photoeditor convert A.CR2 B.CR2 --kind flat --record
+python -m photoeditor presets
+python -m photoeditor info IMG_0001.CR2
+python -m photoeditor check-roll ROLL_FOLDER
+python -m photoeditor merge --bracket A.CR2 B.CR2 C.CR2 --times 0.01 0.04 0.16 --out merged.tif
+```
+
+It reads the editor's data folder, so saved edits, film bases and your export presets apply exactly as in the editor (use `--data-dir` for another folder, and `--versions` to include virtual copies). A preset is matched by name, or by part of its name when that is unambiguous. `convert` writes beside each photo in an `Export` folder unless `--out` is given, never overwrites unless `--overwrite` is given, and exits with status 1 when any photo failed (2 for a bad command).
+
 ## Not included
 
 Other processes (ECN-2 motion-picture film, for example) are not supported as a separate mode. The film base, density and curve tools are process-neutral, and you can characterize any process with a step tablet, but EFAS makes no claims about process-specific colour.
