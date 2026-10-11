@@ -1341,7 +1341,8 @@ class AppWindow(QMainWindow):
         c._save_edit_state() if open_path else None
         self._bulk_open = (mode, replace, in_roll)
         self._bulk_worker = worker = BulkCropWorker(mode, others, c.db_path, replace)
-        worker.progress.connect(lambda i, n, name: self._coord_label.setText(f"{'Cropping' if mode == 'auto' else 'Resetting crops'}: {i + 1} of {n}  {name}"))
+        worker.progress.connect(lambda i, n, name: (self._filmstrip.set_bulk_progress(i, n + (1 if in_roll else 0), name),
+                                                     self._coord_label.setText(f"{'Cropping' if mode == 'auto' else 'Resetting crops'}: {i + 1} of {n}  {name}")))
         worker.finished_all.connect(self._on_bulk_crop_finished)
         self._filmstrip.set_bulk_busy(True)
         worker.start()
@@ -1367,6 +1368,8 @@ class AppWindow(QMainWindow):
                 done += 1
         for p in summary["done"]:
             self._filmstrip.mark_edited(p)
+            self._lighttable.thumbnail_changed(p)
+        self._filmstrip.reload_tiles(summary["done"])
         parts = [f"{'Cropped' if mode == 'auto' else 'Reset the crop on'} {done} photo{'s' if done != 1 else ''}"]
         kept = sum(1 for _p, why in skipped if why == "has a crop")
         none = sum(1 for _p, why in skipped if why == "no clear border found")
@@ -1380,9 +1383,23 @@ class AppWindow(QMainWindow):
             parts.append("stopped early")
         self._coord_label.setText("; ".join(parts) + ".")
         self._lighttable_reload_rows()
+        self._show_bulk_crop_result(mode, done, kept, none, summary)
+
+    def _show_bulk_crop_result(self, mode: str, done: int, kept: int, none: int, summary: dict) -> None:
+        """A plain account of what a whole-roll crop did, so it is never a guess whether it worked."""
+        lines = [f"{'Cropped' if mode == 'auto' else 'Removed the crop from'} {done} photo{'s' if done != 1 else ''}."]
+        if kept:
+            lines.append(f"{kept} already had a crop and {'was' if kept == 1 else 'were'} left alone.")
+        if none:
+            lines.append(f"{none} had no clear border around the picture, so {'it was' if none == 1 else 'they were'} left as {'it is' if none == 1 else 'they are'}. "
+                         "Auto crop needs the picture to stand out from the scan's border; use the editor's Gradient Border Crop or draw the crop by hand for those.")
+        if summary["cancelled"]:
+            lines.append("You stopped it early; the photos not reached were not changed.")
         if summary["failed"]:
-            lines = "\n".join(f"{os.path.basename(p)}: {why}" for p, why in summary["failed"][:10])
-            QMessageBox.warning(self, "Crop Roll", f"{len(summary['failed'])} photo(s) could not be changed:\n\n{lines}")
+            lines.append(f"{len(summary['failed'])} could not be changed (see below).")
+        box = QMessageBox.information if not summary["failed"] else QMessageBox.warning
+        detail = "\n".join(f"{os.path.basename(p)}: {why}" for p, why in summary["failed"][:10])
+        box(self, "Crop Roll" if mode == "auto" else "Reset Crops", "\n\n".join(lines) + (("\n\n" + detail) if detail else ""))
 
     def _on_versions_changed(self, path: str) -> None:
         """The open photo's versions changed (or a photo opened): the panel and the Workbench's x2 badges follow."""

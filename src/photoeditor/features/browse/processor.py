@@ -107,6 +107,14 @@ def load_edited_thumbnail(cache_dir: str, path: str) -> bytes | None:
         return None
 
 
+def forget_edited_thumbnail(cache_dir: str, path: str) -> None:
+    """Drop the edited-look thumbnail (the photo's crop or edits changed behind the editor's back); the plain one shows until the photo is opened again."""
+    try:
+        os.remove(_edited_cache_path(cache_dir, path))
+    except OSError:
+        pass
+
+
 def get_or_make_thumbnail_bytes(cache_dir: str | None, path: str, max_dim: int = 200) -> bytes | None:
     """The edited-look thumbnail if one was saved (see save_edited_thumbnail),
     else reads the on-disk cache first (keyed by thumbnail_cache_key, so a

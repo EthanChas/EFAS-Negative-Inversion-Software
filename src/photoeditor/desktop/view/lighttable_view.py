@@ -325,8 +325,9 @@ class LighttableView(QWidget):
         area.setWidgetResizable(True)
         area.setFrameShape(QFrame.Shape.NoFrame)
         area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        area.setFixedWidth(width)
         area.setWidget(widget)
+        # wide enough for the panels' own minimum width plus the scroll bar, so nothing is cut off at the right edge whatever the font
+        area.setFixedWidth(max(width, widget.minimumSizeHint().width() + area.verticalScrollBar().sizeHint().width() + 2))
         return area
 
     def _section(self, col: QVBoxLayout, title: str, help_text: str = "", expanded: bool = True, reset=None) -> QVBoxLayout:
@@ -374,11 +375,13 @@ class LighttableView(QWidget):
         )
         self._collections: list[tuple[str, dict]] = []
         self._collection_box = QComboBox()
+        self._collection_box.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
+        self._collection_box.setMinimumContentsLength(8)
         self._collection_box.currentIndexChanged.connect(self._on_collection_picked)
         body.addWidget(self._collection_box)
         row = QHBoxLayout()
         row.setSpacing(THEME.space_sm)
-        self._collection_save = QPushButton("Save Current...")
+        self._collection_save = QPushButton("Save...")
         self._collection_save.setToolTip("Save the filters as they are now as a smart collection")
         self._collection_save.clicked.connect(self._save_collection)
         self._collection_delete = QPushButton("Delete")

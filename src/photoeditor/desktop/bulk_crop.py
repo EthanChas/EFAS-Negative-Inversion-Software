@@ -4,49 +4,66 @@ Auto crop does for each photo what the editor's Auto Crop & Straighten button do
 it, straightening it first if it is slightly tilted. The photo's other edits are kept. The result is saved like any edit (the database row and the sidecar).
 """
 
+import dataclasses
 import os
 
+import numpy as np
 from PyQt6.QtCore import QThread, pyqtSignal
 
+from ..features.browse.processor import forget_edited_thumbnail, save_edited_thumbnail
 from ..features.geometry.autocrop import AUTO_STRAIGHTEN_MAX, AUTO_STRAIGHTEN_MIN, detect_frame
 from ..features.geometry.logic import FINE_ROTATION_LIMIT
 from ..features.open_image.processor import load_image_rgb, make_preview_rgb, to_uint8
 from ..features.persistence import edit_store
 from ..features.support import applog
 from ..features.xmp import logic as xmp
-from .export_worker import saved_or_default_state
+from .export_worker import _edits_for, saved_or_default_state
+from .paths import thumbnail_cache_dir
 from .render import EditParams, Renderer
 
 DONE, SKIPPED_HAS_CROP, NO_BORDER, UNCHANGED = "done", "has a crop", "no clear border found", "unchanged"
 
 
+def _positive(base, params, flatfield, path: str):
+    """The picture the editor shows before the crop (inverted, toned), which is what the border is looked for in: in a raw negative the border and the picture can look alike."""
+    image, pre_crop, _stats, _overlay = Renderer().render(base, dataclasses.replace(params, crop_rect=None), ("bulk", path), base.shape[1], None, want_stats=False,
+                                                          overlay=False, flatfield=flatfield)
+    return pre_crop if pre_crop is not None else image
+
+
 def auto_crop_photo(path: str, conn, replace_existing: bool = False, straighten: bool = True) -> str:
-    """Crop one photo to the picture inside its scan. Returns DONE, SKIPPED_HAS_CROP (it already has a crop and `replace_existing` is off) or NO_BORDER."""
+    """Crop one photo to the picture inside its scan, as the editor's Auto Crop & Straighten does. Returns DONE, SKIPPED_HAS_CROP (it already has a crop and
+    `replace_existing` is off) or NO_BORDER."""
     existing = edit_store.load_edit_state(conn, path)
     if existing is not None and existing["crop_rect"] and not replace_existing:
         return SKIPPED_HAS_CROP
-    preview = to_uint8(make_preview_rgb(load_image_rgb(path)))
-    state = existing if existing is not None else saved_or_default_state(path, conn, preview)
+    preview = make_preview_rgb(load_image_rgb(path))
+    preview8 = to_uint8(preview)
+    state = existing if existing is not None else saved_or_default_state(path, conn, preview8)
     if state.get("crop_rect") and not replace_existing:
         return SKIPPED_HAS_CROP
     state = {**state, "crop_rect": None}
-
-    def framed(s: dict):
-        return Renderer._geometry(preview, EditParams.from_dict(s))
-
-    frame = framed(state)
-    det = detect_frame(frame)
+    base = preview if preview.dtype == np.uint16 else preview8
+    params, flatfield = _edits_for(path, conn, preview8, state)
+    det = detect_frame(_positive(base, params, flatfield, path))
     if det is None:
         return NO_BORDER
     if straighten and AUTO_STRAIGHTEN_MIN <= abs(det.skew_deg) <= AUTO_STRAIGHTEN_MAX:
         state["fine_rotation"] = round(max(-FINE_ROTATION_LIMIT, min(FINE_ROTATION_LIMIT, float(state.get("fine_rotation", 0.0)) - det.skew_deg)), 2)
-        frame = framed(state)
-        again = detect_frame(frame)
+        params = dataclasses.replace(params, fine_rotation=state["fine_rotation"])
+        again = detect_frame(_positive(base, params, flatfield, path))
         if again is not None:
             det = again
     state["crop_rect"] = tuple(int(v) for v in det.rect)
     edit_store.save_edit_state(conn, path, state)
+    image, pre_crop, _stats, _overlay = Renderer().render(base, dataclasses.replace(params, crop_rect=state["crop_rect"]), ("bulk-crop", path), base.shape[1], None,
+                                                          want_stats=False, overlay=False, flatfield=flatfield)
+    frame = pre_crop if pre_crop is not None else image
     xmp.write_sidecar(path, state, frame.shape[:2])
+    try:
+        save_edited_thumbnail(thumbnail_cache_dir(), path, image)
+    except Exception:
+        pass
     return DONE
 
 
@@ -58,6 +75,7 @@ def reset_crop_photo(path: str, conn) -> str:
     state = {**state, "crop_rect": None}
     edit_store.save_edit_state(conn, path, state)
     xmp.write_sidecar(path, state, (1, 1))
+    forget_edited_thumbnail(thumbnail_cache_dir(), path)
     return DONE
 
 

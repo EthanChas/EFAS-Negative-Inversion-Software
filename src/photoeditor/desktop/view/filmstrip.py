@@ -3,10 +3,10 @@ import os
 import numpy as np
 from PyQt6.QtCore import QSize, Qt, pyqtSignal
 from PyQt6.QtGui import QIcon, QImage, QPixmap, QWheelEvent
-from PyQt6.QtWidgets import QComboBox, QHBoxLayout, QLabel, QListView, QListWidget, QListWidgetItem, QMenu, QPushButton, QVBoxLayout, QWidget
+from PyQt6.QtWidgets import QComboBox, QHBoxLayout, QLabel, QListView, QListWidget, QListWidgetItem, QMenu, QProgressBar, QPushButton, QVBoxLayout, QWidget
 
 from ...theme.tokens import THEME
-from ...features.browse.processor import save_edited_thumbnail
+from ...features.browse.processor import load_cached_thumbnail, load_edited_thumbnail, save_edited_thumbnail
 from ..paths import thumbnail_cache_dir
 from ..workers import ThumbnailLoader
 from .thumbnail_delegate import FLAG_ROLE, RATING_ROLE, ThumbnailDelegate
@@ -84,6 +84,11 @@ class Filmstrip(QWidget):
         self._reset_crops_btn.setToolTip("Take the crop off every photo of this roll. Rotation, straightening and every other edit stay. You are asked first.")
         self._reset_crops_btn.clicked.connect(self.reset_crops_requested)
         bar.addWidget(self._reset_crops_btn)
+        self._bulk_progress = QProgressBar()
+        self._bulk_progress.setFixedWidth(170)
+        self._bulk_progress.setTextVisible(True)
+        self._bulk_progress.hide()
+        bar.addWidget(self._bulk_progress)
         bar.addStretch(1)
         layout.addLayout(bar)
 
@@ -114,9 +119,31 @@ class Filmstrip(QWidget):
         self.setVisible(False)
 
     def set_bulk_busy(self, busy: bool) -> None:
-        """While a whole-roll crop runs: Crop Roll becomes Stop and Reset Crops is off."""
+        """While a whole-roll crop runs: Crop Roll becomes Stop, Reset Crops is off and a progress bar shows."""
         self._crop_roll_btn.setText("Stop" if busy else "Crop Roll")
         self._reset_crops_btn.setEnabled(not busy)
+        if not busy:
+            self._bulk_progress.setValue(self._bulk_progress.maximum())
+        self._bulk_progress.setVisible(busy)
+        if busy:
+            self.set_bulk_progress(0, 1, "Starting...")
+
+    def set_bulk_progress(self, done: int, total: int, text: str = "") -> None:
+        self._bulk_progress.setRange(0, max(1, total))
+        self._bulk_progress.setValue(min(done, max(1, total)))
+        self._bulk_progress.setFormat(f"{done} of {total}")
+        self._bulk_progress.setToolTip(text)
+
+    def reload_tiles(self, paths: list[str]) -> None:
+        """Read these photos' thumbnails from the cache again (their crop changed behind the editor's back). Nothing is decoded here: a photo with no cached thumbnail keeps its tile."""
+        cache = thumbnail_cache_dir()
+        for path in paths:
+            item = self._find_item(path)
+            data = load_edited_thumbnail(cache, path) or load_cached_thumbnail(cache, path)
+            if item is not None and data:
+                pix = QPixmap()
+                pix.loadFromData(data)
+                item.setIcon(QIcon(pix))
 
     def paths(self) -> list[str]:
         """The folder currently loaded into the strip."""

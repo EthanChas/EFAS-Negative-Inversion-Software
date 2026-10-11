@@ -167,3 +167,27 @@ def test_workbench_library_reset_setting_and_suggestions():
     env = dict(os.environ, PYTHONPATH=SRC + os.pathsep + os.environ.get("PYTHONPATH", ""))
     done = subprocess.run([sys.executable, "-X", "faulthandler", "-c", _SCRIPT], env=env, capture_output=True, text=True, timeout=300)
     assert "WORKBENCH LIBRARY OK" in done.stdout and "WORKBENCH SUGGEST OK" in done.stdout, done.stdout[-1500:] + done.stderr[-3500:]
+
+
+_FIT_SCRIPT = textwrap.dedent(r'''
+    import os, tempfile
+    os.environ["QT_QPA_PLATFORM"] = "offscreen"; os.environ["PHOTOEDITOR_DATA_DIR"] = tempfile.mkdtemp()
+    from PyQt6.QtWidgets import QApplication, QScrollArea
+    app = QApplication([]); app.setStyle("Fusion")
+    from photoeditor.theme.build_qss import load_stylesheet
+    from photoeditor.theme.tokens import THEME
+    app.setStyleSheet(load_stylesheet(THEME))
+    from photoeditor.desktop.view.lighttable_view import LighttableView
+    v = LighttableView(None); v.resize(1200, 800); v.show(); app.processEvents()
+    areas = v.findChildren(QScrollArea)
+    assert len(areas) >= 2
+    for a in areas:
+        assert a.widget().minimumSizeHint().width() <= a.viewport().width(), (a.widget().minimumSizeHint().width(), a.viewport().width())
+    print("FIT OK")
+''')
+
+
+def test_the_workbench_side_panels_are_never_cut_off():
+    env = dict(os.environ, PYTHONPATH=SRC + os.pathsep + os.environ.get("PYTHONPATH", ""))
+    done = subprocess.run([sys.executable, "-c", _FIT_SCRIPT], env=env, capture_output=True, text=True, timeout=120)
+    assert "FIT OK" in done.stdout, done.stdout[-800:] + done.stderr[-2000:]

@@ -45,7 +45,12 @@ _SCRIPT = textwrap.dedent(r'''
     asked = []
     answer = {"go": False, "replace": False}
     win._ask_bulk_crop = lambda mode, n, cropped: (asked.append((mode, n, cropped)), (answer["go"], answer["replace"]))[1]
-    def saved(p): return edit_store.load_edit_state(c._db, p)
+    from photoeditor.features.browse.processor import load_edited_thumbnail
+    from photoeditor.desktop.paths import thumbnail_cache_dir
+    ticks = []
+    real_progress = win._filmstrip.set_bulk_progress
+    win._filmstrip.set_bulk_progress = lambda d, t, text="": (ticks.append((d, t)), real_progress(d, t, text))
+    def saved(p): return edit_store.load_edited if False else edit_store.load_edit_state(c._db, p)
     def finish():
         win._bulk_worker.wait(120000); app.processEvents()
 
@@ -64,6 +69,10 @@ _SCRIPT = textwrap.dedent(r'''
     assert saved(paths[2])["crop_rect"] == (10, 10, 100, 100)
     assert saved(paths[3]) is None or not saved(paths[3])["crop_rect"]
     assert c.state.crop_rect is not None and c.can_undo(), "the open photo was cropped in the editor and can be undone"
+    assert ticks and ticks[1][1] == 5 and max(d for d, _t in ticks) >= 3, ticks
+    assert win._filmstrip._bulk_progress.isHidden(), "the progress bar goes away when it is done"
+    assert "Cropped 2 photos" in shown[-1] and "already had a crop" in shown[-1] and "no clear border" in shown[-1], shown[-1]
+    assert load_edited_thumbnail(thumbnail_cache_dir(), paths[1]) is not None, "the roll's tiles show the crop"
     msg = win._coord_label.text()
     assert "Cropped 2 photos" in msg and "1 already had a crop" in msg and "1 had no clear border" in msg and "1 failed" in msg, msg
     assert shown and "f4.png" in shown[-1]
@@ -85,6 +94,7 @@ _SCRIPT = textwrap.dedent(r'''
     assert saved(paths[2])["crop_rect"] is None and saved(paths[2])["exposure_ev"] == 0.25 and saved(paths[2])["fine_rotation"] == 1.5
     assert c.state.crop_rect is None and c.state.exposure_ev == 0.5, "the open photo lost its crop but kept its exposure"
     assert "Reset the crop on 3 photos" in win._coord_label.text(), win._coord_label.text()
+    assert "Removed the crop from 3 photos" in shown[-1] and load_edited_thumbnail(thumbnail_cache_dir(), paths[2]) is None
 
     # nothing to reset
     asked.clear(); shown.clear()
