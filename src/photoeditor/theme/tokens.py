@@ -1,17 +1,21 @@
 from dataclasses import dataclass
 
+from ..features.platform import pick
+
 
 @dataclass(frozen=True)
 class ThemeConfig:
     """Every color, font, spacing value and border width the app uses."""
 
-    font_family: str = "MS Sans Serif"
-    font_family_fallback: str = "Tahoma"
+    font_family: str = pick("MS Sans Serif", "Helvetica Neue", "DejaVu Sans")
+    font_family_fallback: str = pick("Tahoma", "Helvetica", "Sans Serif")
 
-    font_size_small: int = 7
-    font_size_base: int = 8
-    font_size_header: int = 8
-    font_size_title: int = 8
+    mono_family: str = pick("Consolas", "Menlo", "DejaVu Sans Mono")
+
+    font_size_small: int = pick(7, 10, 7)
+    font_size_base: int = pick(8, 11, 8)
+    font_size_header: int = pick(8, 11, 8)
+    font_size_title: int = pick(8, 11, 8)
 
     bg_app: str = "#3c3c3c"
     bg_panel: str = "#3c3c3c"

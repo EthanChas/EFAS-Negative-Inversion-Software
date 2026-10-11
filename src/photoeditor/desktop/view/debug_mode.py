@@ -17,6 +17,8 @@ from PyQt6.QtWidgets import (
     QTextEdit, QVBoxLayout, QWidget,
 )
 
+from ...theme.tokens import THEME
+
 _NATIVE_DRAG_TYPES = (QSplitterHandle, QScrollBar)
 
 _HANDLE_SIZE = 8
@@ -132,7 +134,7 @@ class DebugLogWindow(QDialog):
         layout = QVBoxLayout(self)
         self._text = QTextEdit()
         self._text.setReadOnly(True)
-        self._text.setFontFamily("Consolas")
+        self._text.setFontFamily(THEME.mono_family)
         layout.addWidget(self._text, 1)
 
         buttons = QHBoxLayout()

@@ -109,7 +109,7 @@ class RollTicket(QWidget):
         p.drawText(left, y + fm.ascent(), fm.elidedText(rig or "Camera and lens", Qt.TextElideMode.ElideRight, right - left))
         number = str(self._frame) if self._frame is not None else "—"
         label = f"FRAME {number}" + (f" / {self._total}" if self._total else "")
-        stamp = QFont(self.font()); stamp.setBold(True); stamp.setStyleHint(QFont.StyleHint.Monospace); stamp.setFamily("Consolas")
+        stamp = QFont(self.font()); stamp.setBold(True); stamp.setStyleHint(QFont.StyleHint.Monospace); stamp.setFamily(THEME.mono_family)
         sfm = QFontMetrics(stamp)
         sw, sh = sfm.horizontalAdvance(label) + 16, sfm.height() + 8
         p.save()

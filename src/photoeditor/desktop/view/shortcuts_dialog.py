@@ -57,7 +57,7 @@ class ShortcutsDialog(QDialog):
                 grid.setVerticalSpacing(THEME.space_sm)
                 for i, (keys, what) in enumerate(rows):
                     key_label = QLabel(keys)
-                    key_label.setStyleSheet(f"color: {THEME.text_primary}; font-family: Consolas;")
+                    key_label.setStyleSheet(f"color: {THEME.text_primary}; font-family: {THEME.mono_family};")
                     key_label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
                     grid.addWidget(key_label, i, 0)
                     grid.addWidget(QLabel(what), i, 1)

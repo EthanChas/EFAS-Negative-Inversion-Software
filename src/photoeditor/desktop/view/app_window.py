@@ -84,6 +84,7 @@ from .negative_tool_panel import NegativeToolPanel
 from .scientific_panel import AdvancedPanels
 from .merge_dialog import MergeDialog
 from .removal_dialogs import RemovedPhotosDialog, confirm_delete_from_disk
+from ...features import platform
 from ...features.library import removal as photo_removal
 from .roll_check_dialog import RollCheckDialog
 from .rebate_dialog import RebateDialog
@@ -1371,8 +1372,11 @@ class AppWindow(QMainWindow):
     def _reveal_in_folder(self, path: str) -> None:
         import subprocess
 
+        command = platform.reveal_command(path)
         try:
-            subprocess.Popen(["explorer", "/select,", os.path.normpath(path)])
+            if command is None:
+                raise OSError("no file-manager command on this system")
+            subprocess.Popen(command)
         except OSError:
             QDesktopServices.openUrl(QUrl.fromLocalFile(os.path.dirname(path)))
 

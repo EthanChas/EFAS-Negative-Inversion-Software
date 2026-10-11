@@ -32,7 +32,7 @@ CREATE TABLE IF NOT EXISTS images (
 """
 _COLUMNS = ("path", "folder", "name", "ext", "size", "mtime_ns", "taken", "taken_exif", "make", "model", "camera", "lens", "iso", "focal",
             "aperture", "shutter", "width", "height")
-_SKIP_DIRS = {"$recycle.bin", "system volume information", "__pycache__"}
+_SKIP_DIRS = {"$recycle.bin", "system volume information", "__pycache__", "lost+found"}
 
 
 def default_db_path() -> str:

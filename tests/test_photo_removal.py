@@ -106,3 +106,22 @@ def test_hiding_is_remembered_reversible_and_touches_no_files(tmp_path):
     edit_store.unhide_photos(conn, photos[:1])
     assert edit_store.hidden_paths(conn) == [photos[1]]
     assert all(os.path.exists(p) for p in photos)
+
+
+def test_off_windows_the_system_trash_is_used_through_send2trash(tmp_path, monkeypatch):
+    calls = []
+    fake = type(sys)("send2trash")
+    fake.send2trash = calls.append
+    monkeypatch.setitem(sys.modules, "send2trash", fake)
+    monkeypatch.setattr(removal.sys, "platform", "linux")
+    removal.send_to_trash(str(tmp_path / "a.jpg"))
+    assert calls == [str(tmp_path / "a.jpg")]
+
+
+def test_off_windows_without_send2trash_nothing_is_deleted(tmp_path, monkeypatch):
+    photos = make(tmp_path, ("a.jpg",))
+    monkeypatch.setitem(sys.modules, "send2trash", None)
+    monkeypatch.setattr(removal.sys, "platform", "darwin")
+    with pytest.raises(removal.TrashUnavailable):
+        removal.delete_photos(photos)
+    assert os.path.exists(photos[0])

@@ -71,8 +71,10 @@ Also built on [PyQt6](https://pypi.org/project/PyQt6/), [Pillow](https://python-
 | OS | Status |
 |---|---|
 | Windows 10 / 11 | Supported (the released `.exe` is Windows only) |
-| Linux | Work in progress, untested |
-| macOS | Work in progress, untested |
+| Linux | Runs from source (see below). Written to be portable but not yet tested on a real Linux machine by the author |
+| macOS | Runs from source (see below). Written to be portable but not yet tested on a real Mac by the author |
+
+The tests run on Windows, Linux and macOS through GitHub Actions (`.github/workflows/tests.yml`), so a problem on another system shows up there. Please report anything that looks wrong on Linux or macOS. Known differences: the self-updating `.exe` is Windows only (elsewhere Info > Version opens the release page); fonts follow the system; on a Mac the Delete key in the Workbench is the key labelled delete (Backspace); deleting photos uses the system Trash through the `send2trash` package.
 
 ## Download
 
@@ -86,7 +88,9 @@ cd EFAS-Negative-Inversion-Software
 python -m pip install PyQt6 Pillow rawpy numpy opencv-python-headless onnxruntime
 ```
 
-On Windows, double-click `start.bat` (or run `start.bat console` to keep a console open for errors). From any shell:
+On Linux and macOS also install `send2trash` (needed to move deleted photos to the Trash). On Linux, Qt needs a few system libraries; on Debian or Ubuntu: `sudo apt install libegl1 libxkbcommon-x11-0 libxcb-cursor0 libxcb-icccm4 libxcb-keysyms1 libxcb-shape0`.
+
+On Windows, double-click `start.bat` (or run `start.bat console` to keep a console open for errors). On Linux and macOS run `./start.sh`. From any shell:
 
 ```bash
 PYTHONPATH=src python -m photoeditor
@@ -94,7 +98,9 @@ PYTHONPATH=src python -m photoeditor
 
 On Windows PowerShell set the path first: `$env:PYTHONPATH = "src"`.
 
-## Build the EXE
+## Build the app
+
+`python tools/build_app.py` builds for the system it runs on (a `.exe` on Windows, a `.app` on macOS, one executable on Linux), after `python -m pip install pyinstaller`. PyInstaller cannot build for another system. The **Build apps** workflow (Actions tab, run by hand) builds all three. The Windows command it wraps:
 
 ```bash
 python -m pip install pyinstaller

@@ -15,6 +15,7 @@ from PyQt6.QtWidgets import (
     QMenu, QStyle, QStyledItemDelegate, QVBoxLayout, QWidget,
 )
 
+from ...features import platform
 from ...features.library import query as Q
 from ...theme.tokens import THEME
 from ..library_worker import ThumbPool
@@ -22,6 +23,8 @@ from .collapsible_panel import CollapsiblePanel
 from .tags_panel import TagsEditor
 
 ROLE_ROW = Qt.ItemDataRole.UserRole + 10
+# Mac keyboards have no Delete key; the key labelled delete there is Backspace
+_DELETE_KEYS = (Qt.Key.Key_Delete, Qt.Key.Key_Backspace) if platform.MACOS else (Qt.Key.Key_Delete,)
 CELL_RANGE = (90, 300)
 CELL_DEFAULT = 170
 _LABEL_H = 16
@@ -233,7 +236,7 @@ class LighttableList(QListView):
             self._on_double(self.currentIndex())
             event.accept()
             return
-        if event.key() == Qt.Key.Key_Delete:
+        if event.key() in _DELETE_KEYS:
             (self.delete_key if event.modifiers() & Qt.KeyboardModifier.ShiftModifier else self.remove_key).emit()
             event.accept()
             return

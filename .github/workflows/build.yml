@@ -1,0 +1,35 @@
+name: Build apps
+
+# Run by hand from the Actions tab. Each system builds its own app; the files are attached to the run, not to a release.
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install
+        run: python -m pip install -e . pyinstaller
+      - name: Build
+        run: python tools/build_app.py
+      - name: Pack (macOS)
+        if: runner.os == 'macOS'
+        run: ditto -c -k --sequesterRsrc --keepParent "dist/EFAS Negative Inversion Software.app" EFAS-macOS.zip
+      - name: Pack (Linux)
+        if: runner.os == 'Linux'
+        run: tar -czf EFAS-linux.tar.gz -C dist "EFAS Negative Inversion Software"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: EFAS-${{ runner.os }}
+          path: |
+            dist/*.exe
+            EFAS-macOS.zip
+            EFAS-linux.tar.gz
