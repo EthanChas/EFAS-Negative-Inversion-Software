@@ -69,6 +69,7 @@ def default_edit_state(negative_inverted: bool) -> dict:
         "scratch_sensitivity": DEFAULT_SCRATCH_SENSITIVITY,
         "heal_strokes": [],
         "clone_strokes": [],
+        "dust_excluded": [],
         "ai_dust": False,
         "ai_threshold": 0.3,
         "ai_grow": 1,

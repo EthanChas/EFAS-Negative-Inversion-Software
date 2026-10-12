@@ -50,8 +50,9 @@ _TOOLS = {
     ),
     "delete": (
         "Delete Repair",
-        "Click a manual repair to remove just that one. Show Detections is turned on so repairs "
-        "appear in amber.",
+        "Click one repair or detection to remove just that one: a manual repair (amber), or a speck or hair Auto Dust Removal found "
+        "(green, magenta) - it is left as it is in the picture, and every other detection stays. Show Detections is turned on so they "
+        "show. Reset Deleted brings the detections you deleted back.",
     ),
     "line": (
         "Smart Transport Line Selection",
@@ -77,6 +78,7 @@ class DustToolPanel(CollapsiblePanel):
     overlay_toggled = pyqtSignal(bool)
     undo_requested = pyqtSignal()
     clear_requested = pyqtSignal()
+    restore_deleted_requested = pyqtSignal()
     clone_tool_shown = pyqtSignal(bool)
 
     def __init__(self, parent: QWidget | None = None):
@@ -87,7 +89,8 @@ class DustToolPanel(CollapsiblePanel):
                 "around them (Threshold: higher is more conservative; Size: how large a speck can "
                 "be). Show Detections marks what detection finds - green specks, magenta hairs, "
                 "amber manual repairs - even while removal is off, so you can tune Threshold by "
-                "eye. The tools below heal by hand. Automatic settings apply when you stop adjusting."
+                "eye. If it got one wrong, pick Delete Repair and click that speck or hair: only that one is left alone, and Reset Deleted "
+                "brings them all back. The tools below heal by hand. Automatic settings apply when you stop adjusting."
             ),
             collapsible=True,
             start_expanded=False,
@@ -227,6 +230,14 @@ class DustToolPanel(CollapsiblePanel):
         actions.addWidget(self._clear_btn)
         body.addLayout(actions)
 
+        self._restore_btn = QPushButton("Reset Deleted (0)")
+        self._restore_btn.setEnabled(False)
+        self._restore_btn.setToolTip(
+            "Put back every detection you deleted one by one with the Delete Repair tool: Auto Dust Removal and AI dust repair what they find there again."
+        )
+        self._restore_btn.clicked.connect(self.restore_deleted_requested)
+        body.addWidget(self._restore_btn)
+
         self._settle_timer = QTimer(self)
         self._settle_timer.setSingleShot(True)
         self._settle_timer.setInterval(_SETTLE_DEBOUNCE_MS)
@@ -275,6 +286,7 @@ class DustToolPanel(CollapsiblePanel):
         self.set_values(False, DEFAULT_THRESHOLD, DEFAULT_SIZE, DEFAULT_SCRATCH_SENSITIVITY)
         self.deactivate_tools()
         self.set_manual_count(0)
+        self.set_deleted_count(0)
 
     def set_values(self, auto: bool, threshold: float, size: float, line_sensitivity: float) -> None:
         """Sync the automatic controls without emitting anything - used by reset() and after a history revert."""
@@ -284,6 +296,10 @@ class DustToolPanel(CollapsiblePanel):
         self._threshold.set_value(threshold)
         self._size.set_value(size)
         self._line_sens.set_value(line_sensitivity)
+
+    def set_deleted_count(self, count: int) -> None:
+        self._restore_btn.setText(f"Reset Deleted ({count})")
+        self._restore_btn.setEnabled(count > 0)
 
     def set_manual_count(self, count: int) -> None:
         self._heals_header.setText(f"MANUAL HEAL · {count}")

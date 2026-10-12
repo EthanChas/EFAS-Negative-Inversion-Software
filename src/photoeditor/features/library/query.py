@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 from typing import Any, Optional
 
 from ..metadata.roll import KNOWN_FILMS
+from ..tags import logic as tag_logic
 
 FLAG_KEEPER = "keeper"
 FLAG_REJECTED = "rejected"
@@ -330,7 +331,7 @@ def matches(row: dict, q: Query, terms: list | None = None) -> bool:
         return False
     if q.under and not in_folder(row, q.under):
         return False
-    if q.tag and q.tag.casefold() not in (t.casefold() for t in row.get("tags", ())):
+    if q.tag and not tag_logic.matches(row.get("tags", ()), q.tag):
         return False
     if q.iso and q.iso != row["iso"]:
         return False
@@ -355,10 +356,9 @@ def filter_rows(rows: list[dict], q: Query) -> list[dict]:
 
 def facets(rows: list[dict]) -> dict[str, list[tuple[Any, str, int]]]:
     """The values the filter panel offers: {facet: [(value, label, count)]}, most photos first."""
-    cams, lenses, films, folders, isos, tags = Counter(), Counter(), Counter(), Counter(), Counter(), Counter()
+    cams, lenses, films, folders, isos = Counter(), Counter(), Counter(), Counter(), Counter()
+    tag_counts = tag_logic.count_with_parents(r.get("tags", ()) for r in rows)
     for r in rows:
-        for t in r.get("tags", ()):
-            tags[t] += 1
         for c in {r["camera"], r["roll_camera"]} - {""}:
             cams[c] += 1
         for l in {r["lens"], r["roll_lens"]} - {""}:
@@ -376,5 +376,5 @@ def facets(rows: list[dict]) -> dict[str, list[tuple[Any, str, int]]]:
         "camera": ordered(cams), "lens": ordered(lenses), "film": ordered(films),
         "folder": ordered(folders, label=lambda f: os.path.basename(f.rstrip("\\/")) or f, key=lambda kv: os.path.basename(kv[0].rstrip("\\/")).lower()),
         "iso": ordered(isos, key=lambda kv: kv[0]),
-        "tag": ordered(tags),
+        "tag": [(t, "    " * tag_logic.depth(t) + tag_logic.leaf(t), tag_counts[t]) for t in tag_logic.tree_order(tag_counts)],
     }

@@ -2,6 +2,7 @@ import copy
 import dataclasses
 import math
 import os
+import sqlite3
 
 import numpy as np
 
@@ -80,7 +81,10 @@ from ..features.datadir import BACKUP_DIR, EDITS_DB
 from .paths import app_data_dir
 from .ai_dust_worker import AiDustWorker
 from .render import EditParams, _scale_rect, RenderJob, Renderer, RenderOutput, RenderThread
-from .session import AppState, HistoryEntry
+from .session import AppState, HistoryEntry, entry_from_json, entry_to_json
+
+HISTORY_LIMIT = 400   # steps kept per photo (the first one and the newest)
+HISTORY_SLACK = 50    # so trimming happens once in a while, not on every edit
 from .workers import FlatFieldWorker, run_blocking
 from .densitometry_worker import LinearScanWorker
 from . import curve_engine
@@ -121,6 +125,7 @@ class AppController(QObject):
     loading_finished = pyqtSignal()
     notice = pyqtSignal(str)
     scratches_changed = pyqtSignal(int)
+    detections_deleted_changed = pyqtSignal(int)
     ai_dust_status = pyqtSignal()
     clone_source_changed = pyqtSignal()
     negative_state_changed = pyqtSignal()
@@ -168,6 +173,9 @@ class AppController(QObject):
         self._last_logged_metering = Metering()
         self._ff = None
         self._redo: list[HistoryEntry] = []
+        self._history_path: str | None = None
+        self._history_saved = 0
+        self._history_rewrite = False
         self._copied_look: dict | None = None
         self._module_preset_in_use: dict[tuple[str, str], str] = {}
         self._folder_images: tuple[str, list[str], float] | None = None
@@ -275,6 +283,7 @@ class AppController(QObject):
         self.state.scratch_sensitivity = saved["scratch_sensitivity"]
         self.state.heal_strokes = [list(s) for s in saved["heal_strokes"]]
         self.state.clone_strokes = [list(s) for s in saved.get("clone_strokes", [])]
+        self.state.dust_excluded = [list(p) for p in saved.get("dust_excluded", [])]
         self.state.ai_dust = bool(saved.get("ai_dust", False))
         self.state.ai_threshold = float(saved.get("ai_threshold", 0.3))
         self.state.ai_grow = int(saved.get("ai_grow", 1))
@@ -550,14 +559,26 @@ class AppController(QObject):
         self.tags_changed.emit([path])
         self.snapshots_changed.emit("")
         self.versions_changed.emit(path)
-        self._log(f"Opened {os.path.basename(path)}")
-        if saved is not None:
+        previous = self._load_saved_history(path) if saved is not None else []
+        if previous:
+            # the steps of the last time this photo was open come back as they were, in order, ready to undo through
+            self.state.history = previous
+            self._redo.clear()
+            self._history_path, self._history_saved, self._history_rewrite = path, len(previous), False
+            if not self._history_matches_state():
+                self._log("Changed outside the editor")
+            self.history_changed.emit()
+        else:
+            self._history_path = None
+            self._log(f"Opened {os.path.basename(path)}")
+        if not previous and saved is not None:
             self._log(f"Restored saved edits: {self._describe_edit_state()}")
-        elif self.state.negative_inverted:
+        elif not previous and self.state.negative_inverted:
             bw = self.state.detected_mode == ProcessMode.BW
             self._log(f"Auto-detected {self.state.detected_mode.value.upper()} and inverted to positive" + (", saturation set to -1" if bw else ""))
         self.file_changed.emit()
         self.scratches_changed.emit(self._manual_repair_count())
+        self.detections_deleted_changed.emit(len(self.state.dust_excluded))
 
     def _token(self):
         return self.state.image_path
@@ -1544,7 +1565,8 @@ class AppController(QObject):
             if d <= half + slack and (best is None or d - half < best[0]):
                 best = (d - half, "line", i)
         if best is None:
-            self.notice.emit("No manual repair there - click on a repair (turn on Show Detections to see them in amber)")
+            if not self._delete_detection_near(x, y):
+                self.notice.emit("Nothing to delete there - click on a marked repair or detection (turn on Show Detections to see them)")
             return
         _, kind, index = best
         if kind == "stroke":
@@ -1556,6 +1578,41 @@ class AppController(QObject):
         self.scratches_changed.emit(self._manual_repair_count())
         self._settle()
         self._log(f"Deleted a manual repair ({self._manual_repair_count()} left)")
+
+    def _delete_detection_near(self, x: float, y: float) -> bool:
+        """The delete picker, second half: a click that lands on (or just beside) something Auto Dust Removal or AI dust found takes out just that one
+        detection - it is left as it is in the picture - and every other detection stays. Remembered by its place in the picture, so it survives a
+        change of Threshold or Size. Needs the detection overlay (Show Detections), which is what shows what can be clicked."""
+        s = self.state
+        overlay = s.overlay_rgba
+        if overlay is None or s.image_rgb is None:
+            return False
+        oh, ow = overlay.shape[:2]
+        ih, iw = s.image_rgb.shape[:2]
+        cx, cy = int(round((x + 0.5) / iw * ow - 0.5)), int(round((y + 0.5) / ih * oh - 0.5))
+        reach = max(3, int(round(6 * ow / max(1, iw))))
+        y0, y1, x0, x1 = max(0, cy - reach), min(oh, cy + reach + 1), max(0, cx - reach), min(ow, cx + reach + 1)
+        ys, xs = np.nonzero(overlay[y0:y1, x0:x1, 3])
+        if ys.size == 0:
+            return False
+        i = int(np.argmin((ys + y0 - cy) ** 2 + (xs + x0 - cx) ** 2))
+        px, py = int(xs[i]) + x0, int(ys[i]) + y0
+        nx, ny = self._display_to_raw((px + 0.5) / ow * iw - 0.5, (py + 0.5) / oh * ih - 0.5)
+        s.dust_excluded = list(s.dust_excluded) + [[round(float(nx), 5), round(float(ny), 5)]]
+        self.detections_deleted_changed.emit(len(s.dust_excluded))
+        self._settle()
+        self._log(f"Deleted an automatic detection ({len(s.dust_excluded)} deleted)")
+        return True
+
+    def reset_deleted_detections(self) -> None:
+        """Put back every detection that was deleted one by one: Auto Dust Removal and AI dust repair what they find again."""
+        s = self.state
+        if s.preview_rgb is None or not s.dust_excluded:
+            return
+        s.dust_excluded = []
+        self.detections_deleted_changed.emit(0)
+        self._settle()
+        self._log("Restored deleted detections")
 
     def set_flag(self, flag: str | None) -> None:
         """Marks the open photo as a keeper, rejected, or (None) neither - saved in the database and the XMP sidecar."""
@@ -1598,6 +1655,11 @@ class AppController(QObject):
     def all_tags(self) -> list[str]:
         """Every tag in use, most used first - what the tag boxes suggest."""
         return [t for t, _n in edit_store.tag_counts(self._db)]
+
+    def tag_usage(self) -> dict[str, int]:
+        """{tag: photos under it} for every tag in use and every level above one (what the quick tag bar ranks by)."""
+        counts = dict(tag_logic.count_with_parents(edit_store.all_tagged(self._db).values()))
+        return counts
 
     def set_tags_for(self, paths: list[str], add=(), remove=()) -> None:
         """Add and/or remove tags on any photos (the open one, or the Workbench's selection); each photo's sidecar follows."""
@@ -1810,10 +1872,10 @@ class AppController(QObject):
                 x1, y1, x2, y2 = rect
                 self._log(f"Cropped to {x2 - x1}x{y2 - y1}")
 
-    def _log(self, description: str) -> None:
-        self._redo.clear()
+    def _snapshot(self, description: str) -> HistoryEntry:
+        """The edit state as it is now, as one history step."""
         s = self.state
-        entry = HistoryEntry(
+        return HistoryEntry(
             description=description,
             exposure_ev=s.exposure_ev,
             tone_curve_points=list(s.tone_curve_points),
@@ -1838,6 +1900,7 @@ class AppController(QObject):
             scratch_sensitivity=s.scratch_sensitivity,
             heal_strokes=[list(h) for h in s.heal_strokes],
             clone_strokes=[list(h) for h in s.clone_strokes],
+            dust_excluded=[list(p) for p in s.dust_excluded],
             ai_dust=s.ai_dust,
             ai_threshold=s.ai_threshold,
             ai_grow=s.ai_grow,
@@ -1866,9 +1929,55 @@ class AppController(QObject):
             border=s.border,
             border_color=s.border_color,
         )
-        self.state.history.append(entry)
+
+    def _log(self, description: str) -> None:
+        self._redo.clear()
+        self.state.history.append(self._snapshot(description))
+        self._trim_history()
         self.history_changed.emit()
+        self._persist_history()
         self._save_edit_state()
+
+    # --- the history survives closing the app ---------------------------------------------------------------------------------------------
+    def _trim_history(self) -> None:
+        """Keep the first step (the photo as opened) and the newest HISTORY_LIMIT, so a very long session cannot grow without end."""
+        history = self.state.history
+        if len(history) > HISTORY_LIMIT + HISTORY_SLACK:
+            del history[1 : len(history) - HISTORY_LIMIT + 1]
+            self._history_rewrite = True
+
+    def _persist_history(self) -> None:
+        """Save the open photo's history steps, so closing and opening the app brings the same list back, in the same order. Only what changed is
+        written: new steps are added, steps that were undone away are forgotten."""
+        path, history = self.state.image_path, self.state.history
+        if path is None:
+            return
+        try:
+            if self._history_path != path or self._history_rewrite:
+                edit_store.replace_history(self._db, path, [(i, e.description, entry_to_json(e)) for i, e in enumerate(history)])
+            else:
+                if len(history) < self._history_saved:
+                    edit_store.truncate_history(self._db, path, len(history))
+                for i in range(min(self._history_saved, len(history)), len(history)):
+                    edit_store.put_history_entry(self._db, path, i, history[i].description, entry_to_json(history[i]))
+            self._history_path, self._history_saved, self._history_rewrite = path, len(history), False
+        except sqlite3.Error:
+            self._history_path = None
+
+    def _load_saved_history(self, path: str) -> list[HistoryEntry]:
+        """The history this photo had when the app was last closed (empty if it has none, or it cannot be read)."""
+        entries = []
+        for description, text in edit_store.load_history(self._db, path):
+            entry = entry_from_json(description, text)
+            if entry is None:
+                return []
+            entries.append(entry)
+        return entries
+
+    def _history_matches_state(self) -> bool:
+        """Is the photo exactly as the last saved history step left it? (Not, if something else changed it since - a paste from the Workbench.)"""
+        history = self.state.history
+        return bool(history) and entry_to_json(history[-1]) == entry_to_json(self._snapshot(history[-1].description))
 
     def _load_sidecar_state(self, path: str) -> dict | None:
         sidecar = xmp.read_sidecar(path)
@@ -1910,6 +2019,7 @@ class AppController(QObject):
             "scratch_sensitivity": s.scratch_sensitivity,
             "heal_strokes": s.heal_strokes,
             "clone_strokes": s.clone_strokes,
+            "dust_excluded": s.dust_excluded,
             "ai_dust": s.ai_dust,
             "ai_threshold": s.ai_threshold,
             "ai_grow": s.ai_grow,
@@ -1966,6 +2076,7 @@ class AppController(QObject):
         self.state.scratch_sensitivity = DEFAULT_SCRATCH_SENSITIVITY
         self.state.heal_strokes = []
         self.state.clone_strokes = []
+        self.state.dust_excluded = []
         self.state.ai_dust = False
         self.state.ai_threshold = aidust.DEFAULT_THRESHOLD
         self.state.ai_grow = aidust.DEFAULT_GROW
@@ -2117,6 +2228,7 @@ class AppController(QObject):
         self._redo.clear()
         self._restore_entry(self.state.history[index])
         self.state.history = self.state.history[: index + 1]
+        self._persist_history()
         self._finish_restore()
 
     def _restore_entry(self, entry: HistoryEntry) -> None:
@@ -2146,6 +2258,7 @@ class AppController(QObject):
         s.scratch_sensitivity = entry.scratch_sensitivity
         s.heal_strokes = [list(h) for h in entry.heal_strokes]
         s.clone_strokes = [list(h) for h in entry.clone_strokes]
+        s.dust_excluded = [list(p) for p in entry.dust_excluded]
         s.ai_dust, s.ai_threshold, s.ai_grow = entry.ai_dust, entry.ai_threshold, entry.ai_grow
         s.marks = entry.marks
         self._last_logged_ai = (entry.ai_dust, round(entry.ai_threshold, 4), entry.ai_grow)
@@ -2190,6 +2303,7 @@ class AppController(QObject):
         self.image_adjusted.emit()
         self.history_changed.emit()
         self.scratches_changed.emit(self._manual_repair_count())
+        self.detections_deleted_changed.emit(len(self.state.dust_excluded))
         self._save_edit_state()
         self.negative_state_changed.emit()
         self.reverted.emit()
@@ -2206,6 +2320,7 @@ class AppController(QObject):
             return
         undone = self.state.history.pop()
         self._redo.append(undone)
+        self._persist_history()
         self._restore_entry(self.state.history[-1])
         self._finish_restore()
         self.notice.emit(f"Undid: {undone.description}")
@@ -2215,6 +2330,7 @@ class AppController(QObject):
             return
         entry = self._redo.pop()
         self.state.history.append(entry)
+        self._persist_history()
         self._restore_entry(entry)
         self._finish_restore()
         self.notice.emit(f"Redid: {entry.description}")

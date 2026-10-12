@@ -744,6 +744,46 @@ class RetouchResult:
     manual: Optional[np.ndarray] = None
 
 
+def drop_marked(mask: Optional[np.ndarray], points, slack_px: float = 2.0) -> Optional[np.ndarray]:
+    """`mask` (0/1) with every connected region that lies on, or within slack_px of, any of the points (fractions 0-1 of the picture, x then y) taken out.
+    Only those regions go: every other one is left exactly as it was."""
+    if mask is None or not points or not mask.any():
+        return mask
+    cv2 = _cv()
+    h, w = mask.shape[:2]
+    _n, labels = cv2.connectedComponents(np.ascontiguousarray(mask > 0, dtype=np.uint8), connectivity=8)
+    reach = int(math.ceil(slack_px))
+    kill: set[int] = set()
+    for nx, ny in points:
+        x, y = int(min(max(nx * w, 0), w - 1)), int(min(max(ny * h, 0), h - 1))
+        y0, y1, x0, x1 = max(0, y - reach), min(h, y + reach + 1), max(0, x - reach), min(w, x + reach + 1)
+        ys, xs = np.nonzero(labels[y0:y1, x0:x1])
+        if ys.size == 0:
+            continue
+        nearest = int(np.argmin((ys + y0 - y) ** 2 + (xs + x0 - x) ** 2))
+        kill.add(int(labels[y0 + ys[nearest], x0 + xs[nearest]]))
+    if not kill:
+        return mask
+    return np.where(np.isin(labels, list(kill)), 0, mask).astype(mask.dtype)
+
+
+def apply_exclusions(score: Optional[np.ndarray], hair: Optional[np.ndarray], points) -> Tuple[Optional[np.ndarray], Optional[np.ndarray]]:
+    """Take the detections the user deleted out of what detection found: (score, hair mask) without them."""
+    if not points:
+        return score, hair
+    if score is not None:
+        slack = max(2.0, 1.5 * film_scale(score.shape))
+        marked = (score < 1.0).astype(np.uint8)
+        kept = drop_marked(marked, points, slack)
+        if kept is not marked:
+            score = np.where((marked > 0) & (kept == 0), np.float32(1.0), score).astype(np.float32)
+    if hair is not None:
+        hair = drop_marked(hair, points, max(2.0, 1.5 * film_scale(hair.shape)))
+        if hair is not None and not hair.any():
+            hair = None
+    return score, hair
+
+
 def _detect(lin, threshold, size, stats_cache, cache_token):
     small = _min_pool(lin, _DETECT_REF)
     key = (cache_token, int(size), small.shape)
@@ -763,11 +803,13 @@ def detect_dust_masks(
     size: int = DEFAULT_SIZE,
     stats_cache: Optional[DustStatsCache] = None,
     cache_token=None,
+    excluded=None,
 ) -> RetouchResult:
     """Detection only (no repair) - what the "Marked" overlay shows while
     Auto Dust Removal is off, so the threshold can be tuned by eye first."""
     lin = _linearize(pixels)
     _small, (score, hair) = _detect(lin, threshold, size, stats_cache, cache_token)
+    score, hair = apply_exclusions(score, hair, excluded)
     specks = (score < 1.0).astype(np.uint8) if score is not None else None
     return RetouchResult(pixels, specks=specks, hairs=hair)
 
@@ -785,6 +827,7 @@ def remove_dust_and_scratches(
     ai_mask: Optional[np.ndarray] = None,
     stats_cache: Optional[DustStatsCache] = None,
     cache_token=None,
+    excluded=None,
 ) -> RetouchResult:
     """Repairs dust specks, hairs (auto), painted heal strokes, traced
     scratches and clone strokes in a raw scan (uint8 sRGB). pixels in the
@@ -794,6 +837,8 @@ def remove_dust_and_scratches(
     scratch_lines = list(scratch_lines or [])
     heal_strokes = list(heal_strokes or [])
     clone_strokes = list(clone_strokes or [])
+    if ai_mask is not None and excluded:
+        ai_mask = drop_marked(ai_mask, excluded, max(2.0, 1.5 * film_scale(ai_mask.shape)))
     if ai_mask is not None and not ai_mask.any():
         ai_mask = None
     if not auto and not scratch_lines and not heal_strokes and not clone_strokes and ai_mask is None:
@@ -810,6 +855,7 @@ def remove_dust_and_scratches(
 
     if auto:
         small, (score, hair) = _detect(lin, threshold, size, stats_cache, cache_token)
+        score, hair = apply_exclusions(score, hair, excluded)
         if score is not None:
             out = _repair_components(out, score)
             specks = (score < 1.0).astype(np.uint8)

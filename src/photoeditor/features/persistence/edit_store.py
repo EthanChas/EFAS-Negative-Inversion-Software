@@ -101,6 +101,16 @@ CREATE TABLE IF NOT EXISTS tags (
 """
 _TAGS_INDEX = "CREATE INDEX IF NOT EXISTS idx_tags_tag ON tags (tag)"
 
+_HISTORY_SCHEMA = """
+CREATE TABLE IF NOT EXISTS edit_history (
+    path TEXT NOT NULL,
+    seq INTEGER NOT NULL,
+    description TEXT NOT NULL,
+    data TEXT NOT NULL,
+    PRIMARY KEY (path, seq)
+)
+"""
+
 _PHOTO_BASE_SCHEMA = """
 CREATE TABLE IF NOT EXISTS photo_film_base (
     path TEXT PRIMARY KEY,
@@ -233,6 +243,7 @@ _MIGRATIONS = (
     ("wm_lens", "TEXT", "''"),
     ("metadata", "TEXT", "'{}'"),
     ("module_presets", "TEXT", "'{}'"),
+    ("dust_excluded", "TEXT", "'[]'"),
 )
 
 _FIELDS = (
@@ -288,6 +299,7 @@ _FIELDS = (
     ("wm_lens", "plain"),
     ("metadata", "json"),
     ("module_presets", "json"),
+    ("dust_excluded", "json"),
 )
 
 
@@ -303,6 +315,7 @@ def connect(db_path: str) -> sqlite3.Connection:
     conn.execute(_INVERSION_SCHEMA)
     conn.execute(_TAGS_SCHEMA)
     conn.execute(_TAGS_INDEX)
+    conn.execute(_HISTORY_SCHEMA)
     conn.execute(_SNAPSHOTS_SCHEMA)
     conn.execute(_HIDDEN_SCHEMA)
     conn.execute(_PHOTO_BASE_SCHEMA)
@@ -348,7 +361,7 @@ def _decode(value, kind: str, field: str):
 
 def save_edit_state(conn: sqlite3.Connection, path: str, state: dict) -> None:
     names = [name for name, _ in _FIELDS]
-    state = {"module_presets": {}, **state}
+    state = {"module_presets": {}, "dust_excluded": [], **state}
     values = [_encode(state[name], kind) for name, kind in _FIELDS]
     marks = ", ".join("?" * (len(names) + 1))
     updates = ", ".join(f"{name}=excluded.{name}" for name in names)
@@ -520,7 +533,7 @@ def get_ratings(conn: sqlite3.Connection, paths: list[str]) -> dict[str, int]:
 
 def state_to_json(state: dict) -> str:
     """An edit state (as AppController._edit_state_dict builds it) as one JSON text, each field encoded the way its column is."""
-    state = {"module_presets": {}, **state}
+    state = {"module_presets": {}, "dust_excluded": [], **state}
     return json.dumps({name: _encode(state[name], kind) for name, kind in _FIELDS if name in state})
 
 
@@ -553,6 +566,34 @@ def delete_snapshot(conn: sqlite3.Connection, path: str, name: str) -> bool:
     cur = conn.execute("DELETE FROM snapshots WHERE path = ? AND name = ?", (path, name))
     conn.commit()
     return cur.rowcount > 0
+
+
+def load_history(conn: sqlite3.Connection, path: str) -> list[tuple[str, str]]:
+    """The saved edit history of a photo, oldest first, as (description, entry text)."""
+    return [(d, data) for d, data in conn.execute("SELECT description, data FROM edit_history WHERE path = ? ORDER BY seq", (path,))]
+
+
+def put_history_entry(conn: sqlite3.Connection, path: str, seq: int, description: str, data: str) -> None:
+    conn.execute("INSERT OR REPLACE INTO edit_history (path, seq, description, data) VALUES (?, ?, ?, ?)", (path, seq, description, data))
+    conn.commit()
+
+
+def truncate_history(conn: sqlite3.Connection, path: str, keep: int) -> None:
+    """Forget every saved step from number `keep` on (the first `keep` stay)."""
+    conn.execute("DELETE FROM edit_history WHERE path = ? AND seq >= ?", (path, keep))
+    conn.commit()
+
+
+def replace_history(conn: sqlite3.Connection, path: str, rows: list[tuple[int, str, str]]) -> None:
+    """Save a photo's whole history again: rows are (step number, description, entry text)."""
+    conn.execute("DELETE FROM edit_history WHERE path = ?", (path,))
+    conn.executemany("INSERT INTO edit_history (path, seq, description, data) VALUES (?, ?, ?, ?)", [(path, *r) for r in rows])
+    conn.commit()
+
+
+def clear_history(conn: sqlite3.Connection, path: str) -> None:
+    conn.execute("DELETE FROM edit_history WHERE path = ?", (path,))
+    conn.commit()
 
 
 def get_tags(conn: sqlite3.Connection, paths: list[str]) -> dict[str, list[str]]:
@@ -714,7 +755,7 @@ def tag_counts(conn: sqlite3.Connection) -> list[tuple[str, int]]:
 _UNTOUCHED = {
     "exposure_ev": 0.0, "rotation_quarter_turns": 0, "flip_h": False, "flip_v": False, "crop_rect": None, "saturation": 0.0,
     "temperature": 0.0, "tint": 0.0, "shadows": 0.0, "highlights": 0.0, "sharpen_amount": 0.0, "dust_auto": False,
-    "scratch_lines": [], "heal_strokes": [], "clone_strokes": [], "ai_dust": False, "marks": {}, "film_type": "auto", "invert_r": 0.0, "invert_g": 0.0, "invert_b": 0.0, "contrast": 0.0,
+    "scratch_lines": [], "heal_strokes": [], "clone_strokes": [], "dust_excluded": [], "ai_dust": False, "marks": {}, "film_type": "auto", "invert_r": 0.0, "invert_g": 0.0, "invert_b": 0.0, "contrast": 0.0,
     "fine_rotation": 0.0, "distortion": 0.0, "keystone_v": 0.0, "keystone_h": 0.0, "chroma_denoise": 0.0, "local_contrast": 0.0, "metering": {}, "wm_film": "off",
     "vignette": 0.0, "border": 0.0,
 }

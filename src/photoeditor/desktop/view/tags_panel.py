@@ -1,5 +1,5 @@
 from PyQt6.QtCore import QStringListModel, Qt, pyqtSignal
-from PyQt6.QtWidgets import QAbstractItemView, QCompleter, QHBoxLayout, QLabel, QLineEdit, QListWidget, QListWidgetItem, QPushButton, QVBoxLayout, QWidget
+from PyQt6.QtWidgets import QAbstractItemView, QComboBox, QCompleter, QHBoxLayout, QLabel, QLineEdit, QListWidget, QListWidgetItem, QPushButton, QVBoxLayout, QWidget
 
 from ...features.tags import logic as tag_logic
 from ...theme.tokens import THEME
@@ -9,8 +9,9 @@ _ROLE_TAG = Qt.ItemDataRole.UserRole
 
 
 class TagsEditor(QWidget):
-    """Type tags (comma separated) and press Enter to add them; select tags in the list and press Remove to take them off. Used for the open
-    photo (TagsPanel) and for the Workbench's selection. It only asks (add_requested / remove_requested); whoever owns it changes the photos."""
+    """Type tags (comma separated) and press Enter to add them, or pick one from the pre-made list under the box; select tags in the list and press
+    Remove to take them off. A tag can sit inside another: type People/Family. Used for the open photo (TagsPanel) and for the Workbench's selection.
+    It only asks (add_requested / remove_requested); whoever owns it changes the photos."""
 
     add_requested = pyqtSignal(list)
     remove_requested = pyqtSignal(list)
@@ -23,8 +24,9 @@ class TagsEditor(QWidget):
         row = QHBoxLayout()
         row.setSpacing(THEME.space_sm)
         self._entry = QLineEdit()
-        self._entry.setPlaceholderText("Add tags: holiday, family")
-        self._entry.setToolTip("Type one or more tags, separated by commas, and press Enter. Tags are searchable in the Workbench (tag:holiday).")
+        self._entry.setPlaceholderText("Add tags: holiday, People/Family")
+        self._entry.setToolTip("Type one or more tags, separated by commas, and press Enter. Put a / between levels to nest a tag (People/Family): searching "
+                               "for People then finds everything inside it. Tags are searchable in the Workbench (tag:holiday).")
         self._model = QStringListModel(self)
         completer = QCompleter(self._model, self)
         completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
@@ -36,6 +38,14 @@ class TagsEditor(QWidget):
         self._add_btn.clicked.connect(self._add)
         row.addWidget(self._add_btn)
         col.addLayout(row)
+        self._premade = QComboBox()
+        self._premade.setToolTip("A list of ready-made tags: pick one to add it, without typing.")
+        self._premade.addItem("Add a pre-made tag...", "")
+        self._premade.model().item(0).setEnabled(False)
+        for tag in tag_logic.PREMADE:
+            self._premade.addItem(tag_logic.display(tag), tag)
+        self._premade.activated.connect(self._on_premade)
+        col.addWidget(self._premade)
         self._list = QListWidget()
         self._list.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         self._list.setFixedHeight(84)
@@ -59,15 +69,16 @@ class TagsEditor(QWidget):
     def set_tags(self, tags: list[str], labels: dict[str, str] | None = None) -> None:
         """The tags to list."""
         self._list.clear()
-        for tag in tags:
-            item = QListWidgetItem((labels or {}).get(tag, tag))
+        for tag in tag_logic.tree_order(tags):
+            item = QListWidgetItem((labels or {}).get(tag, tag_logic.display(tag)))
+            item.setToolTip(tag)
             item.setData(_ROLE_TAG, tag)
             self._list.addItem(item)
         self._hint.setText("" if tags else "No tags yet")
         self._refresh_buttons()
 
     def set_active(self, active: bool) -> None:
-        for w in (self._entry, self._add_btn, self._list):
+        for w in (self._entry, self._add_btn, self._premade, self._list):
             w.setEnabled(active)
         self._refresh_buttons()
 
@@ -76,6 +87,12 @@ class TagsEditor(QWidget):
 
     def _refresh_buttons(self) -> None:
         self._remove_btn.setEnabled(self._list.isEnabled() and bool(self._list.selectedItems()))
+
+    def _on_premade(self, index: int) -> None:
+        tag = self._premade.itemData(index)
+        self._premade.setCurrentIndex(0)
+        if tag:
+            self.add_requested.emit([tag])
 
     def _add(self) -> None:
         tags = tag_logic.parse_tags(self._entry.text())
@@ -95,7 +112,9 @@ class TagsPanel(CollapsiblePanel):
     def __init__(self, parent: QWidget | None = None):
         super().__init__(
             "Tags",
-            help_text="Keywords for this photo. They are saved with it (and in its .xmp sidecar, where Lightroom and darktable read them as keywords), "
+            help_text="Keywords for this photo. Put a / between levels to nest one inside another (People/Family) - searching for People then finds "
+                      "everything inside it - and pick from the pre-made list under the box to add common ones without typing. Press T anywhere for the quick tag bar: "
+                      "type a few letters and press Enter to add the best match. They are saved with it (and in its .xmp sidecar, where Lightroom and darktable read them as keywords), "
                       "searchable in the Workbench with tag:name, and written into exported JPEGs as Windows tags.",
             collapsible=True,
             start_expanded=True,

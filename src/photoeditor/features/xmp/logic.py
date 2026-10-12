@@ -11,8 +11,9 @@ NS_XMP = "http://ns.adobe.com/xap/1.0/"
 NS_CRS = "http://ns.adobe.com/camera-raw-settings/1.0/"
 NS_PE = "http://ns.photoeditor.local/1.0/"
 NS_DC = "http://purl.org/dc/elements/1.1/"
+NS_LR = "http://ns.adobe.com/lightroom/1.0/"
 
-for _prefix, _uri in (("x", NS_X), ("rdf", NS_RDF), ("xmp", NS_XMP), ("crs", NS_CRS), ("pe", NS_PE), ("dc", NS_DC)):
+for _prefix, _uri in (("x", NS_X), ("rdf", NS_RDF), ("xmp", NS_XMP), ("crs", NS_CRS), ("pe", NS_PE), ("dc", NS_DC), ("lr", NS_LR)):
     ET.register_namespace(_prefix, _uri)
 
 _PE_ATTRS = (
@@ -361,10 +362,18 @@ def write_tags(image_path: str, tags: list[str]) -> bool:
     subject = _q(NS_DC, "subject")
     for old in desc.findall(subject):
         desc.remove(old)
+    hierarchical = _q(NS_LR, "hierarchicalSubject")
+    for old in desc.findall(hierarchical):
+        desc.remove(old)
     if tags:
         bag = ET.SubElement(ET.SubElement(desc, subject), _q(NS_RDF, "Bag"))
         for tag in tags:
             ET.SubElement(bag, _q(NS_RDF, "li")).text = tag
+        nested = [t for t in tags if "/" in t]
+        if nested:  # nested tags also as Lightroom/darktable's own hierarchy (levels joined with |)
+            hbag = ET.SubElement(ET.SubElement(desc, hierarchical), _q(NS_RDF, "Bag"))
+            for tag in nested:
+                ET.SubElement(hbag, _q(NS_RDF, "li")).text = "|".join(p for p in tag.split("/") if p)
     tmp = path + ".tmp"
     try:
         ET.indent(root)

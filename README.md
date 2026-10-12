@@ -12,11 +12,11 @@ Built in **Python** with **PyQt6**. Created by Ethan.
 
 - **Negative inversion and metering**: film-base sampling, per-channel balance, colour-negative and black-and-white modes, eyedropper picking
 - **Exposure, tone curve, contrast, shadows/highlights, local contrast, sharpening, denoise, flat-field correction**
-- **Dust and scratch removal**: manual spot and curved-scratch tools, a clone tool and AI dust detection
+- **Dust and scratch removal**: manual spot and curved-scratch tools, a clone tool and AI dust detection. If automatic detection gets one wrong, show the detections, click that one with Delete Repair and only it is left alone (Reset Deleted brings them back)
 - **Geometry**: crop with guides, straighten tool, automatic crop by border gradient
 - **Finishing**: vignette and borders
 - **Watermarks**: a 3D film canister, camera and lens text (with or without the canister), styled text in any installed font or font file (bold, italic, any colour, spacing, rotation, outline), and your own SVG or PNG logo. Drag any of them on the picture to move or resize them: the Position menu switches to Custom, and picking a corner from the menu puts it back
-- **Library**: a Workbench grid with search by camera, lens, film, ISO, date, roll, rating and flag; stars, flags, tags, snapshots, history
+- **Library**: a Workbench grid with search by camera, lens, film, ISO, date, roll, rating and flag; stars, flags, tags, snapshots, history. Tags nest (`People/Family`; searching People finds everything inside it), there is a pre-made tag list, and `T` opens a quick tag bar: type a few letters and Enter adds the closest tag. The edit history is saved with each photo, so it is all there, in order, when you reopen the app
 - **Look presets** and per-module presets, copy and paste of settings between photos
 - **Proofing tools**: test strip, ring-around, split view, contact sheets
 - **Export**: JPEG, PNG and TIFF (16-bit supported), size and quality options, metadata and XMP, batch export

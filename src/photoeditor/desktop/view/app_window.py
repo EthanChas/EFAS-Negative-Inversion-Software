@@ -47,6 +47,7 @@ from ...features.persistence.consolidate import ensure_ready as ensure_data_read
 from .settings_dialog import SettingsDialog
 from .snapshots_panel import SnapshotsPanel
 from .versions_panel import VersionsPanel
+from .quick_tag_dialog import QuickTagDialog
 from .tags_panel import TagsPanel
 from .shortcuts_dialog import ShortcutsDialog
 from ..contactsheet_worker import ContactSheetWorker
@@ -248,6 +249,10 @@ class _HotkeyFilter(QObject):
         if action is None:
             return False
         repeat = event.isAutoRepeat()
+        if action == "quick_tag":
+            if not repeat:
+                window.quick_tag()
+            return True
         if action in ("workbench", "editor"):
             if not repeat:
                 window.set_view("lighttable" if action == "workbench" else "editor")
@@ -1039,6 +1044,8 @@ class AppWindow(QMainWindow):
         self._dust_tool.undo_requested.connect(self.controller.undo_last_retouch)
         self._dust_tool.clear_requested.connect(self.controller.clear_retouch)
         self.controller.scratches_changed.connect(self._dust_tool.set_manual_count)
+        self._dust_tool.restore_deleted_requested.connect(self.controller.reset_deleted_detections)
+        self.controller.detections_deleted_changed.connect(self._dust_tool.set_deleted_count)
         self._image_view.stroke_completed.connect(self._on_stroke_completed)
         self._image_view.tool_clicked.connect(self._on_tool_clicked)
         self._image_view.source_picked.connect(self.controller.set_clone_source)
@@ -1669,6 +1676,19 @@ class AppWindow(QMainWindow):
 
     def lighttable_action(self, action_id: str) -> bool:
         return self._lighttable.handle_action(action_id)
+
+    def quick_tag(self) -> None:
+        """The quick tag bar: type a few letters of a tag and Enter adds the closest one - to the open photo, or to the Workbench's selection."""
+        c = self.controller
+        paths = self._lighttable.selected_paths() if self.lighttable_active() else [c.state.image_path]
+        paths = [p for p in paths if p]
+        if not paths:
+            self._coord_label.setText("Open a photo (or select some in the Workbench) to tag it.")
+            return
+        dialog = QuickTagDialog(c.tag_usage(), len(paths), self)
+        dialog.chosen.connect(lambda tag: c.set_tags_for(paths, add=[tag]))
+        self._quick_tag_dialog = dialog
+        dialog.exec()
 
     def apply_keybinds(self) -> None:
         """Put the keys as they are bound now onto the menu items, the Workbench's tooltips and the cheat sheet."""

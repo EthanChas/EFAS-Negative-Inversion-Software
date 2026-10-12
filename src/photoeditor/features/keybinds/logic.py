@@ -20,6 +20,7 @@ ACTIONS: tuple[KeyAction, ...] = (
     KeyAction("flag_keeper", "Mark keeper", "Culling a roll", "K"),
     KeyAction("flag_rejected", "Mark rejected", "Culling a roll", "R"),
     KeyAction("flag_clear", "Clear the flag", "Culling a roll", "U"),
+    KeyAction("quick_tag", "Quick tag (type a few letters, Enter adds the best match)", "Culling a roll", "T"),
     KeyAction("rating_0", "No rating", "Culling a roll", "0"),
     KeyAction("rating_1", "1 star", "Culling a roll", "1"),
     KeyAction("rating_2", "2 stars", "Culling a roll", "2"),

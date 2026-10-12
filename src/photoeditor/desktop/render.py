@@ -122,6 +122,7 @@ class EditParams:
     metering: Metering = Metering()
     keystone_v: float = 0.0
     keystone_h: float = 0.0
+    dust_excluded: tuple = ()
 
     @classmethod
     def from_dict(cls, d: dict) -> "EditParams":
@@ -182,6 +183,7 @@ class EditParams:
             metering=Metering.from_dict(getattr(s, "metering", None)),
             keystone_v=float(getattr(s, "keystone_v", 0.0)),
             keystone_h=float(getattr(s, "keystone_h", 0.0)),
+            dust_excluded=tuple((float(p[0]), float(p[1])) for p in getattr(s, "dust_excluded", ())),
         )
 
 
@@ -340,6 +342,7 @@ class Renderer:
             round(params.scratch_sensitivity, 6),
             params.heal_strokes,
             params.clone_strokes,
+            params.dust_excluded,
             (id(ai_prob), params.ai_threshold, params.ai_grow) if ai_prob is not None else None,
         )
         if key in self._retouch:
@@ -358,6 +361,7 @@ class Renderer:
             ai_mask=aidust.mask_for_source(ai_prob, source.shape[:2], params.ai_threshold, params.ai_grow) if ai_prob is not None else None,
             stats_cache=self._dust_stats,
             cache_token=cache_token,
+            excluded=list(params.dust_excluded),
         )
         if detect_only:
             detected = detect_dust_masks(
@@ -366,6 +370,7 @@ class Renderer:
                 size=params.dust_size,
                 stats_cache=self._dust_stats,
                 cache_token=cache_token,
+                excluded=list(params.dust_excluded),
             )
             result.specks, result.hairs = detected.specks, detected.hairs
         self._retouch[key] = result

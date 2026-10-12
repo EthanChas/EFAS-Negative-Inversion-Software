@@ -1,3 +1,5 @@
+import dataclasses
+import json
 from dataclasses import dataclass, field
 
 import numpy as np
@@ -67,6 +69,35 @@ class HistoryEntry:
     ai_threshold: float = 0.3
     ai_grow: int = 1
     marks: Marks = field(default_factory=Marks)
+    dust_excluded: list = field(default_factory=list)
+
+
+def entry_to_json(entry: HistoryEntry) -> str:
+    """A history step's edit state as text (its description is kept beside it, not in it)."""
+    data = {}
+    for f in dataclasses.fields(entry):
+        if f.name == "description":
+            continue
+        value = getattr(entry, f.name)
+        data[f.name] = value.to_dict() if hasattr(value, "to_dict") else value
+    return json.dumps(data, sort_keys=True)
+
+
+def entry_from_json(description: str, text: str) -> HistoryEntry | None:
+    """A history step back from what entry_to_json saved; None when it cannot be read (it is then left out rather than guessed at)."""
+    try:
+        data = json.loads(text)
+        if not isinstance(data, dict):
+            return None
+        kwargs = {f.name: data[f.name] for f in dataclasses.fields(HistoryEntry) if f.name != "description" and f.name in data}
+        kwargs["marks"] = Marks.from_dict(kwargs.get("marks"))
+        kwargs["metering"] = Metering.from_dict(kwargs.get("metering"))
+        kwargs["tone_curve_points"] = [tuple(p) for p in kwargs["tone_curve_points"]]
+        if kwargs.get("crop_rect") is not None:
+            kwargs["crop_rect"] = tuple(kwargs["crop_rect"])
+        return HistoryEntry(description=str(description), **kwargs)
+    except (KeyError, TypeError, ValueError):
+        return None
 
 
 @dataclass
@@ -109,6 +140,7 @@ class AppState:
     ai_dust: bool = False
     ai_threshold: float = 0.3
     ai_grow: int = 1
+    dust_excluded: list = field(default_factory=list)
     marks: Marks = field(default_factory=Marks)
     film_type: str = "auto"
     invert_r: float = 0.0

@@ -35,6 +35,7 @@ from ...features.metadata.roll import CANISTER_KEYS, KNOWN_FILMS, RollCard, fram
 from ...features.watermark.logic import ASSET_DIR
 from ...theme.tokens import THEME
 from .collapsible_panel import CollapsiblePanel
+from .date_picker import calendar_button, with_calendar
 
 _COMMIT_MS = 500
 _LABEL_W = 78
@@ -255,7 +256,7 @@ class RollCardTab(QWidget):
         shot.addWidget(slabel)
         self._from = self._text(None, "from  YYYY-MM-DD", self._on_roll_date_changed)
         self._to = self._text(None, "to  YYYY-MM-DD", self._on_roll_date_changed)
-        shot.addWidget(self._from, 1); shot.addWidget(self._to, 1)
+        shot.addWidget(self._from, 1); shot.addWidget(calendar_button(self._from)); shot.addWidget(self._to, 1); shot.addWidget(calendar_button(self._to))
         self._from.setToolTip("The first day this roll was shot. A year or a year-month is fine.")
         self._to.setToolTip("The last day. With both full dates, frames are dated evenly from the first to the last.")
         body.addLayout(shot)
@@ -287,7 +288,8 @@ class RollCardTab(QWidget):
         self._frame_no.valueChanged.connect(self._frame_dirty)
         _row(body, "Frame", self._frame_no, "Its number on the roll. Auto follows its place in the folder.")
         self._date = self._text(None, "uses the roll's dates", self._on_frame_date_changed)
-        _row(body, "Date", self._date, "When this frame was shot (YYYY, YYYY-MM, YYYY-MM-DD, optionally with a time).")
+        self._date.setToolTip("When this frame was shot (YYYY, YYYY-MM, YYYY-MM-DD, optionally with a time). Or pick it on the calendar.")
+        _row(body, "Date", with_calendar(self._date))
         self._place = self._text(None, "e.g. Shibuya, Tokyo", self._on_place_changed)
         _row(body, "Place", self._place)
         self._exposure = self._text(None, "e.g. 1/125 f/8", self._frame_dirty)
