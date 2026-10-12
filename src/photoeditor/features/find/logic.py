@@ -30,7 +30,7 @@ SYNONYMS = {
     "negative": "invert inversion film base orange mask metering convert",
     "film base": "orange mask rebate border dmin",
     "finishing": "vignette border frame",
-    "watermark": "logo text signature stamp",
+    "watermark": "logo svg png text font signature stamp canister camera lens credit copyright drag move resize",
     "export": "save output jpeg tiff png size resize format quality sharpen bit depth",
     "presets": "looks styles apply saved",
     "snapshots": "versions save state compare",

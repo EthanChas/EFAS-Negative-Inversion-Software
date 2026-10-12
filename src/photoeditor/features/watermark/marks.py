@@ -1,20 +1,35 @@
-"""Simple watermarks - a line of text and/or a logo image laid over the finished picture."""
+"""Watermarks that are not the canister - a block of text, a logo (SVG or picture) and the camera/lens text on its own, laid over the finished picture."""
 
 import dataclasses
-import os
+import math
+import re
 from dataclasses import dataclass
 from functools import lru_cache
 from typing import Any
 
 import numpy as np
 
-from .logic import MARGIN, POSITIONS, _FONT_FILES, _blend
+from . import fonts, logoimage
+from .logic import CREDIT, MARGIN, POSITIONS, Part, _blend
 
+CUSTOM = "custom"
+PLACES = {**POSITIONS, CUSTOM: "Custom"}
 DEFAULT_TEXT_POSITION = "bottom_right"
 DEFAULT_LOGO_POSITION = "bottom_left"
+DEFAULT_INFO_POSITION = "bottom_left"
 TEXT_SIZE_RANGE = (0.01, 0.15)
 LOGO_SIZE_RANGE = (0.03, 0.80)
+INFO_SIZE_RANGE = (0.01, 0.10)
+CANISTER_SIZE_RANGE = (0.05, 0.95)
+LINE_SPACING_RANGE = (0.0, 1.0)
+LETTER_SPACING_RANGE = (-0.1, 0.6)
+ROTATION_RANGE = (-180.0, 180.0)
+OUTLINE_RANGE = (0.0, 1.0)
 COLORS = {"white": "White", "black": "Black"}
+ALIGNS = {"auto": "Automatic", "left": "Left", "center": "Centre", "right": "Right"}
+_HEX = re.compile(r"^#[0-9a-fA-F]{6}$")
+_OUTLINE_SHARE = 0.12  # an outline of 1.0 is this share of the letter height thick
+TEXT_MAX = 300
 
 
 def _num(value: Any, low: float, high: float, default: float) -> float:
@@ -29,27 +44,90 @@ def _choice(value: Any, allowed, default: str) -> str:
     return value if isinstance(value, str) and value in allowed else default
 
 
+def _color(value: Any, default: str) -> str:
+    """white, black or #rrggbb (lower-cased)."""
+    if isinstance(value, str):
+        if value in COLORS:
+            return value
+        if _HEX.match(value):
+            return value.lower()
+    return default
+
+
+def color_rgb(value: str) -> tuple[int, int, int]:
+    if value == "black":
+        return 0, 0, 0
+    if isinstance(value, str) and _HEX.match(value):
+        return int(value[1:3], 16), int(value[3:5], 16), int(value[5:7], 16)
+    return 255, 255, 255
+
+
+def _text(value: Any, limit: int) -> str:
+    return value[:limit] if isinstance(value, str) else ""
+
+
 @dataclass(frozen=True)
 class Marks:
+    # a block of text
     text: str = ""
     text_size: float = 0.04
     text_opacity: float = 0.85
     text_color: str = "white"
     text_position: str = DEFAULT_TEXT_POSITION
     text_shadow: bool = True
+    text_font: str = ""
+    text_bold: bool = False
+    text_italic: bool = False
+    text_align: str = "auto"
+    text_line_spacing: float = 0.25
+    text_letter_spacing: float = 0.0
+    text_rotation: float = 0.0
+    text_outline: float = 0.0
+    text_x: float = 0.5
+    text_y: float = 0.9
+    # a logo (SVG or picture)
     logo: str = ""
     logo_size: float = 0.18
     logo_opacity: float = 0.9
     logo_position: str = DEFAULT_LOGO_POSITION
+    logo_x: float = 0.15
+    logo_y: float = 0.9
+    # the canister, once it has been dragged or resized on the picture (-1 / 0 = still where its menus put it)
+    canister_x: float = -1.0
+    canister_y: float = -1.0
+    canister_size: float = 0.0
+    # the camera and lens text, on its own (or still beside the canister)
+    info_beside: bool = True
+    info_credit: bool = True
+    info_position: str = DEFAULT_INFO_POSITION
+    info_size: float = 0.028
+    info_opacity: float = 0.9
+    info_color: str = "white"
+    info_font: str = ""
+    info_bold: bool = False
+    info_shadow: bool = True
+    info_x: float = 0.15
+    info_y: float = 0.93
 
     def has_text(self) -> bool:
         return bool(self.text.strip())
 
     def has_logo(self) -> bool:
-        return bool(self.logo) and os.path.isfile(self.logo)
+        return logoimage.usable(self.logo)
+
+    def has_custom_canister(self) -> bool:
+        return self.canister_x >= 0 and self.canister_y >= 0
+
+    def info_alone(self, info: bool, camera: str, lens: str, canister_on: bool) -> bool:
+        """Is the camera/lens text drawn by itself (not beside the canister)?"""
+        return bool(info and (camera.strip() or lens.strip()) and (not canister_on or not self.info_beside))
 
     def active(self) -> bool:
         return self.has_text() or self.has_logo()
+
+    def wanted(self, info: bool = False, camera: str = "", lens: str = "", canister_on: bool = False) -> bool:
+        """Does anything here need drawing?"""
+        return self.active() or self.info_alone(info, camera, lens, canister_on)
 
     def to_dict(self) -> dict[str, Any]:
         """Only what differs from the defaults, so a photo without marks stores {}."""
@@ -64,80 +142,146 @@ class Marks:
         if not isinstance(data, dict):
             return cls()
         d = cls()
-        return cls(
-            text=str(data.get("text", ""))[:200] if isinstance(data.get("text", ""), str) else "",
-            text_size=_num(data.get("text_size"), *TEXT_SIZE_RANGE, d.text_size),
-            text_opacity=_num(data.get("text_opacity"), 0.0, 1.0, d.text_opacity),
-            text_color=_choice(data.get("text_color"), COLORS, d.text_color),
-            text_position=_choice(data.get("text_position"), POSITIONS, d.text_position),
-            text_shadow=bool(data.get("text_shadow", d.text_shadow)),
-            logo=data.get("logo") if isinstance(data.get("logo"), str) else "",
-            logo_size=_num(data.get("logo_size"), *LOGO_SIZE_RANGE, d.logo_size),
-            logo_opacity=_num(data.get("logo_opacity"), 0.0, 1.0, d.logo_opacity),
-            logo_position=_choice(data.get("logo_position"), POSITIONS, d.logo_position),
-        )
+        kw: dict[str, Any] = {}
+        for f in dataclasses.fields(cls):
+            name, default, raw = f.name, getattr(d, f.name), data.get(f.name)
+            if name in _RANGES:
+                kw[name] = _num(raw, *_RANGES[name], default)
+            elif name in _PLACE_FIELDS:
+                kw[name] = _choice(raw, PLACES, default)
+            elif name in _COLOR_FIELDS:
+                kw[name] = _color(raw, default)
+            elif name == "text_align":
+                kw[name] = _choice(raw, ALIGNS, default)
+            elif name == "text":
+                kw[name] = _text(raw, TEXT_MAX)
+            elif name in ("logo", "text_font", "info_font"):
+                kw[name] = _text(raw, 260)
+            elif isinstance(default, bool):
+                kw[name] = bool(raw) if raw is not None else default
+        out = cls(**kw)
+        if out.canister_x < 0 or out.canister_y < 0:
+            out = dataclasses.replace(out, canister_x=-1.0, canister_y=-1.0)
+        if 0 < out.canister_size < CANISTER_SIZE_RANGE[0]:
+            out = dataclasses.replace(out, canister_size=CANISTER_SIZE_RANGE[0])
+        return out
 
 
-def _font(size: int):
-    from PIL import ImageFont
+_RANGES = {
+    "text_size": TEXT_SIZE_RANGE, "text_opacity": (0.0, 1.0), "text_line_spacing": LINE_SPACING_RANGE, "text_letter_spacing": LETTER_SPACING_RANGE,
+    "text_rotation": ROTATION_RANGE, "text_outline": OUTLINE_RANGE, "text_x": (0.0, 1.0), "text_y": (0.0, 1.0),
+    "logo_size": LOGO_SIZE_RANGE, "logo_opacity": (0.0, 1.0), "logo_x": (0.0, 1.0), "logo_y": (0.0, 1.0),
+    "canister_x": (-1.0, 1.0), "canister_y": (-1.0, 1.0), "canister_size": (0.0, CANISTER_SIZE_RANGE[1]),
+    "info_size": INFO_SIZE_RANGE, "info_opacity": (0.0, 1.0), "info_x": (0.0, 1.0), "info_y": (0.0, 1.0),
+}
+_PLACE_FIELDS = ("text_position", "logo_position", "info_position")
+_COLOR_FIELDS = ("text_color", "info_color")
 
-    for name in _FONT_FILES:
-        try:
-            return ImageFont.truetype(name, size)
-        except OSError:
-            continue
-    return ImageFont.load_default(size)
+
+@dataclass(frozen=True)
+class TextSpec:
+    """Everything that decides how a block of text looks (hashable, so a drawn block can be cached)."""
+
+    text: str
+    height_px: int
+    font: str = ""
+    bold: bool = False
+    italic: bool = False
+    color: str = "white"
+    opacity: float = 1.0
+    shadow: bool = True
+    align: str = "left"
+    line_spacing: float = 0.25
+    letter_spacing: float = 0.0
+    rotation: float = 0.0
+    outline: float = 0.0
+    credit: str = ""
 
 
-@lru_cache(maxsize=16)
-def _text_sprite(text: str, height_px: int, color: str, opacity: float, shadow: bool, align: str) -> tuple[np.ndarray, np.ndarray]:
+def _line_width(probe, text: str, font, spacing_px: float) -> float:
+    if not spacing_px:
+        return probe.textlength(text, font=font)
+    return sum(probe.textlength(ch, font=font) for ch in text) + spacing_px * max(0, len(text) - 1)
+
+
+def _draw_line(draw, x: float, y: float, text: str, font, spacing_px: float, fill, stroke: int, stroke_fill) -> None:
+    if not spacing_px:
+        draw.text((x, y), text, font=font, fill=fill, stroke_width=stroke, stroke_fill=stroke_fill)
+        return
+    for ch in text:
+        draw.text((x, y), ch, font=font, fill=fill, stroke_width=stroke, stroke_fill=stroke_fill)
+        x += draw.textlength(ch, font=font) + spacing_px
+
+
+def _rotate(rgb: np.ndarray, alpha: np.ndarray, degrees: float) -> tuple[np.ndarray, np.ndarray]:
+    """Turn a premultiplied sprite clockwise by `degrees`, on a canvas big enough to hold it."""
+    import cv2
+
+    h, w = alpha.shape
+    rad = math.radians(degrees)
+    c, s = abs(math.cos(rad)), abs(math.sin(rad))
+    nw, nh = int(math.ceil(w * c + h * s)), int(math.ceil(w * s + h * c))
+    m = cv2.getRotationMatrix2D((w / 2, h / 2), -degrees, 1.0)
+    m[0, 2] += nw / 2 - w / 2
+    m[1, 2] += nh / 2 - h / 2
+    stacked = np.dstack([rgb, alpha[:, :, None] * 255.0]).astype(np.float32)
+    turned = cv2.warpAffine(stacked, m, (nw, nh), flags=cv2.INTER_LINEAR, borderMode=cv2.BORDER_CONSTANT, borderValue=0)
+    return np.ascontiguousarray(turned[:, :, :3]), np.ascontiguousarray(turned[:, :, 3] / 255.0)
+
+
+@lru_cache(maxsize=24)
+def text_sprite(spec: TextSpec) -> tuple[np.ndarray, np.ndarray]:
     """The text as a (premultiplied RGB float32 0-255, alpha float32 0-1) sprite."""
     from PIL import Image, ImageDraw
 
-    lines = text.split("\n")
-    font = _font(max(6, height_px))
+    path, fake_bold, fake_italic = fonts.resolve(spec.font, spec.bold, spec.italic)
+    size = max(6, spec.height_px)
+    font = fonts.load(path, size)
+    rows = [(t, font) for t in spec.text.split("\n")]
+    if spec.credit:
+        rows.append((spec.credit, fonts.load(path, max(6, round(size * 0.55)))))
     probe = ImageDraw.Draw(Image.new("L", (8, 8)))
-    widths = [probe.textlength(t, font=font) for t in lines]
-    line_h = max(1, font.getbbox("Hgy")[3] - font.getbbox("Hgy")[1])
-    gap = max(2, round(height_px * 0.25))
-    off = max(1, round(height_px / 14)) if shadow else 0
-    w = int(max(widths)) + off + 2
-    h = line_h * len(lines) + gap * (len(lines) - 1) + off + 2
+    spacing_px = spec.letter_spacing * size
+    widths = [_line_width(probe, t, f, spacing_px if f is font else 0.0) for t, f in rows]
+    tops = [f.getbbox("Hgy")[1] for _t, f in rows]
+    heights = [max(1, f.getbbox("Hgy")[3] - top) for (_t, f), top in zip(rows, tops)]
+    gap = max(0, round(size * spec.line_spacing))
+    bold_px = max(1, round(size / 28)) if fake_bold else 0
+    outline_px = round(spec.outline * _OUTLINE_SHARE * size)
+    off = max(1, round(size / 14)) if spec.shadow else 0
+    pad = outline_px + bold_px + 2
+    inner_w = int(math.ceil(max(widths)))
+    w = inner_w + 2 * pad + off
+    h = sum(heights) + gap * (len(rows) - 1) + 2 * pad + off
+    ink = color_rgb(spec.color)
+    contrast = (0, 0, 0) if (0.299 * ink[0] + 0.587 * ink[1] + 0.114 * ink[2]) > 140 else (255, 255, 255)
     layer = Image.new("RGBA", (w, h), (0, 0, 0, 0))
     shade = Image.new("RGBA", (w, h), (0, 0, 0, 0))
     d, ds = ImageDraw.Draw(layer), ImageDraw.Draw(shade)
-    ink = (255, 255, 255, 255) if color == "white" else (0, 0, 0, 255)
-    halo = (0, 0, 0, 130) if color == "white" else (255, 255, 255, 130)
-    y = 0
-    for t, tw in zip(lines, widths):
-        x = 0 if align == "left" else (w - off - 2 - tw) if align == "right" else (w - off - 2 - tw) / 2
-        top = y - font.getbbox("Hgy")[1]
-        if shadow:
-            ds.text((x + off, top + off), t, font=font, fill=halo)
-        d.text((x, top), t, font=font, fill=ink)
-        y += line_h + gap
+    y = pad
+    for (t, f), tw, top, th in zip(rows, widths, tops, heights):
+        free = inner_w - tw
+        align = spec.align
+        x = pad + (0 if align == "left" else free if align == "right" else free / 2)
+        sp = spacing_px if f is font else 0.0
+        if spec.shadow:
+            _draw_line(ds, x + off, y - top + off, t, f, sp, contrast + (140,), outline_px + bold_px, contrast + (140,))
+        if outline_px:
+            _draw_line(d, x, y - top, t, f, sp, contrast + (255,), outline_px + bold_px, contrast + (255,))
+        _draw_line(d, x, y - top, t, f, sp, ink + (255,), bold_px, ink + (255,))
+        y += th + gap
     shade.alpha_composite(layer)
+    if fake_italic:
+        k = 0.2
+        extra = int(math.ceil(k * h))
+        shade = shade.transform((w + extra, h), Image.Transform.AFFINE, (1, k, -k * h, 0, 1, 0), resample=Image.Resampling.BICUBIC)
     f32 = np.asarray(shade, dtype=np.float32).copy()
-    f32[:, :, 3] *= float(opacity)
+    f32[:, :, 3] *= float(spec.opacity)
     f32[:, :, :3] *= f32[:, :, 3:4] / 255.0
-    return np.ascontiguousarray(f32[:, :, :3]), np.ascontiguousarray(f32[:, :, 3] / 255.0)
-
-
-@lru_cache(maxsize=8)
-def _logo_sprite(path: str, mtime: float, long_side: int, opacity: float) -> tuple[np.ndarray, np.ndarray]:
-    import cv2
-    from PIL import Image
-
-    with Image.open(path) as im:
-        rgba = np.asarray(im.convert("RGBA"), dtype=np.float32)
-    h, w = rgba.shape[:2]
-    k = long_side / max(h, w)
-    rgba[:, :, :3] *= rgba[:, :, 3:4] / 255.0
-    size = (max(1, round(w * k)), max(1, round(h * k)))
-    rgba = cv2.resize(rgba, size, interpolation=cv2.INTER_AREA if k < 1 else cv2.INTER_LINEAR)
-    alpha = rgba[:, :, 3] / 255.0 * float(opacity)
-    rgb = rgba[:, :, :3] * float(opacity)
-    return np.ascontiguousarray(rgb), np.ascontiguousarray(alpha)
+    rgb, alpha = np.ascontiguousarray(f32[:, :, :3]), np.ascontiguousarray(f32[:, :, 3] / 255.0)
+    if spec.rotation:
+        rgb, alpha = _rotate(rgb, alpha, spec.rotation)
+    return rgb, alpha
 
 
 def _place(position: str, iw: int, ih: int, sw: int, sh: int, margin: int) -> tuple[int, int]:
@@ -147,26 +291,57 @@ def _place(position: str, iw: int, ih: int, sw: int, sh: int, margin: int) -> tu
     return x, y
 
 
-def apply_marks(image: np.ndarray, marks: Marks) -> np.ndarray:
-    """uint8 RGB in, uint8 RGB out (the input is never modified): the logo, then the text over it."""
-    if not marks.active():
-        return image
-    ih, iw = image.shape[:2]
+def _where(position: str, cx: float, cy: float, iw: int, ih: int, sw: int, sh: int, margin: int) -> tuple[int, int]:
+    """Top-left corner of a sprite: from the menu's position, or centred on a dragged-to spot (fractions of the picture)."""
+    if position == CUSTOM:
+        return round(cx * iw - sw / 2), round(cy * ih - sh / 2)
+    return _place(position, iw, ih, sw, sh, margin)
+
+
+def _auto_align(position: str) -> str:
+    horiz = position.split("_")[-1] if position not in ("center", CUSTOM) else "center"
+    return {"left": "left", "right": "right"}.get(horiz, "center")
+
+
+def mark_parts(shape, marks: Marks, info: bool = False, camera: str = "", lens: str = "", canister_on: bool = False) -> list[Part]:
+    """The logo ("logo"), the text ("text") and the camera/lens text on its own ("info"), laid out on a picture of this shape."""
+    ih, iw = shape[:2]
     short = min(ih, iw)
     margin = round(short * MARGIN)
-    out = image.copy()
+    parts: list[Part] = []
     if marks.has_logo():
         try:
-            rgb, alpha = _logo_sprite(marks.logo, os.path.getmtime(marks.logo), max(4, round(short * marks.logo_size)), marks.logo_opacity)
+            rgb, alpha = logoimage.logo_sprite(marks.logo, max(4, round(short * marks.logo_size)), marks.logo_opacity)
         except Exception:
             rgb = alpha = None
         if alpha is not None:
-            x, y = _place(marks.logo_position, iw, ih, alpha.shape[1], alpha.shape[0], margin)
-            _blend(out, rgb, alpha, x, y)
+            x, y = _where(marks.logo_position, marks.logo_x, marks.logo_y, iw, ih, alpha.shape[1], alpha.shape[0], margin)
+            parts.append(Part("logo", rgb, alpha, x, y))
     if marks.has_text():
-        horiz = marks.text_position.split("_")[-1] if marks.text_position != "center" else "center"
-        rgb, alpha = _text_sprite(marks.text.strip(), max(6, round(short * marks.text_size)), marks.text_color, marks.text_opacity,
-                                  marks.text_shadow, {"left": "left", "right": "right"}.get(horiz, "center"))
-        x, y = _place(marks.text_position, iw, ih, alpha.shape[1], alpha.shape[0], margin)
-        _blend(out, rgb, alpha, x, y)
+        align = _auto_align(marks.text_position) if marks.text_align == "auto" else marks.text_align
+        rgb, alpha = text_sprite(TextSpec(
+            marks.text.strip(), max(6, round(short * marks.text_size)), marks.text_font, marks.text_bold, marks.text_italic, marks.text_color,
+            marks.text_opacity, marks.text_shadow, align, marks.text_line_spacing, marks.text_letter_spacing, marks.text_rotation, marks.text_outline,
+        ))
+        x, y = _where(marks.text_position, marks.text_x, marks.text_y, iw, ih, alpha.shape[1], alpha.shape[0], margin)
+        parts.append(Part("text", rgb, alpha, x, y))
+    if marks.info_alone(info, camera, lens, canister_on):
+        lines = "\n".join(t.strip() for t in (camera, lens) if t.strip())
+        rgb, alpha = text_sprite(TextSpec(
+            lines, max(6, round(short * marks.info_size)), marks.info_font, marks.info_bold, False, marks.info_color, marks.info_opacity,
+            marks.info_shadow, _auto_align(marks.info_position), 0.3, 0.0, 0.0, 0.0, CREDIT if marks.info_credit else "",
+        ))
+        x, y = _where(marks.info_position, marks.info_x, marks.info_y, iw, ih, alpha.shape[1], alpha.shape[0], margin)
+        parts.append(Part("info", rgb, alpha, x, y))
+    return parts
+
+
+def apply_marks(image: np.ndarray, marks: Marks, info: bool = False, camera: str = "", lens: str = "", canister_on: bool = False) -> np.ndarray:
+    """uint8 RGB in, uint8 RGB out (the input is never modified): the logo, then the text, then the camera/lens text."""
+    parts = mark_parts(image.shape, marks, info, camera, lens, canister_on)
+    if not parts:
+        return image
+    out = image.copy()
+    for part in parts:
+        _blend(out, part.rgb, part.alpha, part.x, part.y)
     return out

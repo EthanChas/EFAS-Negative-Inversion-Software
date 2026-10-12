@@ -14,7 +14,8 @@ Built in **Python** with **PyQt6**. Created by Ethan.
 - **Exposure, tone curve, contrast, shadows/highlights, local contrast, sharpening, denoise, flat-field correction**
 - **Dust and scratch removal**: manual spot and curved-scratch tools, a clone tool and AI dust detection
 - **Geometry**: crop with guides, straighten tool, automatic crop by border gradient
-- **Finishing**: vignette and borders; text and logo watermarks
+- **Finishing**: vignette and borders
+- **Watermarks**: a 3D film canister, camera and lens text (with or without the canister), styled text in any installed font or font file (bold, italic, any colour, spacing, rotation, outline), and your own SVG or PNG logo. Drag any of them on the picture to move or resize them: the Position menu switches to Custom, and picking a corner from the menu puts it back
 - **Library**: a Workbench grid with search by camera, lens, film, ISO, date, roll, rating and flag; stars, flags, tags, snapshots, history
 - **Look presets** and per-module presets, copy and paste of settings between photos
 - **Proofing tools**: test strip, ring-around, split view, contact sheets

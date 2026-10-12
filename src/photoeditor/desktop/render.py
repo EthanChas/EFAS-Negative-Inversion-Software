@@ -501,7 +501,7 @@ class Renderer:
                     pixels = apply_channel_lut(pixels, post)
             elif wide:
                 final = apply_tone_curve(ramp, curve)
-                if deep and not (params.sharpen_amount or params.vignette or watermark_active(params.wm_film) or params.marks.active() or params.border > 0):
+                if deep and not (params.sharpen_amount or params.vignette or watermark_active(params.wm_film) or params.marks.wanted(params.wm_info, params.wm_camera, params.wm_lens, watermark_active(params.wm_film)) or params.border > 0):
                     table = np.clip(np.rint(final[0].T * np.float32(65535.0 / 255.0)), 0, 65535).astype(np.uint16)
                     pixels = np.empty(pixels16.shape, dtype=np.uint16)
                     for c in range(3):
@@ -530,9 +530,10 @@ class Renderer:
                 image = apply_watermark(
                     image, params.wm_film, params.wm_texture, params.wm_size, params.wm_position,
                     params.wm_info, params.wm_camera, params.wm_lens,
+                    (params.marks.canister_x, params.marks.canister_y) if params.marks.has_custom_canister() else None, params.marks.canister_size,
                 )
-            if params.marks.active():
-                image = apply_marks(image, params.marks)
+            if params.marks.wanted(params.wm_info, params.wm_camera, params.wm_lens, watermark_active(params.wm_film)):
+                image = apply_marks(image, params.marks, params.wm_info, params.wm_camera, params.wm_lens, watermark_active(params.wm_film))
             if params.border > 0:
                 image = apply_border(image, params.border, params.border_color)
             return image, pixels, stats, overlay_rgba

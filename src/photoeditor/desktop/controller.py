@@ -44,6 +44,7 @@ from ..features.metadata.roll import RollCard, compose
 from ..features.negative import metering as metering_mod
 from ..features.negative.logic import FILM_TYPE_LABELS, ProcessMode, detect_process_mode
 from ..features.negative.metering import Metering
+from ..features.watermark import layout as wm_layout
 from ..features.watermark.marks import Marks
 from ..features.open_image.logic import is_raw
 from ..features.open_image.processor import load_image_rgb, make_preview_rgb, to_uint8
@@ -890,37 +891,55 @@ class AppController(QObject):
     def set_watermark(
         self, film: str, texture: str, size: str, position: str, info: bool = False, camera: str = "", lens: str = ""
     ) -> None:
-        """The canister watermark: film "off" removes it; info adds the camera/lens text (and a credit line) beside it."""
+        """The canister watermark: film "off" removes it. `info` adds the camera/lens text (and a credit line) - beside the canister, or on its own."""
         s = self.state
         camera, lens = camera.strip(), lens.strip()
         new = (film, texture, size, position, info, camera, lens)
         if s.preview_rgb is None or new == (s.wm_film, s.wm_texture, s.wm_size, s.wm_position, s.wm_info, s.wm_camera, s.wm_lens):
             return
+        was_canister, was_info = (s.wm_film, s.wm_texture, s.wm_size, s.wm_position), s.wm_info
         s.wm_film, s.wm_texture, s.wm_size, s.wm_position, s.wm_info, s.wm_camera, s.wm_lens = new
         self._settle()
-        if not wm.is_active(film):
+        if (film, texture, size, position) == was_canister:
+            self._log("Camera and lens text " + ("on" if info and not was_info else "off" if was_info and not info else "changed"))
+        elif not wm.is_active(film):
             self._log("Removed canister watermark")
         else:
             extra = ", with camera/lens text" if info else ""
             self._log(f"Canister watermark: {wm.FILMS[film]}, {wm.TEXTURES[texture].lower()}, {wm.SIZES[size][0].lower()}, {wm.POSITIONS[position].lower()}{extra}")
 
     def set_marks(self, marks: Marks) -> None:
-        """The plain text and logo watermarks (the Watermark tab, below the canister)."""
+        """The text, logo and camera/lens watermarks, and where the canister has been dragged to (the Watermark tab)."""
         s = self.state
         if s.preview_rgb is None or marks == s.marks:
             return
         before, s.marks = s.marks, marks
         self._settle()
         base = Marks()
-        text_fields = ("text", "text_size", "text_opacity", "text_color", "text_position", "text_shadow")
-        text_changed = any(getattr(before, f) != getattr(marks, f) for f in text_fields)
-        logo_changed = any(getattr(before, f) != getattr(marks, f) for f in ("logo", "logo_size", "logo_opacity", "logo_position"))
+
+        def differs(prefix: str) -> bool:
+            return any(getattr(before, f.name) != getattr(marks, f.name) for f in dataclasses.fields(Marks) if f.name.startswith(prefix))
+
         parts = []
-        if text_changed:
-            parts.append(f"text '{marks.text.strip()}'" if marks.has_text() else "text removed")
-        if logo_changed:
-            parts.append("logo " + (os.path.basename(marks.logo) if marks.logo else "removed"))
+        if differs("text"):
+            if before.text != marks.text:
+                parts.append(f"text '{marks.text.strip()}'" if marks.has_text() else "text removed")
+            else:
+                parts.append("text style" if before.text_position == marks.text_position else "text moved")
+        if differs("logo"):
+            if before.logo != marks.logo:
+                parts.append("logo " + (os.path.basename(marks.logo) if marks.logo else "removed"))
+            else:
+                parts.append("logo moved or resized" if before.logo_opacity == marks.logo_opacity else "logo settings")
+        if differs("canister"):
+            parts.append("canister moved or resized")
+        if differs("info"):
+            parts.append("camera/lens text settings")
         self._log("Watermark: " + (", ".join(parts) or "settings changed") if marks != base or before != base else "Watermark cleared")
+
+    def edit_mark(self, name: str, cx: float, cy: float, ratio: float = 1.0) -> None:
+        """A watermark was dragged on the picture so its centre is at (cx, cy) - fractions of the picture - and sized by `ratio`."""
+        self.set_marks(wm_layout.edit(self.state.marks, name, cx, cy, ratio, self.state.wm_size))
 
     def set_metadata(self, config: MetadataConfig) -> None:
         """This frame's own details (date, place, note...), written into its exports."""
@@ -946,7 +965,7 @@ class AppController(QObject):
         before = (self.state.roll_camera, self.state.roll_lens)
         edit_store.set_folder_roll(self._db, edit_store.folder_key(path), card.to_dict())
         self._apply_roll(card)
-        if wm.is_active(self.state.wm_film) and self.state.wm_info and before != (self.state.roll_camera, self.state.roll_lens):
+        if self.state.wm_info and before != (self.state.roll_camera, self.state.roll_lens):
             self._settle()
 
     def other_rolls(self) -> list[tuple[str, RollCard]]:

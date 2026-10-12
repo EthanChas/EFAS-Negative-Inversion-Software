@@ -25,6 +25,8 @@ from ...features.persistence import edit_store, health
 from ...features.persistence import export as data_export
 from ...features.retouch.logic import DEFAULT_MANUAL_SENSITIVITY
 from ...features.tonecurve.logic import DEFAULT_POINTS
+from ...features.watermark import layout as wm_layout
+from ...features.watermark.logic import is_active as watermark_active
 from ...features.whitebalance.logic import luminance_of
 from ...theme.tokens import THEME
 from ..controller import AppController
@@ -1083,6 +1085,9 @@ class AppWindow(QMainWindow):
         self._watermark_tool = CanisterWatermarkPanel()
         self._watermark_tool.changed.connect(self.controller.set_watermark)
         self._watermark_tool.marks_changed.connect(self.controller.set_marks)
+        self._mark_editing = False
+        self._watermark_tool.edit_on_picture_toggled.connect(self._on_mark_editing_toggled)
+        self._image_view.mark_edited.connect(self._on_mark_edited)
         watermark_content = QWidget()
         watermark_col = QVBoxLayout(watermark_content)
         watermark_col.setContentsMargins(0, 0, 0, 0)
@@ -2229,6 +2234,32 @@ class AppWindow(QMainWindow):
         self._stats_panel.set_stats(state.channel_stats, state.exposure_label, state.luminance["avg"])
         self._filmstrip.update_active_thumbnail(state.image_rgb)
         self._refresh_range()
+        self._refresh_mark_boxes()
+
+    def _on_mark_editing_toggled(self, on: bool) -> None:
+        self._mark_editing = on
+        self._refresh_mark_boxes()
+
+    def _refresh_mark_boxes(self) -> None:
+        """Frame the watermarks that can be dragged (when Move and resize on the picture is on), in the displayed picture's pixels."""
+        s = self.controller.state
+        if not self._mark_editing or s.image_rgb is None or self._showing_pre_crop():
+            self._image_view.set_mark_boxes(None)
+            return
+        h, w, b = wm_layout.unframe_shape(s.image_rgb.shape, s.border)
+        canister = {"film": s.wm_film, "texture": s.wm_texture, "size": s.wm_size, "position": s.wm_position} if watermark_active(s.wm_film) else None
+        found = wm_layout.boxes((h, w), canister, s.marks, s.wm_info, s.wm_camera or s.roll_camera, s.wm_lens or s.roll_lens)
+        self._image_view.set_mark_boxes({name: (x + b, y + b, bw, bh) for name, (x, y, bw, bh) in found.items()}, wm_layout.LABELS)
+
+    def _on_mark_edited(self, name: str, cx: float, cy: float, ratio: float) -> None:
+        """A watermark was dragged or resized on the picture (centre in displayed-picture pixels): store it as fractions of the picture inside any border."""
+        s = self.controller.state
+        if s.image_rgb is None:
+            return
+        h, w, b = wm_layout.unframe_shape(s.image_rgb.shape, s.border)
+        self.controller.edit_mark(name, (cx - b) / w, (cy - b) / h, ratio)
+        self._watermark_tool.set_marks(self.controller.state.marks)
+        self._refresh_mark_boxes()
 
     def _on_image_preview_changed(self) -> None:
         state = self.controller.state

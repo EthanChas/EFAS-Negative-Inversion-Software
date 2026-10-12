@@ -1,5 +1,6 @@
 """Canister watermark - numpy + OpenCV, no Qt/UI imports."""
 
+from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
 
@@ -115,23 +116,62 @@ def _blend(out: np.ndarray, rgb: np.ndarray, alpha: np.ndarray, x: int, y: int) 
     out[y0:y1, x0:x1] = np.clip(region + 0.5, 0, 255).astype(np.uint8)
 
 
-def apply_watermark(
-    image: np.ndarray, film: str, texture: str, size: str, position: str,
-    info: bool = False, camera: str = "", lens: str = "",
-) -> np.ndarray:
-    """uint8 RGB in, uint8 RGB out; the input is never modified."""
-    if not is_active(film) or texture not in TEXTURES or size not in SIZES or position not in POSITIONS:
-        return image
+@dataclass(frozen=True)
+class Part:
+    """One drawn piece of a watermark: a premultiplied sprite and where its top-left corner goes on the picture."""
+
+    name: str
+    rgb: np.ndarray = field(compare=False, repr=False)
+    alpha: np.ndarray = field(compare=False, repr=False)
+    x: int
+    y: int
+
+    @property
+    def box(self) -> tuple[int, int, int, int]:
+        """(x, y, width, height) of the piece."""
+        return self.x, self.y, self.alpha.shape[1], self.alpha.shape[0]
+
+
+def long_side_fraction(size: str, custom_size: float = 0.0) -> float:
+    """How long the canister is, as a share of the picture's shorter side: a size from the menu, or a custom one dragged out on the picture."""
+    if custom_size and custom_size > 0:
+        return float(custom_size)
+    return SIZES[size][1] if size in SIZES else SIZES[DEFAULT_SIZE][1]
+
+
+def canister_parts(
+    shape, film: str, texture: str, size: str, position: str, info: bool = False, camera: str = "", lens: str = "",
+    custom: tuple[float, float] | None = None, custom_size: float = 0.0,
+) -> list[Part]:
+    """The canister (name "canister") and, if asked, the camera/lens text beside it ("canister_info"), placed on a picture of this shape.
+
+    `custom` is the canister's centre as fractions of the picture (set by dragging it) and replaces `position`; `custom_size` replaces `size`."""
+    if not is_active(film) or texture not in TEXTURES or size not in SIZES or (custom is None and position not in POSITIONS):
+        return []
     if not asset_path(film, texture).exists():
-        return image
-    ih, iw = image.shape[:2]
+        return []
+    ih, iw = shape[:2]
     short = min(ih, iw)
-    long_side = max(8, round(short * SIZES[size][1]))
+    long_side = max(8, round(short * long_side_fraction(size, custom_size)))
     rgb, alpha = _sprite(film, texture, long_side)
     sh, sw = alpha.shape
     margin = round(short * MARGIN)
-    vert, horiz = position.split("_") if position != "center" else ("middle", "center")
 
+    if custom is not None:
+        x = round(custom[0] * iw - sw / 2)
+        y = round(custom[1] * ih - sh / 2)
+        on_right = custom[0] > 0.5
+        parts = [Part("canister", rgb, alpha, x, y)]
+        if info:
+            gap = round(sh * 0.05)
+            room = (x - gap - margin) if on_right else (iw - margin - (x + sw) - gap)
+            text = _text_block(camera, lens, sh, max(40, room), on_right)
+            tw = text[1].shape[1]
+            tx = x - gap - tw if on_right else x + sw + gap
+            parts.append(Part("canister_info", text[0], text[1], tx, y + (sh - text[1].shape[0]) // 2))
+        return parts
+
+    vert, horiz = position.split("_") if position != "center" else ("middle", "center")
     text = None
     gap = 0
     if info:
@@ -145,8 +185,22 @@ def apply_watermark(
         text_x, x = gx, gx + tw + gap
     else:
         x, text_x = gx, gx + sw + gap
-    out = image.copy()
-    _blend(out, rgb, alpha, x, y)
+    parts = [Part("canister", rgb, alpha, x, y)]
     if text:
-        _blend(out, text[0], text[1], text_x, y + (sh - text[1].shape[0]) // 2)
+        parts.append(Part("canister_info", text[0], text[1], text_x, y + (sh - text[1].shape[0]) // 2))
+    return parts
+
+
+def apply_watermark(
+    image: np.ndarray, film: str, texture: str, size: str, position: str,
+    info: bool = False, camera: str = "", lens: str = "",
+    custom: tuple[float, float] | None = None, custom_size: float = 0.0,
+) -> np.ndarray:
+    """uint8 RGB in, uint8 RGB out; the input is never modified."""
+    parts = canister_parts(image.shape, film, texture, size, position, info, camera, lens, custom, custom_size)
+    if not parts:
+        return image
+    out = image.copy()
+    for part in parts:
+        _blend(out, part.rgb, part.alpha, part.x, part.y)
     return out

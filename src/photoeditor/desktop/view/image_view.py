@@ -64,10 +64,16 @@ class _ImageLabel(QLabel):
     stroke_completed = pyqtSignal(object)
     tool_clicked = pyqtSignal(float, float)
     source_picked = pyqtSignal(float, float)
+    mark_edited = pyqtSignal(str, float, float, float)
 
     def __init__(self):
         super().__init__()
         self.setMouseTracking(True)
+        self._mark_boxes: dict[str, tuple[float, float, float, float]] = {}
+        self._mark_labels: dict[str, str] = {}
+        self._mark_sel: str | None = None
+        self._mark_drag: dict | None = None
+        self._mark_live: tuple[str, tuple[float, float, float, float]] | None = None
         self._pixels: np.ndarray | None = None
         self._scale = 1.0
         self._dragging = False
@@ -112,6 +118,58 @@ class _ImageLabel(QLabel):
         self._split_pos = 0.5
         self._split_drag = False
         self.setMouseTracking(True)
+
+    def set_mark_boxes(self, boxes: dict | None, labels: dict | None = None) -> None:
+        """The watermarks that can be dragged: name -> (x, y, width, height) in image pixels. None or empty turns the editing off."""
+        self._mark_boxes = dict(boxes or {})
+        self._mark_labels = dict(labels or {})
+        self._mark_live = None
+        if self._mark_sel not in self._mark_boxes:
+            self._mark_sel = None
+        if not self._mark_boxes:
+            self._mark_drag = None
+        self.update()
+
+    def _mark_can_edit(self) -> bool:
+        return bool(self._mark_boxes) and not self._crop_mode and self._tool is None and not self._pick_mode and self._pixels is not None and self._scale > 0
+
+    def _mark_box_now(self, name: str) -> tuple[float, float, float, float]:
+        if self._mark_live is not None and self._mark_live[0] == name:
+            return self._mark_live[1]
+        return self._mark_boxes[name]
+
+    def _mark_hit(self, pos) -> tuple[str, str] | None:
+        """(watermark, "move" or the corner being grabbed) under a widget-space point. The selected one's corners come first, then the smallest box wins."""
+        k = self._scale
+        if self._mark_sel in self._mark_boxes:
+            x, y, w, h = self._mark_box_now(self._mark_sel)
+            for corner, (cx, cy) in {"nw": (x, y), "ne": (x + w, y), "sw": (x, y + h), "se": (x + w, y + h)}.items():
+                if abs(pos.x() - cx * k) <= _CROP_HANDLE_RADIUS and abs(pos.y() - cy * k) <= _CROP_HANDLE_RADIUS:
+                    return self._mark_sel, corner
+        inside = []
+        for name in self._mark_boxes:
+            x, y, w, h = self._mark_box_now(name)
+            if x * k <= pos.x() <= (x + w) * k and y * k <= pos.y() <= (y + h) * k:
+                inside.append((w * h, name))
+        return (min(inside)[1], "move") if inside else None
+
+    def _mark_drag_to(self, pos) -> None:
+        drag = self._mark_drag
+        sx, sy, sw, sh = drag["start"]
+        dx, dy = (pos.x() - drag["anchor"][0]) / self._scale, (pos.y() - drag["anchor"][1]) / self._scale
+        mode = drag["mode"]
+        if mode == "move":
+            box = (sx + dx, sy + dy, sw, sh)
+        else:
+            east, south = "e" in mode, "s" in mode
+            ox, oy = (sx if east else sx + sw), (sy if south else sy + sh)
+            corner_x = (sx + sw if east else sx) + dx
+            new_w = max(sw * 0.1, (corner_x - ox) if east else (ox - corner_x))
+            k = new_w / sw
+            w, h = sw * k, sh * k
+            box = (ox if east else ox - w, oy if south else oy - h, w, h)
+        drag["live"] = box
+        self._mark_live = (drag["name"], box)
 
     def set_source(self, pixels: np.ndarray | None) -> None:
         self._pixels = pixels
@@ -575,6 +633,19 @@ class _ImageLabel(QLabel):
             self._split_drag = True
             event.accept()
             return
+        if event.button() == Qt.MouseButton.LeftButton and self._mark_can_edit():
+            hit = self._mark_hit(event.position())
+            if hit is not None:
+                name, mode = hit
+                self._mark_sel = name
+                start = self._mark_box_now(name)
+                self._mark_drag = {"name": name, "mode": mode, "start": start, "live": start, "anchor": (event.position().x(), event.position().y())}
+                self.update()
+                event.accept()
+                return
+            if self._mark_sel is not None:
+                self._mark_sel = None
+                self.update()
         if event.button() == Qt.MouseButton.LeftButton and self._crop_mode and self._pixels is not None:
             pos = event.position()
             handle = self._crop_handle_at(pos)
@@ -647,6 +718,18 @@ class _ImageLabel(QLabel):
                 self.setCursor(Qt.CursorShape.SplitHCursor)
             else:
                 self.unsetCursor()
+        if self._mark_drag is not None:
+            self._mark_drag_to(event.position())
+            self.update()
+            event.accept()
+            return
+        if self._mark_can_edit() and not self._dragging and not self._cropping:
+            hit = self._mark_hit(event.position())
+            if hit is None:
+                self.unsetCursor()
+            else:
+                mode = hit[1]
+                self.setCursor(Qt.CursorShape.SizeAllCursor if mode == "move" else Qt.CursorShape.SizeFDiagCursor if mode in ("nw", "se") else Qt.CursorShape.SizeBDiagCursor)
         if self._cropping:
             pos = event.position()
             self._update_crop_drag(pos.x(), pos.y())
@@ -679,6 +762,17 @@ class _ImageLabel(QLabel):
     def mouseReleaseEvent(self, event: QMouseEvent) -> None:
         if self._split_drag:
             self._split_drag = False
+            event.accept()
+            return
+        if event.button() == Qt.MouseButton.LeftButton and self._mark_drag is not None:
+            drag, self._mark_drag = self._mark_drag, None
+            x, y, w, h = drag["live"]
+            sx, sy, sw, sh = drag["start"]
+            self.update()
+            if abs(x - sx) >= 1 or abs(y - sy) >= 1 or abs(w - sw) >= 1:
+                self.mark_edited.emit(drag["name"], x + w / 2, y + h / 2, w / sw)
+            else:
+                self._mark_live = None
             event.accept()
             return
         if event.button() == Qt.MouseButton.LeftButton and self._cropping:
@@ -723,6 +817,32 @@ class _ImageLabel(QLabel):
             self.update()
         if not self._dragging:
             self.hover_cleared.emit()
+
+    def _paint_marks(self, painter: QPainter) -> None:
+        """A frame round every watermark that can be dragged; the selected one has corner handles and a name tag."""
+        k = self._scale
+        half = _CROP_HANDLE_RADIUS // 2
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, False)
+        for name in self._mark_boxes:
+            x, y, w, h = self._mark_box_now(name)
+            rect = QRect(round(x * k), round(y * k), max(1, round(w * k)), max(1, round(h * k)))
+            selected = name == self._mark_sel
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.setPen(QPen(QColor(0, 0, 0, 150), 3))
+            painter.drawRect(rect)
+            painter.setPen(QPen(QColor(90, 170, 255) if selected else QColor(255, 255, 255), 1 if not selected else 2, Qt.PenStyle.SolidLine if selected else Qt.PenStyle.DashLine))
+            painter.drawRect(rect)
+            if selected:
+                painter.setBrush(QColor(255, 255, 255))
+                painter.setPen(QPen(QColor(0, 0, 0), 1))
+                for hx, hy in ((rect.left(), rect.top()), (rect.right(), rect.top()), (rect.left(), rect.bottom()), (rect.right(), rect.bottom())):
+                    painter.drawRect(QRect(round(hx - half), round(hy - half), half * 2, half * 2))
+                label = self._mark_labels.get(name, name)
+                metrics = painter.fontMetrics()
+                tag = QRect(rect.left(), max(0, rect.top() - metrics.height() - 4), metrics.horizontalAdvance(label) + 10, metrics.height() + 2)
+                painter.fillRect(tag, QColor(40, 110, 200, 230))
+                painter.setPen(QColor(255, 255, 255))
+                painter.drawText(tag, Qt.AlignmentFlag.AlignCenter, label)
 
     def _paint_tool(self, painter: QPainter) -> None:
         scale = self._scale
@@ -814,6 +934,10 @@ class _ImageLabel(QLabel):
             painter = QPainter(self)
             self._paint_tool(painter)
             painter.end()
+        if self._mark_boxes and not self._crop_mode and self._tool is None and self._scale > 0:
+            painter = QPainter(self)
+            self._paint_marks(painter)
+            painter.end()
         if not self._crop_mode or self._crop_rect_image is None or self._scale <= 0:
             return
 
@@ -877,6 +1001,7 @@ class ImageView(QWidget):
     proof_picked = pyqtSignal(int, int)
     tool_clicked = pyqtSignal(float, float)
     source_picked = pyqtSignal(float, float)
+    mark_edited = pyqtSignal(str, float, float, float)
 
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
@@ -906,6 +1031,7 @@ class ImageView(QWidget):
         self._label.proof_picked.connect(self.proof_picked)
         self._label.tool_clicked.connect(self.tool_clicked)
         self._label.source_picked.connect(self.source_picked)
+        self._label.mark_edited.connect(self.mark_edited)
         self._scroll.setWidget(self._label)
 
         self._hq_indicator = HqIndicator(self)
@@ -951,6 +1077,9 @@ class ImageView(QWidget):
 
     def set_clone_marker(self, source, offset) -> None:
         self._label.set_clone_marker(source, offset)
+
+    def set_mark_boxes(self, boxes: dict | None, labels: dict | None = None) -> None:
+        self._label.set_mark_boxes(boxes, labels)
 
     def set_hq_state(self, mode: str, detail: str = "") -> None:
         """The HQ tag in the bottom-right corner: "loading" (a loading bar), "ready" (a yellow HQ tag, with detail beside it) or "off"."""
