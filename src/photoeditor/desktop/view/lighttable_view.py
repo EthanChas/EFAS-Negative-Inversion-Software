@@ -22,6 +22,7 @@ from ...theme.tokens import THEME
 from ..library_worker import ThumbPool
 from .collapsible_panel import CollapsiblePanel
 from .library_panel import LibraryPanel
+from .tagging_panel import TaggingPanel
 from .tags_panel import TagsEditor
 
 ROLE_ROW = Qt.ItemDataRole.UserRole + 10
@@ -281,6 +282,7 @@ class LighttableView(QWidget):
     collection_delete_requested = pyqtSignal(str)
     removed_list_requested = pyqtSignal()
     duplicates_requested = pyqtSignal()
+    selection_changed = pyqtSignal()
 
     def __init__(self, cache_dir: str | None, parent: QWidget | None = None):
         super().__init__(parent)
@@ -366,6 +368,8 @@ class LighttableView(QWidget):
         self._library.folder_selected.connect(self._on_library_folder)
         self._library.folder_double_clicked.connect(self._on_library_folder)
         col.addWidget(self._library)
+        self.tagging = TaggingPanel()
+        col.addWidget(self.tagging)
 
         body = self._section(
             col, "Smart Collections",
@@ -920,6 +924,7 @@ class LighttableView(QWidget):
         rows = self._selected_rows()
         n = len(rows)
         self._sel_label.setText("Nothing selected" if not n else f"{n} photo{'s' if n != 1 else ''} selected")
+        self.selection_changed.emit()
         for b in (self._open_btn, self._reveal_btn):
             b.setEnabled(n >= 1 or self._current_row() is not None)
         self._export_btn.setEnabled(n >= 1)

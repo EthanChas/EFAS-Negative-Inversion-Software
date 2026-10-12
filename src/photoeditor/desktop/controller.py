@@ -56,6 +56,7 @@ from ..features.persistence import export as data_export
 from ..features.persistence.consolidate import ensure_ready as ensure_data_ready
 from ..features.proofs import logic as proof_logic
 from ..features.tags import logic as tag_logic
+from ..features.tags import tagging
 from ..features.persistence.backup import backup_database
 from ..features.settings import logic as app_settings
 from ..features.retouch.logic import (
@@ -126,6 +127,7 @@ class AppController(QObject):
     notice = pyqtSignal(str)
     scratches_changed = pyqtSignal(int)
     detections_deleted_changed = pyqtSignal(int)
+    tag_dictionary_changed = pyqtSignal()
     ai_dust_status = pyqtSignal()
     clone_source_changed = pyqtSignal()
     negative_state_changed = pyqtSignal()
@@ -1653,13 +1655,71 @@ class AppController(QObject):
         return edit_store.get_tags(self._db, [path]).get(path, [])
 
     def all_tags(self) -> list[str]:
-        """Every tag in use, most used first - what the tag boxes suggest."""
-        return [t for t, _n in edit_store.tag_counts(self._db)]
+        """Every tag there is, most used first - what the tag boxes suggest."""
+        counts = edit_store.dictionary_counts(self._db)
+        return sorted(counts, key=lambda t: (-counts[t], t.casefold()))
 
     def tag_usage(self) -> dict[str, int]:
-        """{tag: photos under it} for every tag in use and every level above one (what the quick tag bar ranks by)."""
+        """{tag: photos under it} for every tag in use, every tag in the dictionary and every level above one (what the quick tag bar ranks by)."""
         counts = dict(tag_logic.count_with_parents(edit_store.all_tagged(self._db).values()))
+        for tag in edit_store.defined_tags(self._db):
+            for level in (*tag_logic.ancestors(tag), tag):
+                if not any(k.casefold() == level.casefold() for k in counts):
+                    counts[level] = 0
         return counts
+
+    # --- the Tagging panel: tag dictionary, rename, change path, delete, keyword files ---------------------------------------------------
+    def tagging_data(self, paths: list[str]) -> tuple[dict[str, list[str]], dict[str, int]]:
+        """What the Tagging panel shows for these photos: ({photo: its tags}, {tag: photos in the library carrying it} for every tag there is)."""
+        return edit_store.get_tags(self._db, [p for p in paths if p]), edit_store.dictionary_counts(self._db)
+
+    def tag_lists(self) -> list[list[str]]:
+        """Every tagged photo's tags (the panel's suggestions are worked out from them)."""
+        return list(edit_store.all_tagged(self._db).values())
+
+    def create_tag(self, text: str, paths: list[str] | None = None) -> str:
+        """Make a tag in the dictionary (and, if photos are given, put it on them). Returns the tag as stored ("" if there was nothing usable)."""
+        tag = tag_logic.clean_tag(text)
+        if not tag:
+            return ""
+        edit_store.define_tags(self._db, [tag])
+        if paths:
+            self.set_tags_for(paths, add=[tag])
+        self.tag_dictionary_changed.emit()
+        return tag
+
+    def rename_tag(self, old: str, new: str, with_children: bool = True) -> bool:
+        """Rename a tag everywhere (what is inside it moves with it). A name that already exists merges the two."""
+        new = tag_logic.clean_tag(new)
+        if not new or new == old:
+            return False
+        changed = edit_store.rename_tag(self._db, old, new, with_children)
+        self._after_tag_change(changed)
+        self.notice.emit(f"Renamed tag {tag_logic.display(old)} to {tag_logic.display(new)} on {len(changed)} photo{'s' if len(changed) != 1 else ''}")
+        return True
+
+    def delete_tag(self, tag: str, with_children: bool = False) -> int:
+        """Delete a tag from the dictionary and take it off every photo (with with_children, what is inside it too). Returns the photos that changed."""
+        changed = edit_store.delete_tag(self._db, tag, with_children)
+        self._after_tag_change(changed)
+        self.notice.emit(f"Deleted tag {tag_logic.display(tag)} from {len(changed)} photo{'s' if len(changed) != 1 else ''}")
+        return len(changed)
+
+    def _after_tag_change(self, changed: list[str]) -> None:
+        for path in changed:
+            xmp.write_tags(path, self.photo_tags(path))
+        self.tags_changed.emit(changed)
+        self.tag_dictionary_changed.emit()
+
+    def import_tags(self, text: str) -> int:
+        """Add the keywords of a Lightroom keyword file (the format darktable also reads and writes) to the dictionary; none go onto photos."""
+        tags = tagging.from_lightroom(text)
+        edit_store.define_tags(self._db, tags)
+        self.tag_dictionary_changed.emit()
+        return len(tags)
+
+    def export_tags_text(self) -> str:
+        return tagging.to_lightroom(edit_store.dictionary_counts(self._db))
 
     def set_tags_for(self, paths: list[str], add=(), remove=()) -> None:
         """Add and/or remove tags on any photos (the open one, or the Workbench's selection); each photo's sidecar follows."""

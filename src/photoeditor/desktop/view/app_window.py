@@ -48,6 +48,7 @@ from .settings_dialog import SettingsDialog
 from .snapshots_panel import SnapshotsPanel
 from .versions_panel import VersionsPanel
 from .quick_tag_dialog import QuickTagDialog
+from .tagging_panel import TaggingPanel
 from .tags_panel import TagsPanel
 from .shortcuts_dialog import ShortcutsDialog
 from ..contactsheet_worker import ContactSheetWorker
@@ -381,6 +382,10 @@ class AppWindow(QMainWindow):
         self._lighttable.open_requested.connect(self.open_in_editor)
         self._lighttable.rate_requested.connect(self._on_lighttable_rate)
         self._lighttable.tags_requested.connect(lambda paths, add, remove: self.controller.set_tags_for(paths, add, remove))
+        self._wire_tagging(self._lighttable.tagging)
+        self._lighttable.selection_changed.connect(self._refresh_tagging)
+        self.controller.tag_dictionary_changed.connect(self._refresh_tagging)
+        self.controller.file_changed.connect(self._refresh_tagging)
         self._lighttable.flag_requested.connect(self._on_lighttable_flag)
         self._lighttable.export_requested.connect(self.export_selected)
         self._lighttable.copy_settings_requested.connect(self.controller.copy_settings_from_path)
@@ -676,6 +681,9 @@ class AppWindow(QMainWindow):
         self._library_panel.root_removed.connect(self._on_library_root_removed)
         self._library_panel.root_added.connect(self._on_editor_root_added)
         left_tools_col.addWidget(self._library_panel)
+        self._tagging_panel = TaggingPanel()
+        left_tools_col.addWidget(self._tagging_panel)
+        self._wire_tagging(self._tagging_panel)
 
         self._masking_tool = MaskingToolPanel()
         left_tools_col.addWidget(self._masking_tool)
@@ -1622,8 +1630,50 @@ class AppWindow(QMainWindow):
         if added or changed or removed:
             self._lighttable_reload_rows()
 
+    def _tagging_targets(self) -> list[str]:
+        """The photos the Tagging panel works on: the Workbench's selection there, the open photo in the editor."""
+        if self.lighttable_active():
+            return [p for p in self._lighttable.selected_paths() if p]
+        path = self.controller.state.image_path
+        return [path] if path else []
+
+    def _wire_tagging(self, panel) -> None:
+        c = self.controller
+        panel.set_tag_lists_provider(c.tag_lists)
+        panel.attach_requested.connect(lambda tags: c.set_tags_for(self._tagging_targets(), add=tags))
+        panel.detach_requested.connect(lambda tags: c.set_tags_for(self._tagging_targets(), remove=tags))
+        panel.create_requested.connect(lambda tag, attach: c.create_tag(tag, self._tagging_targets() if attach else None))
+        panel.rename_requested.connect(lambda old, new: c.rename_tag(old, new, True))
+        panel.delete_requested.connect(lambda tag, children: c.delete_tag(tag, children))
+        panel.collection_requested.connect(self.show_tag_collection)
+        panel.import_requested.connect(lambda text: self._coord_label.setText(f"Imported {c.import_tags(text)} tags into the dictionary."))
+        panel.export_requested.connect(self._export_tags)
+
+    def _refresh_tagging(self, *_args) -> None:
+        """The Tagging panels (editor and Workbench) show the tags of the photos in front of you against the whole dictionary."""
+        paths = self._tagging_targets()
+        per_path, dictionary = self.controller.tagging_data(paths)
+        for panel in (self._tagging_panel, self._lighttable.tagging):
+            panel.set_data(paths, per_path, dictionary)
+
+    def _export_tags(self, path: str) -> None:
+        try:
+            with open(path, "w", encoding="utf-8", newline="\n") as f:
+                f.write(self.controller.export_tags_text())
+            self._coord_label.setText(f"Saved the tags to {os.path.basename(path)}.")
+        except OSError as e:
+            QMessageBox.warning(self, "Export tags", f"The file could not be written.\n\n{e}")
+
+    def show_tag_collection(self, tag: str) -> None:
+        """The Workbench, showing only the photos with this tag (and anything inside it)."""
+        self.set_view("lighttable")
+        state = library_query.default_state()
+        state["tag"] = tag
+        self._lighttable.set_filter_state(state)
+
     def _on_tags_changed(self, paths: list) -> None:
         """Tags changed (here, or on opening a photo): the open photo's panel and the Workbench's rows follow."""
+        self._refresh_tagging()
         current = self.controller.state.image_path
         if current is not None and current in paths:
             self._tags_panel.editor.set_active(True)

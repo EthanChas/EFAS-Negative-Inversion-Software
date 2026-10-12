@@ -100,6 +100,8 @@ CREATE TABLE IF NOT EXISTS tags (
 )
 """
 _TAGS_INDEX = "CREATE INDEX IF NOT EXISTS idx_tags_tag ON tags (tag)"
+# tags that exist whether or not any photo carries them (made in the Tagging panel, or imported from a keyword file)
+_TAG_DICT_SCHEMA = "CREATE TABLE IF NOT EXISTS tag_dictionary (tag TEXT PRIMARY KEY COLLATE NOCASE)"
 
 _HISTORY_SCHEMA = """
 CREATE TABLE IF NOT EXISTS edit_history (
@@ -315,6 +317,7 @@ def connect(db_path: str) -> sqlite3.Connection:
     conn.execute(_INVERSION_SCHEMA)
     conn.execute(_TAGS_SCHEMA)
     conn.execute(_TAGS_INDEX)
+    conn.execute(_TAG_DICT_SCHEMA)
     conn.execute(_HISTORY_SCHEMA)
     conn.execute(_SNAPSHOTS_SCHEMA)
     conn.execute(_HIDDEN_SCHEMA)
@@ -629,6 +632,75 @@ def add_tags(conn: sqlite3.Connection, paths: list[str], tags: list[str]) -> Non
 def remove_tags(conn: sqlite3.Connection, paths: list[str], tags: list[str]) -> None:
     conn.executemany("DELETE FROM tags WHERE path = ? AND tag = ?", [(p, t) for p in paths for t in tags])
     conn.commit()
+
+
+def define_tags(conn: sqlite3.Connection, tags: list[str]) -> None:
+    """Make tags exist in the dictionary without putting them on any photo."""
+    conn.executemany("INSERT OR IGNORE INTO tag_dictionary (tag) VALUES (?)", [(t,) for t in tags])
+    conn.commit()
+
+
+def defined_tags(conn: sqlite3.Connection) -> list[str]:
+    return [t for (t,) in conn.execute("SELECT tag FROM tag_dictionary ORDER BY tag COLLATE NOCASE")]
+
+
+def dictionary_counts(conn: sqlite3.Connection) -> dict[str, int]:
+    """Every tag there is -> how many photos carry it (0 for one that exists but is on no photo)."""
+    counts = {t: 0 for t in defined_tags(conn)}
+    used = {t.casefold(): t for t in counts}
+    for tag, n in tag_counts(conn):
+        counts.pop(used.get(tag.casefold(), ""), None)
+        counts[tag] = n
+    return counts
+
+
+def _like_inside(tag: str) -> str:
+    return tag.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "/%"
+
+
+def tag_paths(conn: sqlite3.Connection, tag: str, with_children: bool = False) -> list[str]:
+    """The photos that carry a tag (and, with with_children, anything inside it)."""
+    if with_children:
+        rows = conn.execute("SELECT DISTINCT path FROM tags WHERE tag = ? COLLATE NOCASE OR tag LIKE ? ESCAPE '\\'", (tag, _like_inside(tag)))
+    else:
+        rows = conn.execute("SELECT DISTINCT path FROM tags WHERE tag = ? COLLATE NOCASE", (tag,))
+    return [p for (p,) in rows]
+
+
+def rename_tag(conn: sqlite3.Connection, old: str, new: str, with_children: bool = True) -> list[str]:
+    """Rename a tag everywhere - and, with with_children, everything inside it moves along (People -> Family moves People/Kids to Family/Kids). A tag
+    renamed onto one that already exists merges with it. Returns the photos whose tags changed."""
+    pattern = "tag = ? COLLATE NOCASE OR tag LIKE ? ESCAPE '\\'" if with_children else "tag = ? COLLATE NOCASE"
+    args = (old, _like_inside(old)) if with_children else (old,)
+    affected: set[str] = set()
+    for path, tag in conn.execute(f"SELECT path, tag FROM tags WHERE {pattern}", args).fetchall():
+        target = new + tag[len(old):]
+        if target.casefold() == tag.casefold():
+            conn.execute("UPDATE tags SET tag = ? WHERE path = ? AND tag = ?", (target, path, tag))
+        else:
+            conn.execute("INSERT OR IGNORE INTO tags (path, tag) VALUES (?, ?)", (path, target))
+            conn.execute("DELETE FROM tags WHERE path = ? AND tag = ?", (path, tag))
+        affected.add(path)
+    for (tag,) in conn.execute(f"SELECT tag FROM tag_dictionary WHERE {pattern}", args).fetchall():
+        target = new + tag[len(old):]
+        if target.casefold() == tag.casefold():
+            conn.execute("UPDATE tag_dictionary SET tag = ? WHERE tag = ?", (target, tag))
+        else:
+            conn.execute("INSERT OR IGNORE INTO tag_dictionary (tag) VALUES (?)", (target,))
+            conn.execute("DELETE FROM tag_dictionary WHERE tag = ?", (tag,))
+    conn.commit()
+    return sorted(affected)
+
+
+def delete_tag(conn: sqlite3.Connection, tag: str, with_children: bool = False) -> list[str]:
+    """Delete a tag from the dictionary and take it off every photo (with with_children, everything inside it too). Returns the photos that changed."""
+    affected = tag_paths(conn, tag, with_children)
+    pattern = "tag = ? COLLATE NOCASE OR tag LIKE ? ESCAPE '\\'" if with_children else "tag = ? COLLATE NOCASE"
+    args = (tag, _like_inside(tag)) if with_children else (tag,)
+    conn.execute(f"DELETE FROM tags WHERE {pattern}", args)
+    conn.execute(f"DELETE FROM tag_dictionary WHERE {pattern}", args)
+    conn.commit()
+    return sorted(affected)
 
 
 def save_collection(conn: sqlite3.Connection, name: str, state: dict) -> None:
