@@ -20,6 +20,10 @@ class FlatFieldPanel(CollapsiblePanel):
     remove_requested = pyqtSignal()
     enabled_toggled = pyqtSignal(bool)
     check_requested = pyqtSignal(str)
+    permanent_reference_picked = pyqtSignal(str)
+    permanent_from_folder_requested = pyqtSignal()
+    permanent_remove_requested = pyqtSignal()
+    permanent_enabled_toggled = pyqtSignal(bool)
 
     def __init__(self, parent: QWidget | None = None):
         super().__init__(
@@ -29,7 +33,10 @@ class FlatFieldPanel(CollapsiblePanel):
                 "scan of the bare light source for this folder. Auto (Roll): build it from every frame in "
                 "the folder instead - needs at least 5 frames, and works because the light's falloff is the "
                 "same in every frame while picture content isn't. Either way it's saved for the whole "
-                "folder and applied to every photo in it, now and later, and to exports."
+                "folder and applied to every photo in it, now and later, and to exports. Permanent (all photos) "
+                "is one flat field for your scanner's light that applies to every photo you ever open, in any "
+                "folder, and to exports, until you remove it or switch it off; a folder with a flat field of its "
+                "own uses that one instead, so the two never stack."
             ),
             collapsible=True,
             start_expanded=False,
@@ -73,6 +80,29 @@ class FlatFieldPanel(CollapsiblePanel):
         self._check_btn.setMenu(menu)
         body.addWidget(self._check_btn)
 
+        self._permanent_hint = QLabel("")
+        self._permanent_hint.setProperty("role", "hint")
+        self._permanent_hint.setWordWrap(True)
+        body.addWidget(self._permanent_hint)
+        self._permanent_enable = QCheckBox("Permanent - apply to every photo")
+        self._permanent_enable.setToolTip("One flat field for your scanner's light, applied to every photo in every folder, forever (until removed or switched off).")
+        self._permanent_enable.toggled.connect(self.permanent_enabled_toggled)
+        body.addWidget(self._permanent_enable)
+        prow = QHBoxLayout()
+        prow.setSpacing(THEME.space_sm)
+        self._permanent_btn = QPushButton("Set Permanent...")
+        self._permanent_btn.setToolTip("Pick a scan of the bare light source to use for every photo.")
+        pmenu = QMenu(self._permanent_btn)
+        pmenu.addAction("From a Reference File...", self._on_pick_permanent)
+        self._permanent_from_folder = pmenu.addAction("From This Folder's Flat Field", self.permanent_from_folder_requested.emit)
+        self._permanent_btn.setMenu(pmenu)
+        prow.addWidget(self._permanent_btn)
+        self._permanent_remove = QPushButton("Remove")
+        self._permanent_remove.setToolTip("Delete the permanent flat field.")
+        self._permanent_remove.clicked.connect(self.permanent_remove_requested)
+        prow.addWidget(self._permanent_remove)
+        body.addLayout(prow)
+
         self._progress = QProgressBar()
         self._progress.setFormat("%p% done")
         self._progress.hide()
@@ -92,6 +122,11 @@ class FlatFieldPanel(CollapsiblePanel):
         path, _ = QFileDialog.getOpenFileName(self, "Picture of the light to check", self._folder_path, file_dialog_filter())
         if path:
             self.check_requested.emit(path)
+
+    def _on_pick_permanent(self) -> None:
+        path, _ = QFileDialog.getOpenFileName(self, "Flat-field reference for every photo", self._folder_path, file_dialog_filter())
+        if path:
+            self.permanent_reference_picked.emit(path)
 
     def _on_pick(self) -> None:
         path, _ = QFileDialog.getOpenFileName(
@@ -121,6 +156,24 @@ class FlatFieldPanel(CollapsiblePanel):
         self._check_btn.setEnabled(not busy)
         self._roll_btn.setEnabled(opened and not busy)
         self._remove_btn.setEnabled(has and not busy)
+        perm = info.get("permanent") or {"has": False, "enabled": False, "source": ""}
+        if not perm["has"]:
+            self._permanent_hint.setText("No permanent flat field yet.")
+        elif perm["enabled"]:
+            overridden = info.get("scope") == "folder"
+            self._permanent_hint.setText(
+                f"Permanent flat field (from {perm['source'] or 'a reference'}) is on for every photo"
+                + (" - but this folder has its own, which is used here." if overridden else ".")
+            )
+        else:
+            self._permanent_hint.setText("A permanent flat field is saved but switched off.")
+        self._permanent_enable.blockSignals(True)
+        self._permanent_enable.setChecked(bool(perm["enabled"]))
+        self._permanent_enable.blockSignals(False)
+        self._permanent_enable.setEnabled(perm["has"] and not busy)
+        self._permanent_btn.setEnabled(not busy)
+        self._permanent_from_folder.setEnabled(has)
+        self._permanent_remove.setEnabled(perm["has"] and not busy)
         self._progress.setVisible(busy)
         self._cancel_btn.setVisible(busy)
         if busy:

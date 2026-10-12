@@ -80,7 +80,7 @@ from .image_view import ImageView
 from .import_window import ImportWindow
 from .library_panel import LibraryPanel
 from .lighttable_view import LighttableView
-from ..paths import system_thumbnail_dir, thumbnail_cache_dir
+from ..paths import old_thumbnail_dirs, system_thumbnail_dir, thumbnail_cache_dir
 from .uninstall_dialog import UninstallDialog
 from .advanced_preset_dialog import AdvancedPresetDialog
 from .ai_dust_panel import AiDustPanel
@@ -994,6 +994,10 @@ class AppWindow(QMainWindow):
         self._flatfield_tool.cancel_requested.connect(self.controller.cancel_roll_flatfield)
         self._flatfield_tool.remove_requested.connect(self.controller.clear_folder_flatfield)
         self._flatfield_tool.enabled_toggled.connect(self.controller.set_flatfield_enabled)
+        self._flatfield_tool.permanent_reference_picked.connect(self._on_permanent_flatfield_picked)
+        self._flatfield_tool.permanent_from_folder_requested.connect(self.controller.make_folder_flatfield_permanent)
+        self._flatfield_tool.permanent_remove_requested.connect(self.controller.clear_permanent_flatfield)
+        self._flatfield_tool.permanent_enabled_toggled.connect(self.controller.set_permanent_flatfield_enabled)
         self.controller.flatfield_changed.connect(self._refresh_flatfield_panel)
         self.controller.flatfield_busy_changed.connect(lambda _busy: self._refresh_flatfield_panel())
         self.controller.flatfield_progress.connect(self._flatfield_tool.set_progress)
@@ -2267,6 +2271,19 @@ class AppWindow(QMainWindow):
         if result is not None and result.ok:
             self._flatfield_tool.show_message(result.headline)
 
+    def _on_permanent_flatfield_picked(self, path: str) -> None:
+        """Same check as a folder reference - but it would be copied into every photo you ever open."""
+        try:
+            result, _what = self.controller.check_flatfield(path)
+        except Exception:
+            result = None
+        if result is not None and not result.ok and not self._show_flat_check(result, os.path.basename(path), ask=True):
+            self._flatfield_tool.show_message("Not used.")
+            return
+        self.controller.set_permanent_flatfield_from_reference(path)
+        if result is not None and result.ok:
+            self._flatfield_tool.show_message(result.headline)
+
     def _on_flatfield_gain_checked(self, result) -> None:
         self._flatfield_tool.show_message(result.headline)
         if not result.ok:
@@ -2485,7 +2502,7 @@ class AppWindow(QMainWindow):
         this program has closed, then close."""
         from ...features.uninstall import logic as uninstall
 
-        cache = [system_thumbnail_dir()]
+        cache = list(dict.fromkeys([system_thumbnail_dir(), *old_thumbnail_dirs()]))
         dialog = UninstallDialog(uninstall.data_folders(cache), uninstall.program_path(), uninstall.shared_folder_files(), self)
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return

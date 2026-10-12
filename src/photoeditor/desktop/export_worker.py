@@ -126,8 +126,8 @@ def _edits_for(path: str, conn, preview, state: dict | None = None) -> tuple:
         {**saved, "roll_camera": roll.camera.strip(), "roll_lens": roll.lens.strip(), "film_base": base}
     )
     flatfield = None
-    row = edit_store.get_folder_flatfield(conn, edit_store.folder_key(path))
-    if row is not None and row["enabled"]:
+    row = edit_store.effective_flatfield(conn, path)
+    if row is not None:
         flatfield = (gain_token(row["gain"]), row["gain"])
     return params, flatfield
 

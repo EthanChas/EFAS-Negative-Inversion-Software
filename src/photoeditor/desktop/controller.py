@@ -182,6 +182,8 @@ class AppController(QObject):
         self._module_preset_in_use: dict[tuple[str, str], str] = {}
         self._folder_images: tuple[str, list[str], float] | None = None
         self._ff_info = {"has": False, "enabled": False, "source": ""}
+        self._ff_global_info = {"has": False, "enabled": False, "source": ""}
+        self._ff_scope = ""
         self._ff_worker = None
         self._linear = None
         self._linear_worker = None
@@ -1094,23 +1096,68 @@ class AppController(QObject):
             self._last_logged_invert_rgb = (r, g, b)
             self._log(f"Negative color trimmed (R {r:+.2f}, G {g:+.2f}, B {b:+.2f})")
 
-    def _load_flatfield(self, path: str) -> None:
-        row = edit_store.get_folder_flatfield(self._db, edit_store.folder_key(path))
+    def _load_flatfield(self, path: str | None = None) -> None:
+        path = path if path is not None else self.state.image_path
+        glob = edit_store.get_global_flatfield(self._db)
+        self._ff_global_info = {"has": glob is not None, "enabled": bool(glob and glob["enabled"]), "source": glob["source"] if glob else ""}
+        row = edit_store.get_folder_flatfield(self._db, edit_store.folder_key(path)) if path else None
         if row is None:
-            self._ff, self._ff_info = None, {"has": False, "enabled": False, "source": ""}
+            self._ff_info = {"has": False, "enabled": False, "source": ""}
         else:
-            self._ff = (gain_token(row["gain"]), row["gain"]) if row["enabled"] else None
             self._ff_info = {"has": True, "enabled": row["enabled"], "source": row["source"]}
+        use = edit_store.effective_flatfield(self._db, path) if path else None
+        self._ff = (gain_token(use["gain"]), use["gain"]) if use is not None else None
+        self._ff_scope = use["scope"] if use is not None else ""
         self.flatfield_changed.emit()
 
     def flatfield_info(self) -> dict:
-        """{"has", "enabled", "source", "folder", "folder_path"} for the open photo's folder."""
+        """{"has", "enabled", "source", "folder", "folder_path"} for the open photo's folder, plus the permanent flat field ("permanent": {"has", "enabled",
+        "source"}) and which one is in use on this photo ("scope": "folder", "permanent" or "")."""
         path = self.state.image_path
         folder = os.path.basename(os.path.dirname(path)) if path else ""
         return {
             **self._ff_info, "folder": folder, "folder_path": os.path.dirname(path) if path else "",
             "open": path is not None, "busy": self._ff_worker is not None,
+            "permanent": dict(self._ff_global_info), "scope": self._ff_scope,
         }
+
+    def _reapply_flatfield(self) -> None:
+        self._load_flatfield()
+        if self.state.image_path is not None:
+            self._settle()
+
+    def set_permanent_flatfield_from_reference(self, reference_path: str) -> None:
+        """Bakes one reference shot (a scan of the bare light) into the permanent flat field: from then on it applies to every photo, in every folder, in
+        every session, and to exports - except a photo whose own folder has a flat field switched on."""
+        try:
+            gain = run_blocking(lambda: gain_from_reference(reference_path))
+        except Exception as exc:
+            self.notice.emit(f"Permanent flat field: couldn't read that reference image ({exc})")
+            return
+        edit_store.set_global_flatfield(self._db, gain, os.path.basename(reference_path))
+        self._reapply_flatfield()
+        self.notice.emit("Permanent flat field set - it applies to every photo")
+
+    def make_folder_flatfield_permanent(self) -> None:
+        """Promotes the open photo's folder flat field to the permanent one."""
+        path = self.state.image_path
+        row = edit_store.get_folder_flatfield(self._db, edit_store.folder_key(path)) if path else None
+        if row is None:
+            self.notice.emit("This folder has no flat field to make permanent.")
+            return
+        edit_store.set_global_flatfield(self._db, row["gain"], row["source"] or "a folder")
+        self._reapply_flatfield()
+        self.notice.emit("This folder's flat field is now the permanent one - it applies to every photo")
+
+    def set_permanent_flatfield_enabled(self, enabled: bool) -> None:
+        if enabled == self._ff_global_info["enabled"]:
+            return
+        edit_store.set_global_flatfield_enabled(self._db, enabled)
+        self._reapply_flatfield()
+
+    def clear_permanent_flatfield(self) -> None:
+        edit_store.delete_global_flatfield(self._db)
+        self._reapply_flatfield()
 
     def _store_folder_flatfield(self, folder_path: str, gain, source: str) -> None:
         edit_store.set_folder_flatfield(self._db, edit_store.folder_key(folder_path, is_file=False), gain, source)
@@ -1134,7 +1181,7 @@ class AppController(QObject):
         corrected = self._ff is not None
         if corrected:
             picture = apply_flatfield(picture, self._ff[1])
-        return flat_check.check_picture(picture, corrected=corrected), os.path.basename(s.image_path) + (" with this folder's flat field applied" if corrected else "")
+        return flat_check.check_picture(picture, corrected=corrected), os.path.basename(s.image_path) + ((" with the permanent flat field applied" if self._ff_scope == "permanent" else " with this folder's flat field applied") if corrected else "")
 
     def set_folder_flatfield_from_reference(self, reference_path: str) -> None:
         """Bakes one reference shot (a scan of the bare light) into this

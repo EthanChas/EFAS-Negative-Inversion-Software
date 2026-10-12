@@ -65,7 +65,7 @@ class TaggingPanel(CollapsiblePanel):
                 "it moves too), delete it, or see its photos. Import and Export read and write a Lightroom keyword file."
             ),
             collapsible=True,
-            start_expanded=True,
+            start_expanded=False,
             parent=parent,
         )
         self._paths: list[str] = []

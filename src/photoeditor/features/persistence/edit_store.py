@@ -77,6 +77,17 @@ CREATE TABLE IF NOT EXISTS folder_flatfield (
 )
 """
 
+_GLOBAL_FLATFIELD_SCHEMA = """
+CREATE TABLE IF NOT EXISTS global_flatfield (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    enabled INTEGER NOT NULL DEFAULT 1,
+    source TEXT NOT NULL DEFAULT '',
+    height INTEGER NOT NULL,
+    width INTEGER NOT NULL,
+    gain BLOB NOT NULL
+)
+"""
+
 _ROLL_SCHEMA = """
 CREATE TABLE IF NOT EXISTS folder_roll (
     folder TEXT PRIMARY KEY,
@@ -310,6 +321,7 @@ def connect(db_path: str) -> sqlite3.Connection:
     conn.execute(_SCHEMA)
     conn.execute(_FLAGS_SCHEMA)
     conn.execute(_FLATFIELD_SCHEMA)
+    conn.execute(_GLOBAL_FLATFIELD_SCHEMA)
     conn.execute(_ROLL_SCHEMA)
     conn.execute(_RATINGS_SCHEMA)
     conn.execute(_BASE_SCHEMA)
@@ -467,6 +479,56 @@ def set_folder_flatfield_enabled(conn: sqlite3.Connection, folder: str, enabled:
 def delete_folder_flatfield(conn: sqlite3.Connection, folder: str) -> None:
     conn.execute("DELETE FROM folder_flatfield WHERE folder = ?", (folder,))
     conn.commit()
+
+
+def set_global_flatfield(conn: sqlite3.Connection, gain: np.ndarray, source: str = "", enabled: bool = True) -> None:
+    """The one permanent flat field: it applies to every photo that has no flat field of its own folder's."""
+    gain = np.ascontiguousarray(gain, dtype=np.float32)
+    h, w = gain.shape[:2]
+    conn.execute(
+        """
+        INSERT INTO global_flatfield (id, enabled, source, height, width, gain) VALUES (1, ?, ?, ?, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET enabled=excluded.enabled, source=excluded.source,
+            height=excluded.height, width=excluded.width, gain=excluded.gain
+        """,
+        (int(enabled), source, h, w, gain.tobytes()),
+    )
+    conn.commit()
+
+
+def get_global_flatfield(conn: sqlite3.Connection) -> dict | None:
+    """{"gain": (h, w, 3) float32, "enabled": bool, "source": str} or None."""
+    row = conn.execute("SELECT enabled, source, height, width, gain FROM global_flatfield WHERE id = 1").fetchone()
+    if row is None:
+        return None
+    enabled, source, h, w, blob = row
+    try:
+        gain = np.frombuffer(blob, dtype=np.float32).reshape(h, w, 3).copy()
+    except ValueError:
+        return None
+    return {"gain": gain, "enabled": bool(enabled), "source": source}
+
+
+def set_global_flatfield_enabled(conn: sqlite3.Connection, enabled: bool) -> None:
+    conn.execute("UPDATE global_flatfield SET enabled = ? WHERE id = 1", (int(enabled),))
+    conn.commit()
+
+
+def delete_global_flatfield(conn: sqlite3.Connection) -> None:
+    conn.execute("DELETE FROM global_flatfield WHERE id = 1")
+    conn.commit()
+
+
+def effective_flatfield(conn: sqlite3.Connection, path: str) -> dict | None:
+    """The flat field a photo is rendered with: its folder's own when that is switched on (it was measured with the lighting of that session, the permanent
+    one's falloff included, so the two are never stacked), else the permanent one when that is on. {"gain", "source", "scope": "folder" | "permanent"} or None."""
+    row = get_folder_flatfield(conn, folder_key(path))
+    if row is not None and row["enabled"]:
+        return {"gain": row["gain"], "source": row["source"], "scope": "folder"}
+    row = get_global_flatfield(conn)
+    if row is not None and row["enabled"]:
+        return {"gain": row["gain"], "source": row["source"], "scope": "permanent"}
+    return None
 
 
 def get_folder_roll(conn: sqlite3.Connection, folder: str) -> dict | None:
