@@ -82,12 +82,6 @@ def test_ties_go_to_the_more_used_then_the_shorter():
     assert len(T.rank("a", [f"a{i}" for i in range(30)], limit=5)) == 5
 
 
-def test_premade_tags_are_clean_nested_and_unique():
-    assert len(T.PREMADE) >= 20 and len(set(t.casefold() for t in T.PREMADE)) == len(T.PREMADE)
-    for tag in T.PREMADE:
-        assert T.clean_tag(tag) == tag, tag
-    assert any(T.depth(t) for t in T.PREMADE)
-
 
 def _row(name, tags):
     return {"name": name, "tags": tags, "tags_text": " ".join(tags), "rating": 0, "flag": "", "edited": False, "camera": "", "roll_camera": "", "lens": "", "roll_lens": "",

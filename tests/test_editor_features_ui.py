@@ -195,6 +195,7 @@ _FEATURES = _COMMON + textwrap.dedent(r'''
     assert got3 == ["zzqx brand new"], "nothing fits: what was typed becomes a new tag"
     dlg4 = QuickTagDialog(usage, 1)
     assert dlg4.results()[0] == "People/Family" or dlg4.results()[0] == "People", "with nothing typed the most used come first"
+    c.add_premade(["People/Portrait", "Places/Nature", "Subject/Night"])  # the user's own pre-made tags
     # through the window: the hotkey's path adds the chosen tag to the open photo
     QuickTagDialog.exec = lambda self: (self._entry.setText("natur"), self._pick(self.selected()))
     win.quick_tag()
@@ -212,7 +213,7 @@ _FEATURES = _COMMON + textwrap.dedent(r'''
     asked = []
     editor.add_requested.connect(asked.append)
     combo = editor._premade
-    assert combo.count() > 20 and combo.itemText(0).startswith("Add a pre-made tag")
+    assert combo.count() == 4 and combo.itemText(0).startswith("Add a pre-made tag"), [combo.itemText(i) for i in range(combo.count())]
     idx = combo.findData("People/Portrait")
     assert idx > 0 and combo.itemText(idx) == "People › Portrait"
     combo.activated.emit(idx)

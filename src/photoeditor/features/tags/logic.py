@@ -10,16 +10,6 @@ SEP = "/"
 DISPLAY_SEP = " › "
 _SPLIT = re.compile(r"[,;\n]+")
 
-# Offered in the "Add a pre-made tag" list: a starting set, nested so the nesting is visible. Picking one adds exactly that tag.
-PREMADE: tuple[str, ...] = (
-    "People/Portrait", "People/Family", "People/Friends", "People/Self portrait",
-    "Places/City", "Places/Nature", "Places/Travel", "Places/Home", "Places/Beach", "Places/Mountains",
-    "Subject/Street", "Subject/Architecture", "Subject/Animals", "Subject/Food", "Subject/Night", "Subject/Abstract", "Subject/Still life",
-    "Film/Colour negative", "Film/Black & white", "Film/Slide", "Film/Expired",
-    "Status/Keeper", "Status/Needs rescan", "Status/To print", "Status/Share",
-)
-
-
 def _clean_part(text: str) -> str:
     text = re.sub(r"\s+", " ", str(text)).strip().lstrip("#").strip()
     return text.replace(",", " ").replace(";", " ").replace("|", " ").strip()

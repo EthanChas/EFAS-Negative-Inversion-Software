@@ -7,7 +7,7 @@ from PyQt6.QtWidgets import QDialog, QLabel, QLineEdit, QListWidget, QListWidget
 from ...features.tags import logic as tag_logic
 
 _ROLE = Qt.ItemDataRole.UserRole
-MAX_ROWS = 7
+MAX_ROWS = 12
 
 
 class QuickTagDialog(QDialog):
@@ -17,14 +17,14 @@ class QuickTagDialog(QDialog):
 
     chosen = pyqtSignal(str)
 
-    def __init__(self, usage: dict[str, int], photo_count: int = 1, parent: QWidget | None = None):
+    def __init__(self, usage: dict[str, int], photo_count: int = 1, parent: QWidget | None = None, premade: list[str] | tuple[str, ...] = ()):
         super().__init__(parent)
         self.setWindowTitle("Quick tag")
         self.setWindowFlag(Qt.WindowType.FramelessWindowHint, True)
         self.setModal(True)
         self.setMinimumWidth(380)
         self._usage = dict(usage)
-        self._candidates = list(dict.fromkeys([*self._usage, *tag_logic.PREMADE]))
+        self._candidates = list(dict.fromkeys([*self._usage, *premade]))
         col = QVBoxLayout(self)
         col.setSpacing(6)
         what = "this photo" if photo_count == 1 else f"the {photo_count} selected photos"

@@ -384,6 +384,9 @@ class AppWindow(QMainWindow):
         self._lighttable.tags_requested.connect(lambda paths, add, remove: self.controller.set_tags_for(paths, add, remove))
         self._wire_tagging(self._lighttable.tagging)
         self._lighttable.selection_changed.connect(self._refresh_tagging)
+        self._lighttable._tags.premade_add_requested.connect(self.controller.add_premade)
+        self._lighttable._tags.premade_remove_requested.connect(self.controller.remove_premade)
+        self._refresh_premade()
         self.controller.tag_dictionary_changed.connect(self._refresh_tagging)
         self.controller.file_changed.connect(self._refresh_tagging)
         self._lighttable.flag_requested.connect(self._on_lighttable_flag)
@@ -1140,6 +1143,9 @@ class AppWindow(QMainWindow):
         metadata_col.setContentsMargins(0, 0, 0, 0)
         metadata_col.setSpacing(THEME.space_sm)
         self._tags_panel = TagsPanel()
+        self._tags_panel.editor.premade_add_requested.connect(self.controller.add_premade)
+        self._tags_panel.editor.premade_remove_requested.connect(self.controller.remove_premade)
+        self.controller.premade_changed.connect(self._refresh_premade)
         self._tags_panel.editor.add_requested.connect(lambda tags: self.controller.set_tags_for([self.controller.state.image_path], add=tags))
         self._tags_panel.editor.remove_requested.connect(lambda tags: self.controller.set_tags_for([self.controller.state.image_path], remove=tags))
         self.controller.tags_changed.connect(self._on_tags_changed)
@@ -1630,6 +1636,14 @@ class AppWindow(QMainWindow):
         if added or changed or removed:
             self._lighttable_reload_rows()
 
+    def _refresh_premade(self) -> None:
+        """The user's pre-made tag list changed: every drop-down and menu that offers it follows."""
+        premade = self.controller.premade_tags()
+        self._tags_panel.editor.set_premade(premade)
+        self._lighttable._tags.set_premade(premade)
+        for panel in (self._tagging_panel, self._lighttable.tagging):
+            panel.set_premade(premade)
+
     def _tagging_targets(self) -> list[str]:
         """The photos the Tagging panel works on: the Workbench's selection there, the open photo in the editor."""
         if self.lighttable_active():
@@ -1646,6 +1660,8 @@ class AppWindow(QMainWindow):
         panel.rename_requested.connect(lambda old, new: c.rename_tag(old, new, True))
         panel.delete_requested.connect(lambda tag, children: c.delete_tag(tag, children))
         panel.collection_requested.connect(self.show_tag_collection)
+        panel.premade_add_requested.connect(c.add_premade)
+        panel.premade_remove_requested.connect(c.remove_premade)
         panel.import_requested.connect(lambda text: self._coord_label.setText(f"Imported {c.import_tags(text)} tags into the dictionary."))
         panel.export_requested.connect(self._export_tags)
 
@@ -1735,7 +1751,7 @@ class AppWindow(QMainWindow):
         if not paths:
             self._coord_label.setText("Open a photo (or select some in the Workbench) to tag it.")
             return
-        dialog = QuickTagDialog(c.tag_usage(), len(paths), self)
+        dialog = QuickTagDialog(c.tag_usage(), len(paths), self, c.premade_tags())
         dialog.chosen.connect(lambda tag: c.set_tags_for(paths, add=[tag]))
         self._quick_tag_dialog = dialog
         dialog.exec()
@@ -2147,6 +2163,7 @@ class AppWindow(QMainWindow):
         self._sync_film_base()
         self._sync_inversion()
         self._negative_tool.set_quality(self.controller.scan_quality())
+        self._refresh_scan_grading()
         self._probe_image = None
         self._advanced.set_probe_active(False)
         self._advanced.set_probe(None)
@@ -2208,7 +2225,8 @@ class AppWindow(QMainWindow):
         self._histogram_panel.clear_selection()
         self._image_view.set_range_overlay(None)
         self._histogram_panel.set_data(state.histogram, state.luminance_histogram)
-        self._stats_panel.set_stats(state.channel_stats, state.exposure_label, state.luminance["avg"])
+        self._stats_panel.set_stats(state.channel_stats, state.exposure_label, state.luminance["avg"], state.readout)
+        self._refresh_scan_grading()
         self._coord_label.setText("Move the mouse over the image to inspect a pixel.")
 
         self._refresh_size_label()
@@ -2308,7 +2326,8 @@ class AppWindow(QMainWindow):
         self._refresh_export_hints()
         self._refresh_size_label()
         self._histogram_panel.set_data(state.histogram, state.luminance_histogram)
-        self._stats_panel.set_stats(state.channel_stats, state.exposure_label, state.luminance["avg"])
+        self._stats_panel.set_stats(state.channel_stats, state.exposure_label, state.luminance["avg"], state.readout)
+        self._refresh_scan_grading()
         self._filmstrip.update_active_thumbnail(state.image_rgb)
         self._refresh_range()
         self._refresh_mark_boxes()
@@ -2755,9 +2774,15 @@ class AppWindow(QMainWindow):
         if self._advanced.isVisibleTo(self):
             self.controller.request_linear()
 
+    def _refresh_scan_grading(self) -> None:
+        """The SCAN section under the histogram follows the photo, its scan check and the Negative tab's settings."""
+        quality, lines = self.controller.scan_grading()
+        self._stats_panel.set_scan(quality, lines)
+
     def _on_measurement_changed(self) -> None:
         c = self.controller
         self._negative_tool.set_quality(c.scan_quality())
+        self._refresh_scan_grading()
         self._advanced.set_measurement(c.current_measurement(), c.linear_error(), c.linear_busy(), c.state.image_path is not None)
 
     def _on_scan_transfer_changed(self, key: str) -> None:

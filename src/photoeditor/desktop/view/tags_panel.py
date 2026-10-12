@@ -4,6 +4,7 @@ from PyQt6.QtWidgets import QAbstractItemView, QComboBox, QCompleter, QHBoxLayou
 from ...features.tags import logic as tag_logic
 from ...theme.tokens import THEME
 from .collapsible_panel import CollapsiblePanel
+from .premade_dialog import PremadeTagsDialog
 
 _ROLE_TAG = Qt.ItemDataRole.UserRole
 
@@ -15,6 +16,8 @@ class TagsEditor(QWidget):
 
     add_requested = pyqtSignal(list)
     remove_requested = pyqtSignal(list)
+    premade_add_requested = pyqtSignal(list)      # tags to put on the user's pre-made list
+    premade_remove_requested = pyqtSignal(list)   # tags to take off it
 
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
@@ -38,14 +41,20 @@ class TagsEditor(QWidget):
         self._add_btn.clicked.connect(self._add)
         row.addWidget(self._add_btn)
         col.addLayout(row)
+        premade_row = QHBoxLayout()
+        premade_row.setSpacing(THEME.space_sm)
         self._premade = QComboBox()
-        self._premade.setToolTip("A list of ready-made tags: pick one to add it, without typing.")
-        self._premade.addItem("Add a pre-made tag...", "")
-        self._premade.model().item(0).setEnabled(False)
-        for tag in tag_logic.PREMADE:
-            self._premade.addItem(tag_logic.display(tag), tag)
+        self._premade.setToolTip("Your own pre-made tags, the ones you use again and again: pick one to add it, without typing. Manage... edits the list.")
         self._premade.activated.connect(self._on_premade)
-        col.addWidget(self._premade)
+        premade_row.addWidget(self._premade, 1)
+        self._manage_btn = QPushButton("Manage...")
+        self._manage_btn.setToolTip("Choose which tags are on your pre-made list")
+        self._manage_btn.clicked.connect(self._manage_premade)
+        premade_row.addWidget(self._manage_btn)
+        col.addLayout(premade_row)
+        self._premade_list: list[str] = []
+        self._known_tags: list[str] = []
+        self.set_premade([])
         self._list = QListWidget()
         self._list.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         self._list.setFixedHeight(84)
@@ -64,7 +73,33 @@ class TagsEditor(QWidget):
 
     def set_suggestions(self, tags: list[str]) -> None:
         """Every tag in use, offered as you type."""
+        self._known_tags = list(tags)
         self._model.setStringList(list(tags))
+
+    def set_premade(self, tags: list[str]) -> None:
+        """The user's pre-made tags, for the drop-down."""
+        self._premade_list = list(tags)
+        self._premade.blockSignals(True)
+        self._premade.clear()
+        self._premade.addItem("Add a pre-made tag..." if tags else "No pre-made tags yet - click Manage", "")
+        self._premade.model().item(0).setEnabled(False)
+        for tag in tags:
+            self._premade.addItem(tag_logic.display(tag), tag)
+        self._premade.setCurrentIndex(0)
+        self._premade.blockSignals(False)
+
+    def _manage_premade(self) -> None:
+        dialog = PremadeTagsDialog(self._premade_list, self._known_tags, self)
+        if not dialog.exec():
+            return
+        new = dialog.tags()
+        old_keys, new_keys = {t.casefold() for t in self._premade_list}, {t.casefold() for t in new}
+        added = [t for t in new if t.casefold() not in old_keys]
+        removed = [t for t in self._premade_list if t.casefold() not in new_keys]
+        if added:
+            self.premade_add_requested.emit(added)
+        if removed:
+            self.premade_remove_requested.emit(removed)
 
     def set_tags(self, tags: list[str], labels: dict[str, str] | None = None) -> None:
         """The tags to list."""
@@ -113,7 +148,7 @@ class TagsPanel(CollapsiblePanel):
         super().__init__(
             "Tags",
             help_text="Keywords for this photo. Put a / between levels to nest one inside another (People/Family) - searching for People then finds "
-                      "everything inside it - and pick from the pre-made list under the box to add common ones without typing. Press T anywhere for the quick tag bar: "
+                      "everything inside it - and keep your own pre-made list (Manage...) of the tags you use again and again, to pick instead of typing. Press T anywhere for the quick tag bar: "
                       "type a few letters and press Enter to add the best match. They are saved with it (and in its .xmp sidecar, where Lightroom and darktable read them as keywords), "
                       "searchable in the Workbench with tag:name, and written into exported JPEGs as Windows tags.",
             collapsible=True,

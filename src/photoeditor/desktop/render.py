@@ -47,6 +47,7 @@ from ..features.negative.logic import (
 )
 from ..features.retouch.logic import DustStatsCache, RetouchResult, detect_dust_masks, remove_dust_and_scratches
 from ..features.shadows_highlights.logic import adjust_shadows_highlights
+from ..features.whitebalance.readout import tonal_readout
 from ..features.sharpening.logic import apply_sharpening
 from ..features.tonecurve.logic import apply_tone_curve
 from ..features.whitebalance.logic import (
@@ -232,6 +233,7 @@ def compute_stats(image: np.ndarray) -> dict:
         "channel_stats": channel_stats(sample),
         "luminance": luminance,
         "exposure_label": exposure_label(luminance["avg"]),
+        "readout": tonal_readout(sample),
     }
 
 

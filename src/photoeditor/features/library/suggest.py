@@ -4,6 +4,8 @@ values your library actually has. Pure functions, no Qt."""
 from collections import Counter
 from datetime import date
 
+from ..tags import logic as tag_logic
+
 FIELD_HELP = (
     ("camera:", "camera name"), ("lens:", "lens"), ("film:", "film stock"), ("roll:", "roll name"), ("folder:", "folder name"), ("name:", "file name"),
     ("note:", "words in a note"), ("place:", "place"), ("ext:", "file type"), ("tag:", "tag"), ("iso:", "film ISO"), ("date:", "date taken"),
@@ -20,6 +22,7 @@ FIXED = (
     ("versions:>1", "has virtual copies"),
 )
 MAX_SHOWN = 30
+MAX_TAGS = 400
 _NOTHING = "\x00"
 
 
@@ -69,8 +72,10 @@ def build(rows: list[dict], today: date | None = None) -> list[tuple[str, str]]:
     values("roll", "roll", "roll")
     values("folder_name", "folder", "folder")
     values("ext", "ext", "file type")
-    tags = Counter(t for r in rows for t in r.get("tags", ()))
-    for tag, n in sorted(tags.items(), key=lambda kv: (-kv[1], kv[0].casefold()))[:40]:
+    # every tag - and every level above one, so typing a parent (Friends) offers it as well as what is inside it (Friends/Dog, Friends/Ghitta) - not just
+    # the most used few
+    tags = tag_logic.count_with_parents(r.get("tags", ()) for r in rows)
+    for tag, n in sorted(tags.items(), key=lambda kv: (-kv[1], kv[0].casefold()))[:MAX_TAGS]:
         out.append((f"tag:{quote(tag)}", f"tag, {n:,} photo{'s' if n != 1 else ''}"))
     isos = Counter(int(r.get("iso") or 0) for r in rows)
     isos.pop(0, None)

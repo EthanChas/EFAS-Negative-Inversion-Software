@@ -56,7 +56,7 @@ from ..features.persistence import export as data_export
 from ..features.persistence.consolidate import ensure_ready as ensure_data_ready
 from ..features.proofs import logic as proof_logic
 from ..features.tags import logic as tag_logic
-from ..features.tags import tagging
+from ..features.tags import premade, tagging
 from ..features.persistence.backup import backup_database
 from ..features.settings import logic as app_settings
 from ..features.retouch.logic import (
@@ -128,6 +128,7 @@ class AppController(QObject):
     scratches_changed = pyqtSignal(int)
     detections_deleted_changed = pyqtSignal(int)
     tag_dictionary_changed = pyqtSignal()
+    premade_changed = pyqtSignal()
     ai_dust_status = pyqtSignal()
     clone_source_changed = pyqtSignal()
     negative_state_changed = pyqtSignal()
@@ -642,6 +643,7 @@ class AppController(QObject):
             s.channel_stats = out.stats["channel_stats"]
             s.luminance = out.stats["luminance"]
             s.exposure_label = out.stats["exposure_label"]
+            s.readout = out.stats.get("readout")
         if self._hq_busy and ((s.hq_enabled and out.kind == "hq") or (not s.hq_enabled and out.kind == "base" and out.full)):
             self._set_hq_busy(False)
         if out.full:
@@ -692,6 +694,7 @@ class AppController(QObject):
         s.channel_stats = stats["channel_stats"]
         s.luminance = stats["luminance"]
         s.exposure_label = stats["exposure_label"]
+        s.readout = stats.get("readout")
         if s.hq_enabled:
             self._set_hq_busy(True)
             self._gen = gen
@@ -1667,6 +1670,25 @@ class AppController(QObject):
                 if not any(k.casefold() == level.casefold() for k in counts):
                     counts[level] = 0
         return counts
+
+    # --- the user's own pre-made tags ----------------------------------------------------------------------------------------------------
+    def premade_tags(self) -> list[str]:
+        return premade.load()
+
+    def add_premade(self, tags: list[str]) -> None:
+        """Put tags on the user's pre-made list (and in the tag dictionary, so they exist even before a photo has them)."""
+        tags = tag_logic.unique(tags)
+        if not tags:
+            return
+        premade.add(tags)
+        edit_store.define_tags(self._db, tags)
+        self.premade_changed.emit()
+        self.tag_dictionary_changed.emit()
+
+    def remove_premade(self, tags: list[str]) -> None:
+        """Take tags off the pre-made list. No photo loses a tag by this."""
+        premade.remove(tags)
+        self.premade_changed.emit()
 
     # --- the Tagging panel: tag dictionary, rename, change path, delete, keyword files ---------------------------------------------------
     def tagging_data(self, paths: list[str]) -> tuple[dict[str, list[str]], dict[str, int]]:
@@ -2797,6 +2819,26 @@ class AppController(QObject):
                 return dens_quality.ScanQuality("unknown", "Checking the scan...", "Reading the RAW data in the background.")
             return dens_quality.unknown(self._linear_error or "The scan has not been checked.")
         return dens_quality.assess(self._measurement)
+
+    def scan_grading(self) -> tuple[object, list[tuple[str, str]]]:
+        """What the histogram's SCAN section says: (the scan-quality verdict, the grading lines - what the photo was recognised as, the film base, the
+        inversion method and the metering). The same facts the Negative tab shows."""
+        from ..features.whitebalance import readout as rd
+
+        s = self.state
+        if s.image_path is None:
+            return None, []
+        mode = s.detected_mode.value if s.detected_mode is not None else ""
+        name = ""
+        if s.inversion_profile:
+            try:
+                name = self.profile_store().load(s.inversion_profile).name
+            except fpmod.ProfileError:
+                name = ""
+        m = s.metering
+        lines = rd.scan_lines(mode, s.negative_inverted, s.film_base, s.inversion_engine, name,
+                              rd.metering_text(m.buffer, m.rect, m.range_clip, m.white, m.black) if s.negative_inverted else "")
+        return self.scan_quality(), lines
 
     def roll_check_inputs(self) -> tuple[list[str], tuple | None]:
         """The open folder's photos and, when one was sampled for this roll, its film base (linear), for the roll consistency check."""

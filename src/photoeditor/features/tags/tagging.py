@@ -118,7 +118,17 @@ def build_tree(dictionary: dict[str, int], attached: dict[str, int], total: int,
                 index[key] = node
                 parent_list.append(node)
             parent_list = node.children
+    for root in roots:
+        _roll_up(root)
     return roots
+
+
+def _roll_up(node: Node) -> None:
+    """A level shows a dash when something inside it is attached (darktable does the same), so a parent is not blank while its children are marked."""
+    for child in node.children:
+        _roll_up(child)
+    if node.mark == NONE and any(c.mark != NONE for c in node.children):
+        node.mark = SOME
 
 
 # ---- Lightroom keyword files: one keyword a line, a tab for every level it is inside ----

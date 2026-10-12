@@ -191,4 +191,5 @@ class AppState:
     channel_stats: dict[str, dict[str, float]] | None = None
     luminance: dict[str, float] | None = None
     exposure_label: str | None = None
+    readout: dict | None = None
     history: list[HistoryEntry] = field(default_factory=list)
