@@ -127,7 +127,7 @@ _SCRIPT = textwrap.dedent(r'''
     win = AppWindow(); c = win.controller
     c.open_file(photo)
     c.set_film_base((200, 150, 100), pick=(10, 100))
-    db = os.path.join(data, "photoeditor.db")
+    db = os.path.join(data, "photo-edits.db")
     conn = edit_store.connect(db)
 
     # neutral edits: the standard export and the flat export agree to 8-bit rounding

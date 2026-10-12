@@ -8,6 +8,8 @@ import copy
 import datetime as dt
 import json
 import os
+
+from ..datadir import CAMERA_SETUPS_DIR, FILM_PROFILES_DIR
 import uuid
 from dataclasses import dataclass, field
 
@@ -448,8 +450,8 @@ class SetupStore(_JsonStore):
 
 
 def profiles_dir(data_dir: str) -> str:
-    return os.path.join(data_dir, "film_profiles")
+    return os.path.join(data_dir, FILM_PROFILES_DIR)
 
 
 def setups_dir(data_dir: str) -> str:
-    return os.path.join(data_dir, "camera_setups")
+    return os.path.join(data_dir, CAMERA_SETUPS_DIR)

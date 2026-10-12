@@ -14,9 +14,9 @@ import os
 
 from PyQt6.QtCore import QSettings
 
-from ..features.datadir import app_data_dir
+from ..features.datadir import LAYOUT_FILE, app_data_dir
 
-_FILE = "qsettings.ini"
+_FILE = LAYOUT_FILE
 _IMPORTED = "_meta/registry_imports"
 _checked: set[str] = set()
 

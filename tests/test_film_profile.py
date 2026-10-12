@@ -135,7 +135,7 @@ def test_compare_lists_differences():
 
 
 def test_store_save_load_list_duplicate_delete(tmp_path):
-    store = fp.ProfileStore(str(tmp_path / "film_profiles"))
+    store = fp.ProfileStore(str(tmp_path / "film-profiles"))
     assert store.list() == []
     a, b = make_profile(name="Zebra"), make_profile(name="Apple", kind="supplied")
     store.save(a)
@@ -150,7 +150,7 @@ def test_store_save_load_list_duplicate_delete(tmp_path):
 
 
 def test_store_skips_unreadable_files_and_rejects_unsafe_ids(tmp_path):
-    folder = tmp_path / "film_profiles"
+    folder = tmp_path / "film-profiles"
     store = fp.ProfileStore(str(folder))
     store.save(make_profile())
     (folder / "broken.json").write_text("{nope")
@@ -164,7 +164,7 @@ def test_store_skips_unreadable_files_and_rejects_unsafe_ids(tmp_path):
 
 
 def test_import_never_overwrites_and_export_round_trips(tmp_path):
-    store = fp.ProfileStore(str(tmp_path / "film_profiles"))
+    store = fp.ProfileStore(str(tmp_path / "film-profiles"))
     p = make_profile()
     store.save(p)
     out = tmp_path / "exported.json"
@@ -194,7 +194,7 @@ def test_tier1_curve_files_convert():
 def test_camera_setup_round_trip_and_validation(tmp_path):
     s = fp.new_setup("Light table A", camera="Canon EOS R", lens="100mm macro", light_source="white LED panel", flare_fraction=0.004,
                      flare_fraction_se=0.001, noise_sigma=[0.0002, 0.00025, 0.0003], linearity_error_percent=0.6)
-    store = fp.SetupStore(str(tmp_path / "camera_setups"))
+    store = fp.SetupStore(str(tmp_path / "camera-setups"))
     store.save(s)
     t = store.load(s.id)
     assert t.flare_fraction == 0.004 and t.camera == "Canon EOS R" and store.list()[0]["name"] == "Light table A"

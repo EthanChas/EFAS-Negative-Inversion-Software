@@ -120,13 +120,13 @@ def _db_path() -> str:
     """The editor's database. Before the editor has ever run there is none, and nothing is created in its place: a throwaway empty one stands in."""
     import tempfile
 
-    from .features.datadir import app_data_dir
+    from .features.datadir import EDITS_DB, app_data_dir
 
-    real = os.path.join(app_data_dir(), "photoeditor.db")
+    real = os.path.join(app_data_dir(), EDITS_DB)
     if os.path.exists(real):
         return real
     if not _scratch_db:
-        _scratch_db.append(os.path.join(tempfile.mkdtemp(prefix="efas-cli-"), "photoeditor.db"))
+        _scratch_db.append(os.path.join(tempfile.mkdtemp(prefix="efas-cli-"), EDITS_DB))
     return _scratch_db[0]
 
 

@@ -5,9 +5,10 @@ import os
 import re
 import sqlite3
 
+from ..datadir import BACKUP_PREFIX
 from .health import update_best
 
-_NAME = re.compile(r"^photoeditor-\d{4}-\d{2}-\d{2}\.db$")
+_NAME = re.compile(r"^" + re.escape(BACKUP_PREFIX) + r"\d{4}-\d{2}-\d{2}\.db$")
 
 
 def list_backups(backup_dir: str) -> list[tuple[str, int, float]]:
@@ -27,11 +28,11 @@ def list_backups(backup_dir: str) -> list[tuple[str, int, float]]:
 
 
 def backup_database(conn: sqlite3.Connection, backup_dir: str, keep: int = 14, force: bool = False, today: dt.date | None = None) -> str | None:
-    """Copy the live database to backup_dir/photoeditor-YYYY-MM-DD.db with SQLite's own backup API (safe while the
+    """Copy the live database to backup_dir/photo-edits-YYYY-MM-DD.db with SQLite's own backup API (safe while the
     app is writing) and keep only the newest `keep` copies. One per day: None when today's already exists, unless
     force replaces it. Written to a temp name first, so a crash never leaves a truncated backup under the real one."""
     day = (today or dt.date.today()).isoformat()
-    path = os.path.join(backup_dir, f"photoeditor-{day}.db")
+    path = os.path.join(backup_dir, f"{BACKUP_PREFIX}{day}.db")
     if os.path.exists(path) and not force:
         return None
     os.makedirs(backup_dir, exist_ok=True)

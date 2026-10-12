@@ -7,16 +7,30 @@ import shutil
 import sqlite3
 import zipfile
 
-DB_NAME = "photoeditor.db"
-DATA_FILES = ("settings.json", "presets.json", "look_presets.json", "module_presets.json", "metadata_sticky.json")
-GEAR_DIR = "gear"
+from ..datadir import (
+    BACKUP_DIR,
+    EDITS_DB,
+    GEAR_DIR,
+    GEAR_PRESETS_FILE,
+    LOOK_PRESETS_FILE,
+    MODULE_PRESETS_FILE,
+    REMEMBERED_METADATA_FILE,
+    RESTORE_PENDING_DIR,
+    SETTINGS_FILE,
+    new_name,
+)
+
+DB_NAME = EDITS_DB
+DATA_FILES = (SETTINGS_FILE, GEAR_PRESETS_FILE, LOOK_PRESETS_FILE, MODULE_PRESETS_FILE, REMEMBERED_METADATA_FILE)
 MANIFEST = "manifest.json"
-PENDING = "restore_pending"
-_APP = "PhotoEditor data export"
+PENDING = RESTORE_PENDING_DIR
+_APP = "EFAS data export"
+_OLD_DB_NAME = "photoeditor.db"
+_OLD_GEAR_DIR = "gear"
 
 
 def default_export_name(today: dt.date | None = None) -> str:
-    return f"PhotoEditor-data-{(today or dt.date.today()).isoformat()}.zip"
+    return f"EFAS-data-{(today or dt.date.today()).isoformat()}.zip"
 
 
 def export_data(conn: sqlite3.Connection, data_dir: str, dest_zip: str) -> list[str]:
@@ -58,12 +72,19 @@ def export_data(conn: sqlite3.Connection, data_dir: str, dest_zip: str) -> list[
     return names
 
 
+def canonical(name: str) -> str:
+    """The current name of a file an export holds (exports made by older versions use the old file names)."""
+    parts = name.split("/")
+    parts[0] = new_name(parts[0])
+    return "/".join(parts)
+
+
 def _safe(name: str) -> bool:
-    """Only the files an export holds, and nothing that could land outside the data folder."""
-    if name == MANIFEST or name in (DB_NAME, *DATA_FILES):
+    """Only the files an export holds (from this version or an older one, whose files had other names), and nothing that could land outside the data folder."""
+    if name == MANIFEST or canonical(name) in (DB_NAME, *DATA_FILES):
         return True
     parts = name.split("/")
-    return parts[0] == GEAR_DIR and len(parts) > 1 and all(p not in ("", ".", "..") and ":" not in p and "\\" not in p for p in parts)
+    return parts[0] in (GEAR_DIR, _OLD_GEAR_DIR) and len(parts) > 1 and all(p not in ("", ".", "..") and ":" not in p and "\\" not in p for p in parts)
 
 
 def check_source(path: str) -> str:
@@ -83,8 +104,8 @@ def check_source(path: str) -> str:
     try:
         with zipfile.ZipFile(path) as z:
             names = z.namelist()
-            if MANIFEST not in names or DB_NAME not in names:
-                return "That zip is not a PhotoEditor data export."
+            if MANIFEST not in names or not {n for n in names} & {DB_NAME, _OLD_DB_NAME}:
+                return "That zip is not an EFAS data export."
             if not all(_safe(n) for n in names if not n.endswith("/")):
                 return "That zip holds files this app does not recognise."
     except zipfile.BadZipFile:
@@ -108,11 +129,11 @@ def stage_import(path: str, data_dir: str) -> list[str]:
         for name in z.namelist():
             if name.endswith("/") or name == MANIFEST:
                 continue
-            target = os.path.join(pending, *name.split("/"))
+            target = os.path.join(pending, *canonical(name).split("/"))
             os.makedirs(os.path.dirname(target), exist_ok=True)
             with z.open(name) as src, open(target, "wb") as dst:
                 shutil.copyfileobj(src, dst)
-            staged.append(name)
+            staged.append(canonical(name))
     return staged
 
 
@@ -130,7 +151,7 @@ def apply_pending_restore(data_dir: str, now: dt.datetime | None = None) -> list
     if not os.path.isdir(pending):
         return []
     stamp = (now or dt.datetime.now()).strftime("%Y-%m-%d_%H%M%S")
-    keep = os.path.join(data_dir, "backups", f"before-restore-{stamp}")
+    keep = os.path.join(data_dir, BACKUP_DIR, f"before-restore-{stamp}")
     restored: list[str] = []
     try:
         for root, _dirs, files in os.walk(pending):

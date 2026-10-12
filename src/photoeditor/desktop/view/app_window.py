@@ -78,7 +78,8 @@ from .image_view import ImageView
 from .import_window import ImportWindow
 from .library_panel import LibraryPanel
 from .lighttable_view import LighttableView
-from ..paths import thumbnail_cache_dir
+from ..paths import system_thumbnail_dir, thumbnail_cache_dir
+from .uninstall_dialog import UninstallDialog
 from .advanced_preset_dialog import AdvancedPresetDialog
 from .ai_dust_panel import AiDustPanel
 from .look_presets_panel import LookPresetsPanel
@@ -504,6 +505,10 @@ class AppWindow(QMainWindow):
         data_folder_action = QAction("Open Data Folder", self)
         data_folder_action.triggered.connect(self._open_data_folder)
         file_menu.addAction(data_folder_action)
+        self._uninstall_action = QAction("Uninstall EFAS...", self)
+        self._uninstall_action.setToolTip("Remove EFAS from this computer - the program and, if you choose, all your data. Asks you to confirm.")
+        self._uninstall_action.triggered.connect(self._on_uninstall)
+        file_menu.addAction(self._uninstall_action)
 
         file_menu.addSeparator()
         exit_action = QAction("Exit", self)
@@ -2392,6 +2397,27 @@ class AppWindow(QMainWindow):
 
     def _open_data_folder(self) -> None:
         QDesktopServices.openUrl(QUrl.fromLocalFile(os.path.dirname(self.controller.db_path)))
+
+    def _on_uninstall(self) -> None:
+        """File > Uninstall EFAS: ask what to remove (with a warning that deleting data cannot be undone), start the helper that removes it once
+        this program has closed, then close."""
+        from ...features.uninstall import logic as uninstall
+
+        cache = [system_thumbnail_dir()]
+        dialog = UninstallDialog(uninstall.data_folders(cache), uninstall.program_path(), uninstall.shared_folder_files(), self)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        delete_data, delete_program = dialog.choices()
+        plan = uninstall.make_plan(delete_data, delete_program, cache)
+        if plan.is_empty():
+            QMessageBox.information(self, "Uninstall EFAS", "There was nothing to remove.")
+            return
+        try:
+            uninstall.launch(plan)
+        except Exception as e:
+            QMessageBox.critical(self, "Uninstall EFAS", f"EFAS could not start the removal, so nothing was removed.\n\n{e}")
+            return
+        self.close()
 
 
     def split_active(self) -> bool:

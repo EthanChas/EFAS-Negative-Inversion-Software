@@ -4,7 +4,7 @@ import json
 import os
 from typing import Any
 
-from ..datadir import app_data_dir
+from ..datadir import SETTINGS_FILE, app_data_dir
 
 DEMOSAIC_CHOICES: dict[str, tuple[str, str, str]] = {
     "linear": ("Fast (linear)", "LINEAR", "Quickest and softest - fine for a quick look."),
@@ -38,7 +38,7 @@ _cache: tuple[tuple[int, int], dict[str, Any]] | None = None
 
 
 def settings_path() -> str:
-    return os.path.join(app_data_dir(), "settings.json")
+    return os.path.join(app_data_dir(), SETTINGS_FILE)
 
 
 def _clean(data: Any) -> dict[str, Any]:

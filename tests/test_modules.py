@@ -20,7 +20,7 @@ def test_the_two_settings_are_off_by_default_and_checked_for_type(tmp_path, monk
     S.save({"hover_modules": True, "module_colours": True, "module_colour_choices": {"Export": "Teal", "Bad": 5}})
     d = S.load()
     assert d["hover_modules"] and d["module_colours"] and d["module_colour_choices"] == {"Export": "Teal"}
-    (tmp_path / "settings.json").write_text('{"hover_modules": "yes", "module_colours": 1, "module_colour_choices": [1]}')
+    (tmp_path / "app-settings.json").write_text('{"hover_modules": "yes", "module_colours": 1, "module_colour_choices": [1]}')
     S._cache = None
     d = S.load()
     assert d["hover_modules"] is False and d["module_colours"] is False and d["module_colour_choices"] == {}

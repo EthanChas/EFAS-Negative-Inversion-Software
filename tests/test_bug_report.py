@@ -64,7 +64,7 @@ def test_the_log_is_trimmed_to_its_tail(data_dir):
 def test_a_report_holds_what_it_says_and_nothing_personal(data_dir):
     applog.install("1.2.3")
     applog.logger().warning("Export failed for %s: boom", r"C:\Users\Ethan\Pictures\Private Wedding\a.cr2")
-    (data_dir / "settings.json").write_text('{"backup_dir": "C:\\\\Users\\\\Ethan\\\\Secret Backups", "advanced_mode": true, "keybinds": {"x": "Ctrl+Q"}}')
+    (data_dir / "app-settings.json").write_text('{"backup_dir": "C:\\\\Users\\\\Ethan\\\\Secret Backups", "advanced_mode": true, "keybinds": {"x": "Ctrl+Q"}}')
     r = R.build("1.2.3", "Export fails", "It crashed", "Click export", "A file")
     md = R.full_markdown(r)
     assert "It crashed" in md and "Click export" in md and "1.2.3" in md and "Python" in md and "PyQt6" in md

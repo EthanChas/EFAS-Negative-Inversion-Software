@@ -5,7 +5,7 @@ import sqlite3
 from datetime import datetime
 from typing import Iterable, Iterator
 
-from ..datadir import app_data_dir
+from ..datadir import LIBRARY_INDEX_DB, app_data_dir
 from ..open_image.logic import SUPPORTED_EXTS
 
 _SCHEMA = """
@@ -36,7 +36,7 @@ _SKIP_DIRS = {"$recycle.bin", "system volume information", "__pycache__", "lost+
 
 
 def default_db_path() -> str:
-    return os.path.join(app_data_dir(), "library_index.db")
+    return os.path.join(app_data_dir(), LIBRARY_INDEX_DB)
 
 
 def connect(db_path: str | None = None) -> sqlite3.Connection:

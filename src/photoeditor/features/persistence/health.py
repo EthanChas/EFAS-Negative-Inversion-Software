@@ -3,7 +3,9 @@
 import os
 import sqlite3
 
-BEST_NAME = "photoeditor-best.db"
+from ..datadir import BEST_BACKUP
+
+BEST_NAME = BEST_BACKUP
 _COUNTED = ("edits", "ratings", "flags", "folder_roll", "folder_base", "tags", "snapshots")
 _MIN_BACKUP_ROWS = 10
 _LOSS_RATIO = 0.6

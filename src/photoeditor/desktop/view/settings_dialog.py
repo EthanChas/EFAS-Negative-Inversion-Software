@@ -10,7 +10,7 @@ from PyQt6.QtWidgets import (
 )
 
 from ...features.aidust import logic as aidust
-from ...features.datadir import app_data_dir
+from ...features.datadir import BACKUP_DIR, app_data_dir
 from ...features.keybinds import logic as binds
 from ...features.persistence import export as data_export
 from ...features.persistence.backup import backup_database, list_backups
@@ -342,7 +342,7 @@ class SettingsDialog(QDialog):
         QDesktopServices.openUrl(QUrl.fromLocalFile(path))
 
     def _effective_backup_dir(self) -> str:
-        return self._backup_dir or os.path.join(app_data_dir(), "backups")
+        return self._backup_dir or os.path.join(app_data_dir(), BACKUP_DIR)
 
     def _refresh_backup_info(self) -> None:
         folder = self._effective_backup_dir()

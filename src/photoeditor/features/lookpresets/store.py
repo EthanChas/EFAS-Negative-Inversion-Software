@@ -1,19 +1,19 @@
 """The user's saved edit presets - a name and a look (tone, color, film type, sharpening, watermark) to put on any photo. No Qt imports.
 
-Kept in look_presets.json in the app's data folder, in the order they were made. What a look may contain is the controller's business
+Kept in look-presets.json in the app's data folder, in the order they were made. What a look may contain is the controller's business
 (AppController.LOOK_FIELDS); this file only stores named dicts of plain values."""
 
 import json
 import os
 from typing import Any
 
-from ..datadir import app_data_dir
+from ..datadir import LOOK_PRESETS_FILE, app_data_dir
 
 MAX_NAME = 60
 
 
 def _path() -> str:
-    return os.path.join(app_data_dir(), "look_presets.json")
+    return os.path.join(app_data_dir(), LOOK_PRESETS_FILE)
 
 
 def clean_name(name: str) -> str:

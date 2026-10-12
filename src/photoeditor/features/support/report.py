@@ -13,7 +13,7 @@ import zipfile
 from dataclasses import dataclass, field
 from urllib.parse import quote
 
-from ..datadir import app_data_dir
+from ..datadir import BACKUP_DIR, EDITS_DB, FILM_PROFILES_DIR, LIBRARY_INDEX_DB, app_data_dir
 from . import applog
 
 REPO = "EthanChas/EFAS-Negative-Inversion-Software"
@@ -82,10 +82,10 @@ def data_summary() -> dict:
         except OSError:
             return None
 
-    backups = os.path.join(root, "backups")
+    backups = os.path.join(root, BACKUP_DIR)
     count = len([f for f in os.listdir(backups)]) if os.path.isdir(backups) else 0
-    profiles = os.path.join(root, "film_profiles")
-    return {"database_bytes": size(os.path.join(root, "photoeditor.db")), "library_index_bytes": size(os.path.join(root, "library_index.db")),
+    profiles = os.path.join(root, FILM_PROFILES_DIR)
+    return {"database_bytes": size(os.path.join(root, EDITS_DB)), "library_index_bytes": size(os.path.join(root, LIBRARY_INDEX_DB)),
             "backups": count, "film_profiles": len([f for f in os.listdir(profiles) if f.endswith(".json")]) if os.path.isdir(profiles) else 0}
 
 

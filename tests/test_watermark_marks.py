@@ -142,7 +142,7 @@ def test_fonts_find_families_and_resolve():
 def test_installed_fonts_scan_is_cached(tmp_path, monkeypatch):
     monkeypatch.setenv("PHOTOEDITOR_DATA_DIR", str(tmp_path))
     first = fonts.installed_fonts()
-    assert (tmp_path / "fonts.json").exists()
+    assert (tmp_path / "font-list-cache.json").exists()
     assert fonts.installed_fonts() == first
     if first:
         assert fonts.families(first)

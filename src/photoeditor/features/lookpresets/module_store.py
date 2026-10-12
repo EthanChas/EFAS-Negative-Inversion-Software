@@ -1,6 +1,6 @@
 """The presets of single editing modules - what the little menu in a module's header stores and loads (darktable-style). No Qt imports.
 
-A module preset is a name and the values of just that module's fields. Kept per module in module_presets.json in the app's data folder:
+A module preset is a name and the values of just that module's fields. Kept per module in module-presets.json in the app's data folder:
 {"exposure": [{"name": "Push a stop", "values": {...}}], "color": [...]}. They are separate from the whole-look presets
 (store.py): those hold a photo's entire look, these hold one module."""
 
@@ -8,12 +8,12 @@ import json
 import os
 from typing import Any
 
-from ..datadir import app_data_dir
+from ..datadir import MODULE_PRESETS_FILE, app_data_dir
 from .store import clean_name
 
 
 def _path() -> str:
-    return os.path.join(app_data_dir(), "module_presets.json")
+    return os.path.join(app_data_dir(), MODULE_PRESETS_FILE)
 
 
 def _load_all() -> dict[str, list[dict[str, Any]]]:

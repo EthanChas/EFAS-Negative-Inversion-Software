@@ -18,6 +18,10 @@ def main() -> None:
     from .features.support import applog
 
     applog.install(__version__)
+    from .features import datadir
+
+    if datadir.last_move:
+        applog.logger().info("Moved the old data folder: %s", {k: v for k, v in datadir.last_move.items() if k != "copied"})
     if sys.platform.startswith("win"):
         try:
             import ctypes

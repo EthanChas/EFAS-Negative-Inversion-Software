@@ -1,4 +1,6 @@
-"""Bringing every copy of the user's data into the one data folder - sqlite3 / json / shutil only, no Qt imports."""
+"""Bringing the copies of the user's data that older versions left in other folders into the one data folder - sqlite3 / json / shutil only, no Qt imports.
+
+The folders merged in are old ones, so the files in them have the old names (photoeditor.db, look_presets.json...); the data folder has the current names."""
 
 import glob
 import json
@@ -7,7 +9,12 @@ import shutil
 import sqlite3
 from datetime import datetime
 
-_MARKER = "consolidated.json"
+from ..datadir import BACKUP_DIR, EDITS_DB, GEAR_DIR, IMPORT_RECORD_FILE, new_name
+
+_MARKER = IMPORT_RECORD_FILE
+_OLD_DB = "photoeditor.db"
+_OLD_BACKUPS = "backups"
+_OLD_GEAR = "gear"
 _JSON_FILES = ("settings.json", "look_presets.json", "module_presets.json", "presets.json", "metadata_sticky.json", "recents.json", "session.json")
 _BACKUP_GLOB = "photoeditor-????-??-??.db"
 _TABLES = {
@@ -143,8 +150,8 @@ def consolidate(target_dir: str, other_dirs: list[str]) -> dict:
         done = set()
     summary: dict = {"databases": [], "files": []}
 
-    target_db = os.path.join(target_dir, "photoeditor.db")
-    dbs = [os.path.join(d, "photoeditor.db") for d in other_dirs if os.path.isfile(os.path.join(d, "photoeditor.db"))]
+    target_db = os.path.join(target_dir, EDITS_DB)
+    dbs = [os.path.join(d, _OLD_DB) for d in other_dirs if os.path.isfile(os.path.join(d, _OLD_DB))]
     fresh = [p for p in dbs if _fingerprint(p) not in done]
     if fresh:
         fresh.sort(key=lambda p: (_newest_edit(p), os.path.getmtime(p)), reverse=True)
@@ -173,34 +180,34 @@ def consolidate(target_dir: str, other_dirs: list[str]) -> dict:
             conn.close()
 
     for name in _JSON_FILES:
-        ours = os.path.join(target_dir, name)
+        ours = os.path.join(target_dir, new_name(name))
         copies = sorted((os.path.join(d, name) for d in other_dirs if os.path.isfile(os.path.join(d, name))), key=os.path.getmtime, reverse=True)
         if not copies:
             continue
         if not os.path.isfile(ours):
             shutil.copy2(copies[0], ours)
-            summary["files"].append(name)
+            summary["files"].append(new_name(name))
             copies = copies[1:]
-        if name in ("look_presets.json", "module_presets.json"):
+        if name in ("look_presets.json", "module_presets.json"):  # the old names of the preset files
             for other in copies:
                 _union_presets(ours, other)
     for d in other_dirs:
-        gear = os.path.join(d, "gear")
+        gear = os.path.join(d, _OLD_GEAR)
         if os.path.isdir(gear):
             for root, _dirs, files in os.walk(gear):
                 for f in files:
                     src = os.path.join(root, f)
-                    dst = os.path.join(target_dir, "gear", os.path.relpath(src, gear))
+                    dst = os.path.join(target_dir, GEAR_DIR, os.path.relpath(src, gear))
                     if not os.path.exists(dst):
                         os.makedirs(os.path.dirname(dst), exist_ok=True)
                         shutil.copy2(src, dst)
-                        summary["files"].append(os.path.join("gear", os.path.relpath(src, gear)))
-        for src in glob.glob(os.path.join(d, "backups", _BACKUP_GLOB)):
-            dst = os.path.join(target_dir, "backups", os.path.basename(src))
+                        summary["files"].append(os.path.join(GEAR_DIR, os.path.relpath(src, gear)))
+        for src in glob.glob(os.path.join(d, _OLD_BACKUPS, _BACKUP_GLOB)):
+            dst = os.path.join(target_dir, BACKUP_DIR, new_name(os.path.basename(src)))
             if not os.path.exists(dst):
                 os.makedirs(os.path.dirname(dst), exist_ok=True)
                 shutil.copy2(src, dst)
-                summary["files"].append(os.path.join("backups", os.path.basename(src)))
+                summary["files"].append(os.path.join(BACKUP_DIR, new_name(os.path.basename(src))))
 
     if summary["databases"] or summary["files"] or not os.path.isfile(marker_path):
         try:

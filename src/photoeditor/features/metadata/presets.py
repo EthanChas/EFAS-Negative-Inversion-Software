@@ -4,7 +4,7 @@ import json
 import os
 from typing import Any, Optional
 
-from ..datadir import app_data_dir
+from ..datadir import GEAR_PRESETS_FILE, app_data_dir
 from .models import FORMAT_OPTIONS
 from .roll import KNOWN_FILMS
 
@@ -12,7 +12,7 @@ KINDS = ("camera", "lens", "film")
 
 
 def _path() -> str:
-    return os.path.join(app_data_dir(), "presets.json")
+    return os.path.join(app_data_dir(), GEAR_PRESETS_FILE)
 
 
 def load() -> dict[str, Any]:

@@ -120,7 +120,7 @@ def test_the_profile_records_where_it_came_from_and_can_drive_an_inversion(tmp_p
     assert p.curves["G"].used[4] is False and len(p.curves["G"].x) == 21
     assert p.uncertainty["overall"] in ("good", "fair", "poor", "interpolated") and set(p.uncertainty["quality"]) == {"R", "G", "B"}
     assert p.base["v_base"] == pytest.approx(list(V_BASE))
-    store = fp.ProfileStore(str(tmp_path / "film_profiles"))
+    store = fp.ProfileStore(str(tmp_path / "film-profiles"))
     store.save(p)
     back = store.load(p.id)
     x = np.linspace(-3, -0.4, 9)

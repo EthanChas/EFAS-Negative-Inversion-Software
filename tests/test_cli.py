@@ -55,7 +55,7 @@ def test_convert_a_folder_with_a_preset_into_an_output_folder(roll, tmp_path):
 def test_saved_edits_from_the_editors_database_are_applied(roll, tmp_path):
     data = tmp_path / "data"
     data.mkdir()
-    conn = edit_store.connect(str(data / "photoeditor.db"))
+    conn = edit_store.connect(str(data / "photo-edits.db"))
     state = default_edit_state(False)
     state["rotation_quarter_turns"] = 1
     edit_store.save_edit_state(conn, str(roll / "f0.png"), state)
@@ -115,7 +115,7 @@ def test_a_failing_photo_gives_status_1_and_names_the_file(roll, tmp_path):
 def test_info_reports_edits_rating_and_hiding(roll, tmp_path):
     data = tmp_path / "data"
     data.mkdir()
-    conn = edit_store.connect(str(data / "photoeditor.db"))
+    conn = edit_store.connect(str(data / "photo-edits.db"))
     edit_store.set_rating(conn, str(roll / "f0.png"), 4)
     edit_store.hide_photos(conn, [str(roll / "f0.png")])
     conn.close()

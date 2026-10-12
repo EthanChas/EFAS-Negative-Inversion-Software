@@ -18,7 +18,7 @@ from typing import Callable, Optional
 import cv2
 import numpy as np
 
-from ..datadir import app_data_dir
+from ..datadir import AI_DUST_CACHE_DIR, app_data_dir
 from ..lut.logic import apply_channel_lut, to_uint8
 from ..negative.logic import compute_invert_lut
 
@@ -120,7 +120,7 @@ def _model_signature() -> str:
 
 
 def cache_dir() -> str:
-    return os.path.join(app_data_dir(), "ai_dust_cache")
+    return os.path.join(app_data_dir(), AI_DUST_CACHE_DIR)
 
 
 def cache_file(path: str, inverted: bool, mono: bool) -> str:

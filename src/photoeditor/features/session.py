@@ -5,7 +5,7 @@ import json
 import os
 from typing import Any
 
-from .datadir import app_data_dir
+from .datadir import SESSION_FILE, app_data_dir
 
 MAX_RECENT = 10
 _MAX_LAST_BY_FOLDER = 60
@@ -27,7 +27,7 @@ _DEFAULTS: dict[str, Any] = {
 
 
 def _path() -> str:
-    return os.path.join(app_data_dir(), "session.json")
+    return os.path.join(app_data_dir(), SESSION_FILE)
 
 
 def load() -> dict[str, Any]:

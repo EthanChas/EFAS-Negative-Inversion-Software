@@ -9,7 +9,7 @@ import os
 import sys
 import threading
 
-from ..datadir import app_data_dir
+from ..datadir import LOG_DIR, app_data_dir
 
 LOG_NAME = "efas.log"
 MAX_BYTES = 400_000
@@ -19,7 +19,7 @@ _old_hooks: tuple | None = None
 
 
 def log_dir() -> str:
-    return os.path.join(app_data_dir(), "logs")
+    return os.path.join(app_data_dir(), LOG_DIR)
 
 
 def log_path() -> str:

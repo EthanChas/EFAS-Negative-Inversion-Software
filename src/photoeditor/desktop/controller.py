@@ -76,6 +76,7 @@ from ..features.tonecurve.logic import DEFAULT_POINTS
 from ..features.watermark import logic as wm
 from ..features.xmp import logic as xmp
 from ..features.whitebalance.logic import clipping_overlay
+from ..features.datadir import BACKUP_DIR, EDITS_DB
 from .paths import app_data_dir
 from .ai_dust_worker import AiDustWorker
 from .render import EditParams, _scale_rect, RenderJob, Renderer, RenderOutput, RenderThread
@@ -204,7 +205,7 @@ class AppController(QObject):
             data_export.apply_pending_restore(data_dir)
         except Exception:
             pass
-        self.db_path = os.path.join(data_dir, "photoeditor.db")
+        self.db_path = os.path.join(data_dir, EDITS_DB)
         self._db = edit_store.connect(self.db_path)
 
     def export_size(self) -> tuple[int, int] | None:
@@ -3077,7 +3078,7 @@ class AppController(QObject):
     def backup_dir(self) -> str:
         """Where the daily copies go: the folder chosen in Settings, or backups/ inside the data folder."""
         chosen = app_settings.get("backup_dir")
-        return chosen if chosen else os.path.join(os.path.dirname(self.db_path), "backups")
+        return chosen if chosen else os.path.join(os.path.dirname(self.db_path), BACKUP_DIR)
 
     def daily_backup(self) -> str | None:
         """Once a day, copy the database to the backups folder (the newest few are kept - the number is set in Settings)."""

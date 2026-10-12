@@ -94,7 +94,7 @@ _SCRIPT = textwrap.dedent(r'''
     row = edit_store.get_inversion(c.database(), first)
     assert row["engine"] == "curve" and row["profile_id"] == profile.id and len(row["white"]) == 3
     # export uses the same method and the original size
-    conn = edit_store.connect(os.path.join(data, "photoeditor.db"))
+    conn = edit_store.connect(os.path.join(data, "photo-edits.db"))
     full_curve, _ = render_full_resolution(first, conn)
     assert full_curve.shape[:2] == (h, w)
     # another photo is untouched by it

@@ -4,7 +4,9 @@ import json
 import os
 import sqlite3
 
-_MARKER = "legacy_merged.json"
+from ..datadir import LEGACY_MERGED_FILE
+
+_MARKER = LEGACY_MERGED_FILE
 _TABLES = ("edits", "flags", "folder_flatfield")
 
 
