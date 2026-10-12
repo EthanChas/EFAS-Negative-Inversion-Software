@@ -116,7 +116,9 @@ def windows_script(plan: Plan, pid: int, wait: int = WAIT_SECONDS, retries: int 
         "chcp 65001 >nul",
         "set N=0",
         ":waitexit",
-        f'"{_SYS32}tasklist.exe" /FI "PID eq {pid}" /FO CSV /NH 2>nul | "{_SYS32}find.exe" """{pid}""" >nul',
+        # no pipe: a pipe between two programs can hang the whole script if the pipe is not closed; a file cannot
+        f'"{_SYS32}tasklist.exe" /FI "PID eq {pid}" /FO CSV /NH > "%~f0.pid" 2>nul',
+        f'"{_SYS32}find.exe" """{pid}""" "%~f0.pid" >nul',
         "if errorlevel 1 goto gone",
         "set /a N=N+1",
         f"if %N% GEQ {wait} goto giveup",
@@ -143,7 +145,7 @@ def windows_script(plan: Plan, pid: int, wait: int = WAIT_SECONDS, retries: int 
         ]
     if plan.clean_registry:
         lines.append(f'"{_SYS32}reg.exe" delete "{REGISTRY_KEY}" /f >nul 2>&1')
-    lines += [":giveup", '(goto) 2>nul & del "%~f0"']
+    lines += [":giveup", 'del /f /q "%~f0.pid" >nul 2>&1', '(goto) 2>nul & del "%~f0"']
     return "\r\n".join(lines) + "\r\n"
 
 

@@ -99,6 +99,7 @@ def test_the_script_deletes_everything_once_the_app_has_exited(isolated, tmp_pat
     assert new.exists() and exe.exists(), "nothing is touched while the app is still running"
     assert wait_until(lambda: not new.exists() and not old.exists() and not exe.exists() and not os.path.exists(script)), (new.exists(), old.exists(), exe.exists(), os.path.exists(script))
     app.wait()
+    assert not os.path.exists(script + ".pid"), "the helper leaves nothing behind"
     assert (keep / "picture.jpg").exists() and (keep / "picture.jpg.xmp").exists(), "photos and their sidecars are never touched"
     assert exe.parent.exists(), "only the program file goes, not the folder it sat in"
 
@@ -165,3 +166,10 @@ def test_a_folder_shared_with_other_programs_only_loses_efass_own_files(isolated
     app.wait()
     assert (packages / "some_package.py").read_text() == "keep" and (shared / "unrelated.txt").exists() and (shared / "backups" / "someone-elses.db").exists()
     assert not (shared / "photoeditor.db").exists() and not (shared / "session.json").exists() and not (shared / "backups" / "photoeditor-2026-01-01.db").exists()
+
+
+def test_the_wait_loop_uses_no_pipe():
+    """A pipe between tasklist and find can hang a detached script for ever (it did, once, and flashed a console window every second): the check reads a file."""
+    text = un.windows_script(un.Plan(folders=["C:/x"]), 1234)
+    waiting = text.split(":gone")[0]
+    assert "|" not in waiting and '"%~f0.pid"' in waiting
