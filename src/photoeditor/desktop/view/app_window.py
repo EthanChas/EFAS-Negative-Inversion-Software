@@ -72,6 +72,7 @@ from .filmstrip import Filmstrip
 from .flatfield_panel import FlatFieldPanel
 from .histogram_panel import HistogramPanel
 from .history_panel import HistoryPanel
+from .app_icon import APP_NAME, app_icon
 from .icons import correction_icon, eyedropper_cursor, metadata_icon, negative_icon, sun_icon, watermark_icon
 from .image_view import ImageView
 from .import_window import ImportWindow
@@ -305,7 +306,8 @@ class AppWindow(QMainWindow):
         module_style.STYLE.apply(app_settings.load())
         _live_windows.add(self)
         self.setWindowFlag(Qt.WindowType.FramelessWindowHint)
-        self.setWindowTitle("Ethan's Fuckass Editing App")
+        self.setWindowTitle(APP_NAME)
+        self.setWindowIcon(app_icon())
         self.setMinimumSize(480, 360)
 
         self._import_window: ImportWindow | None = None
@@ -356,7 +358,7 @@ class AppWindow(QMainWindow):
         self.controller.hq_busy_changed.connect(self._on_hq_busy)
 
         frame = WindowFrame()
-        frame.layout().addWidget(TitleBar("Ethan's Fuckass Editing App"), 0)
+        frame.layout().addWidget(TitleBar(APP_NAME), 0)
 
         self._cursor_sync = CursorSyncFilter(frame)
         QApplication.instance().installEventFilter(self._cursor_sync)

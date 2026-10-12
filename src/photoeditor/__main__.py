@@ -5,6 +5,7 @@ from PyQt6.QtGui import QColor, QFont, QPalette
 from PyQt6.QtWidgets import QApplication
 
 from . import cli
+from .desktop.view.app_icon import APP_NAME, app_icon
 from .desktop.view.app_window import AppWindow
 from .theme.build_qss import load_stylesheet
 from .theme.tokens import THEME
@@ -17,7 +18,16 @@ def main() -> None:
     from .features.support import applog
 
     applog.install(__version__)
+    if sys.platform.startswith("win"):
+        try:
+            import ctypes
+
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("EFAS.NegativeInversionSoftware")
+        except Exception:
+            pass
     app = QApplication(sys.argv)
+    app.setApplicationName(APP_NAME)
+    app.setWindowIcon(app_icon())
     app.setStyle("Fusion")
     app.setFont(QFont(THEME.font_family, THEME.font_size_base))
     app.setStyleSheet(load_stylesheet(THEME))

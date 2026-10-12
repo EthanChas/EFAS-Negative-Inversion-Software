@@ -4,6 +4,7 @@ from PyQt6.QtWidgets import QHBoxLayout, QLabel, QWidget
 
 from ...theme.tokens import THEME
 from .bevel_widgets import CaptionButton
+from .app_icon import logo_pixmap
 from .icons import photo_icon
 
 
@@ -26,7 +27,9 @@ class TitleBar(QWidget):
         row.setSpacing(THEME.space_sm)
 
         icon_label = QLabel()
-        icon_label.setPixmap(photo_icon(THEME.title_bar_height - 8))
+        icon_label.setPixmap(logo_pixmap(THEME.title_bar_height - 6))
+        if icon_label.pixmap().isNull():
+            icon_label.setPixmap(photo_icon(THEME.title_bar_height - 8))
         row.addWidget(icon_label)
 
         self._label = QLabel(title)
