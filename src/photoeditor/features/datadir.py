@@ -22,7 +22,6 @@ SESSION_FILE = "last-session.json"                # session.json
 RECENTS_FILE = "recent-folders.json"              # recents.json
 REMEMBERED_METADATA_FILE = "remembered-metadata.json"   # metadata_sticky.json
 GEAR_PRESETS_FILE = "camera-and-lens-presets.json"      # presets.json
-PREMADE_TAGS_FILE = "premade-tags.json"           # (new: the user's own pre-made tags)
 LOOK_PRESETS_FILE = "look-presets.json"           # look_presets.json
 MODULE_PRESETS_FILE = "module-presets.json"       # module_presets.json
 FONT_CACHE_FILE = "font-list-cache.json"          # fonts.json

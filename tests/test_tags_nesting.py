@@ -1,4 +1,4 @@
-"""Nested tags (People/Family), finding the closest tag as you type, and the pre-made list."""
+"""Nested tags (People/Family), finding the closest tag as you type, and the tag lists."""
 import pytest
 
 from photoeditor.features.tags import logic as T

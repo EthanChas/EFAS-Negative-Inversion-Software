@@ -52,8 +52,6 @@ class TaggingPanel(CollapsiblePanel):
     collection_requested = pyqtSignal(str)        # show the photos with this tag in the Workbench
     import_requested = pyqtSignal(str)            # the text of a keyword file
     export_requested = pyqtSignal(str)            # where to write the keyword file
-    premade_add_requested = pyqtSignal(list)      # tags for the user's pre-made list
-    premade_remove_requested = pyqtSignal(list)
 
     def __init__(self, parent: QWidget | None = None):
         super().__init__(
@@ -75,7 +73,6 @@ class TaggingPanel(CollapsiblePanel):
         self._dictionary: dict[str, int] = {}
         self._tag_lists = lambda: []
         self._expanded: set[str] = set()
-        self._premade: list[str] = []
         body = self.body()
         body.setSpacing(THEME.space_sm)
 
@@ -181,13 +178,6 @@ class TaggingPanel(CollapsiblePanel):
         """Show these photos' tags against this dictionary."""
         self._paths, self._per_path, self._dictionary = list(paths), dict(per_path), dict(dictionary)
         self._rebuild()
-
-    def set_premade(self, tags: list[str]) -> None:
-        """The user's pre-made tags (the right-click menus offer to add a tag to the list, or take it off)."""
-        self._premade = list(tags)
-
-    def _in_premade(self, tag: str) -> bool:
-        return any(t.casefold() == tag.casefold() for t in self._premade)
 
     def paths(self) -> list[str]:
         return list(self._paths)
@@ -344,13 +334,10 @@ class TaggingPanel(CollapsiblePanel):
         menu = QMenu(self._attached)
         detach = menu.addAction("Detach")
         find = menu.addAction("Find in the dictionary")
-        premade = menu.addAction("Remove from my pre-made tags" if self._in_premade(tag) else "Add to my pre-made tags")
         collection = menu.addAction("Show photos with this tag")
         copy = menu.addAction("Copy to clipboard")
         chosen = menu.exec(self._attached.viewport().mapToGlobal(pos))
-        if chosen == premade:
-            (self.premade_remove_requested if self._in_premade(tag) else self.premade_add_requested).emit([tag])
-        elif chosen == detach:
+        if chosen == detach:
             self.detach_requested.emit(self._selected_attached() or [tag])
         elif chosen == find:
             self.find_tag(tag)
@@ -386,14 +373,10 @@ class TaggingPanel(CollapsiblePanel):
         delete.setEnabled(defined)
         delete_node = menu.addAction("Delete node (and everything inside)")
         menu.addSeparator()
-        premade = menu.addAction("Remove from my pre-made tags" if self._in_premade(tag) else "Add to my pre-made tags")
-        premade.setEnabled(defined)
         collection = menu.addAction("Show photos with this tag")
         copy = menu.addAction("Copy to clipboard")
         chosen = menu.exec(viewport.mapToGlobal(pos))
-        if chosen == premade:
-            (self.premade_remove_requested if self._in_premade(tag) else self.premade_add_requested).emit([tag])
-        elif chosen == attach:
+        if chosen == attach:
             self.attach_requested.emit(self._selected_dictionary() or [tag])
         elif chosen == detach:
             self.detach_requested.emit([tag])

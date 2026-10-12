@@ -17,14 +17,14 @@ class QuickTagDialog(QDialog):
 
     chosen = pyqtSignal(str)
 
-    def __init__(self, usage: dict[str, int], photo_count: int = 1, parent: QWidget | None = None, premade: list[str] | tuple[str, ...] = ()):
+    def __init__(self, usage: dict[str, int], photo_count: int = 1, parent: QWidget | None = None):
         super().__init__(parent)
         self.setWindowTitle("Quick tag")
         self.setWindowFlag(Qt.WindowType.FramelessWindowHint, True)
         self.setModal(True)
         self.setMinimumWidth(380)
         self._usage = dict(usage)
-        self._candidates = list(dict.fromkeys([*self._usage, *premade]))
+        self._candidates = list(self._usage)
         col = QVBoxLayout(self)
         col.setSpacing(6)
         what = "this photo" if photo_count == 1 else f"the {photo_count} selected photos"

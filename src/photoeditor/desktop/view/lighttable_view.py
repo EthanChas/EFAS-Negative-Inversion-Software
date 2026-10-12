@@ -259,7 +259,9 @@ class _TokenCompleter(QCompleter):
     """Completes the word being typed in the search box, not the whole line: `camera:"Canon" rat` offers `rating:` and puts it after the camera term."""
 
     def splitPath(self, path: str) -> list[str]:
-        return [suggest.match_key(suggest.current_token(path)[1])]
+        # No filtering of its own: the list it is given is already what fits the word being typed (suggest.matching), which can match on a level in the
+        # middle of a value (Dog -> tag:Friends/Dogass) that a plain "contains" test on the text would miss when a field name is typed in front.
+        return [""]
 
     def pathFromIndex(self, index) -> str:
         return suggest.apply(self.widget().text(), index.data(COMPLETION_ROLE))
@@ -287,6 +289,7 @@ class LighttableView(QWidget):
     def __init__(self, cache_dir: str | None, parent: QWidget | None = None):
         super().__init__(parent)
         self._resolve_key = lambda _event: None
+        self._known_tags: list[str] | None = None
         self._rows: list[dict] = []
         self._shown: list[dict] = []
         self._loading = False
@@ -944,6 +947,11 @@ class LighttableView(QWidget):
         elif n == 0:
             self._info.setText("Select a photo.")
 
+    def set_known_tags(self, tags: list[str]) -> None:
+        """Every tag that has been made (not only the ones on the photos listed now): what the tag box completes and the drop-down under it lists."""
+        self._known_tags = list(tags)
+        self._tags.set_suggestions(self._known_tags)
+
     def _refresh_tag_editor(self, rows: list[dict]) -> None:
         """The tags of the selection: each with how many of the selected photos carry it, when more than one is selected."""
         counts: dict[str, int] = {}
@@ -954,7 +962,7 @@ class LighttableView(QWidget):
         labels = {t: f"{t}  ({counts[t]} of {len(rows)})" for t in tags} if len(rows) > 1 else None
         self._tags.set_active(bool(rows))
         self._tags.set_tags(tags, labels)
-        self._tags.set_suggestions(sorted({t for r in self._rows for t in r.get("tags", ())}, key=str.casefold))
+        self._tags.set_suggestions(self._known_tags if self._known_tags is not None else sorted({t for r in self._rows for t in r.get("tags", ())}, key=str.casefold))
 
     @staticmethod
     def _describe(r: dict) -> str:

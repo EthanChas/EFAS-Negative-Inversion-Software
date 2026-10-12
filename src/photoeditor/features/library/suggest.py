@@ -1,6 +1,7 @@
 """Suggestions for the Workbench search box: as you type `rat` or `camera:` it offers `rating:>=3`, `camera:"Canon EOS"` and the rest, from the fields the search knows and the
 values your library actually has. Pure functions, no Qt."""
 
+import re
 from collections import Counter
 from datetime import date
 
@@ -94,18 +95,37 @@ def build(rows: list[dict], today: date | None = None) -> list[tuple[str, str]]:
     return unique
 
 
+def _levels(value: str) -> list[str]:
+    """The pieces of a value that can be typed on their own: the levels of a nested tag (Friends/Dogass -> Friends, Dogass) and the words of a name."""
+    return [p for p in re.split(r"[\s/]+", value) if p]
+
+
 def matching(candidates: list[tuple[str, str]], token: str, limit: int = MAX_SHOWN) -> list[tuple[str, str]]:
-    """The suggestions for the word being typed: ones that start with it, then (for a word with no colon yet) ones whose value starts with it."""
+    """The suggestions for the word being typed, best first: ones that start with it; then ones whose value starts with it; then ones where a level or word of
+    the value starts with it (so Dog finds tag:Friends/Dogass, with or without the tag: in front); then, for three letters or more, ones that contain it."""
     key = match_key(token).casefold()
     if key == _NOTHING:
         return []
-    first, second = [], []
+    field, wanted = key.split(":", 1) if ":" in key else (None, key)
+    wanted = wanted.lstrip('"')
+    tiers: list[list[tuple[str, str]]] = [[], [], [], []]
     for text, help_ in candidates:
         low = text.casefold()
-        if low.startswith(key) and low != key:
-            first.append((text, help_))
-        elif ":" not in key:
-            value = low.split(":", 1)[1].lstrip('"') if ":" in low else ""
-            if value.startswith(key):
-                second.append((text, help_))
-    return (first + second)[:limit]
+        if low == key:
+            continue  # a finished term is not offered again
+        if low.startswith(key):
+            tiers[0].append((text, help_))
+            continue
+        if ":" not in low or not wanted:
+            continue
+        cfield, value = low.split(":", 1)
+        value = value.lstrip('"')
+        if field is not None and cfield != field:
+            continue
+        if value.startswith(wanted):
+            tiers[1].append((text, help_))
+        elif any(level.startswith(wanted) for level in _levels(value)):
+            tiers[2].append((text, help_))
+        elif len(wanted) >= 3 and wanted in value:
+            tiers[3].append((text, help_))
+    return [item for tier in tiers for item in tier][:limit]

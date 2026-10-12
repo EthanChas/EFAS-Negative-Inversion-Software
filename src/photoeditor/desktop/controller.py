@@ -56,7 +56,7 @@ from ..features.persistence import export as data_export
 from ..features.persistence.consolidate import ensure_ready as ensure_data_ready
 from ..features.proofs import logic as proof_logic
 from ..features.tags import logic as tag_logic
-from ..features.tags import premade, tagging
+from ..features.tags import tagging
 from ..features.persistence.backup import backup_database
 from ..features.settings import logic as app_settings
 from ..features.retouch.logic import (
@@ -128,7 +128,6 @@ class AppController(QObject):
     scratches_changed = pyqtSignal(int)
     detections_deleted_changed = pyqtSignal(int)
     tag_dictionary_changed = pyqtSignal()
-    premade_changed = pyqtSignal()
     ai_dust_status = pyqtSignal()
     clone_source_changed = pyqtSignal()
     negative_state_changed = pyqtSignal()
@@ -1670,25 +1669,6 @@ class AppController(QObject):
                 if not any(k.casefold() == level.casefold() for k in counts):
                     counts[level] = 0
         return counts
-
-    # --- the user's own pre-made tags ----------------------------------------------------------------------------------------------------
-    def premade_tags(self) -> list[str]:
-        return premade.load()
-
-    def add_premade(self, tags: list[str]) -> None:
-        """Put tags on the user's pre-made list (and in the tag dictionary, so they exist even before a photo has them)."""
-        tags = tag_logic.unique(tags)
-        if not tags:
-            return
-        premade.add(tags)
-        edit_store.define_tags(self._db, tags)
-        self.premade_changed.emit()
-        self.tag_dictionary_changed.emit()
-
-    def remove_premade(self, tags: list[str]) -> None:
-        """Take tags off the pre-made list. No photo loses a tag by this."""
-        premade.remove(tags)
-        self.premade_changed.emit()
 
     # --- the Tagging panel: tag dictionary, rename, change path, delete, keyword files ---------------------------------------------------
     def tagging_data(self, paths: list[str]) -> tuple[dict[str, list[str]], dict[str, int]]:

@@ -1,5 +1,5 @@
 """In the running editor: the history comes back after closing the app, a wrong auto-detection can be deleted on its own (and reset), the quick tag bar
-and pre-made tags work, and the date boxes have a calendar."""
+and the drop-down of made tags work, and the date boxes have a calendar."""
 import json
 import os
 import subprocess
@@ -195,7 +195,7 @@ _FEATURES = _COMMON + textwrap.dedent(r'''
     assert got3 == ["zzqx brand new"], "nothing fits: what was typed becomes a new tag"
     dlg4 = QuickTagDialog(usage, 1)
     assert dlg4.results()[0] == "People/Family" or dlg4.results()[0] == "People", "with nothing typed the most used come first"
-    c.add_premade(["People/Portrait", "Places/Nature", "Subject/Night"])  # the user's own pre-made tags
+    c.create_tag("Places/Nature"); c.create_tag("People/Portrait"); c.create_tag("Subject/Night")  # tags made but not on any photo yet
     # through the window: the hotkey's path adds the chosen tag to the open photo
     QuickTagDialog.exec = lambda self: (self._entry.setText("natur"), self._pick(self.selected()))
     win.quick_tag()
@@ -208,14 +208,14 @@ _FEATURES = _COMMON + textwrap.dedent(r'''
     assert "Subject/Night" in c.photo_tags(PHOTO) and "Subject/Night" in c.photo_tags(os.path.join(DATA, "photos", "b.png"))
     win.set_view("editor")
 
-    # ---- pre-made tags drop-down in the Tags section
+    # ---- the drop-down of tags you have made, in the Tags section
     editor = win._tags_panel.editor
     asked = []
     editor.add_requested.connect(asked.append)
-    combo = editor._premade
-    assert combo.count() == 4 and combo.itemText(0).startswith("Add a pre-made tag"), [combo.itemText(i) for i in range(combo.count())]
+    combo = editor._mytags
+    names = [combo.itemText(i) for i in range(combo.count())]
+    assert names[0] == "Add one of my tags..." and "People › Portrait" in names and "Places › Nature" in names and "People › Family" in names, names
     idx = combo.findData("People/Portrait")
-    assert idx > 0 and combo.itemText(idx) == "People › Portrait"
     combo.activated.emit(idx)
     assert asked == [["People/Portrait"]] and combo.currentIndex() == 0, "picking one adds it and the list goes back to its heading"
     combo.activated.emit(0)
@@ -281,7 +281,7 @@ def test_the_history_comes_back_in_order_after_closing_the_app():
         _run(_HISTORY, data, f"HISTORY PHASE {phase} OK", PHASE=phase)
 
 
-def test_delete_one_detection_quick_tags_premade_tags_and_calendars():
+def test_delete_one_detection_quick_tags_my_tags_and_calendars():
     data = tempfile.mkdtemp()
     _make_photos(data)
     _run(_FEATURES, data, "FEATURES OK")
