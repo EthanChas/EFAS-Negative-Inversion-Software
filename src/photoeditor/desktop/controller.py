@@ -2800,14 +2800,14 @@ class AppController(QObject):
             return dens_quality.unknown(self._linear_error or "The scan has not been checked.")
         return dens_quality.assess(self._measurement)
 
-    def scan_grading(self) -> tuple[object, list[tuple[str, str]]]:
-        """What the histogram's SCAN section says: (the scan-quality verdict, the grading lines - what the photo was recognised as, the film base, the
-        inversion method and the metering). The same facts the Negative tab shows."""
+    def scan_grading(self) -> tuple[object, tuple[str, str]]:
+        """What the histogram's scan rows say: (the scan-quality verdict, (a one-line summary of the negative, its full lines for a tooltip)). The same facts the
+        Negative tab shows."""
         from ..features.whitebalance import readout as rd
 
         s = self.state
         if s.image_path is None:
-            return None, []
+            return None, ("", "")
         mode = s.detected_mode.value if s.detected_mode is not None else ""
         name = ""
         if s.inversion_profile:
@@ -2816,9 +2816,9 @@ class AppController(QObject):
             except fpmod.ProfileError:
                 name = ""
         m = s.metering
-        lines = rd.scan_lines(mode, s.negative_inverted, s.film_base, s.inversion_engine, name,
-                              rd.metering_text(m.buffer, m.rect, m.range_clip, m.white, m.black) if s.negative_inverted else "")
-        return self.scan_quality(), lines
+        summary = rd.negative_summary(mode, s.negative_inverted, s.film_base, s.inversion_engine, name,
+                                      rd.metering_text(m.buffer, m.rect, m.range_clip, m.white, m.black) if s.negative_inverted else "")
+        return self.scan_quality(), summary
 
     def roll_check_inputs(self) -> tuple[list[str], tuple | None]:
         """The open folder's photos and, when one was sampled for this roll, its film base (linear), for the roll consistency check."""

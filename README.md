@@ -12,7 +12,7 @@ Built in **Python** with **PyQt6**. Created by Ethan.
 
 - **Negative inversion and metering**: film-base sampling, per-channel balance, colour-negative and black-and-white modes, eyedropper picking
 - **Exposure, tone curve, contrast, shadows/highlights, local contrast, sharpening, denoise, flat-field correction**
-- **A written read-out under the histogram**: exposure, median, tonal range, contrast, clipping, average colour and saturation, plus the scan grading the Negative tab gives (scan quality, what it was recognised as, film base, inversion method, metering)
+- **A short written read-out under the histogram**: exposure, contrast, range, clipping, colour, saturation and the channel averages on one line each, then the scan quality and a line on the negative; hover a row for the full detail
 - **Dust and scratch removal**: manual spot and curved-scratch tools, a clone tool and AI dust detection. If automatic detection gets one wrong, show the detections, click that one with Delete Repair and only it is left alone (Reset Deleted brings them back)
 - **Geometry**: crop with guides, straighten tool, automatic crop by border gradient
 - **Finishing**: vignette and borders

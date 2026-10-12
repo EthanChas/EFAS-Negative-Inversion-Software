@@ -2769,8 +2769,8 @@ class AppWindow(QMainWindow):
 
     def _refresh_scan_grading(self) -> None:
         """The SCAN section under the histogram follows the photo, its scan check and the Negative tab's settings."""
-        quality, lines = self.controller.scan_grading()
-        self._stats_panel.set_scan(quality, lines)
+        quality, summary = self.controller.scan_grading()
+        self._stats_panel.set_scan(quality, summary)
 
     def _on_measurement_changed(self) -> None:
         c = self.controller

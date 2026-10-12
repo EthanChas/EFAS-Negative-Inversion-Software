@@ -7,6 +7,7 @@ import numpy as np
 
 _LUMA = np.array((0.299, 0.587, 0.114), dtype=np.float32)
 SHADOW_CLIP = 3
+DEFAULT_BUFFER = 0.12  # Metering's own default margin
 HIGHLIGHT_CLIP = 252
 SHADOW_LIMIT = 64
 HIGHLIGHT_LIMIT = 192
@@ -100,64 +101,66 @@ def _pct(v: float) -> str:
     return f"{v:.0f}%" if v >= 9.5 or v == 0 else f"{v:.1f}%"
 
 
-def exposure_lines(r: dict) -> list[tuple[str, str]]:
+def cast_short(r: dict) -> str:
+    """The average colour in as few words as will do: Neutral, warm, strong cool, slight green..."""
+    mean = max((r["r"] + r["g"] + r["b"]) / 3.0, 1.0)
+    warmth = (r["r"] - r["b"]) / mean
+    tint = (r["g"] - (r["r"] + r["b"]) / 2.0) / mean
+    leans = [(abs(v), ("strong " if abs(v) >= 0.15 else "slight " if abs(v) < 0.08 else "") + (plus if v > 0 else minus))
+             for v, plus, minus in ((warmth, "warm", "cool"), (tint, "green", "magenta")) if abs(v) >= 0.04]
+    if len(leans) == 2 and max(leans)[0] >= 0.15:
+        leans = [max(leans)]  # a strong lean says it all; the weaker one would only make the line long
+    return "Neutral" if not leans else ", ".join(text for _size, text in leans).capitalize()
+
+
+def compact_rows(r: dict) -> list[tuple[str, str, str]]:
+    """The read-out as a few very short rows (label, what to show, the whole story for a tooltip): exposure, contrast, range, clipping, colour and saturation."""
+    rng = range_label(r).replace(" range", "")
+    sat = saturation_label(r["saturation"])
     return [
-        ("Exposure", f"{exposure_verdict(r['mean'])}, {r['mean']:.0f}"),
-        ("Median", f"{r['median']:.0f}  ({r['median'] / 255 * 100:.0f}%)"),
-        ("Range", f"{range_label(r).replace(' range', '')}, {r['p1']:.0f}-{r['p99']:.0f}"),
-        ("Dark / mid / light", f"{_pct(r['shadows_pct'])} / {_pct(r['midtones_pct'])} / {_pct(r['highlights_pct'])}"),
+        ("Exposure", f"{exposure_verdict(r['mean'])}, {r['mean']:.0f}",
+         f"Average brightness {r['mean']:.0f} of 255 ({r['mean'] / 255 * 100:.0f}%); the middle tone (median) is {r['median']:.0f}."),
+        ("Contrast", contrast_label(r),
+         f"The dark and bright ends of the picture (5% to 95%) are {r['p95'] - r['p5']:.0f} apart out of 255, with a deviation of {r['std']:.0f}."),
+        ("Range", f"{rng} {r['p1']:.0f}-{r['p99']:.0f}",
+         f"{range_label(r)}: 98% of the picture lies between {r['p1']:.0f} and {r['p99']:.0f}. Dark (below {SHADOW_LIMIT}) {_pct(r['shadows_pct'])}, "
+         f"middle {_pct(r['midtones_pct'])}, light ({HIGHLIGHT_LIMIT} and up) {_pct(r['highlights_pct'])}."),
+        ("Clipping", f"{_pct(r['blocked_pct'])} / {_pct(r['blown_pct'])}",
+         f"Blocked shadows {_pct(r['blocked_pct'])} (brightness {SHADOW_CLIP} or less) / blown highlights {_pct(r['blown_pct'])} ({HIGHLIGHT_CLIP} or more)."),
+        ("Colour", cast_short(r),
+         f"The picture's average colour is {cast_label(r).lower()}. This reads the picture, not the white balance: a red wall will say warm."),
+        ("Saturation", sat, f"How colourful the picture is: {sat.lower()} ({r['saturation']:.2f}; 0 is grey, 1 is pure colour)."),
     ]
 
 
-def contrast_lines(r: dict) -> list[tuple[str, str]]:
-    return [
-        ("Contrast", contrast_label(r)),
-        ("Spread", f"{r['p95'] - r['p5']:.0f} of 255"),
-        ("Deviation", f"{r['std']:.0f}"),
-    ]
-
-
-def clipping_lines(r: dict) -> list[tuple[str, str]]:
-    return [
-        ("Blocked shadows", _pct(r["blocked_pct"])),
-        ("Blown highlights", _pct(r["blown_pct"])),
-    ]
-
-
-def colour_lines(r: dict) -> list[tuple[str, str]]:
-    return [
-        ("Average", cast_label(r)),
-        ("Saturation", f"{saturation_label(r['saturation'])}, {r['saturation']:.2f}"),
-    ]
-
-
-def scan_lines(mode: str, inverted: bool, base: tuple | None, engine: str, profile_name: str, metering: str) -> list[tuple[str, str]]:
-    """The negative's own grading lines - what the Negative tab reports, in one place: what it was recognised as, the film base, the inversion method and how
-    it is metered."""
-    kinds = {"c41": "Colour negative", "bw": "Black & white negative", "e6": "Slide"}
-    what = kinds.get(mode, "")
-    if what:
-        what += ", inverted" if inverted and mode != "e6" else ", not inverted" if mode != "e6" else ""
-    if base is None:
-        base_text = "Auto-estimated"
-    else:
-        base_text = f"Sampled ({base[0]}, {base[1]}, {base[2]})"
-    method = "Curve-informed" + (f": {profile_name}" if profile_name else "") if engine == "curve" else "Standard"
-    lines = []
-    if what:
-        lines.append(("Type", what))
-    lines += [("Film base", base_text), ("Inversion", method)]
+def negative_summary(mode: str, inverted: bool, base: tuple | None, engine: str, profile_name: str, metering: str) -> tuple[str, str]:
+    """The negative's grading in one short line - what it is, whether it is inverted, whether the film base was sampled, and only what is not the
+    ordinary way (a curve-informed inversion, a region or moved points) - and the full lines for a tooltip."""
+    kinds = {"c41": ("Colour neg", "Colour negative"), "bw": ("B&W neg", "Black & white negative"), "e6": ("Slide", "Slide")}
+    short, full = kinds.get(mode, ("", ""))
+    flow = ", inverted" if inverted and mode != "e6" else ", not inverted" if mode in ("c41", "bw") else ""
+    parts = [(short + flow) if short else ("Inverted" if inverted else "Not inverted"), "sampled base" if base is not None else "auto base"]
+    if engine == "curve":
+        parts.append("curve" + (f": {profile_name}" if profile_name else ""))
     if metering:
-        lines.append(("Metering", metering))
-    return lines
+        parts.append("metering changed")
+    tip = [f"Recognised as: {full + flow if full else 'unknown'}",
+           "Film base: " + (f"sampled ({base[0]}, {base[1]}, {base[2]})" if base is not None else "estimated from the photo"),
+           "Inversion: " + (f"curve-informed{': ' + profile_name if profile_name else ''}" if engine == "curve" else "standard")]
+    if metering:
+        tip.append(f"Metering: {metering}")
+    return ", ".join(parts), "\n".join(tip)
 
 
 def metering_text(buffer: float, rect, range_clip: float, white: float, black: float) -> str:
-    """How the black and white points are read, in a few words."""
-    where = "drawn region" if rect else f"whole frame less {buffer * 100:.0f}% margin"
+    """How the black and white points are read when that is not the ordinary way - "" for the ordinary whole-frame reading with the standard margin."""
     extras = []
+    if rect:
+        extras.append("drawn region")
+    elif abs(buffer - DEFAULT_BUFFER) > 1e-9:
+        extras.append(f"whole frame less {buffer * 100:.0f}% margin")
     if range_clip:
         extras.append(f"range clip {range_clip:g}")
     if white or black:
         extras.append("points moved")
-    return where + ("; " + ", ".join(extras) if extras else "")
+    return ", ".join(extras)

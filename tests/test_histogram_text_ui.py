@@ -36,30 +36,34 @@ _SCRIPT = textwrap.dedent(r'''
         return cond()
 
     def texts(panel):
-        return [l.text() for l in panel.findChildren(QLabel) if l.isVisibleTo(panel) or True]
+        return [l.text() for l in panel.findChildren(QLabel)]
 
-    # ---- the panel on its own
+    # ---- the panel on its own: a few compact rows
     panel = ChannelStatsPanel(); panel.show()
     stats = {k: {"avg": 120.0, "shadow_clip_pct": 0.0, "highlight_clip_pct": 1.5} for k in "rgb"}
     ramp = np.repeat(np.arange(256, dtype=np.uint8)[None, :, None], 3, axis=2).repeat(8, axis=0)
     panel.set_stats(stats, "Well exposed", 127.5)
-    assert not panel._contrast_head.isVisible(), "without a read-out the extra sections stay hidden"
+    assert panel._rows["Exposure"][1].text() == "Well exposed, 128" and panel._rows["Contrast"][1].text() == "-"
     panel.set_stats(stats, "Well exposed", 127.5, R.tonal_readout(ramp))
-    t = texts(panel)
-    for expected in ("EXPOSURE", "CONTRAST", "CLIPPING", "COLOUR", "Median", "Range", "Dark / mid / light", "Contrast", "Spread", "Deviation", "Blocked shadows", "Blown highlights", "Average", "Saturation"):
-        assert expected in t, (expected, t)
-    assert panel._contrast_head.isVisible() and panel._exposure_value.text().startswith("Well exposed")
-    assert panel._value_labels["r"].text() == "avg 120 · clip 0.0/1.5%"
+    labels = [panel._rows[k][0].text() for k in panel._rows]
+    assert labels == ["Exposure", "Contrast", "Range", "Clipping", "Colour", "Saturation", "Channels"], labels
+    assert panel._rows["Exposure"][1].text() in ("Well exposed, 128", "Well exposed, 127")
+    assert panel._rows["Range"][1].text().startswith("Full ")
+    assert "120" in panel._rows["Channels"][1].text() and panel._rows["Channels"][1].text().count("120") == 3
+    assert "average 120" in panel._rows["Channels"][1].toolTip() and "1.5%" in panel._rows["Channels"][1].toolTip()
+    assert "median" in panel._rows["Exposure"][0].toolTip() and "Dark (below 64)" in panel._rows["Range"][1].toolTip(), "the detail is in the tooltips"
     n = len(texts(panel))
     panel.set_stats(stats, "Well exposed", 127.5, R.tonal_readout(ramp))
-    assert len(texts(panel)) == n, "refilling replaces the rows, it does not pile them up"
-    panel.set_scan(ScanQuality("good", "Scan quality is good", "The whole negative is well above the noise floor."), [("Type", "Colour negative, inverted"), ("Film base", "Auto-estimated"), ("Inversion", "Standard")])
-    t = texts(panel)
-    assert "SCAN" in t and any("Scan quality is good" in x for x in t) and "Film base" in t and "Colour negative, inverted" in t
-    panel.set_scan(None, [])
-    assert not panel._scan_head.isVisible() and not panel._quality_head.isVisible()
+    assert len(texts(panel)) == n
+    assert len([t for t in texts(panel) if t.isupper() and len(t) > 3]) == 0, "no section headings"
+    panel.set_scan(ScanQuality("good", "Scan quality is good", "The whole negative is well above the noise floor."), ("Colour neg, inverted, auto base", "Recognised as: Colour negative, inverted"))
+    assert panel._quality_head.isVisible() and "Scan quality is good" in panel._quality_head.text() and "noise floor" in panel._quality_head.toolTip()
+    assert panel._negative.text() == "Colour neg, inverted, auto base" and "Recognised as" in panel._negative.toolTip()
+    panel.set_scan(None, ("", ""))
+    assert not panel._quality_head.isVisible() and not panel._negative.isVisible()
     panel.clear()
-    assert panel._exposure_value.text() == "-" and not panel._contrast_head.isVisible()
+    assert panel._rows["Exposure"][1].text() == "-"
+    assert len(panel.findChildren(QLabel)) <= 18, "a compact block"
 
     # ---- in the app: it follows the photo, and the grading follows the Negative tab
     win = aw.AppWindow(); win.resize(1500, 1000); win.show(); app.processEvents()
@@ -69,20 +73,18 @@ _SCRIPT = textwrap.dedent(r'''
     pump(secs=0.5)
     sp = win._stats_panel
     first = texts(sp)
-    assert "Spread" in first and "CONTRAST" in first and "SCAN" in first
+    assert "Contrast" in first and "Colour" in first
     assert c.state.readout["mean"] > 0
     c.set_exposure_ev(1.5)
-    assert pump(lambda: c.state.readout["mean"] > 0 and texts(sp) != first)
-    quality, lines = c.scan_grading()
-    keys = [k for k, _v in lines]
-    assert "Film base" in keys and "Inversion" in keys
-    assert dict(lines)["Inversion"] == "Standard"
+    assert pump(lambda: texts(sp) != first)
+    quality, (summary, tip) = c.scan_grading()
+    assert summary and "base" in summary and "Inversion: standard" in tip
     c.state.film_base = (210, 130, 80)
     win._refresh_scan_grading()
-    assert "Sampled (210, 130, 80)" in texts(sp)
+    assert sp._negative.text().endswith("sampled base") and "sampled (210, 130, 80)" in sp._negative.toolTip()
     c.state.film_base = None
     win._refresh_scan_grading()
-    assert "Auto-estimated" in texts(sp) and "Sampled (210, 130, 80)" not in texts(sp)
+    assert sp._negative.text().endswith("auto base")
     print("HISTOGRAM TEXT OK"); sys.stdout.flush(); os._exit(0)
 ''')
 
