@@ -49,6 +49,7 @@ class NegativeToolPanel(CollapsiblePanel):
     auto_base_requested = pyqtSignal()
     inversion_requested = pyqtSignal(str, str, str)
     compare_requested = pyqtSignal(str, str)
+    film_reference_requested = pyqtSignal()
 
     def __init__(self, parent: QWidget | None = None):
         super().__init__(
@@ -166,6 +167,10 @@ class NegativeToolPanel(CollapsiblePanel):
         self._ab_btn.setToolTip("See the standard and the curve-informed conversion side by side, with numbers. Changes nothing.")
         self._ab_btn.clicked.connect(lambda: self.compare_requested.emit(self._engine_profile.currentData() or "", self._engine_setup.currentData() or ""))
         body.addWidget(self._ab_btn)
+        self._film_ref_btn = QPushButton("Film Colour Reference...")
+        self._film_ref_btn.setToolTip("Search a film stock and see photos shot on it (from lomography.com), to judge a conversion's colour against")
+        self._film_ref_btn.clicked.connect(self.film_reference_requested)
+        body.addWidget(self._film_ref_btn)
         self._guidance = QLabel("")
         self._guidance.setProperty("role", "hint")
         self._guidance.setWordWrap(True)

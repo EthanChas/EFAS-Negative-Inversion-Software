@@ -32,6 +32,7 @@ Built in **Python** with **PyQt6**. Created by Ethan.
 - **Report a problem**: a redacted report you can read, save and attach to a GitHub issue; nothing is sent automatically
 - **Updates**: Info > Version, with a startup notice when a new version is out (see Updates below)
 - **Themes**: Default, Modern, Midnight, Graphite, Darkroom and High contrast, with accent colours and text size, plus your own themes as CSS files (Settings > Themes; see [docs/themes.md](docs/themes.md))
+- **Film Colour Reference** (Extra menu, and the Negative tab): search a film stock and see photos shot on it, from lomography.com, in a clean gallery to judge a conversion's colour against (see Privacy below)
 - **Data safety**: automatic backups, startup health check with restore, and full data export/import (Settings > Data & backup)
 
 ## Privacy
@@ -39,6 +40,8 @@ Built in **Python** with **PyQt6**. Created by Ethan.
 The editor is **offline only**. No data is sent out: no analytics, no telemetry, no accounts, and your photos and edits never leave your computer.
 
 The one thing it does online is ask the GitHub releases page for the latest version number, so it can tell you when an update exists (and download it if you choose to update). That is a plain web request, so GitHub sees your IP address the way any website does, and nothing else. You can turn the check off under Settings > General, and you can run the app with no internet connection at all.
+
+The other online feature is the **Film Colour Reference**. It does nothing until you open it from the Extra menu or the Negative tab and agree to it once (Settings > General turns it off again). While its window is open it reads lomography.com's film list and the sample photos of the film you pick, only from lomography.com's own film pages (never its search, browse or API pages, which its robots.txt asks programs to avoid), with a User-Agent that says what it is. What you type in its search box stays on this computer (the film list is searched here), no information about you or your photos is sent, and lomography.com sees your IP address like any website does. The photos are shown, not saved or edited; they are by Lomography community members, so each shows who took it and links to its page. Only the film list (names and page addresses) is kept, for two weeks, in the data folder.
 
 Your privacy is a right, and it will be respected.
 

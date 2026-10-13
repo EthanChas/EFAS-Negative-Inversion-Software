@@ -119,6 +119,7 @@ from .sharpening_panel import SharpeningToolPanel
 from .stats_panel import ChannelStatsPanel
 from .title_bar import TitleBar
 from .tone_curve_panel import ToneCurveToolPanel
+from .film_reference_dialog import FilmReferenceDialog
 from .tool_rail import SlideOutPanel, ToolRail
 from .window_frame import CursorSyncFilter, WindowFrame
 
@@ -599,6 +600,10 @@ class AppWindow(QMainWindow):
             "live (moves/resizes), so the layout keeps working underneath."
         )
         extra_menu.addAction(self._debug_action)
+        self._film_reference_action = QAction("Film Colour Reference...", self)
+        self._film_reference_action.setToolTip("Search a film stock and see photos shot on it, from lomography.com, to judge colour against")
+        self._film_reference_action.triggered.connect(lambda _c=False: self.show_film_reference())
+        extra_menu.addAction(self._film_reference_action)
 
         info_menu = menubar.addMenu("Info")
         shortcuts_action = self._shortcuts_action = QAction("Keyboard Shortcuts", self)
@@ -978,6 +983,7 @@ class AppWindow(QMainWindow):
         self._advanced.profile_imported.connect(self._on_profile_imported)
         self._negative_tool.inversion_requested.connect(self._on_inversion_requested)
         self._negative_tool.compare_requested.connect(self._on_compare_requested)
+        self._negative_tool.film_reference_requested.connect(self.show_film_reference)
         self.controller.inversion_changed.connect(self._sync_inversion)
         self._advanced.set_transfer(app_settings.get("scan_transfer"))
         self._negative_tool.advanced_toggled.connect(self._on_advanced_toggled)
@@ -1900,6 +1906,43 @@ class AppWindow(QMainWindow):
         path = self.controller.state.image_path
         if changed and path:
             self.controller.open_file(path)
+
+    def _roll_film(self) -> str:
+        """The film named on the open photo's Roll Card, to start the Film Colour Reference's search with."""
+        path = self.controller.state.image_path
+        if not path:
+            return ""
+        try:
+            from ..export_worker import load_roll
+
+            return load_roll(path, self.controller._db).film.strip()
+        except Exception:
+            return ""
+
+    def show_film_reference(self, ask: bool = True) -> None:
+        """Extra > Film Colour Reference / the Negative tab's button: photos of a film stock from lomography.com. It is the one feature besides the update check
+        that goes online, so the first time it asks (and Settings > General can switch it off again)."""
+        if not app_settings.get("film_reference_online"):
+            if not ask:
+                return
+            answer = QMessageBox.question(
+                self, "Film Colour Reference",
+                "The Film Colour Reference gets the list of film stocks and sample photos from lomography.com, only while its window is open. "
+                "Nothing about you or your photos is sent (lomography.com sees your internet address, as any website does), and what you type in the search box "
+                "stays on this computer. The photos are shown, not saved.\n\nAllow this?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, QMessageBox.StandardButton.No,
+            )
+            if answer != QMessageBox.StandardButton.Yes:
+                return
+            app_settings.save({"film_reference_online": True})
+        existing = getattr(self, "_film_reference", None)
+        if existing is not None and existing.isVisible():
+            existing.raise_()
+            existing.activateWindow()
+            return
+        self._film_reference = FilmReferenceDialog(self, self._roll_film())
+        self._film_reference.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, True)
+        self._film_reference.show()
 
     def show_credits(self) -> None:
         CreditsDialog(self).exec()

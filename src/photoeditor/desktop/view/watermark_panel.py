@@ -318,7 +318,7 @@ class CanisterWatermarkPanel(CollapsiblePanel):
     def _build_info(self, body) -> None:
         body.addWidget(self._subtitle("CAMERA AND LENS"))
         self._info = QCheckBox("Add Camera and Lens")
-        self._info.setToolTip("Write the camera and lens in white, with \"Edited with Ethans Negative Inversion App\" in tiny text underneath.")
+        self._info.setToolTip("Write the camera and lens in white, with \"Edited with EFAS Negative Inversion Software\" in tiny text underneath.")
         self._info.toggled.connect(self._on_info_toggled)
         body.addWidget(self._info)
         self._camera = self._add_text(body, "Camera", "e.g. Pentax K1000", kind="camera")
@@ -326,7 +326,7 @@ class CanisterWatermarkPanel(CollapsiblePanel):
         self._camera.completer().activated.connect(lambda _t: self._on_camera_picked())
         self._info_beside = self._check(body, "Next to the canister", "With a canister showing, put the text beside it. Untick to place the text on its own, wherever you like.",
                                         self._on_info_toggled)
-        self._info_credit = self._check(body, "Credit line", "The tiny \"Edited with Ethans Negative Inversion App\" line under the text.")
+        self._info_credit = self._check(body, "Credit line", "The tiny \"Edited with EFAS Negative Inversion Software\" line under the text.")
         self._info_position = self._add_row(body, "Position", [(label, key) for key, label in PLACES.items()], "Where the camera and lens text sits (when not beside the canister).", self._emit_marks)
         self._info_size = self._slider(body, "Size", INFO_SIZE_RANGE[0] * 100, INFO_SIZE_RANGE[1] * 100, Marks().info_size * 100, 1, 0.1,
                                        "Height of the letters, as a percentage of the picture's shorter side.")

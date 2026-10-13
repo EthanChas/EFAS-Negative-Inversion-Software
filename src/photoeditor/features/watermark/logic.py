@@ -21,7 +21,7 @@ DEFAULT_TEXTURE = "plastic"
 DEFAULT_SIZE = "medium"
 DEFAULT_POSITION = "bottom_right"
 MARGIN = 0.03
-CREDIT = "Edited with Ethans Negative Inversion App"
+CREDIT = "Edited with EFAS Negative Inversion Software"
 _FONT_FILES = ("segoeui.ttf", "arial.ttf", "DejaVuSans.ttf")
 
 

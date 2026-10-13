@@ -24,7 +24,7 @@ from .models import (
     resolve_description_fields,
 )
 
-_NEGPY_SOFTWARE = "Ethans Negative Inversion App"
+_NEGPY_SOFTWARE = "EFAS Negative Inversion Software"
 NEGPY_SOFTWARE = _NEGPY_SOFTWARE
 
 

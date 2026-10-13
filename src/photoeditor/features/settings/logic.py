@@ -29,6 +29,7 @@ DEFAULTS: dict[str, Any] = {
     "workbench_library": True,
     "hq_always": False,
     "collapse_on_tab_change": True,
+    "film_reference_online": False,
     "theme": "classic",
     "theme_accent": ACCENTS[0][0],
     "theme_text_scale": 100,
@@ -54,7 +55,7 @@ def _clean(data: Any) -> dict[str, Any]:
         return out
     if data.get("raw_demosaic") in DEMOSAIC_CHOICES:
         out["raw_demosaic"] = data["raw_demosaic"]
-    for key in ("raw_auto_bright", "auto_advance", "backup_auto", "check_updates", "advanced_mode", "scan_quality", "hover_modules", "module_colours", "workbench_library", "hq_always", "collapse_on_tab_change"):
+    for key in ("raw_auto_bright", "auto_advance", "backup_auto", "check_updates", "advanced_mode", "scan_quality", "hover_modules", "module_colours", "workbench_library", "hq_always", "collapse_on_tab_change", "film_reference_online"):
         if isinstance(data.get(key), bool):
             out[key] = data[key]
     if isinstance(data.get("theme"), str) and 0 < len(data["theme"]) <= 120:
