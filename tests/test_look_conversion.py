@@ -1,30 +1,30 @@
 """The conversion from another program's scanner-look settings to EFAS sliders (docs/presets.md)."""
 import pytest
 
-from photoeditor.features.lookpresets import builtin, nlp
+from photoeditor.features.lookpresets import builtin, lookconvert
 from photoeditor.features.lookpresets.modules import LOOK_KEYS
 
 
 def test_each_rule_on_its_own():
-    assert nlp.convert({"Saturation": 5})["saturation"] == pytest.approx(0.10)
-    assert nlp.convert({"Darks": -24})["shadows"] == pytest.approx(-0.24) and nlp.convert({"Lights": 12})["highlights"] == pytest.approx(0.12)
-    assert nlp.convert({"Blacks": -20, "LabFade": 7})["print_toe"] == pytest.approx(-0.13), "blacks and fade share the toe"
-    assert nlp.convert({"Whites": 15})["print_shoulder"] == pytest.approx(-0.15), "brighter whites push the highlights harder to white"
-    warm = nlp.convert({"BlueYellowShadows": 6, "BlueYellowHighs": 3})
+    assert lookconvert.convert({"Saturation": 5})["saturation"] == pytest.approx(0.10)
+    assert lookconvert.convert({"Darks": -24})["shadows"] == pytest.approx(-0.24) and lookconvert.convert({"Lights": 12})["highlights"] == pytest.approx(0.12)
+    assert lookconvert.convert({"Blacks": -20, "LabFade": 7})["print_toe"] == pytest.approx(-0.13), "blacks and fade share the toe"
+    assert lookconvert.convert({"Whites": 15})["print_shoulder"] == pytest.approx(-0.15), "brighter whites push the highlights harder to white"
+    warm = lookconvert.convert({"BlueYellowShadows": 6, "BlueYellowHighs": 3})
     assert warm["temperature"] == pytest.approx((6 * 0.5 + 3 * 0.2) / 50)
-    assert nlp.convert({"GreenMagentaMids": -4})["tint"] == pytest.approx(-4 * 0.3 / 50)
-    assert nlp.convert({"RedCyanHighs": -2, "RedCyanShadows": 2})["invert_r"] == pytest.approx((-2 * 0.2 + 2 * 0.5) / 100)
+    assert lookconvert.convert({"GreenMagentaMids": -4})["tint"] == pytest.approx(-4 * 0.3 / 50)
+    assert lookconvert.convert({"RedCyanHighs": -2, "RedCyanShadows": 2})["invert_r"] == pytest.approx((-2 * 0.2 + 2 * 0.5) / 100)
 
 
 def test_what_cannot_be_carried_over_is_left_out_and_a_blank_preset_is_neutral():
-    out = nlp.convert({"LabGlow": 12, "LUT": "Frontier", "ToneProfile": "linear", "ToningMethod": "vintageToning", "ColorMethod": "shadowWeighted"})
-    assert out == nlp.convert({}) and "invert_r" not in out
+    out = lookconvert.convert({"LabGlow": 12, "LUT": "Frontier", "ToneProfile": "linear", "ToningMethod": "vintageToning", "ColorMethod": "shadowWeighted"})
+    assert out == lookconvert.convert({}) and "invert_r" not in out
     assert out["saturation"] == out["shadows"] == out["highlights"] == out["print_toe"] == out["print_shoulder"] == 0 and out["print_toe_width"] == 2.5
-    assert nlp.convert({"Saturation": "lots", "Darks": None, "Lights": True})["saturation"] == 0, "damaged values count as zero"
+    assert lookconvert.convert({"Saturation": "lots", "Darks": None, "Lights": True})["saturation"] == 0, "damaged values count as zero"
 
 
 def test_every_converted_key_is_a_slider_a_look_can_hold():
-    assert set(nlp.convert({"RedCyanHighs": 1})) <= set(LOOK_KEYS)
+    assert set(lookconvert.convert({"RedCyanHighs": 1})) <= set(LOOK_KEYS)
 
 
 def test_the_lab_scanner_presets_are_here():

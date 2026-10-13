@@ -1,10 +1,9 @@
-"""Turning a scanner-look preset from Negative Lab Pro's published list (the JSON files of its "NLP Color" presets) into an EFAS look - the conversion that made the
-Lab Scanners built-in presets, kept as code so the rule is written down and testable. No Qt imports.
+"""Turning a scanner-look or film-look preset from another program's published list of presets (JSON files of tone, saturation and colour-balance settings) into an
+EFAS look - the conversion that made the built-in Lab Scanners and Film Stocks presets, kept as code so the rule is written down and testable. No Qt imports.
 
-Only the tone, saturation and colour-balance settings can be carried over; the colour lookup table a preset names ("Frontier", "Crystal", "Pakon"...) and its glow
-setting have no equivalent in EFAS and are left out (docs/presets.md). EFAS has no separate colour balance for shadows and highlights, so the three tonal ranges are
-folded into one overall balance. The values are approximations, not measurements of any machine.
-"""
+Only the tone, saturation and colour-balance settings can be carried over; the colour lookup table a preset names and its glow setting have no equivalent in EFAS and are
+left out (docs/presets.md). EFAS has no separate colour balance for shadows and highlights, so the three tonal ranges are folded into one overall balance. The values are
+approximations, not measurements of any machine or film."""
 from typing import Any
 
 SATURATION_PER = 50.0

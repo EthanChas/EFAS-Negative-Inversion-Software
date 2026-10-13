@@ -29,9 +29,9 @@ The same goes for **Film Profiles** (Advanced mode): put slashes in a profile's 
 | Lab Scanners/Pakon (Clean and Rich) | A Pakon-style look: clean, bright highlights with a firm white, a slight saturation lift, otherwise neutral. Subtle: most of a Pakon scan's look is its colour response, which EFAS cannot copy |
 | Lab Scanners/Noritsu (Green Shadows) | A Noritsu-style look: lifted shadows, bright clean highlights with more separation, a faint green in the shadows, a modest saturation lift |
 
-**What these are, and are not.** They are EFAS's own approximations, made by converting the tone, saturation and colour-balance settings of the matching scanner-look presets in Negative Lab Pro's published list into EFAS's sliders. They are not measurements of the machines, not a copy of that program's presets, and not its colour lookup tables or camera profiles (those are not included). The 100 in *Frontier 100* and *Crystal 100* means full strength. Treat them as starting points and adjust by eye.
+**What these are, and are not.** They are EFAS's own approximations, made by converting the tone, saturation and colour-balance settings of the matching scanner-look presets in another program's published list into EFAS's sliders. They are not measurements of the machines, not a copy of that program's presets, and not its colour lookup tables or camera profiles (those are not included). The 100 in *Frontier 100* and *Crystal 100* means full strength. Treat them as starting points and adjust by eye.
 
-The conversion, from the other program's values (their scale is about 100 per unit). It is written as code in `features/lookpresets/nlp.py` and tested:
+The conversion, from the other program's values (their scale is about 100 per unit). It is written as code in `features/lookpresets/lookconvert.py` and tested:
 
 | Their setting | EFAS slider | Rule |
 |---|---|---|
