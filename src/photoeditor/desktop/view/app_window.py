@@ -3136,14 +3136,28 @@ class AppWindow(QMainWindow):
         }
         if tab_id not in panels:
             return
+        was_open = [other for other, p in panels.items() if p._is_open and (other != tab_id or not checked)]
         panels[tab_id].set_open(checked)
         self._open_tab = tab_id if checked else (self._open_tab if self._open_tab != tab_id else "")
+        if app_settings.get("collapse_on_tab_change"):
+            for left in was_open:
+                self._close_modules_when_hidden(panels[left])
         if checked:
             QTimer.singleShot(260, lambda p=panels[tab_id]: self._fit_sidebar_to_tab(p))
             for other_id, other_panel in panels.items():
                 if other_id != tab_id:
                     other_panel.set_open(False)
                     self._tool_rail.set_tab_checked(other_id, False)
+
+    def _close_modules_when_hidden(self, tab_panel) -> None:
+        """Settings > General "Close a tab's modules when I switch tabs": once the tab has slid shut, every module in it is folded up, so it is closed
+        when you come back (unless you came back at once)."""
+        def fold() -> None:
+            if not tab_panel._is_open:
+                for module in tab_panel.findChildren(CollapsiblePanel):
+                    module.collapse_now()
+
+        QTimer.singleShot(240, fold)
 
     def _fit_sidebar_to_tab(self, panel) -> None:
         """Widen the right sidebar, at the image's expense, when the opened tab needs more room than the sidebar has - otherwise the

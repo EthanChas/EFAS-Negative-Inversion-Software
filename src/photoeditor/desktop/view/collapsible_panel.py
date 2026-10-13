@@ -309,6 +309,18 @@ class CollapsiblePanel(BevelPanel):
         self._animation.start()
         self.toggled.emit(expanded)
 
+    def collapse_now(self) -> bool:
+        """Close the module at once, without the slide - for a module nobody can see (its tab was just left). Returns whether it was open."""
+        if not self._collapsible or not self._expanded:
+            return False
+        self._animation.stop()
+        self._expanded = False
+        self._pinned = False
+        self._header.arrow_button.set_expanded(False)
+        self._body_container.setMaximumHeight(0)
+        self.toggled.emit(False)
+        return True
+
     def _on_animation_finished(self) -> None:
         if self._expanded:
             self._body_container.setMaximumHeight(_NO_MAX)
