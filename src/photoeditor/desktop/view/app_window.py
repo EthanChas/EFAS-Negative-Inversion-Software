@@ -2201,6 +2201,8 @@ class AppWindow(QMainWindow):
         self._hq_btn.blockSignals(False)
         self._hq_action.setChecked(False)
         self._image_view.set_hq_state("off")
+        if app_settings.get("hq_always") and state.preview_rgb is not None:
+            self._hq_btn.setChecked(True)  # Settings > Always work in HQ: the same as pressing the HQ button on every photo
         self._crop_tool.reset()
         self._crop_tool.set_flips(state.flip_h, state.flip_v)
         self._crop_tool.set_fine_rotation(state.fine_rotation)
