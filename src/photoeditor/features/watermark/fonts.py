@@ -166,7 +166,9 @@ def load(path: str | None, size: int):
 
     for name in ((path,) if path else ()) + _FALLBACK_FILES:
         try:
-            return ImageFont.truetype(name, size)
-        except OSError:
+            font = ImageFont.truetype(name, size)
+            font.getlength("Ag")  # skip a font that opens but cannot measure text (macOS's Helvetica.ttc can fail here)
+            return font
+        except Exception:
             continue
     return ImageFont.load_default(size)

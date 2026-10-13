@@ -406,17 +406,23 @@ class PluginCore:
     def read_text(self, path: str) -> str:
         """The text of a file in the plugin's data folder (a relative path starts there) or one the user picked."""
         full = self._checked_path(path, False)
-        _need(os.path.getsize(full) <= MAX_FILE_BYTES, "That file is too big to read as text (8 MB at most).")
-        with open(full, "r", encoding="utf-8", errors="replace") as f:
-            return f.read()
+        try:
+            _need(os.path.getsize(full) <= MAX_FILE_BYTES, "That file is too big to read as text (8 MB at most).")
+            with open(full, "r", encoding="utf-8", errors="replace") as f:
+                return f.read()
+        except OSError as e:
+            raise PluginError(f"Could not read that file ({e.strerror or e}).") from None
 
     def write_text(self, path: str, text: str) -> None:
         """Write text to a file in the plugin's data folder (a relative path starts there) or one the user chose with save_path."""
         full = self._checked_path(path, True)
         text = _text(text, "The text", MAX_FILE_BYTES)
-        os.makedirs(os.path.dirname(full), exist_ok=True)
-        with open(full, "w", encoding="utf-8") as f:
-            f.write(text)
+        try:
+            os.makedirs(os.path.dirname(full), exist_ok=True)
+            with open(full, "w", encoding="utf-8") as f:
+                f.write(text)
+        except OSError as e:
+            raise PluginError(f"Could not write that file ({e.strerror or e}).") from None
 
     # ------------------------------------------------------------ the photo and its edit
     def photo(self):

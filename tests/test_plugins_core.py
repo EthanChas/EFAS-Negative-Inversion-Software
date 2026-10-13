@@ -361,7 +361,7 @@ def test_the_python_api(qapp, tmp_path):
     ("set_edit({})", "needs a table"), ("set_edit(5)", "needs a table"), ('on("nothing", print)', "There is no event"), ('on("photo_opened", 5)', "must be a function"),
     ('add_module("")', "cannot be empty"), ('add_module("x", tab="nowhere")', "There is no tab"), ('add_menu_item("", print)', "cannot be empty"),
     ('add_menu_item("x", None)', "must be a function"), ('after("soon", print)', "must be a number"), ("add_tags([])", "needs a list"), ("add_tags('x')", "needs a list"),
-    ('settings_set("k", object())', "can only hold"), ('settings_get("")', "cannot be empty"), ("image(5)", "from 16 to 8192"), ('read_text("C:/Windows/win.ini")', "may only read"),
+    ('settings_set("k", object())', "can only hold"), ('settings_get("")', "cannot be empty"), ("image(5)", "from 16 to 8192"), ('read_text(__import__("sys").executable)', "may only read"),
     ('write_text("../escape.txt", "x")', "may only read"), ('write_text("/etc/passwd", "x")', "may only read"),
 ])
 def test_api_mistakes_raise_a_sentence_the_author_can_act_on(qapp, tmp_path, call, fragment):

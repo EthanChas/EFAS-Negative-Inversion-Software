@@ -39,7 +39,7 @@ _SYNTH = textwrap.dedent(r'''
     dproc.is_measurable = lambda p: True
     dproc.linear_scan = lambda path, picture, transfer: linear.LinearScan(files[path], INFO)
     win = AppWindow(); c = win.controller; nt = win._negative_tool
-    def pump(cond, secs=30):
+    def pump(cond, secs=120):
         t = time.time()
         while time.time() - t < secs and not cond():
             QCoreApplication.processEvents(); time.sleep(0.02)

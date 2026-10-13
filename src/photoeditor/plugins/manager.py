@@ -182,7 +182,11 @@ class PluginManager(QObject):
         sys.modules[name] = module
         sys.path.insert(0, manifest.folder)
         try:
-            spec.loader.exec_module(module)
+            # compiled from the source each time: a cached .pyc is trusted by size and second, so a quick same-size edit would otherwise reload the old code
+            with open(manifest.entry_path, "r", encoding="utf-8") as fh:
+                source = fh.read()
+            module.__file__ = manifest.entry_path
+            exec(compile(source, manifest.entry_path, "exec"), module.__dict__)
             register = getattr(module, "register", None)
             if not callable(register):
                 raise PluginError("The plugin must define register(api).")
