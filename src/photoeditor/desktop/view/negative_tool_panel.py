@@ -1,6 +1,7 @@
 import dataclasses
 
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal
+from PyQt6.QtGui import QIcon
 from PyQt6.QtWidgets import QCheckBox, QComboBox, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
 
 from ...features.densitometry.quality import COLOURS as QUALITY_COLOURS
@@ -8,6 +9,7 @@ from ...features.negative.logic import FILM_TYPE_LABELS, FILM_TYPES, ProcessMode
 from ...features.negative.metering import DEFAULT_BUFFER, MAX_BUFFER, Metering
 from ...theme.tokens import THEME
 from .collapsible_panel import CollapsiblePanel
+from .icons import eyedropper_icon
 from .slider_row import SliderRow
 
 _MODE_LABELS = {
@@ -50,6 +52,7 @@ class NegativeToolPanel(CollapsiblePanel):
     inversion_requested = pyqtSignal(str, str, str)
     compare_requested = pyqtSignal(str, str)
     film_reference_requested = pyqtSignal()
+    point_dropper_toggled = pyqtSignal(str, bool)  # "white" or "black", armed or not
 
     def __init__(self, parent: QWidget | None = None):
         super().__init__(
@@ -225,6 +228,18 @@ class NegativeToolPanel(CollapsiblePanel):
         self._channel.currentIndexChanged.connect(self._on_channel_changed)
         channel_row.addWidget(self._channel, 1)
         body.addLayout(channel_row)
+        dropper_row = QHBoxLayout()
+        dropper_row.setSpacing(THEME.space_sm)
+        self._droppers: dict[str, QPushButton] = {}
+        for kind, label in (("white", "White dropper"), ("black", "Black dropper")):
+            button = QPushButton(label)
+            button.setCheckable(True)
+            button.setIcon(QIcon(eyedropper_icon(14)))
+            button.setToolTip(f"Click, then click the spot in the picture that should be pure {kind}: the {kind} point is set from it and the dropper puts itself away")
+            button.toggled.connect(lambda on, k=kind: self._on_dropper_toggled(k, on))
+            self._droppers[kind] = button
+            dropper_row.addWidget(button)
+        body.addLayout(dropper_row)
         self._white = SliderRow("White point")
         self._black = SliderRow("Black point")
         body.addWidget(self._white)
@@ -370,6 +385,21 @@ class NegativeToolPanel(CollapsiblePanel):
         self._base_btn.blockSignals(True)
         self._base_btn.setChecked(active)
         self._base_btn.blockSignals(False)
+
+    def _on_dropper_toggled(self, kind: str, on: bool) -> None:
+        if on:  # one dropper at a time
+            other = self._droppers["black" if kind == "white" else "white"]
+            other.blockSignals(True)
+            other.setChecked(False)
+            other.blockSignals(False)
+        self.point_dropper_toggled.emit(kind, on)
+
+    def set_dropper_active(self, kind: str | None) -> None:
+        """Show which dropper (if any) is armed, without emitting anything - used when a pick ends or another tool takes over."""
+        for name, button in self._droppers.items():
+            button.blockSignals(True)
+            button.setChecked(name == kind)
+            button.blockSignals(False)
 
     def set_metering(self, metering: Metering) -> None:
         """Show a Metering in the controls without emitting anything."""

@@ -5,7 +5,9 @@ from enum import Enum
 import numpy as np
 
 from ..lut.logic import apply_channel_lut
-from .metering import POINT_SHIFT, RANGE_STEP, Metering
+import dataclasses
+
+from .metering import POINT_LIMIT, POINT_SHIFT, RANGE_STEP, Metering
 
 _ANALYSIS_BUFFER = 0.12
 _ANALYSIS_MAX_DIM = 256
@@ -97,6 +99,61 @@ def detect_process_mode(pixels: np.ndarray, region: tuple[int, int, int, int] | 
     return ProcessMode.E6
 
 
+def measure_reading(
+    pixels: np.ndarray, region: tuple[int, int, int, int] | None = None, base_rgb: tuple[int, int, int] | None = None,
+    metering: Metering | None = None,
+) -> tuple[list[float], list[float]]:
+    """(floors, ceils): each channel's film-base (floor) and max-exposure (ceiling) log-density as the inversion reads them from the picture, before the white and
+    black points move them - the measurement compute_invert_lut starts from, split out so the white / black point droppers can use the very same one."""
+    m = metering or Metering()
+    wide = pixels.dtype == np.uint16
+    top = 65535.0 if wide else 255.0
+    crop = _analysis_region(pixels, region, m.buffer).astype(np.float32) / top
+    crop_density = -np.log10(np.clip(crop, _EPS, 1.0))
+    low_p = max(0.0, min(25.0, _FLOOR_DENSITY_PERCENTILE + m.range_clip * RANGE_STEP))
+    high_p = max(75.0, min(100.0, _CEIL_DENSITY_PERCENTILE - m.range_clip * RANGE_STEP))
+    floors, ceils = [], []
+    for c in range(3):
+        floor = float(np.percentile(crop_density[:, :, c], low_p))
+        ceil = float(np.percentile(crop_density[:, :, c], high_p))
+        if base_rgb is not None:
+            measured = float(-np.log10(np.clip(base_rgb[c] / 255.0, _EPS, 1.0)))
+            if ceil - measured > 0.15:
+                floor = measured
+        floors.append(floor)
+        ceils.append(ceil)
+    if m.cast_removal < 1.0:
+        mean_floor, mean_ceil = sum(floors) / 3.0, sum(ceils) / 3.0
+        floors = [mean_floor + m.cast_removal * (f - mean_floor) for f in floors]
+        ceils = [mean_ceil + m.cast_removal * (c_ - mean_ceil) for c_ in ceils]
+    return floors, ceils
+
+
+def point_from_pixel(kind: str, scan_rgb: tuple[float, float, float], floors: list[float], ceils: list[float], metering: Metering) -> Metering | None:
+    """The metering that makes one scan pixel (each channel 0-1, as the scanner recorded it) pure white (kind "white") or pure black ("black") in the
+    inversion: each channel's point goes where that pixel's density is, so all three channels reach the end together and the pixel comes out neutral. The
+    white / black point sliders get the average and the Red / Green / Blue trims the difference. None when that cannot be done - the spot is on the wrong side of
+    the picture (the dark end cannot be the white point, nor the bright end the black point), so the sliders would run out of range or white and black would meet."""
+    density = [float(-np.log10(np.clip(v, _EPS, 1.0))) for v in scan_rgb]
+    need = []
+    for c in range(3):
+        span = max(ceils[c] - floors[c], _EPS)
+        need.append((ceils[c] - density[c]) / (POINT_SHIFT * span) if kind == "white" else (density[c] - floors[c]) / (POINT_SHIFT * span))
+    overall = max(-POINT_LIMIT, min(POINT_LIMIT, sum(need) / 3.0))
+    trims = tuple(round(max(-1.0, min(1.0, n - overall)), 4) for n in need)
+    new = dataclasses.replace(metering, white=round(overall, 4), white_trim=trims) if kind == "white" else dataclasses.replace(metering, black=round(overall, 4), black_trim=trims)
+    whites, blacks = new.white_points(), new.black_points()
+    for c in range(3):
+        span = max(ceils[c] - floors[c], _EPS)
+        floor, ceil = floors[c] + blacks[c] * POINT_SHIFT * span, ceils[c] - whites[c] * POINT_SHIFT * span
+        if ceil - floor < 0.1 * span:
+            return None
+        reached = (density[c] - floor) / (ceil - floor)  # where the spot lands, 0 (black) to 1 (white)
+        if (kind == "white" and reached < 0.985) or (kind == "black" and reached > 0.015):
+            return None  # the sliders cannot go far enough: the spot is on the wrong side of the picture for this point
+    return new
+
+
 def compute_invert_lut(
     pixels: np.ndarray, region: tuple[int, int, int, int] | None = None, base_rgb: tuple[int, int, int] | None = None,
     metering: Metering | None = None,
@@ -119,28 +176,10 @@ def compute_invert_lut(
     m = metering or Metering()
     wide = pixels.dtype == np.uint16
     top = 65535.0 if wide else 255.0
-    crop = _analysis_region(pixels, region, m.buffer).astype(np.float32) / top
-    crop_density = -np.log10(np.clip(crop, _EPS, 1.0))
+    floors, ceils = measure_reading(pixels, region, base_rgb, m)
 
     sample_values = np.arange(int(top) + 1, dtype=np.float32)
     sample_density = -np.log10(np.clip(sample_values / top, _EPS, 1.0))
-
-    low_p = max(0.0, min(25.0, _FLOOR_DENSITY_PERCENTILE + m.range_clip * RANGE_STEP))
-    high_p = max(75.0, min(100.0, _CEIL_DENSITY_PERCENTILE - m.range_clip * RANGE_STEP))
-    floors, ceils = [], []
-    for c in range(3):
-        floor = float(np.percentile(crop_density[:, :, c], low_p))
-        ceil = float(np.percentile(crop_density[:, :, c], high_p))
-        if base_rgb is not None:
-            measured = float(-np.log10(np.clip(base_rgb[c] / 255.0, _EPS, 1.0)))
-            if ceil - measured > 0.15:
-                floor = measured
-        floors.append(floor)
-        ceils.append(ceil)
-    if m.cast_removal < 1.0:
-        mean_floor, mean_ceil = sum(floors) / 3.0, sum(ceils) / 3.0
-        floors = [mean_floor + m.cast_removal * (f - mean_floor) for f in floors]
-        ceils = [mean_ceil + m.cast_removal * (c_ - mean_ceil) for c_ in ceils]
     whites, blacks = m.white_points(), m.black_points()
 
     lut = np.empty((3, int(top) + 1), dtype=np.float32 if wide else np.uint8)

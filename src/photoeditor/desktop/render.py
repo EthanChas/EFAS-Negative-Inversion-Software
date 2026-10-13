@@ -43,6 +43,7 @@ from ..features.negative.logic import (
     apply_channel_offsets,
     apply_invert_lut,
     compute_invert_lut,
+    measure_reading,
     monochrome,
 )
 from ..features.retouch.logic import DustStatsCache, RetouchResult, detect_dust_masks, remove_dust_and_scratches
@@ -543,6 +544,51 @@ class Renderer:
             if params.border > 0:
                 image = apply_border(image, params.border, params.border_color)
             return image, pixels, stats, overlay_rgba
+
+    def probe_negative(self, source: np.ndarray, params: EditParams, token, base_width: int, flatfield: tuple | None = None):
+        """What the inversion is reading from the picture as it is edited now, for the white / black point droppers: -> (frame, crop, floors, ceils), or None.
+        frame is the scan after the geometry (rotation, straightening, flips) and the dust repair, before the crop - the very picture the inversion measures;
+        crop is the crop rectangle in it (or None); floors / ceils are the film-base and max-exposure densities it finds (see measure_reading)."""
+        with self.lock:
+            scale = source.shape[1] / base_width
+            source16 = None
+            if flatfield is not None:
+                source = self._flatfielded(source, token, flatfield)
+                token = (token, flatfield[0])
+            if source.dtype == np.uint16:
+                source16 = source
+                source = self._as_uint8(source, token)
+            retouched = self._retouched(source, params, token, False)
+            pixels = retouched.pixels
+            pixels16 = self._retouched16(source16, source, retouched, token) if source16 is not None else None
+
+            def geometry(step, *args):
+                nonlocal pixels, pixels16
+                if pixels16 is not None:
+                    pixels16 = step(pixels16, *args)
+                else:
+                    pixels = step(pixels, *args)
+
+            if params.film_type == "bw":
+                geometry(monochrome)
+            geometry(fine_rotate, params.fine_rotation)
+            geometry(radial_distort, params.distortion)
+            geometry(keystone, params.keystone_v, params.keystone_h)
+            if params.rotation_quarter_turns:
+                geometry(rotate_quarter_turns, params.rotation_quarter_turns)
+            if params.flip_h:
+                geometry(flip_horizontal)
+            if params.flip_v:
+                geometry(flip_vertical)
+            frame = pixels16 if pixels16 is not None else pixels
+            rect = _scale_rect(params.crop_rect, scale, frame.shape[1], frame.shape[0])
+            meter_rect = rect if params.metering.rect is None else _scale_rect(params.metering.rect, scale, frame.shape[1], frame.shape[0])
+            base = params.film_base
+            if base is not None and params.film_type == "bw":
+                gray = round(0.299 * base[0] + 0.587 * base[1] + 0.114 * base[2])
+                base = (gray, gray, gray)
+            floors, ceils = measure_reading(frame, meter_rect, base, params.metering)
+            return frame, rect, floors, ceils
 
 
 class RenderThread(QThread):

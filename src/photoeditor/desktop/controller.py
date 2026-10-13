@@ -43,7 +43,7 @@ from ..features.metadata import suggest
 from ..features.metadata.models import MetadataConfig
 from ..features.metadata.roll import RollCard, compose
 from ..features.negative import metering as metering_mod
-from ..features.negative.logic import FILM_TYPE_LABELS, ProcessMode, detect_process_mode
+from ..features.negative.logic import FILM_TYPE_LABELS, ProcessMode, detect_process_mode, point_from_pixel
 from ..features.negative.metering import Metering
 from ..features.watermark import layout as wm_layout
 from ..features.watermark.marks import Marks
@@ -872,6 +872,38 @@ class AppController(QObject):
 
     def reset_metering(self) -> None:
         self.set_metering(Metering())
+
+    def set_point_from_pixel(self, kind: str, x: int, y: int, shape: tuple[int, int], uncropped: bool = False) -> str:
+        """The white / black point dropper: the pixel clicked at (x, y) of the picture on screen (shape = its (height, width); uncropped when the view is showing the
+        whole frame, as it does while cropping) becomes pure white ("white") or pure black ("black") in the inversion, in all three channels, by moving the
+        White / Black point sliders and their Red / Green / Blue trims. Returns what happened, in a sentence (also shown as a notice)."""
+        s = self.state
+        what = "white" if kind == "white" else "black"
+        if s.preview_rgb is None:
+            return "Open a photo first."
+        if not s.negative_inverted:
+            message = f"The {what} point dropper works on an inverted negative: press Invert first."
+        elif s.inversion_engine == "curve":
+            message = f"The {what} point belongs to the standard inversion; the curve-informed method sets its own."
+        else:
+            probe = self._renderer.probe_negative(self._render_base(), EditParams.from_state(s), self._token(), self._render_base().shape[1], flatfield=self._ff)
+            frame, rect, floors, ceils = probe
+            h, w = shape
+            x1, y1, x2, y2 = (0, 0, frame.shape[1], frame.shape[0]) if uncropped or rect is None else rect
+            fx, fy = min(max((x + 0.5) / max(w, 1), 0.0), 1.0), min(max((y + 0.5) / max(h, 1), 0.0), 1.0)
+            px = int(min(frame.shape[1] - 1, max(0, x1 + fx * (x2 - x1))))
+            py = int(min(frame.shape[0] - 1, max(0, y1 + fy * (y2 - y1))))
+            patch = frame[max(0, py - 1):py + 2, max(0, px - 1):px + 2].reshape(-1, 3).astype(np.float32).mean(axis=0)  # the spot and its neighbours: not one noisy pixel
+            top = 65535.0 if frame.dtype == np.uint16 else 255.0
+            new = point_from_pixel(kind, tuple(float(v) / top for v in patch), floors, ceils, s.metering)
+            if new is None:
+                message = f"That spot cannot be the {what} point: it is not {'lighter' if kind == 'white' else 'darker'} than the other end of the picture."
+            else:
+                self.set_metering(new)
+                self.negative_state_changed.emit()
+                message = f"{what.capitalize()} point set from the picture."
+        self.notice.emit(message)
+        return message
 
     def _finishing_values(self) -> tuple:
         s = self.state

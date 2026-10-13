@@ -960,6 +960,7 @@ class AppWindow(QMainWindow):
         self._negative_tool.inverted_toggled.connect(self.controller.set_negative_inverted)
         self._negative_tool.film_type_changed.connect(self.controller.set_film_type)
         self._negative_tool.base_pick_toggled.connect(self._on_base_pick_toggled)
+        self._negative_tool.point_dropper_toggled.connect(self._on_point_dropper_toggled)
         self._negative_tool.auto_base_requested.connect(self._on_auto_base_requested)
         self._negative_tool.base_cleared.connect(lambda: self.controller.set_film_base(None))
         self.controller.film_base_changed.connect(self._sync_film_base)
@@ -2248,6 +2249,7 @@ class AppWindow(QMainWindow):
         self._refresh_ai_dust_panel()
         self._image_view.set_pick_mode(False)
         self._image_view.set_tool(None)
+        self._end_point_dropper()  # a new photo: no dropper left armed
         self._hq_btn.blockSignals(True)
         self._hq_btn.setChecked(False)
         self._hq_btn.blockSignals(False)
@@ -2859,6 +2861,7 @@ class AppWindow(QMainWindow):
             self._end_probe()
             return
         self._end_base_pick()
+        self._end_point_dropper()
         raw = self.controller.render_raw_scan()
         if raw is None:
             self._advanced.set_probe_active(False)
@@ -2886,6 +2889,7 @@ class AppWindow(QMainWindow):
             self._end_base_pick()
             return
         self._end_probe()
+        self._end_point_dropper()
         self._arm_raw_pick("clear", "Clear light: click a spot with no film in it (the bare backlight) on the raw scan.")
 
     def _on_base_pick_toggled(self, on: bool) -> None:
@@ -2895,6 +2899,7 @@ class AppWindow(QMainWindow):
             self._end_base_pick()
             return
         self._end_probe()
+        self._end_point_dropper()
         self._arm_raw_pick("base", "Film base: click the clear, unexposed film border on the raw scan.")
 
     def _arm_raw_pick(self, kind: str, message: str) -> None:
@@ -2941,7 +2946,40 @@ class AppWindow(QMainWindow):
     def _sync_film_base(self) -> None:
         self._negative_tool.set_film_base(self.controller.state.film_base)
 
+    def _on_point_dropper_toggled(self, kind: str, on: bool) -> None:
+        """The Negative tab's white / black point dropper: armed, the next click on the picture sets that point from the spot clicked."""
+        if not on:
+            self._end_point_dropper()
+            return
+        self._end_probe()
+        self._end_base_pick()
+        self._curve_tool.deactivate_eyedropper()
+        self._dust_tool.deactivate_tools()
+        self._image_view.set_tool(None)
+        self._point_dropper = kind
+        self._image_view.set_pick_mode(True, eyedropper_cursor())
+        self._coord_label.setText(f"{kind.capitalize()} point dropper: click the spot that should be pure {kind}.")
+
+    def _end_point_dropper(self) -> None:
+        """Put the dropper away: the click is taken, the button pops up and the cursor is the ordinary one again."""
+        if getattr(self, "_point_dropper", None) is None:
+            return
+        self._point_dropper = None
+        self._image_view.set_pick_mode(False)
+        self._negative_tool.set_dropper_active(None)
+
     def _on_pixel_picked(self, x: int, y: int, rgb: tuple[int, int, int]) -> None:
+        kind = getattr(self, "_point_dropper", None)
+        if kind is not None:
+            self._end_point_dropper()  # one click, then the tool deselects itself
+            state = self.controller.state
+            uncropped = self._showing_pre_crop()
+            shown = state.pre_crop_rgb if uncropped else state.image_rgb
+            if shown is not None:
+                message = self.controller.set_point_from_pixel(kind, x, y, shown.shape[:2], uncropped=uncropped)
+                self._negative_tool.set_metering(state.metering)
+                self._coord_label.setText(message)
+            return
         if self._base_pick_image is not None:
             kind = self._pick_kind
             if kind == "clear":
@@ -2964,6 +3002,7 @@ class AppWindow(QMainWindow):
 
     def _on_eyedropper_toggled(self, active: bool) -> None:
         if active:
+            self._end_point_dropper()
             self._end_base_pick()
             self._dust_tool.deactivate_tools()
             self._image_view.set_tool(None)
