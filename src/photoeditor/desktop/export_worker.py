@@ -70,6 +70,8 @@ def default_edit_state(negative_inverted: bool) -> dict:
         "heal_strokes": [],
         "clone_strokes": [],
         "dust_excluded": [],
+        "error_marks": [],
+        "modules_off": [],
         "ai_dust": False,
         "ai_threshold": 0.3,
         "ai_grow": 1,

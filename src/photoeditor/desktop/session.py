@@ -141,6 +141,8 @@ class AppState:
     ai_threshold: float = 0.3
     ai_grow: int = 1
     dust_excluded: list = field(default_factory=list)
+    modules_off: list = field(default_factory=list)  # the modules switched off with the light in their header (their settings are kept)
+    error_marks: list = field(default_factory=list)  # boxes the person drew round faults in the scan (features/errormarks)
     marks: Marks = field(default_factory=Marks)
     film_type: str = "auto"
     invert_r: float = 0.0

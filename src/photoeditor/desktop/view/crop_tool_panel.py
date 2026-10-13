@@ -47,6 +47,7 @@ class CropToolPanel(CollapsiblePanel):
     auto_crop_requested = pyqtSignal()
     gradient_crop_requested = pyqtSignal()
     straighten_tool_toggled = pyqtSignal(bool)
+    corners_tool_toggled = pyqtSignal(bool)
     auto_adjust_changed = pyqtSignal(float, float)
     guide_changed = pyqtSignal(str, int)
     ratio_changed = pyqtSignal(object)
@@ -199,6 +200,14 @@ class CropToolPanel(CollapsiblePanel):
         )
         self._straighten_btn.toggled.connect(self.straighten_tool_toggled)
         body.addWidget(self._straighten_btn)
+        self._corners_btn = QPushButton("Four-Corner Straighten")
+        self._corners_btn.setCheckable(True)
+        self._corners_btn.setToolTip(
+            "Click the four corners of the photo (the frame itself, not the scan around it), in any order. The picture is turned and keystoned so the four "
+            "points become a true rectangle, and cropped to it. The Angle and Keystone sliders below show what it set, so you can adjust it. Esc starts the points again."
+        )
+        self._corners_btn.toggled.connect(self.corners_tool_toggled)
+        body.addWidget(self._corners_btn)
         self._fine = SliderRow(
             "Angle", min_value=-FINE_ROTATION_LIMIT, max_value=FINE_ROTATION_LIMIT, reset_value=0.0, decimals=1, step=0.1
         )
@@ -360,6 +369,15 @@ class CropToolPanel(CollapsiblePanel):
         self._straighten_btn.blockSignals(True)
         self._straighten_btn.setChecked(active)
         self._straighten_btn.blockSignals(False)
+
+    def corners_active(self) -> bool:
+        return self._corners_btn.isChecked()
+
+    def set_corners_active(self, active: bool) -> None:
+        """Sync the Four-Corner Straighten button without emitting anything (the tool finished, or another tool took over)."""
+        self._corners_btn.blockSignals(True)
+        self._corners_btn.setChecked(active)
+        self._corners_btn.blockSignals(False)
 
     def is_crop_active(self) -> bool:
         return self._crop_btn.isChecked()

@@ -8,6 +8,7 @@ worker only ever renders the latest request), and the controller drops any
 output whose generation number has been superseded - so a fast drag costs one
 render at a time, never a growing backlog."""
 
+import dataclasses
 import threading
 import traceback
 from collections import OrderedDict
@@ -21,6 +22,7 @@ from ..features.contrast.logic import apply_contrast
 from ..features.denoise.logic import apply_chroma_denoise
 from ..features.localcontrast.logic import apply_local_contrast
 from ..features.negative.metering import Metering
+from ..features.lookpresets.modules import off_overrides
 from ..features.aidust import logic as aidust
 from ..features.watermark.marks import Marks, apply_marks
 from ..features.watermark.logic import apply_watermark, is_active as watermark_active
@@ -133,6 +135,15 @@ class EditParams:
 
     @classmethod
     def from_state(cls, s) -> "EditParams":
+        params = cls._from_state(s)
+        off = tuple(getattr(s, "modules_off", None) or ())
+        if off:
+            extra = {"marks": Marks()} if "watermark" in off else {}
+            params = dataclasses.replace(params, **off_overrides(off), **extra)
+        return params
+
+    @classmethod
+    def _from_state(cls, s) -> "EditParams":
         return cls(
             exposure_ev=s.exposure_ev,
             tone_curve_points=tuple(tuple(p) for p in s.tone_curve_points),

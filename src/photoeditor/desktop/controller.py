@@ -27,6 +27,7 @@ from ..features.geometry.logic import (
     flip_vertical,
     rotate_quarter_turns,
     map_display_to_raw,
+    map_raw_to_display,
     transform_rect_flip_h,
     transform_rect_flip_v,
     transform_rect_rotate_left,
@@ -37,7 +38,7 @@ from ..features.flatfield.logic import apply_flatfield, gain_token
 from ..features.flatfield.processor import gain_from_reference
 from ..features.lookpresets import module_store
 from ..features.lookpresets import store as look_store
-from ..features.lookpresets.modules import PANEL_MODULES, panel_defaults, panel_fields
+from ..features.lookpresets.modules import PANEL_MODULES, SWITCHABLE, panel_defaults, panel_fields
 from ..features.metadata import store as metadata_store
 from ..features.metadata import suggest
 from ..features.metadata.models import MetadataConfig
@@ -46,6 +47,8 @@ from ..features.negative import metering as metering_mod
 from ..features.negative.logic import FILM_TYPE_LABELS, ProcessMode, detect_process_mode, point_from_pixel
 from ..features.negative.metering import Metering
 from ..features.watermark import layout as wm_layout
+from ..features.errormarks import logic as error_marks_logic
+from ..features.geometry import corners as corners_logic
 from ..features.watermark.marks import Marks
 from ..features.open_image.logic import is_raw
 from ..features.open_image.processor import load_image_rgb, make_preview_rgb, to_uint8
@@ -143,6 +146,8 @@ class AppController(QObject):
     flag_changed = pyqtSignal(str, object)
     module_presets_changed = pyqtSignal(str)
     look_presets_changed = pyqtSignal(str)
+    error_marks_changed = pyqtSignal()
+    modules_enabled_changed = pyqtSignal()
     rating_changed = pyqtSignal(str, int)
     snapshots_changed = pyqtSignal(str)
     versions_changed = pyqtSignal(str)
@@ -288,6 +293,8 @@ class AppController(QObject):
         self.state.heal_strokes = [list(s) for s in saved["heal_strokes"]]
         self.state.clone_strokes = [list(s) for s in saved.get("clone_strokes", [])]
         self.state.dust_excluded = [list(p) for p in saved.get("dust_excluded", [])]
+        self.state.error_marks = error_marks_logic.clean(saved.get("error_marks", []))
+        self.state.modules_off = [k for k in saved.get("modules_off", []) if k in SWITCHABLE]
         self.state.ai_dust = bool(saved.get("ai_dust", False))
         self.state.ai_threshold = float(saved.get("ai_threshold", 0.3))
         self.state.ai_grow = int(saved.get("ai_grow", 1))
@@ -767,6 +774,31 @@ class AppController(QObject):
         self.reverted.emit()
         self.notice.emit(f"Straightened {correction:+.1f}\u00b0")
         return correction
+
+    def straighten_from_corners(self, clicks: list[tuple[float, float]]):
+        """The Four-Corner Straighten tool: the four corners of the photo, clicked on the picture as shown before the crop (0..1 fractions of it, any order). Sets
+        the Angle and the Keystone that make them a true rectangle and crops to it, as one step. Returns the result (see features/geometry/corners.py), or None."""
+        s = self.state
+        if s.preview_rgb is None:
+            return None
+        try:
+            result = corners_logic.straighten_from_corners(
+                clicks, self._current_frame_size(), s.rotation_quarter_turns, s.flip_h, s.flip_v, s.fine_rotation, s.distortion, s.keystone_v, s.keystone_h,
+            )
+        except ValueError as exc:
+            self.notice.emit(str(exc))
+            return None
+        self._drop_auto_run()
+        s.fine_rotation, s.keystone_v, s.keystone_h, s.crop_rect = result.fine_rotation, result.keystone_v, result.keystone_h, result.crop_rect
+        self._recompute_image()
+        self._last_logged_fine_rotation = s.fine_rotation
+        self._last_logged_keystone = (s.keystone_v, s.keystone_h)
+        self._last_logged_crop = s.crop_rect
+        self.image_adjusted.emit()
+        self.reverted.emit()
+        self._log(f"Straightened from four corners ({s.fine_rotation:+.1f}\u00b0, keystone {s.keystone_v:+.2f} / {s.keystone_h:+.2f})")
+        self.notice.emit(" ".join(result.notes) or f"Straightened from the four corners: angle {s.fine_rotation:+.1f}\u00b0, keystone {s.keystone_v:+.2f} vertical, {s.keystone_h:+.2f} horizontal.")
+        return result
 
     def set_fine_rotation(self, degrees: float) -> None:
         """Straighten by a small angle (positive = clockwise)."""
@@ -1388,6 +1420,80 @@ class AppController(QObject):
             (x + 0.5) / w_img, (y + 0.5) / h_img, s.crop_rect, self._current_frame_size(),
             s.rotation_quarter_turns, s.flip_h, s.flip_v, s.fine_rotation, s.distortion, s.keystone_v, s.keystone_h,
         )
+
+    # ------------------------------------------------------------ the on/off light of a module
+    def module_enabled(self, key: str) -> bool:
+        return key not in self.state.modules_off
+
+    def set_module_enabled(self, key: str, enabled: bool) -> None:
+        """Switch a module off or on for the open photo: off, the picture is made as if the module were untouched; its settings are kept for when it is back on."""
+        s = self.state
+        if key not in SWITCHABLE or s.preview_rgb is None or enabled == self.module_enabled(key):
+            return
+        s.modules_off = [k for k in s.modules_off if k != key] if enabled else s.modules_off + [key]
+        self._settle()
+        self._save_edit_state()
+        self.modules_enabled_changed.emit()
+        self.notice.emit(f"{self.module_title(key)} switched {'on' if enabled else 'off'}")
+
+    # ------------------------------------------------------------ error marking: boxes round faults in the scan (notes, never part of the edit)
+    def error_marks(self) -> list[dict]:
+        return [{"kind": m["kind"], "pts": [list(p) for p in m["pts"]]} for m in self.state.error_marks]
+
+    def error_mark_shapes(self) -> list[dict]:
+        """Every mark as {"kind", "points"}: the four corners in pixels of the picture on screen (they follow the crop, rotation, flips and straightening)."""
+        s = self.state
+        if s.image_rgb is None or not s.error_marks:
+            return []
+        h_img, w_img = s.image_rgb.shape[:2]
+        frame = self._current_frame_size()
+        shapes = []
+        for m in s.error_marks:
+            points = []
+            for px, py in m["pts"]:
+                u, v = map_raw_to_display(px, py, s.crop_rect, frame, s.rotation_quarter_turns, s.flip_h, s.flip_v, s.fine_rotation, s.distortion, s.keystone_v, s.keystone_h)
+                points.append((u * w_img, v * h_img))
+            shapes.append({"kind": m["kind"], "points": points})
+        return shapes
+
+    def add_error_mark(self, kind: str, x1: float, y1: float, x2: float, y2: float) -> bool:
+        """Mark a box, given in pixels of the picture on screen, as a fault of this kind."""
+        s = self.state
+        if s.image_rgb is None or len(s.error_marks) >= error_marks_logic.MAX_MARKS:
+            return False
+        kind = kind if kind in error_marks_logic.KIND_IDS else "unknown"
+        corners = ((x1, y1), (x2, y1), (x2, y2), (x1, y2))
+        pts = [[round(a, 5), round(b, 5)] for a, b in (self._display_to_raw(x - 0.5, y - 0.5) for x, y in corners)]
+        s.error_marks = s.error_marks + [{"kind": kind, "pts": pts}]
+        self._error_marks_edited(f"Marked {error_marks_logic.kind(kind).label.lower()}")
+        return True
+
+    def set_error_mark_kind(self, index: int, kind: str) -> None:
+        s = self.state
+        if 0 <= index < len(s.error_marks) and kind in error_marks_logic.KIND_IDS and s.error_marks[index]["kind"] != kind:
+            s.error_marks = [dict(m, kind=kind) if i == index else m for i, m in enumerate(s.error_marks)]
+            self._error_marks_edited(f"Changed a mark to {error_marks_logic.kind(kind).label.lower()}")
+
+    def delete_error_mark(self, index: int) -> None:
+        s = self.state
+        if 0 <= index < len(s.error_marks):
+            s.error_marks = [m for i, m in enumerate(s.error_marks) if i != index]
+            self._error_marks_edited("Removed a mark")
+
+    def clear_error_marks(self, kind: str | None = None) -> int:
+        """Remove every mark (or every mark of one kind). Returns how many went."""
+        s = self.state
+        keep = [m for m in s.error_marks if kind is not None and m["kind"] != kind]
+        gone = len(s.error_marks) - len(keep)
+        if gone:
+            s.error_marks = keep
+            self._error_marks_edited(f"Removed {gone} mark{'s' if gone != 1 else ''}")
+        return gone
+
+    def _error_marks_edited(self, message: str) -> None:
+        self._save_edit_state()
+        self.error_marks_changed.emit()
+        self.notice.emit(message)
 
     def brush_scale(self) -> float:
         """Displayed-image pixels per unit of brush size: a brush is a
@@ -2161,6 +2267,8 @@ class AppController(QObject):
             "heal_strokes": s.heal_strokes,
             "clone_strokes": s.clone_strokes,
             "dust_excluded": s.dust_excluded,
+            "error_marks": s.error_marks,
+            "modules_off": s.modules_off,
             "ai_dust": s.ai_dust,
             "ai_threshold": s.ai_threshold,
             "ai_grow": s.ai_grow,
@@ -2218,6 +2326,8 @@ class AppController(QObject):
         self.state.heal_strokes = []
         self.state.clone_strokes = []
         self.state.dust_excluded = []
+        self.state.error_marks = []
+        self.state.modules_off = []
         self.state.ai_dust = False
         self.state.ai_threshold = aidust.DEFAULT_THRESHOLD
         self.state.ai_grow = aidust.DEFAULT_GROW
@@ -2514,6 +2624,32 @@ class AppController(QObject):
         self._restore_entry(self.state.history[-1])
         self._finish_restore()
         return True
+
+    def preview_look(self, look: dict) -> np.ndarray | None:
+        """The open photo as it would look with this look on it - the picture only: nothing is applied, no history step is made and the editor's state is
+        untouched. None when no photo is open or the look holds nothing usable."""
+        s = self.state
+        if s.preview_rgb is None:
+            return None
+        changes = self._clean_look(look)
+        meter = Metering.from_dict(look["metering"]) if isinstance(look.get("metering"), dict) else None
+        marks = changes.pop("marks", None)
+        if marks is not None:
+            changes["marks"] = Marks.from_dict(marks)
+        if meter is not None:
+            changes["metering"] = dataclasses.replace(meter, rect=s.metering.rect)
+        if not changes:
+            return None
+        shown = dataclasses.replace(s, **changes)
+        base = self._render_base()
+        image, _pre_crop, _stats, _overlay = self._renderer.render(
+            base, EditParams.from_state(shown), self._token(), base.shape[1], None, want_stats=False, overlay=False, flatfield=self._ff,
+        )
+        return image
+
+    def preview_look_preset(self, name: str) -> np.ndarray | None:
+        look = look_store.get(name)
+        return self.preview_look(look) if look is not None else None
 
     def _clean_look(self, look: dict) -> dict:
         clean: dict = {}

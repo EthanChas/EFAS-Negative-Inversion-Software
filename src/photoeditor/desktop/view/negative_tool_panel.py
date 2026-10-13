@@ -2,9 +2,10 @@ import dataclasses
 
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QIcon
-from PyQt6.QtWidgets import QCheckBox, QComboBox, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
+from PyQt6.QtWidgets import QCheckBox, QComboBox, QHBoxLayout, QInputDialog, QLabel, QMenu, QPushButton, QVBoxLayout, QWidget
 
 from ...features.densitometry.quality import COLOURS as QUALITY_COLOURS
+from ...features.negative import lightsource
 from ...features.negative.logic import FILM_TYPE_LABELS, FILM_TYPES, ProcessMode
 from ...features.negative.metering import DEFAULT_BUFFER, MAX_BUFFER, Metering
 from ...theme.tokens import THEME
@@ -39,6 +40,7 @@ class NegativeToolPanel(CollapsiblePanel):
     inverted_toggled = pyqtSignal(bool)
     film_type_changed = pyqtSignal(str)
     rgb_changed = pyqtSignal(float, float, float)
+    light_source_requested = pyqtSignal(float, float, float, str)  # the trim for a scanning light, and the light's name
     rgb_preview_requested = pyqtSignal(float, float, float)
     base_pick_toggled = pyqtSignal(bool)
     base_cleared = pyqtSignal()
@@ -263,7 +265,26 @@ class NegativeToolPanel(CollapsiblePanel):
 
         trim = QLabel("COLOR TRIM")
         trim.setProperty("role", "subtitle")
-        body.addWidget(trim)
+        trim_row = QHBoxLayout()
+        trim_row.addWidget(trim)
+        trim_row.addStretch(1)
+        self._light_btn = QPushButton("Scanning light...")
+        self._light_btn.setToolTip("Start the colour trim from the backlight the negative was photographed on (assumes the camera was set to daylight white balance)")
+        self._light_menu = QMenu(self._light_btn)
+        for name, kelvin, note in lightsource.PRESETS:
+            action = self._light_menu.addAction(name)
+            action.setToolTip(note)
+            action.triggered.connect(lambda _c=False, n=name, k=kelvin: self._pick_light(n, k))
+        self._light_menu.setToolTipsVisible(True)
+        self._light_menu.addSeparator()
+        custom = self._light_menu.addAction("Another temperature...")
+        custom.setToolTip("Type the colour temperature of your light, in kelvin (for a light the maker rates in kelvin, such as a CineStill CS-LITE mode)")
+        custom.triggered.connect(lambda _c=False: self._pick_custom_light())
+        clear = self._light_menu.addAction("No correction (trim to zero)")
+        clear.triggered.connect(lambda _c=False: self.light_source_requested.emit(0.0, 0.0, 0.0, "no light correction"))
+        self._light_btn.setMenu(self._light_menu)
+        trim_row.addWidget(self._light_btn)
+        body.addLayout(trim_row)
         rows = QVBoxLayout()
         rows.setSpacing(THEME.space_sm)
         self._red = SliderRow("Red")
@@ -283,6 +304,15 @@ class NegativeToolPanel(CollapsiblePanel):
         self._settle_timer.setSingleShot(True)
         self._settle_timer.setInterval(_SETTLE_DEBOUNCE_MS)
         self._settle_timer.timeout.connect(self._on_settled)
+
+    def _pick_light(self, name: str, kelvin: float) -> None:
+        self.light_source_requested.emit(*lightsource.trim_for(kelvin), name)
+
+    def _pick_custom_light(self) -> None:
+        kelvin, ok = QInputDialog.getInt(self, "Scanning light", "Colour temperature of the light (kelvin):", int(lightsource.REFERENCE_KELVIN),
+                                         int(lightsource.MIN_KELVIN), int(lightsource.MAX_KELVIN), 100)
+        if ok:
+            self._pick_light(f"{kelvin} K light", float(kelvin))
 
     def show_detection(self, mode: ProcessMode) -> None:
         self._result_label.setText(f"Detected: {_MODE_LABELS[mode]}")

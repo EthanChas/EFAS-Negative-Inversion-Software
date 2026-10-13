@@ -279,3 +279,60 @@ def map_display_to_raw(
     if fine_rotation:
         px, py = unfine_rotate_point(px, py, fine_rotation, raw_w, raw_h)
     return px, py
+
+
+def map_raw_to_display(
+    px: float,
+    py: float,
+    crop_rect: tuple[int, int, int, int] | None,
+    frame_size: tuple[int, int],
+    rotation_quarter_turns: int,
+    flip_h: bool,
+    flip_v: bool,
+    fine_rotation: float = 0.0,
+    distortion: float = 0.0,
+    keystone_v: float = 0.0,
+    keystone_h: float = 0.0,
+) -> tuple[float, float]:
+    """The other way round from map_display_to_raw: a point in the untouched raw scan's 0..1 frame -> where it is in the displayed (cropped, rotated, flipped)
+    image, as 0..1 fractions (u, v), which may be outside 0..1 when the point has been cropped away. The crop, flips and turns are undone exactly; the fine
+    rotation, distortion and keystone are solved for (Newton's method from the straight answer), which is exact to many digits for any setting the sliders allow."""
+    h, w = frame_size
+
+    def straight(x: float, y: float) -> tuple[float, float]:
+        for _ in range(rotation_quarter_turns % 4):  # undo the quarter turns (each took (a, b) to (b, 1 - a))
+            x, y = 1.0 - y, x
+        if flip_h:
+            x = 1.0 - x
+        if flip_v:
+            y = 1.0 - y
+        if crop_rect is not None:
+            x1, y1, x2, y2 = crop_rect
+            return (x * w - x1) / (x2 - x1), (y * h - y1) / (y2 - y1)
+        return x, y
+
+    u, v = straight(px, py)
+    if not (fine_rotation or distortion or keystone_v or keystone_h):
+        return u, v
+
+    def forward(a: float, b: float) -> tuple[float, float]:
+        return map_display_to_raw(a, b, crop_rect, frame_size, rotation_quarter_turns, flip_h, flip_v, fine_rotation, distortion, keystone_v, keystone_h)
+
+    # start from where the point would be with no lens or rotation terms, then correct
+    u, v = straight(px, py)
+    eps = 1e-4
+    for _ in range(12):
+        fx, fy = forward(u, v)
+        ex, ey = px - fx, py - fy
+        if abs(ex) < 1e-9 and abs(ey) < 1e-9:
+            break
+        ax, ay = forward(u + eps, v)
+        bx, by = forward(u, v + eps)
+        j11, j21 = (ax - fx) / eps, (ay - fy) / eps
+        j12, j22 = (bx - fx) / eps, (by - fy) / eps
+        det = j11 * j22 - j12 * j21
+        if abs(det) < 1e-12:
+            break
+        u += (ex * j22 - ey * j12) / det
+        v += (ey * j11 - ex * j21) / det
+    return u, v

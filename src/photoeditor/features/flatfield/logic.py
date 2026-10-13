@@ -42,6 +42,8 @@ def compute_gain(reference_rgb: np.ndarray) -> np.ndarray:
 
 def _gain_from_linear(ref: np.ndarray) -> np.ndarray:
     cv2 = _cv()
+    if min(ref.shape[:2]) >= 8:
+        ref = cv2.medianBlur(np.ascontiguousarray(ref, dtype=np.float32), 5)  # specks of dust on the light source or the lens must not become dark spots in the gain map
     sigma = max(ref.shape[:2]) / 16.0
     blur = np.clip(cv2.GaussianBlur(ref, (0, 0), sigmaX=sigma, sigmaY=sigma), 1e-4, None)
     means = blur.reshape(-1, blur.shape[2]).mean(axis=0)

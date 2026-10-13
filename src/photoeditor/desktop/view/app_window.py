@@ -87,6 +87,8 @@ from .uninstall_dialog import UninstallDialog
 from .advanced_preset_dialog import AdvancedPresetDialog
 from .ai_dust_panel import AiDustPanel
 from .look_presets_panel import LookPresetsPanel
+from .error_marks_panel import ErrorMarksPanel
+from ...features.errormarks import logic as error_marks_logic
 from .module_menu import ModuleMenus
 from .loading_overlay import LoadingOverlay
 from .masking_panel import MaskingToolPanel
@@ -122,6 +124,7 @@ from .title_bar import TitleBar
 from .tone_curve_panel import ToneCurveToolPanel
 from .film_reference_dialog import FilmReferenceDialog
 from .tool_rail import SlideOutPanel, ToolRail
+from ...features.geometry.stabilize import stabilize as stabilize_rect
 from .plugin_host import WindowPluginHost
 from .plugin_log_window import PluginLogWindow
 from ...plugins.manager import PluginManager
@@ -430,7 +433,7 @@ class AppWindow(QMainWindow):
         ):
             self._module_menus.attach(panel, key)
         for signal in (
-            self.controller.module_presets_changed, self.controller.history_changed, self.controller.image_adjusted,
+            self.controller.module_presets_changed, self.controller.modules_enabled_changed, self.controller.history_changed, self.controller.image_adjusted,
             self.controller.image_preview_changed, self.controller.reverted, self.controller.file_changed,
         ):
             signal.connect(self._module_menus.refresh)
@@ -737,6 +740,12 @@ class AppWindow(QMainWindow):
         self._split_action.setToolTip("Show the picture before the edit left of a draggable divider and the edit right of it")
         self._split_action.toggled.connect(self.set_split)
         view_menu_anchor.addAction(self._split_action)
+        self._error_marks_action = QAction("Error Marks", self)
+        self._error_marks_action.setCheckable(True)
+        self._error_marks_action.setChecked(app_settings.get("error_marks_visible"))
+        self._error_marks_action.setToolTip("Show the boxes marked round scratches, watermarks, transport lines and other faults (Negative tab > Error marking)")
+        self._error_marks_action.toggled.connect(self.set_error_marks_visible)
+        view_menu_anchor.addAction(self._error_marks_action)
         self._lighttable_action = QAction("Workbench", self)
         self._lighttable_action.setToolTip("The whole library as a grid: search, filter, sort, rate and flag")
         self._lighttable_action.triggered.connect(lambda: self.set_view("lighttable"))
@@ -819,6 +828,14 @@ class AppWindow(QMainWindow):
         self._presets_panel.apply_folder_requested.connect(self._on_apply_preset_to_folder)
         self._presets_panel.delete_requested.connect(self.controller.delete_look_preset)
         self._presets_panel.advanced_requested.connect(self._on_advanced_preset_edit)
+        self._presets_panel.preview_requested.connect(self._on_preset_hover)
+        self._presets_panel.preview_ended.connect(self._on_preset_hover_ended)
+        self._preset_hover_name: str | None = None
+        self._preset_previewing = False
+        self._preset_hover_timer = QTimer(self)
+        self._preset_hover_timer.setSingleShot(True)
+        self._preset_hover_timer.setInterval(140)
+        self._preset_hover_timer.timeout.connect(self._show_preset_preview)
         self.controller.look_presets_changed.connect(lambda select: self._presets_panel.set_presets(self.controller.look_presets(), select or None))
         left_tools_col.addWidget(self._presets_panel)
         self._snapshots_panel = SnapshotsPanel()
@@ -1078,6 +1095,7 @@ class AppWindow(QMainWindow):
         self._negative_tool.base_cleared.connect(lambda: self.controller.set_film_base(None))
         self.controller.film_base_changed.connect(self._sync_film_base)
         self._negative_tool.rgb_changed.connect(self.controller.set_invert_rgb)
+        self._negative_tool.light_source_requested.connect(self._on_light_source)
         self._negative_tool.metering_changed.connect(self.controller.set_metering)
         self._negative_tool.metering_preview.connect(self.controller.preview_metering)
         self._negative_tool.region_draw_toggled.connect(self._on_region_draw_toggled)
@@ -1135,6 +1153,7 @@ class AppWindow(QMainWindow):
         self._image_view.proof_picked.connect(self._on_proof_picked)
         self._exposure_tool.proof_requested.connect(self.toggle_proof)
         self._crop_tool.straighten_tool_toggled.connect(self._on_straighten_tool_toggled)
+        self._crop_tool.corners_tool_toggled.connect(self._on_corners_tool_toggled)
         self._crop_tool.crop_cleared.connect(self._on_crop_cleared)
         self._crop_tool.auto_crop_requested.connect(self._on_auto_crop)
         self._crop_tool.gradient_crop_requested.connect(self._on_gradient_crop)
@@ -1196,6 +1215,21 @@ class AppWindow(QMainWindow):
         self._ai_dust_tool.cancel_requested.connect(self.controller.cancel_ai_dust)
         self.controller.ai_dust_status.connect(self._refresh_ai_dust_panel)
         negative_tools_col.addWidget(self._ai_dust_tool)
+
+        self._error_marks_panel = ErrorMarksPanel()
+        self._error_marks_panel.set_marks_visible(app_settings.get("error_marks_visible"))
+        self._error_marks_panel.kind_chosen.connect(self._on_error_kind_chosen)
+        self._error_marks_panel.visibility_toggled.connect(self.set_error_marks_visible)
+        self._error_marks_panel.clear_requested.connect(self._on_clear_error_marks)
+        self._image_view.error_mark_drawn.connect(self._on_error_mark_drawn)
+        self._image_view.error_mark_context.connect(self._on_error_mark_context)
+        self._image_view.set_error_marks_visible(app_settings.get("error_marks_visible"))
+        self._error_tool_kind = ""
+        self.controller.error_marks_changed.connect(self._refresh_error_marks)
+        self.controller.image_adjusted.connect(self._refresh_error_marks)
+        self.controller.reverted.connect(self._refresh_error_marks)
+        self.controller.file_changed.connect(self._refresh_error_marks)
+        negative_tools_col.addWidget(self._error_marks_panel)
 
         negative_tools_col.addStretch(1)
 
@@ -1504,14 +1538,23 @@ class AppWindow(QMainWindow):
             if cropped:
                 replace = QCheckBox(f"Also replace the {cropped} crop{'s' if cropped != 1 else ''} already made")
                 box.setCheckBox(replace)
+            same = QCheckBox("Make every crop the same size")
+            same.setChecked(app_settings.get("crop_roll_same_size"))
+            same.setToolTip("Frames of one roll are one size: the crops are made the size most of them share, each centred where its own border was found. "
+                            "A frame whose crop is quite different (a half frame, a partly hidden border) is left as found.")
+            grid = box.layout()
+            grid.addWidget(same, grid.rowCount(), 0, 1, grid.columnCount())
             go = box.addButton(f"Crop {n} Photo{'s' if n != 1 else ''}", QMessageBox.ButtonRole.AcceptRole)
         else:
+            same = None
             box.setWindowTitle("Reset Crops")
             box.setText(f"Remove the crop from {cropped} photo{'s' if cropped != 1 else ''}?")
             box.setInformativeText("Only crops are removed. Rotation, straightening, tone, colour and every other edit stay. This cannot be undone in one step.")
             go = box.addButton("Reset Crops", QMessageBox.ButtonRole.AcceptRole)
         box.addButton("Cancel", QMessageBox.ButtonRole.RejectRole)
         box.exec()
+        if same is not None and box.clickedButton() is go:
+            app_settings.save({"crop_roll_same_size": same.isChecked()})
         return box.clickedButton() is go, bool(replace is not None and replace.isChecked())
 
     def bulk_crop(self, mode: str) -> None:
@@ -1537,7 +1580,7 @@ class AppWindow(QMainWindow):
             return
         c._save_edit_state() if open_path else None
         self._bulk_open = (mode, replace, in_roll)
-        self._bulk_worker = worker = BulkCropWorker(mode, others, c.db_path, replace)
+        self._bulk_worker = worker = BulkCropWorker(mode, others, c.db_path, replace, mode == "auto" and app_settings.get("crop_roll_same_size"))
         worker.progress.connect(lambda i, n, name: (self._filmstrip.set_bulk_progress(i, n + (1 if in_roll else 0), name),
                                                      self._coord_label.setText(f"{'Cropping' if mode == 'auto' else 'Resetting crops'}: {i + 1} of {n}  {name}")))
         worker.photo_done.connect(self._refresh_photo_tiles)
@@ -1557,6 +1600,7 @@ class AppWindow(QMainWindow):
                 if replace or not c.state.crop_rect:
                     if c.auto_crop():
                         done += 1
+                        self._match_open_crop(summary.get("shared") or {})
                     else:
                         skipped.append((c.state.image_path, "no clear border found"))
                 else:
@@ -1571,8 +1615,11 @@ class AppWindow(QMainWindow):
             self._lighttable.thumbnail_changed(p)
         self._filmstrip.reload_tiles(summary["done"])
         parts = [f"{'Cropped' if mode == 'auto' else 'Reset the crop on'} {done} photo{'s' if done != 1 else ''}"]
+        resized = len(summary.get("resized") or [])
         kept = sum(1 for _p, why in skipped if why == "has a crop")
         none = sum(1 for _p, why in skipped if why == "no clear border found")
+        if resized:
+            parts.append(f"{resized} made the same size as the rest")
         if kept:
             parts.append(f"{kept} already had a crop")
         if none:
@@ -1584,6 +1631,17 @@ class AppWindow(QMainWindow):
         self._coord_label.setText("; ".join(parts) + ".")
         self._lighttable_reload_rows()
         self._show_bulk_crop_result(mode, done, kept, none, summary)
+
+    def _match_open_crop(self, shared: dict) -> None:
+        """The open photo's crop, just made in the editor, takes the size the rest of the roll's crops were given (Crop Roll > Make every crop the same size)."""
+        c = self.controller
+        rect = c.state.crop_rect
+        if not shared or rect is None:
+            return
+        frame_h, frame_w = c._current_frame_size()
+        new = stabilize_rect(tuple(rect), frame_w, frame_h, shared)
+        if new != tuple(rect):
+            c.set_crop_rect(new)
 
     def _refresh_photo_tiles(self, path: str) -> None:
         """One photo's crop (or other saved edit) changed behind the editor's back: its tile in the filmstrip and the Workbench show it straight away."""
@@ -2419,6 +2477,69 @@ class AppWindow(QMainWindow):
 
         self._refresh_size_label()
 
+    # ------------------------------------------------------------ error marking
+    def set_error_marks_visible(self, visible: bool) -> None:
+        """View > Error Marks, or the box in the Negative tab's Error marking module: show or hide the marks. Stopping them showing also stops marking."""
+        visible = bool(visible)
+        app_settings.save({"error_marks_visible": visible})
+        self._image_view.set_error_marks_visible(visible)
+        self._error_marks_panel.set_marks_visible(visible)
+        if self._error_marks_action.isChecked() != visible:
+            self._error_marks_action.blockSignals(True)
+            self._error_marks_action.setChecked(visible)
+            self._error_marks_action.blockSignals(False)
+        if not visible and self._error_tool_kind:
+            self._on_error_kind_chosen("")
+            self._error_marks_panel.set_active_kind("")
+
+    def _on_error_kind_chosen(self, kind: str) -> None:
+        self._error_tool_kind = kind
+        if kind and not app_settings.get("error_marks_visible"):
+            self.set_error_marks_visible(True)
+        self._image_view.set_error_tool(kind or None)
+        if kind:
+            self._coord_label.setText(f"Marking {error_marks_logic.kind(kind).label.lower()}: drag a box round each one on the picture.")
+
+    def _on_error_mark_drawn(self, x1: float, y1: float, x2: float, y2: float) -> None:
+        if self._error_tool_kind:
+            self.controller.add_error_mark(self._error_tool_kind, x1, y1, x2, y2)
+
+    def _on_error_mark_context(self, index: int, where) -> None:
+        marks = self.controller.error_marks()
+        if not 0 <= index < len(marks):
+            return
+        current = marks[index]["kind"]
+        menu = QMenu(self)
+        change = menu.addMenu("Change to")
+        for kind in error_marks_logic.KINDS:
+            action = change.addAction(kind.label)
+            action.setCheckable(True)
+            action.setChecked(kind.id == current)
+            action.triggered.connect(lambda _c=False, k=kind.id: self.controller.set_error_mark_kind(index, k))
+        menu.addAction("Remove this mark", lambda: self.controller.delete_error_mark(index))
+        menu.addAction(f"Remove all {error_marks_logic.kind(current).label.lower()}", lambda: self.controller.clear_error_marks(current))
+        menu.exec(where)
+
+    def _on_clear_error_marks(self) -> None:
+        n = len(self.controller.error_marks())
+        if n and QMessageBox.question(self, "Clear error marks", f"Remove all {n} mark{'s' if n != 1 else ''} from this photo?") == QMessageBox.StandardButton.Yes:
+            self.controller.clear_error_marks()
+
+    def _refresh_error_marks(self) -> None:
+        """Put the marks on the picture where the current crop, rotation and straightening put them, and update the module's count."""
+        c = self.controller
+        self._image_view.set_error_marks(c.error_mark_shapes())
+        self._error_marks_panel.set_summary(c.state.error_marks)
+
+    def _on_light_source(self, r: float, g: float, b: float, name: str) -> None:
+        """Negative > Color trim > Scanning light: the trim for that light goes on the open photo as an ordinary edit (so it can be undone and adjusted)."""
+        if self.controller.state.image_path is None:
+            self._coord_label.setText("Open a photo first.")
+            return
+        self._negative_tool.set_rgb(r, g, b)
+        self.controller.set_invert_rgb(r, g, b)
+        self._coord_label.setText(f"Color trim set for {name} (R {r:+.2f}, G {g:+.2f}, B {b:+.2f}); adjust it by eye.")
+
     def _sync_negative_panel(self) -> None:
         state = self.controller.state
         self._negative_tool.set_film_type(state.film_type)
@@ -2515,7 +2636,36 @@ class AppWindow(QMainWindow):
             self._shadow_clip_btn.setToolTip(f"Mark crushed shadows in blue ({state.clip_fractions[0] * 100:.1f}% of the image).")
             self._highlight_clip_btn.setToolTip(f"Mark blown highlights in red ({state.clip_fractions[1] * 100:.1f}% of the image).")
 
+    def _preview_allowed(self) -> bool:
+        """A look may be shown on the picture only while the picture is the plain edited one (not while cropping or picking a point on it)."""
+        return (app_settings.get("hover_preview") and self.controller.state.image_rgb is not None and not self._showing_pre_crop()
+                and self._base_pick_image is None and self._probe_image is None and not self.lighttable_active())
+
+    def _on_preset_hover(self, name: str) -> None:
+        self._preset_hover_name = name
+        if self._preview_allowed():
+            self._preset_hover_timer.start()
+
+    def _show_preset_preview(self) -> None:
+        name = self._preset_hover_name
+        if name is None or not self._preview_allowed():
+            return
+        image = self.controller.preview_look_preset(name)
+        if image is not None:
+            self._image_view.update_pixels(image)
+            self._preset_previewing = True
+            self._coord_label.setText(f"Previewing the preset '{name}': nothing is applied until you press Apply")
+
+    def _on_preset_hover_ended(self) -> None:
+        self._preset_hover_name = None
+        self._preset_hover_timer.stop()
+        if self._preset_previewing:
+            self._preset_previewing = False
+            if self._preview_allowed() or self.controller.state.image_rgb is not None:
+                self._image_view.update_pixels(self.controller.state.image_rgb)
+
     def _on_image_adjusted(self) -> None:
+        self._preset_previewing = False
         state = self.controller.state
         if self._showing_pre_crop():
             self._image_view.update_pixels(state.pre_crop_rgb)
@@ -3147,6 +3297,7 @@ class AppWindow(QMainWindow):
         iv = self._image_view
         if tool is not None:
             self._crop_tool.set_straighten_active(False)
+            self._leave_corners()
         iv.set_tool(None)
         iv.set_pick_mode(False)
         if tool is None:
@@ -3170,6 +3321,9 @@ class AppWindow(QMainWindow):
         return size / 2 * self.controller.brush_scale()
 
     def _on_stroke_completed(self, points: list) -> None:
+        if self._crop_tool.corners_active():
+            self._on_corners_finished(points)
+            return
         if self._crop_tool.straighten_active():
             if len(points) >= 2:
                 self.controller.straighten_by_line(points[0], points[1])
@@ -3445,11 +3599,58 @@ class AppWindow(QMainWindow):
         self._negative_tool.set_region_draw_active(False)
         self._image_view.exit_crop_mode(self.controller.state.image_rgb)
 
+    def _on_corners_tool_toggled(self, enabled: bool) -> None:
+        """Crop & Rotate > Four-Corner Straighten: show the picture before the crop and take four clicks on it."""
+        iv = self._image_view
+        state = self.controller.state
+        if not enabled:
+            iv.set_tool(None)
+            if state.image_rgb is not None:
+                iv.update_pixels(state.image_rgb)
+            return
+        if state.image_rgb is None:
+            self._crop_tool.set_corners_active(False)
+            self._coord_label.setText("Open a photo first.")
+            return
+        if self._crop_tool.is_crop_active():
+            self._crop_tool.set_crop_mode(False)
+            self._on_crop_mode_toggled(False)
+        self.set_split(False)
+        self.close_proof()
+        self._crop_tool.set_straighten_active(False)
+        self._end_region_draw()
+        self._dust_tool.deactivate_tools()
+        self._curve_tool.deactivate_eyedropper()
+        iv.set_pick_mode(False)
+        iv.set_tool(None)
+        iv.update_pixels(state.pre_crop_rgb if state.pre_crop_rgb is not None else state.image_rgb)
+        iv.set_tool("corners", None)
+        self._coord_label.setText("Click the four corners of the photo, in any order (Esc starts again).")
+
+    def _leave_corners(self) -> None:
+        """Another tool took over from Four-Corner Straighten: put the edited picture back on screen."""
+        if self._crop_tool.corners_active():
+            self._crop_tool.set_corners_active(False)
+            if self.controller.state.image_rgb is not None:
+                self._image_view.update_pixels(self.controller.state.image_rgb)
+
+    def _on_corners_finished(self, points: list) -> None:
+        self._crop_tool.set_corners_active(False)
+        self._image_view.set_tool(None)
+        state = self.controller.state
+        shown = state.pre_crop_rgb if state.pre_crop_rgb is not None else state.image_rgb
+        if len(points) == 4 and shown is not None:
+            height, width = shown.shape[:2]
+            self.controller.straighten_from_corners([(x / width, y / height) for x, y in points])
+        if state.image_rgb is not None:
+            self._image_view.update_pixels(state.image_rgb)
+
     def _on_straighten_tool_toggled(self, enabled: bool) -> None:
         iv = self._image_view
         if not enabled:
             iv.set_tool(None)
             return
+        self._leave_corners()
         if self._crop_tool.is_crop_active():
             self._crop_tool.set_crop_mode(False)
             self._on_crop_mode_toggled(False)
@@ -3465,6 +3666,7 @@ class AppWindow(QMainWindow):
             self.set_split(False)
             self.close_proof()
             self._crop_tool.set_straighten_active(False)
+            self._crop_tool.set_corners_active(False)
             self._end_region_draw()
             self._dust_tool.deactivate_tools()
             self._image_view.set_tool(None)

@@ -1,5 +1,5 @@
 from PyQt6.QtCore import QEasingCurve, QPointF, QPropertyAnimation, QRectF, Qt, QTimer, pyqtSignal
-from PyQt6.QtGui import QAction, QActionGroup, QColor, QLinearGradient, QPainter, QPaintEvent
+from PyQt6.QtGui import QAction, QActionGroup, QColor, QLinearGradient, QPainter, QPaintEvent, QPen
 from PyQt6.QtWidgets import (
     QAbstractSpinBox, QApplication, QHBoxLayout, QLabel, QLineEdit, QMenu, QMessageBox, QPlainTextEdit, QPushButton, QTextEdit, QVBoxLayout, QWidget,
 )
@@ -11,6 +11,54 @@ from .module_style import AUTOMATIC, NAMED, PLAIN, STYLE
 _NO_MAX = 16777215
 HOVER_OPEN_MS = 220
 HOVER_CLOSE_MS = 400
+
+
+class _PowerLight(QWidget):
+    """The on/off light beside a module's name: green is on, red is off. A square in the Classic theme, a circle with a grey border in the others."""
+
+    clicked = pyqtSignal()
+    ON, OFF = "#2fb344", "#d63939"
+
+    def __init__(self, parent: QWidget | None = None):
+        super().__init__(parent)
+        self._on = True
+        self.setFixedSize(16, 16)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.hide()
+        STYLE.changed.connect(self.update)
+        self._tip()
+
+    def is_on(self) -> bool:
+        return self._on
+
+    def set_on(self, on: bool) -> None:
+        if on != self._on:
+            self._on = on
+            self._tip()
+            self.update()
+
+    def _tip(self) -> None:
+        self.setToolTip("On: this module is applied to the picture. Click to switch it off (its settings are kept)." if self._on
+                        else "Off: the picture is made without this module, and its controls are greyed out. Click to switch it back on.")
+
+    def mousePressEvent(self, event) -> None:
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.clicked.emit()
+        event.accept()  # not the header's: clicking the light must not open or close the module
+
+    def paintEvent(self, event) -> None:
+        painter = QPainter(self)
+        colour = QColor(self.ON if self._on else self.OFF)
+        if THEME.style == "classic":
+            painter.fillRect(2, 2, 12, 12, QColor(0, 0, 0))
+            painter.fillRect(3, 3, 10, 10, colour)
+        else:
+            painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+            painter.setBrush(colour)
+            painter.setPen(QPen(QColor("#8a8f98"), 1.5))
+            painter.drawEllipse(QRectF(2.0, 2.0, 12.0, 12.0))
+        painter.end()
 
 
 class _CollapsibleHeader(QWidget):
@@ -39,6 +87,9 @@ class _CollapsibleHeader(QWidget):
             self.setCursor(Qt.CursorShape.PointingHandCursor)
             self.arrow_button = CaptionButton("collapse")
             row.addWidget(self.arrow_button, 0, Qt.AlignmentFlag.AlignVCenter)
+
+        self.power_light = _PowerLight()
+        row.addWidget(self.power_light, 0, Qt.AlignmentFlag.AlignVCenter)
 
         label = QLabel(title)
         label.setProperty("role", "mini_header_text")
@@ -142,6 +193,7 @@ class CollapsiblePanel(BevelPanel):
     layout, already spoken for by the header)."""
 
     toggled = pyqtSignal(bool)
+    power_toggled = pyqtSignal(bool)  # the light in the header was clicked: the state it asks for
 
     def __init__(
         self,
@@ -196,6 +248,22 @@ class CollapsiblePanel(BevelPanel):
 
     def body(self) -> QVBoxLayout:
         return self._body_layout
+
+    def enable_power_switch(self) -> None:
+        """Show the on/off light in the header; clicking it sends power_toggled with the state it asks for (the owner decides, then calls set_power)."""
+        light = self._header.power_light
+        if not light.isHidden():
+            return
+        light.show()
+        light.clicked.connect(lambda: self.power_toggled.emit(not light.is_on()))
+
+    def set_power(self, on: bool) -> None:
+        """Show the module as on (green) or off (red); an off module's controls are greyed out (the header stays usable)."""
+        self._header.power_light.set_on(on)
+        self._body_container.setEnabled(on)
+
+    def power_on(self) -> bool:
+        return self._header.power_light.is_on()
 
     def enable_module_buttons(self) -> None:
         """Show a Reset button and a Presets (menu) button in the header, next to the help button."""

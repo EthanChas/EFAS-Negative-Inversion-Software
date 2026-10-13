@@ -371,6 +371,11 @@ class SettingsDialog(QDialog):
         col.addWidget(self._collapse_on_tab_change)
         col.addWidget(_hint("On: whichever modules you opened in a tab are closed again when you move to another tab, so each tab is tidy when you return. Off: every module "
                             "stays as you left it, open or closed, even after you switch tabs."))
+        self._hover_preview = QCheckBox("Preview a preset on the picture while the mouse is over it")
+        self._hover_preview.setChecked(self._initial["hover_preview"])
+        self._hover_preview.setToolTip("Rest the mouse on a preset in the Presets list to see it on the open photo; move away and the photo goes back")
+        col.addWidget(self._hover_preview)
+        col.addWidget(_hint("Nothing is applied until you press Apply or double-click the preset: the picture just shows what it would look like. Turn this off on a slow computer."))
         self._film_reference_online = QCheckBox("Allow the Film Colour Reference to contact lomography.com")
         self._film_reference_online.setChecked(self._initial["film_reference_online"])
         self._film_reference_online.setToolTip("Extra > Film Colour Reference shows sample photos of a film stock from lomography.com; turn this off to stop it going online")
@@ -825,7 +830,7 @@ class SettingsDialog(QDialog):
         return {
             "raw_demosaic": self._demosaic.currentData(), "raw_auto_bright": self._auto_bright.isChecked(), "auto_advance": self._auto_advance.isChecked(),
             "check_updates": self._check_updates.isChecked(), "scan_quality": self._scan_quality.isChecked(),
-            "hover_modules": self._hover_modules.isChecked(), "workbench_library": self._workbench_library.isChecked(), "hq_always": self._hq_always.isChecked(), "collapse_on_tab_change": self._collapse_on_tab_change.isChecked(), "film_reference_online": self._film_reference_online.isChecked(), "module_colours": self._module_colours.isChecked(),
+            "hover_modules": self._hover_modules.isChecked(), "workbench_library": self._workbench_library.isChecked(), "hq_always": self._hq_always.isChecked(), "collapse_on_tab_change": self._collapse_on_tab_change.isChecked(), "film_reference_online": self._film_reference_online.isChecked(), "hover_preview": self._hover_preview.isChecked(), "module_colours": self._module_colours.isChecked(),
             "backup_auto": self._backup_auto.isChecked(), "backup_keep": self._backup_keep.value(), "backup_dir": self._backup_dir,
             "keybinds": binds.overrides_from(self._keys), **self._theme_values(),
         }

@@ -1,4 +1,4 @@
-from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtCore import QEvent, Qt, pyqtSignal
 from PyQt6.QtWidgets import QHBoxLayout, QInputDialog, QListWidget, QListWidgetItem, QMessageBox, QPushButton, QWidget
 
 from ...theme.tokens import THEME
@@ -17,6 +17,8 @@ class LookPresetsPanel(CollapsiblePanel):
     apply_folder_requested = pyqtSignal(str)
     delete_requested = pyqtSignal(str)
     advanced_requested = pyqtSignal(str)
+    preview_requested = pyqtSignal(str)  # the mouse rests on this preset: show it on the picture without applying it
+    preview_ended = pyqtSignal()  # the mouse left the list
 
     def __init__(self, parent: QWidget | None = None):
         super().__init__(
@@ -38,6 +40,9 @@ class LookPresetsPanel(CollapsiblePanel):
         self._list.setMaximumHeight(_LIST_MAX_HEIGHT)
         self._list.itemSelectionChanged.connect(self._sync_buttons)
         self._list.itemDoubleClicked.connect(lambda _item: self._apply())
+        self._list.setMouseTracking(True)
+        self._list.itemEntered.connect(self._on_hover)
+        self._list.viewport().installEventFilter(self)
         body.addWidget(self._list)
 
         row = QHBoxLayout()
@@ -68,6 +73,18 @@ class LookPresetsPanel(CollapsiblePanel):
         body.addLayout(row2)
 
         self.set_presets([])
+
+    def _on_hover(self, item: QListWidgetItem) -> None:
+        row = self._list.row(item)
+        if self._has_photo and self._names and 0 <= row < len(self._names):
+            self.preview_requested.emit(self._names[row])
+        else:
+            self.preview_ended.emit()
+
+    def eventFilter(self, watched, event) -> bool:
+        if watched is self._list.viewport() and event.type() in (QEvent.Type.Leave, QEvent.Type.Hide):
+            self.preview_ended.emit()
+        return super().eventFilter(watched, event)
 
     def set_presets(self, names: list[str], select: str | None = None) -> None:
         self._names = list(names)

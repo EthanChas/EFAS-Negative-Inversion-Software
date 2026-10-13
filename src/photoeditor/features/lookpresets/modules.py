@@ -91,6 +91,22 @@ PANEL_MODULES: dict[str, tuple[str, tuple[str, ...]]] = {
 }
 
 
+# A module with an on/off light in its header: while it is off the picture is made as if the module were untouched (its settings are kept). The Negative module
+# is not here: without its inversion there is no picture to edit.
+SWITCHABLE = tuple(k for k in PANEL_MODULES if k != "negative")
+
+
+def off_overrides(keys) -> dict[str, Any]:
+    """The values (by field name, as the renderer takes them) that stand in for these modules while they are switched off."""
+    out: dict[str, Any] = {}
+    for key in keys:
+        if key not in SWITCHABLE:
+            continue
+        for name, value in panel_defaults(key).items():
+            out[name] = tuple(tuple(p) for p in value) if name == "tone_curve_points" else value
+    return out
+
+
 def panel_fields(key: str) -> tuple[FieldSpec, ...]:
     ids = PANEL_MODULES[key][1]
     return tuple(f for m in MODULES if m.id in ids for f in m.fields)

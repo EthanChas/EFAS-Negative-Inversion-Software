@@ -1,6 +1,7 @@
 from PyQt6.QtCore import QObject
 from PyQt6.QtWidgets import QInputDialog, QMenu, QMessageBox, QWidget
 
+from ...features.lookpresets.modules import SWITCHABLE
 from ..controller import AppController
 from .collapsible_panel import CollapsiblePanel
 
@@ -19,10 +20,15 @@ class ModuleMenus(QObject):
         panel.reset_button.clicked.connect(lambda _c=False, k=key: self._controller.reset_module(k))
         panel.presets_button.clicked.connect(lambda _c=False, p=panel, k=key: self._show_menu(p, k))
         panel.update_preset_button.clicked.connect(lambda _c=False, k=key: self._controller.update_module_preset(k))
+        if key in SWITCHABLE:
+            panel.enable_power_switch()
+            panel.power_toggled.connect(lambda on, k=key: self._controller.set_module_enabled(k, on))
 
     def refresh(self, *_args) -> None:
         """Show or hide every panel's Update Preset button: it is there while the preset loaded on the module has been changed."""
         for key, panel in self._panels.items():
+            if key in SWITCHABLE:
+                panel.set_power(self._controller.module_enabled(key))
             name = self._controller.module_active_preset(key)
             panel.set_preset_status(name, bool(name) and self._controller.module_preset_modified(key))
 

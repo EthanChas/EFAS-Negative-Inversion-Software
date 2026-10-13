@@ -257,6 +257,8 @@ _MIGRATIONS = (
     ("metadata", "TEXT", "'{}'"),
     ("module_presets", "TEXT", "'{}'"),
     ("dust_excluded", "TEXT", "'[]'"),
+    ("error_marks", "TEXT", "'[]'"),
+    ("modules_off", "TEXT", "'[]'"),
 )
 
 _FIELDS = (
@@ -313,6 +315,8 @@ _FIELDS = (
     ("metadata", "json"),
     ("module_presets", "json"),
     ("dust_excluded", "json"),
+    ("error_marks", "json"),
+    ("modules_off", "json"),
 )
 
 
@@ -376,7 +380,7 @@ def _decode(value, kind: str, field: str):
 
 def save_edit_state(conn: sqlite3.Connection, path: str, state: dict) -> None:
     names = [name for name, _ in _FIELDS]
-    state = {"module_presets": {}, "dust_excluded": [], **state}
+    state = {"module_presets": {}, "dust_excluded": [], "error_marks": [], "modules_off": [], **state}
     values = [_encode(state[name], kind) for name, kind in _FIELDS]
     marks = ", ".join("?" * (len(names) + 1))
     updates = ", ".join(f"{name}=excluded.{name}" for name in names)
@@ -598,7 +602,7 @@ def get_ratings(conn: sqlite3.Connection, paths: list[str]) -> dict[str, int]:
 
 def state_to_json(state: dict) -> str:
     """An edit state (as AppController._edit_state_dict builds it) as one JSON text, each field encoded the way its column is."""
-    state = {"module_presets": {}, "dust_excluded": [], **state}
+    state = {"module_presets": {}, "dust_excluded": [], "error_marks": [], "modules_off": [], **state}
     return json.dumps({name: _encode(state[name], kind) for name, kind in _FIELDS if name in state})
 
 
@@ -889,7 +893,7 @@ def tag_counts(conn: sqlite3.Connection) -> list[tuple[str, int]]:
 _UNTOUCHED = {
     "exposure_ev": 0.0, "rotation_quarter_turns": 0, "flip_h": False, "flip_v": False, "crop_rect": None, "saturation": 0.0,
     "temperature": 0.0, "tint": 0.0, "shadows": 0.0, "highlights": 0.0, "sharpen_amount": 0.0, "dust_auto": False,
-    "scratch_lines": [], "heal_strokes": [], "clone_strokes": [], "dust_excluded": [], "ai_dust": False, "marks": {}, "film_type": "auto", "invert_r": 0.0, "invert_g": 0.0, "invert_b": 0.0, "contrast": 0.0,
+    "scratch_lines": [], "heal_strokes": [], "clone_strokes": [], "dust_excluded": [], "error_marks": [], "modules_off": [], "ai_dust": False, "marks": {}, "film_type": "auto", "invert_r": 0.0, "invert_g": 0.0, "invert_b": 0.0, "contrast": 0.0,
     "fine_rotation": 0.0, "distortion": 0.0, "keystone_v": 0.0, "keystone_h": 0.0, "chroma_denoise": 0.0, "local_contrast": 0.0, "metering": {}, "wm_film": "off",
     "vignette": 0.0, "border": 0.0,
 }

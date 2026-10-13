@@ -1,11 +1,12 @@
 import numpy as np
 from PyQt6.QtCore import QPointF, QRect, QRectF, Qt, pyqtSignal
 from PyQt6.QtGui import (
-    QBrush, QColor, QCursor, QImage, QKeyEvent, QMouseEvent, QPainter, QPen, QPixmap, QWheelEvent,
+    QBrush, QColor, QCursor, QImage, QKeyEvent, QMouseEvent, QPainter, QPen, QPixmap, QPolygonF, QWheelEvent,
 )
 from PyQt6.QtWidgets import QLabel, QScrollArea, QVBoxLayout, QWidget
 
 from ...theme.tokens import THEME
+from ...features.errormarks import logic as error_marks
 from ...features.geometry.guides import CropGuide, guide_shapes
 from ...features.retouch.curve import smooth_path
 from .bevel_widgets import BevelPanel
@@ -65,10 +66,16 @@ class _ImageLabel(QLabel):
     tool_clicked = pyqtSignal(float, float)
     source_picked = pyqtSignal(float, float)
     mark_edited = pyqtSignal(str, float, float, float)
+    error_mark_drawn = pyqtSignal(float, float, float, float)  # a box dragged with the error-marking tool, in image pixels
+    error_mark_context = pyqtSignal(int, object)  # right-click on a mark: its index and where on screen
 
     def __init__(self):
         super().__init__()
         self.setMouseTracking(True)
+        self._err_shapes: list[dict] = []
+        self._err_visible = True
+        self._err_tool: str | None = None
+        self._err_drag: list | None = None
         self._mark_boxes: dict[str, tuple[float, float, float, float]] = {}
         self._mark_labels: dict[str, str] = {}
         self._mark_sel: str | None = None
@@ -170,6 +177,71 @@ class _ImageLabel(QLabel):
             box = (ox if east else ox - w, oy if south else oy - h, w, h)
         drag["live"] = box
         self._mark_live = (drag["name"], box)
+
+    # ------------------------------------------------------------ error marks: coloured, named boxes round faults in the scan
+    def set_error_marks(self, shapes: list[dict]) -> None:
+        self._err_shapes = list(shapes)
+        self.update()
+
+    def set_error_marks_visible(self, visible: bool) -> None:
+        self._err_visible = visible
+        self.update()
+
+    def set_error_tool(self, kind_id: str | None) -> None:
+        """Drag a box on the picture to mark a fault of this kind (None turns it off)."""
+        self._err_tool = kind_id
+        self._err_drag = None
+        if kind_id is not None:
+            self.setCursor(Qt.CursorShape.CrossCursor)
+        elif self._tool is None and not self._pick_mode:
+            self.unsetCursor()
+        self.update()
+
+    def _error_mark_at(self, pos) -> int | None:
+        """The mark under a widget-space point (the smallest when they overlap)."""
+        k = self._scale if self._scale > 0 else 1.0
+        point = QPointF(pos.x() / k, pos.y() / k)
+        best, best_area = None, None
+        for i, shape in enumerate(self._err_shapes):
+            poly = QPolygonF([QPointF(x, y) for x, y in shape["points"]])
+            if poly.containsPoint(point, Qt.FillRule.OddEvenFill):
+                box = poly.boundingRect()
+                area = box.width() * box.height()
+                if best_area is None or area <= best_area:
+                    best, best_area = i, area
+        return best
+
+    def _paint_error_marks(self, painter: QPainter) -> None:
+        k = self._scale
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        metrics = painter.fontMetrics()
+        for shape in self._err_shapes:
+            info = error_marks.kind(shape["kind"])
+            colour = QColor(info.colour)
+            poly = QPolygonF([QPointF(x * k, y * k) for x, y in shape["points"]])
+            halo = QColor(255, 255, 255, 215) if error_marks.text_colour(info.colour) == "#ffffff" else QColor(0, 0, 0, 190)
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.setPen(QPen(halo, 4))
+            painter.drawPolygon(poly)
+            painter.setBrush(QColor(colour.red(), colour.green(), colour.blue(), 45))
+            painter.setPen(QPen(colour, 2))
+            painter.drawPolygon(poly)
+            box = poly.boundingRect()
+            tag = QRectF(box.left(), max(0.0, box.top() - metrics.height() - 3), metrics.horizontalAdvance(info.label) + 10, metrics.height() + 2)
+            painter.setPen(QPen(halo, 1))
+            painter.setBrush(colour)
+            painter.drawRect(tag)
+            painter.setPen(QColor(error_marks.text_colour(info.colour)))
+            painter.drawText(tag, Qt.AlignmentFlag.AlignCenter, info.label)
+        if self._err_drag is not None and self._err_tool is not None:
+            colour = QColor(error_marks.kind(self._err_tool).colour)
+            (x1, y1), (x2, y2) = self._err_drag
+            rect = QRectF(min(x1, x2) * k, min(y1, y2) * k, abs(x2 - x1) * k, abs(y2 - y1) * k)
+            painter.setBrush(QColor(colour.red(), colour.green(), colour.blue(), 45))
+            painter.setPen(QPen(QColor(255, 255, 255, 215), 4))
+            painter.drawRect(rect)
+            painter.setPen(QPen(colour, 2, Qt.PenStyle.DashLine))
+            painter.drawRect(rect)
 
     def set_source(self, pixels: np.ndarray | None) -> None:
         self._pixels = pixels
@@ -385,7 +457,7 @@ class _ImageLabel(QLabel):
     def _line_tool(self) -> bool:
         """The click-point tools: "polyline" and "curve" (any number of points, finished by hand; the curve is smoothed through them) and
         "line2" (two points, finishes itself)."""
-        return self._tool in ("polyline", "curve", "line2", "straighten")
+        return self._tool in ("polyline", "curve", "line2", "straighten", "corners")
 
     def _finish_polyline(self) -> None:
         stroke, self._stroke = self._stroke, []
@@ -633,6 +705,19 @@ class _ImageLabel(QLabel):
             self._split_drag = True
             event.accept()
             return
+        if event.button() == Qt.MouseButton.RightButton and self._err_visible and self._err_shapes and not self._crop_mode and self._pixels is not None:
+            hit = self._error_mark_at(event.position())
+            if hit is not None:
+                self.error_mark_context.emit(hit, event.globalPosition().toPoint())
+                event.accept()
+                return
+        if event.button() == Qt.MouseButton.LeftButton and self._err_tool is not None and not self._crop_mode and self._tool is None and self._pixels is not None:
+            pt = self._img_pt(event.position())
+            self._err_drag = [pt, pt]
+            self.setFocus()
+            self.update()
+            event.accept()
+            return
         if event.button() == Qt.MouseButton.LeftButton and self._mark_can_edit():
             hit = self._mark_hit(event.position())
             if hit is not None:
@@ -674,12 +759,16 @@ class _ImageLabel(QLabel):
                 self._stroke.append(pt)
                 if len(self._stroke) >= 2:
                     self._finish_polyline()
+            elif self._tool == "corners":
+                self._stroke.append(pt)
+                if len(self._stroke) >= 4:
+                    self._finish_polyline()
             else:
                 self._stroke.append(pt)
             self.update()
             event.accept()
             return
-        if event.button() == Qt.MouseButton.MiddleButton and self._pixels is not None and self._tool is not None:
+        if event.button() == Qt.MouseButton.MiddleButton and self._pixels is not None and (self._tool is not None or self._err_tool is not None):
             self._dragging = True
             self._drag_button = Qt.MouseButton.MiddleButton
             self._drag_last_pos = event.globalPosition()
@@ -718,6 +807,9 @@ class _ImageLabel(QLabel):
                 self.setCursor(Qt.CursorShape.SplitHCursor)
             else:
                 self.unsetCursor()
+        if self._err_drag is not None:
+            self._err_drag[1] = self._img_pt(event.position())
+            self.update()
         if self._mark_drag is not None:
             self._mark_drag_to(event.position())
             self.update()
@@ -764,6 +856,18 @@ class _ImageLabel(QLabel):
             self._split_drag = False
             event.accept()
             return
+        if event.button() == Qt.MouseButton.LeftButton and self._err_drag is not None:
+            (x1, y1), (x2, y2) = self._err_drag
+            self._err_drag = None
+            self.update()
+            if self._pixels is not None:
+                height, width = self._pixels.shape[:2]
+                x1, x2 = sorted((min(max(x1, 0.0), width), min(max(x2, 0.0), width)))
+                y1, y2 = sorted((min(max(y1, 0.0), height), min(max(y2, 0.0), height)))
+                if (x2 - x1) * self._scale >= error_marks.MIN_BOX and (y2 - y1) * self._scale >= error_marks.MIN_BOX:
+                    self.error_mark_drawn.emit(x1, y1, x2, y2)
+            event.accept()
+            return
         if event.button() == Qt.MouseButton.LeftButton and self._mark_drag is not None:
             drag, self._mark_drag = self._mark_drag, None
             x, y, w, h = drag["live"]
@@ -802,6 +906,8 @@ class _ImageLabel(QLabel):
             self._dragging = False
             if self._tool is not None:
                 self.setCursor(Qt.CursorShape.BlankCursor)
+            elif self._err_tool is not None:
+                self.setCursor(Qt.CursorShape.CrossCursor)
             elif self._pick_mode and self._pick_cursor is not None:
                 self.setCursor(self._pick_cursor)
             else:
@@ -866,6 +972,13 @@ class _ImageLabel(QLabel):
                     path = [QPointF(x, y) for x, y in smooth_path([(p.x(), p.y()) for p in path], 3.0)]
                 if len(path) > 1:
                     painter.drawPolyline(path)
+                if self._tool == "corners" and len(pts) >= 3:
+                    painter.drawLine(pts[-1], pts[0])
+                if self._tool == "corners":
+                    painter.setPen(QPen(QColor(255, 255, 255, 255), 1))
+                    for number, p in enumerate(pts, 1):
+                        painter.drawText(QPointF(p.x() + 6, p.y() - 6), str(number))
+                    painter.setPen(QPen(QColor(255, 200, 0, 220), 1.5))
                 if self._tool == "line2" and len(pts) == 1 and self._hover is not None and abs(self._hover.x() - pts[0].x()) > 4:
                     slope = (self._hover.y() - pts[0].y()) / (self._hover.x() - pts[0].x())
                     right = float(self.width())
@@ -938,6 +1051,10 @@ class _ImageLabel(QLabel):
             painter = QPainter(self)
             self._paint_marks(painter)
             painter.end()
+        if (self._err_shapes or self._err_drag is not None) and (self._err_visible or self._err_tool is not None) and not self._crop_mode and self._scale > 0:
+            painter = QPainter(self)
+            self._paint_error_marks(painter)
+            painter.end()
         if not self._crop_mode or self._crop_rect_image is None or self._scale <= 0:
             return
 
@@ -1002,6 +1119,8 @@ class ImageView(QWidget):
     tool_clicked = pyqtSignal(float, float)
     source_picked = pyqtSignal(float, float)
     mark_edited = pyqtSignal(str, float, float, float)
+    error_mark_drawn = pyqtSignal(float, float, float, float)
+    error_mark_context = pyqtSignal(int, object)
 
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
@@ -1032,6 +1151,8 @@ class ImageView(QWidget):
         self._label.tool_clicked.connect(self.tool_clicked)
         self._label.source_picked.connect(self.source_picked)
         self._label.mark_edited.connect(self.mark_edited)
+        self._label.error_mark_drawn.connect(self.error_mark_drawn)
+        self._label.error_mark_context.connect(self.error_mark_context)
         self._scroll.setWidget(self._label)
 
         self._hq_indicator = HqIndicator(self)
@@ -1080,6 +1201,15 @@ class ImageView(QWidget):
 
     def set_mark_boxes(self, boxes: dict | None, labels: dict | None = None) -> None:
         self._label.set_mark_boxes(boxes, labels)
+
+    def set_error_marks(self, shapes: list[dict]) -> None:
+        self._label.set_error_marks(shapes)
+
+    def set_error_marks_visible(self, visible: bool) -> None:
+        self._label.set_error_marks_visible(visible)
+
+    def set_error_tool(self, kind_id: str | None) -> None:
+        self._label.set_error_tool(kind_id)
 
     def set_hq_state(self, mode: str, detail: str = "") -> None:
         """The HQ tag in the bottom-right corner: "loading" (a loading bar), "ready" (a yellow HQ tag, with detail beside it) or "off"."""
