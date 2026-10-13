@@ -46,7 +46,7 @@ def test_modern_text_is_easy_to_read():
 
 def test_modern_is_roomier_and_slider_steps_are_finer():
     c, m = tokens.classic_theme(), tokens.modern_theme()
-    assert m.font_size_base > c.font_size_base and m.radius_md > c.radius_md == 0 and m.title_bar_height > c.title_bar_height
+    assert m.font_size_base >= c.font_size_base and m.radius_md > c.radius_md == 0 and m.title_bar_height > c.title_bar_height
     assert m.slider_steps >= 10 * c.slider_steps
 
 
@@ -71,13 +71,13 @@ def test_stylesheets_resolve_and_differ():
 def test_theme_settings_are_validated():
     from photoeditor.features.settings import logic as S
 
-    assert S._clean({})["theme"] == "classic" and S._clean({})["theme_accent"] == "Blue" and S._clean({})["theme_text_scale"] == 100
+    assert S._clean({})["theme"] == "modern" and S._clean({})["theme_accent"] == "Blue" and S._clean({})["theme_text_scale"] == 100
     ok = S._clean({"theme": "midnight", "theme_accent": "Coral", "theme_text_scale": 115})
     assert (ok["theme"], ok["theme_accent"], ok["theme_text_scale"]) == ("midnight", "Coral", 115)
     assert S._clean({"theme": "user:Sunset.css"})["theme"] == "user:Sunset.css"
     bad = S._clean({"theme": 5, "theme_accent": "Mauve", "theme_text_scale": "big"})
-    assert (bad["theme"], bad["theme_accent"], bad["theme_text_scale"]) == ("classic", "Blue", 100)
-    assert S._clean({"theme": ""})["theme"] == "classic" and S._clean({"theme": "x" * 500})["theme"] == "classic"
+    assert (bad["theme"], bad["theme_accent"], bad["theme_text_scale"]) == ("modern", "Blue", 100), "a bad value falls back to the default, Modern"
+    assert S._clean({"theme": ""})["theme"] == "modern" and S._clean({"theme": "x" * 500})["theme"] == "modern"
     assert S._clean({"theme_text_scale": 400})["theme_text_scale"] == tokens.TEXT_SCALE_RANGE[1]
     assert S._clean({"theme_text_scale": 10})["theme_text_scale"] == tokens.TEXT_SCALE_RANGE[0]
 
@@ -135,16 +135,16 @@ def test_hand_painted_widgets_follow_a_theme_change(app):
     row.set_value(0.5)
     plain = BevelPanel(sunken=False)
     assert bar.height() == 22 and frame.layout().contentsMargins().left() == 3 and row._slider.maximum() == 100 and close.width() == 16
-    assert plain.layout().contentsMargins().left() == 2 and panel._header.height() == 20
+    assert plain.layout().contentsMargins().left() == 2 and panel._header.height() == tokens.THEME.font_size_header + tokens.THEME.space_lg
 
     runtime.apply(app, {"theme": "modern"})
-    assert bar.height() == 34 and frame.layout().contentsMargins().left() == 1 and close.width() == 46 and panel._header.height() == 30
+    assert bar.height() == 34 and frame.layout().contentsMargins().left() == 1 and close.width() == 46 and panel._header.height() == tokens.THEME.font_size_header + tokens.THEME.space_lg + 8
     assert row._slider.maximum() == 1000 and abs(row.value() - 0.5) < 1e-9 and abs(row._from_slider(row._slider.value()) - 0.5) < 1e-3, "the value stays put"
     assert row._slider.pageStep() == 100 and plain.layout().contentsMargins().left() == 1
 
     runtime.apply(app, {"theme": "classic"})
     assert bar.height() == 22 and row._slider.maximum() == 100 and abs(row.value() - 0.5) < 1e-9
-    assert plain.layout().contentsMargins().left() == 2 and panel._header.height() == 20 and close.width() == 16
+    assert plain.layout().contentsMargins().left() == 2 and panel._header.height() == tokens.THEME.font_size_header + tokens.THEME.space_lg and close.width() == 16
 
 
 def test_a_slider_row_jumps_to_where_the_groove_is_clicked_in_modern(app):

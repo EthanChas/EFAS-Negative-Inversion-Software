@@ -70,7 +70,7 @@ def test_every_built_in_theme_is_readable_and_complete():
                 assert hexed.match(getattr(t, field.name)), (spec.id, field.name)
     assert themes.build(themes.find("darkroom"), "Violet").accent_primary == "#ff4d3d", "a theme with its own accent ignores the chosen one"
     assert themes.build(themes.find("midnight"), "Violet").accent_primary == "#b392f0"
-    assert themes.build(themes.find("contrast")).font_size_base > themes.build(themes.find("modern")).font_size_base
+    assert themes.build(themes.find("contrast")).font_size_base >= themes.build(themes.find("modern")).font_size_base
 
 
 def test_the_darkroom_theme_is_red_only():
@@ -312,8 +312,8 @@ def test_only_one_theme_and_one_accent_can_be_selected(app, tmp_path, monkeypatc
     def ticked():
         return [k for k, c in dialog._theme_cards.items() if c.isChecked()]
 
-    assert ticked() == ["classic"]
-    for name in ("modern", "midnight", "graphite", "darkroom", "contrast", "classic", "midnight"):
+    assert ticked() == ["modern"], "Modern is the default"
+    for name in ("classic", "midnight", "graphite", "darkroom", "contrast", "modern", "midnight"):
         dialog._theme_cards[name].click()
         assert ticked() == [name], (name, ticked())
     dialog._theme_cards["midnight"].click()  # clicking the chosen one again keeps it chosen

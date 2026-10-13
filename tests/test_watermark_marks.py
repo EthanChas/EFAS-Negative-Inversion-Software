@@ -226,3 +226,28 @@ def test_svg_logo_renders_sharp_at_any_size():
     env = dict(os.environ, PYTHONPATH=SRC + os.pathsep + os.environ.get("PYTHONPATH", ""))
     done = subprocess.run([sys.executable, "-X", "faulthandler", "-c", _SVG_SCRIPT], env=env, capture_output=True, text=True, timeout=120)
     assert "SVG OK" in done.stdout, done.stdout[-1500:] + done.stderr[-3000:]
+
+
+def test_a_font_that_cannot_measure_text_is_left_out_of_the_font_list(monkeypatch):
+    """On macOS an emoji font is bitmap-only and its getlength raises (division by zero): such a font must not be offered, or chosen as the default."""
+    from PIL import ImageFont
+
+    from photoeditor.features.watermark import fonts
+
+    class Bad:
+        def getname(self):
+            return ("Apple Color Emoji", "Regular")
+
+        def getlength(self, text):
+            raise OSError("division by zero")
+
+    class Good(Bad):
+        def getname(self):
+            return ("Fine Font", "Regular")
+
+        def getlength(self, text):
+            return 12.0
+
+    monkeypatch.setattr(ImageFont, "truetype", lambda path, size: Bad() if "bad" in path else Good())
+    assert fonts._read_name("/fonts/bad.ttc") is None
+    assert fonts._read_name("/fonts/good.ttf") == ("Fine Font", "Regular")

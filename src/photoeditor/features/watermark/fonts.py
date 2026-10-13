@@ -64,7 +64,9 @@ def _read_name(path: str) -> tuple[str, str] | None:
     from PIL import ImageFont
 
     try:
-        family, style = ImageFont.truetype(path, 12).getname()
+        font = ImageFont.truetype(path, 12)
+        family, style = font.getname()
+        font.getlength("Ag")  # a font that cannot measure text (a bitmap-only one such as an emoji font, on macOS) is no use for a watermark
     except Exception:
         return None
     family = (family or "").strip()

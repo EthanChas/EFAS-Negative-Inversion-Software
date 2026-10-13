@@ -155,6 +155,8 @@ def posix_script(plan: Plan, pid: int, wait: int = WAIT_SECONDS, retries: int = 
         f"PID={int(pid)}",
         "n=0",
         'while kill -0 "$PID" 2>/dev/null; do',
+        # a process that has exited but not yet been collected by its parent still answers kill -0: it is a zombie (state Z) and is gone for our purposes
+        '  case "$(ps -o stat= -p "$PID" 2>/dev/null)" in Z*) break ;; esac',
         "  n=$((n+1))",
         f"  [ $n -ge {wait} ] && {{ rm -f -- \"$0\"; exit 0; }}",
         "  sleep 1",

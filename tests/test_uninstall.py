@@ -173,3 +173,11 @@ def test_the_wait_loop_uses_no_pipe():
     text = un.windows_script(un.Plan(folders=["C:/x"]), 1234)
     waiting = text.split(":gone")[0]
     assert "|" not in waiting and '"%~f0.pid"' in waiting
+
+
+def test_the_posix_helper_does_not_wait_for_a_process_that_has_already_exited():
+    """A process that has exited but has not been collected by its parent still answers kill -0 (it is a zombie): the helper must treat it as gone, or it gives up after
+    its waiting time and deletes nothing."""
+    text = un.posix_script(un.Plan(folders=["/tmp/x"]), 4242)
+    assert 'ps -o stat= -p "$PID"' in text and "Z*) break" in text
+    assert text.index("Z*) break") < text.index("sleep 1"), "checked inside the waiting loop, before it sleeps"
