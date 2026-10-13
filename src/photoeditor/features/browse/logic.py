@@ -42,6 +42,47 @@ def list_subfolders(folder: str) -> list[str]:
     return subfolders
 
 
+# How the Library lists its folders: key, name, (which fact it sorts on, newest/most first?).
+SORT_MODES = (
+    ("added", "As added"), ("name", "Name A-Z"), ("name_desc", "Name Z-A"), ("date_new", "Newest first"), ("date_old", "Oldest first"),
+    ("count_most", "Most photos"), ("count_fewest", "Fewest photos"),
+)
+DEFAULT_SORT = "added"
+_SORT_FACT = {  # mode: (fact, descending)
+    "added": ("order", False), "name": ("name", False), "name_desc": ("name", True), "date_new": ("date", True), "date_old": ("date", False),
+    "count_most": ("count", True), "count_fewest": ("count", False),
+}
+
+
+def sort_fact(mode: str) -> tuple[str, bool]:
+    """(the fact a sort mode is about - "order", "name", "date" or "count" - and whether it runs from most to least); an unknown mode is "as added"."""
+    return _SORT_FACT.get(mode, _SORT_FACT[DEFAULT_SORT])
+
+
+def folder_stats(folder: str) -> tuple[int, int, float]:
+    """(photos directly in the folder, subfolders, when its newest photo was last changed). The date is the newest photo's file time, or the folder's own when
+    it holds no photos - the day the roll was last added to, which is what "newest first" should mean for a library of scanned rolls."""
+    if not folder or not os.path.isdir(folder):
+        return (0, 0, 0.0)
+    images, subfolders, newest = 0, 0, 0.0
+    try:
+        for entry in os.scandir(folder):
+            if entry.is_dir(follow_symlinks=False):
+                if not entry.name.startswith("."):
+                    subfolders += 1
+            elif os.path.splitext(entry.name)[1].lower() in SUPPORTED_EXTS:
+                images += 1
+                try:
+                    newest = max(newest, entry.stat().st_mtime)
+                except OSError:
+                    pass
+        if not newest:
+            newest = os.stat(folder).st_mtime
+    except OSError:
+        pass
+    return (images, subfolders, newest)
+
+
 def folder_counts(folder: str) -> tuple[int, int]:
     """(image count, subfolder count) directly inside `folder` - a single
     shallow scan, not a recursive walk, so showing this next to every node

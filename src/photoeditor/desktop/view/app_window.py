@@ -404,6 +404,7 @@ class AppWindow(QMainWindow):
         self._lighttable.set_library_visible(app_settings.get("workbench_library"))
         self._lighttable.library_panel.root_removed.connect(self._on_workbench_root_removed)
         self._lighttable.library_panel.root_added.connect(self._on_workbench_root_added)
+        self._lighttable.library_panel.sort_changed.connect(lambda mode: self._library_panel.apply_sort(mode))
         self._lighttable.delete_requested.connect(self.delete_photos)
         self._lighttable.removed_list_requested.connect(self.show_removed_photos)
         self._lighttable.duplicates_requested.connect(self.find_duplicates)
@@ -687,6 +688,7 @@ class AppWindow(QMainWindow):
         self._library_panel.folder_double_clicked.connect(self._on_library_folder_double_clicked)
         self._library_panel.root_removed.connect(self._on_library_root_removed)
         self._library_panel.root_added.connect(self._on_editor_root_added)
+        self._library_panel.sort_changed.connect(lambda mode: self._lighttable.library_panel.apply_sort(mode))
         left_tools_col.addWidget(self._library_panel)
         self._tagging_panel = TaggingPanel()
         left_tools_col.addWidget(self._tagging_panel)
@@ -1936,13 +1938,19 @@ class AppWindow(QMainWindow):
                 return
             app_settings.save({"film_reference_online": True})
         existing = getattr(self, "_film_reference", None)
-        if existing is not None and existing.isVisible():
+        try:
+            still_open = existing is not None and existing.isVisible()
+        except RuntimeError:  # closed with the window's X: Qt has already deleted it
+            still_open = False
+        if still_open:
             existing.raise_()
             existing.activateWindow()
             return
-        self._film_reference = FilmReferenceDialog(self, self._roll_film())
-        self._film_reference.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, True)
-        self._film_reference.show()
+        dialog = FilmReferenceDialog(self, self._roll_film())
+        dialog.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, True)
+        dialog.destroyed.connect(lambda *_: setattr(self, "_film_reference", None) if getattr(self, "_film_reference", None) is dialog else None)
+        self._film_reference = dialog
+        dialog.show()
 
     def show_credits(self) -> None:
         CreditsDialog(self).exec()

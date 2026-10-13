@@ -356,13 +356,25 @@ _APP_SCRIPT = r"""
     first = win._film_reference
     win.show_film_reference()
     assert len(asked) == 2 and win._film_reference is first, "allowed once, never asked again; already open: no second window"
+    from PyQt6.QtCore import QCoreApplication, QEvent
+    def really_closed():
+        QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)  # what the event loop does after the window's X: the dialog is deleted
+        app.processEvents()
     first.close()
+    really_closed()
     assert win._film_reference_action.text() == "Film Colour Reference..." and win._negative_tool._film_ref_btn.text() == "Film Colour Reference..."
     win._negative_tool._film_ref_btn.click()
-    assert win._film_reference.isVisible() and win._film_reference is not first, "the Negative tab's button opens it"
+    assert win._film_reference.isVisible() and win._film_reference is not first, "closed with X, it opens again from the Negative tab's button"
+    assert pump(lambda: win._film_reference._list.count() == 5), "and the new window works (its own connection to the site)"
     win._film_reference.close()
+    really_closed()
     win._film_reference_action.trigger()
-    assert win._film_reference.isVisible(), "so does Extra > Film Colour Reference"
+    assert win._film_reference.isVisible(), "and from Extra > Film Colour Reference"
+    assert pump(lambda: win._film_reference._list.count() == 5)
+    win._film_reference.close()
+    really_closed()
+    win.show_film_reference()
+    assert win._film_reference.isVisible(), "any number of times"
     win._film_reference.close()
     print("FILM REF APP OK")
     sys.stdout.flush(); os._exit(0)

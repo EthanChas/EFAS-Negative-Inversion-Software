@@ -1,13 +1,14 @@
 import os
 
 from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtWidgets import QFileDialog, QHBoxLayout, QMessageBox, QWidget
+from PyQt6.QtWidgets import QComboBox, QFileDialog, QHBoxLayout, QLabel, QMessageBox, QWidget
 
 from ..settings_store import qsettings
 from ...theme.tokens import THEME
 from .bevel_widgets import CaptionButton
 from .collapsible_panel import CollapsiblePanel
-from .folder_tree import ROOTS_SETTINGS_KEY, FolderTree
+from ...features.browse.logic import DEFAULT_SORT, SORT_MODES
+from .folder_tree import ROOTS_SETTINGS_KEY, SORT_SETTINGS_KEY, FolderTree
 
 _TREE_MAX_HEIGHT = 260
 
@@ -29,6 +30,7 @@ class LibraryPanel(CollapsiblePanel):
     folder_double_clicked = pyqtSignal(str)
     root_removed = pyqtSignal(str)
     root_added = pyqtSignal(str)
+    sort_changed = pyqtSignal(str)
 
     def __init__(self, parent: QWidget | None = None, workbench: bool = False):
         super().__init__(
@@ -37,6 +39,7 @@ class LibraryPanel(CollapsiblePanel):
                 "A folder tree of your added root folders, like a film library - add one with the + button. "
                 + ("Click any folder (or subfolder) to show only the photos in it; the reset button in this header clears the choice and shows every photo. "
                    if workbench else "Click any folder (or subfolder) to browse its photos in the Import window. ")
+                + "Sort the folders with the Sort box: by name, by date (when the newest photo in the folder was last changed), by number of photos, or as you added them. "
                 + "Right-click a top-level folder to remove it from the list (your photos and edits are not touched)."
             ),
             collapsible=False,
@@ -50,6 +53,15 @@ class LibraryPanel(CollapsiblePanel):
 
         toolbar = QHBoxLayout()
         toolbar.setSpacing(THEME.space_sm)
+        sort_label = QLabel("Sort")
+        sort_label.setProperty("role", "hint")
+        toolbar.addWidget(sort_label)
+        self._sort = QComboBox()
+        for key, label in SORT_MODES:
+            self._sort.addItem(label, key)
+        self._sort.setToolTip("Order the folders: by name, date (newest photo in the folder), number of photos, or as added")
+        self._sort.setMinimumContentsLength(11)
+        toolbar.addWidget(self._sort)
         toolbar.addStretch(1)
         add_btn = CaptionButton("add")
         add_btn.setToolTip("Add a root folder")
@@ -68,7 +80,28 @@ class LibraryPanel(CollapsiblePanel):
         self._tree.remove_root_requested.connect(self._remove_root_folder)
         body.addWidget(self._tree)
 
+        saved = str(self._settings.value(SORT_SETTINGS_KEY, DEFAULT_SORT, type=str))
+        self._sort.setCurrentIndex(max(0, self._sort.findData(saved)))
+        self._tree.set_sort(self._sort.currentData())
+        self._sort.currentIndexChanged.connect(self._on_sort_picked)
         self._tree.set_roots(self._settings.value(ROOTS_SETTINGS_KEY, [], type=list))
+
+    def _on_sort_picked(self) -> None:
+        mode = self._sort.currentData()
+        self._settings.setValue(SORT_SETTINGS_KEY, mode)
+        self._settings.sync()
+        self._tree.set_sort(mode)
+        self.sort_changed.emit(mode)
+
+    def apply_sort(self, mode: str) -> None:
+        """The other Library panel's choice (the editor's and the Workbench's list the same folders the same way)."""
+        self._sort.blockSignals(True)
+        self._sort.setCurrentIndex(max(0, self._sort.findData(mode)))
+        self._sort.blockSignals(False)
+        self._tree.set_sort(mode)
+
+    def sort_mode(self) -> str:
+        return self._tree.sort_mode
 
     def _add_root_folder(self) -> None:
         folder = QFileDialog.getExistingDirectory(self, "Add a root folder")
