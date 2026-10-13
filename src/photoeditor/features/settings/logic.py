@@ -4,6 +4,7 @@ import json
 import os
 from typing import Any
 
+from ...theme.tokens import ACCENTS, TEXT_SCALE_RANGE
 from ..datadir import SETTINGS_FILE, app_data_dir
 
 DEMOSAIC_CHOICES: dict[str, tuple[str, str, str]] = {
@@ -27,6 +28,9 @@ DEFAULTS: dict[str, Any] = {
     "hover_modules": False,
     "workbench_library": True,
     "hq_always": False,
+    "theme": "classic",
+    "theme_accent": ACCENTS[0][0],
+    "theme_text_scale": 100,
     "module_colours": False,
     "module_colour_choices": {},
     "scan_transfer": "srgb",
@@ -52,6 +56,13 @@ def _clean(data: Any) -> dict[str, Any]:
     for key in ("raw_auto_bright", "auto_advance", "backup_auto", "check_updates", "advanced_mode", "scan_quality", "hover_modules", "module_colours", "workbench_library", "hq_always"):
         if isinstance(data.get(key), bool):
             out[key] = data[key]
+    if data.get("theme") in ("classic", "modern"):
+        out["theme"] = data["theme"]
+    if data.get("theme_accent") in [name for name, _c in ACCENTS]:
+        out["theme_accent"] = data["theme_accent"]
+    scale = data.get("theme_text_scale")
+    if isinstance(scale, int) and not isinstance(scale, bool):
+        out["theme_text_scale"] = max(TEXT_SCALE_RANGE[0], min(TEXT_SCALE_RANGE[1], scale))
     if data.get("scan_transfer") in ("linear", "srgb", "gamma2.2"):
         out["scan_transfer"] = data["scan_transfer"]
     keep = data.get("backup_keep")

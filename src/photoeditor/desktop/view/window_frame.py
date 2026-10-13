@@ -32,14 +32,21 @@ class WindowFrame(QWidget):
         self.setObjectName("windowFrame")
         self.setMouseTracking(True)
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(
-            THEME.window_border_width, THEME.window_border_width,
-            THEME.window_border_width, THEME.window_border_width,
-        )
         layout.setSpacing(0)
+        self.apply_theme()
+
+    def apply_theme(self) -> None:
+        w = THEME.window_border_width
+        self.layout().setContentsMargins(w, w, w, w)
 
     def paintEvent(self, event: QPaintEvent) -> None:
         painter = QPainter(self)
+        if THEME.style == "modern":
+            painter.fillRect(self.rect(), QColor(THEME.bg_app))
+            painter.setPen(QColor(THEME.border_color))
+            painter.drawRect(0, 0, self.width() - 1, self.height() - 1)
+            painter.end()
+            return
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, False)
 
         rect = self.rect()

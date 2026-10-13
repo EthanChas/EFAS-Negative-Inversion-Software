@@ -23,13 +23,10 @@ class TitleBar(QWidget):
         self.setAutoFillBackground(False)
 
         row = QHBoxLayout(self)
-        row.setContentsMargins(THEME.space_sm, 2, 2, 2)
+        self._row = row
         row.setSpacing(THEME.space_sm)
 
-        icon_label = QLabel()
-        icon_label.setPixmap(logo_pixmap(THEME.title_bar_height - 6))
-        if icon_label.pixmap().isNull():
-            icon_label.setPixmap(photo_icon(THEME.title_bar_height - 8))
+        self._icon_label = icon_label = QLabel()
         row.addWidget(icon_label)
 
         self._label = QLabel(title)
@@ -45,9 +42,23 @@ class TitleBar(QWidget):
         self._min_btn.clicked.connect(self._minimize)
         self._max_btn.clicked.connect(self._toggle_maximize)
         self._close_btn.clicked.connect(self._close)
+        self.apply_theme()
+
+    def apply_theme(self) -> None:
+        modern = THEME.style == "modern"
+        self.setFixedHeight(THEME.title_bar_height)
+        self._row.setContentsMargins(THEME.space_md if modern else THEME.space_sm, 0 if modern else 2, 0 if modern else 2, 0 if modern else 2)
+        size = THEME.title_bar_height - (14 if modern else 6)
+        self._icon_label.setPixmap(logo_pixmap(size))
+        if self._icon_label.pixmap().isNull():
+            self._icon_label.setPixmap(photo_icon(size - 2))
 
     def paintEvent(self, event: QPaintEvent) -> None:
         painter = QPainter(self)
+        if THEME.style == "modern":
+            painter.fillRect(self.rect(), QColor(THEME.bg_app))
+            painter.end()
+            return
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, False)
         gradient = QLinearGradient(0, 0, self.width(), 0)
         gradient.setColorAt(0, QColor(THEME.accent_primary))

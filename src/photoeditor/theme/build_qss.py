@@ -1,8 +1,9 @@
 import dataclasses
 
+from .modern_qss import MODERN_QSS
 from .tokens import ThemeConfig
 
-_QSS_TEMPLATE = """
+_CLASSIC_QSS = """
 QWidget {
     background-color: @bg_app;
     color: @text_primary;
@@ -187,8 +188,8 @@ QSplitter::handle:hover { background-color: @accent_primary; }
 
 
 def load_stylesheet(theme: ThemeConfig) -> str:
-    """Resolve every @token in the template against `theme`'s own field values."""
-    qss = _QSS_TEMPLATE
+    """Resolve every @token in the theme's template (Default or Modern) against `theme`'s own field values."""
+    qss = MODERN_QSS if theme.style == "modern" else _CLASSIC_QSS
     for f in sorted(dataclasses.fields(theme), key=lambda f: -len(f.name)):
         value = getattr(theme, f.name)
         if isinstance(value, (str, int)):

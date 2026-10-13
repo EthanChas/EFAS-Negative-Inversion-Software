@@ -1,14 +1,12 @@
 import sys
 
 from PyQt6 import sip
-from PyQt6.QtGui import QColor, QFont, QPalette
 from PyQt6.QtWidgets import QApplication
 
 from . import cli
 from .desktop.view.app_icon import APP_NAME, app_icon
 from .desktop.view.app_window import AppWindow
-from .theme.build_qss import load_stylesheet
-from .theme.tokens import THEME
+from .theme import runtime as theme_runtime
 
 
 def main() -> None:
@@ -33,19 +31,7 @@ def main() -> None:
     app.setApplicationName(APP_NAME)
     app.setWindowIcon(app_icon())
     app.setStyle("Fusion")
-    app.setFont(QFont(THEME.font_family, THEME.font_size_base))
-    app.setStyleSheet(load_stylesheet(THEME))
-
-    palette = QPalette()
-    palette.setColor(QPalette.ColorRole.Window, QColor(THEME.bg_app))
-    palette.setColor(QPalette.ColorRole.Base, QColor(THEME.bg_input))
-    palette.setColor(QPalette.ColorRole.Text, QColor(THEME.text_primary))
-    palette.setColor(QPalette.ColorRole.WindowText, QColor(THEME.text_primary))
-    palette.setColor(QPalette.ColorRole.Button, QColor(THEME.bg_app))
-    palette.setColor(QPalette.ColorRole.ButtonText, QColor(THEME.text_primary))
-    palette.setColor(QPalette.ColorRole.Highlight, QColor(THEME.accent_primary))
-    palette.setColor(QPalette.ColorRole.HighlightedText, QColor(THEME.on_accent))
-    app.setPalette(palette)
+    theme_runtime.apply(app)  # the saved theme (Settings > Themes): colours, font, stylesheet
 
     window = AppWindow()
     window.controller.daily_backup()

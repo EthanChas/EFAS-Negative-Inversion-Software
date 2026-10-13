@@ -5,7 +5,7 @@ import time
 from PyQt6.QtCore import QUrl, Qt
 from PyQt6.QtGui import QDesktopServices, QKeySequence
 from PyQt6.QtWidgets import (
-    QCheckBox, QComboBox, QDialog, QFileDialog, QFormLayout, QFrame, QHBoxLayout, QKeySequenceEdit, QLabel, QListWidget, QMessageBox, QPushButton,
+    QCheckBox, QComboBox, QSlider, QDialog, QFileDialog, QFormLayout, QFrame, QHBoxLayout, QKeySequenceEdit, QLabel, QListWidget, QMessageBox, QPushButton,
     QScrollArea, QSpinBox, QStackedWidget, QVBoxLayout, QWidget,
 )
 
@@ -15,7 +15,9 @@ from ...features.keybinds import logic as binds
 from ...features.persistence import export as data_export
 from ...features.persistence.backup import backup_database, list_backups
 from ...features.settings import logic as settings
-from ...theme.tokens import THEME
+from ...theme import runtime as theme_runtime
+from ...theme.tokens import ACCENTS, MODERN, TEXT_SCALE_RANGE, THEME, THEME_NAMES
+from .theme_preview import AccentSwatch, ThemeCard, card_theme
 from ..paths import thumbnail_cache_dir
 
 
@@ -70,7 +72,7 @@ class SettingsDialog(QDialog):
         self._categories.setFixedWidth(160)
         self._pages = QStackedWidget()
         for title, page in (
-            ("General", self._general_page()), ("Image decoding", self._decoding_page()), ("Keybinds", self._keybinds_page()),
+            ("General", self._general_page()), ("Themes", self._themes_page()), ("Image decoding", self._decoding_page()), ("Keybinds", self._keybinds_page()),
             ("Data & backup", self._data_page()), ("Storage", self._storage_page()),
         ):
             self._categories.addItem(title)
@@ -92,6 +94,110 @@ class SettingsDialog(QDialog):
         row.addWidget(self._save)
         outer.addLayout(row)
         self._check_keys()
+
+    def _themes_page(self) -> QWidget:
+        """Settings > Themes: pick the Default look or the Modern one, its accent colour and the text size. Every change shows at once; Cancel puts it back."""
+        page = QWidget()
+        col = QVBoxLayout(page)
+        col.setSpacing(THEME.space_md)
+        self._theme_name = self._initial["theme"]
+        self._theme_accent = self._initial["theme_accent"]
+        col.addWidget(_hint("Choose how the program looks. A change shows straight away so you can judge it; Save keeps it and Cancel puts the old look back."))
+        cards = QHBoxLayout()
+        cards.setSpacing(THEME.space_lg)
+        self._theme_cards: dict[str, ThemeCard] = {}
+        notes = {
+            "classic": "The original Windows 98 style: bevelled controls, compact text.",
+            "modern": "Flat, rounded, opaque Windows 11 style: easier to read, roomier, smoother sliders.",
+        }
+        for key in ("classic", "modern"):
+            box = QVBoxLayout()
+            card = ThemeCard(card_theme(key, self._initial), THEME_NAMES[key])
+            card.setChecked(key == self._theme_name)
+            card.clicked.connect(lambda _c=False, k=key: self._pick_theme(k))
+            self._theme_cards[key] = card
+            box.addWidget(card)
+            note = _hint(notes[key])
+            note.setFixedWidth(236)
+            box.addWidget(note)
+            box.addStretch(1)
+            cards.addLayout(box)
+        cards.addStretch(1)
+        col.addLayout(cards)
+
+        head = QLabel("Accent colour")
+        head.setStyleSheet(f"color: {THEME.text_secondary}; font-weight: bold;")
+        col.addWidget(head)
+        swatches = QHBoxLayout()
+        swatches.setSpacing(THEME.space_sm)
+        self._accent_buttons: list[AccentSwatch] = []
+        for name, colour in ACCENTS:
+            swatch = AccentSwatch(name, colour)
+            swatch.setChecked(name == self._theme_accent)
+            swatch.clicked.connect(lambda _c=False, n=name: self._pick_accent(n))
+            self._accent_buttons.append(swatch)
+            swatches.addWidget(swatch)
+        swatches.addStretch(1)
+        col.addLayout(swatches)
+        self._accent_hint = _hint("The colour of sliders, switches, the selected item and the main button. It belongs to the Modern theme; the Default theme keeps its own blue.")
+        col.addWidget(self._accent_hint)
+
+        head = QLabel("Text size")
+        head.setStyleSheet(f"color: {THEME.text_secondary}; font-weight: bold;")
+        col.addWidget(head)
+        size_row = QHBoxLayout()
+        self._text_scale = QSlider(Qt.Orientation.Horizontal)
+        self._text_scale.setRange(*TEXT_SCALE_RANGE)
+        self._text_scale.setSingleStep(5)
+        self._text_scale.setPageStep(5)
+        self._text_scale.setValue(self._initial["theme_text_scale"])
+        self._text_scale.setMaximumWidth(320)
+        self._text_scale_label = QLabel("")
+        self._text_scale.valueChanged.connect(self._pick_scale)
+        size_row.addWidget(self._text_scale)
+        size_row.addWidget(self._text_scale_label)
+        size_row.addStretch(1)
+        reset = QPushButton("Reset")
+        reset.clicked.connect(lambda: self._text_scale.setValue(100))
+        size_row.addWidget(reset)
+        col.addLayout(size_row)
+        col.addWidget(_hint("Makes all the program's text larger or smaller (100% is as designed). Panels and controls grow with it."))
+        col.addStretch(1)
+        self._sync_theme_page()
+        return page
+
+    def _theme_values(self) -> dict:
+        return {"theme": self._theme_name, "theme_accent": self._theme_accent, "theme_text_scale": self._text_scale.value()}
+
+    def _sync_theme_page(self) -> None:
+        modern = self._theme_name == MODERN
+        for button in self._accent_buttons:
+            button.setEnabled(modern)
+        self._text_scale_label.setText(f"{self._text_scale.value()}%")
+
+    def _preview_theme(self) -> None:
+        values = self._theme_values()
+        for key, card in self._theme_cards.items():
+            card.set_theme(card_theme(key, values))
+        self._sync_theme_page()
+        theme_runtime.apply(None, values)
+
+    def _pick_theme(self, name: str) -> None:
+        self._theme_name = name
+        self._theme_cards[name].setChecked(True)
+        self._preview_theme()
+
+    def _pick_accent(self, name: str) -> None:
+        self._theme_accent = name
+        self._preview_theme()
+
+    def _pick_scale(self, _value: int) -> None:
+        self._preview_theme()
+
+    def reject(self) -> None:
+        """Cancel: whatever look was being previewed goes back to the saved one."""
+        theme_runtime.apply(None, self._initial)
+        super().reject()
 
     def _general_page(self) -> QWidget:
         page = QWidget()
@@ -466,7 +572,7 @@ class SettingsDialog(QDialog):
             "check_updates": self._check_updates.isChecked(), "scan_quality": self._scan_quality.isChecked(),
             "hover_modules": self._hover_modules.isChecked(), "workbench_library": self._workbench_library.isChecked(), "hq_always": self._hq_always.isChecked(), "module_colours": self._module_colours.isChecked(),
             "backup_auto": self._backup_auto.isChecked(), "backup_keep": self._backup_keep.value(), "backup_dir": self._backup_dir,
-            "keybinds": binds.overrides_from(self._keys),
+            "keybinds": binds.overrides_from(self._keys), **self._theme_values(),
         }
 
     def decoding_changed(self) -> bool:

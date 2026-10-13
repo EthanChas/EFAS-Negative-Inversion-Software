@@ -1,10 +1,10 @@
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QMouseEvent
-from PyQt6.QtWidgets import QDoubleSpinBox, QHBoxLayout, QLabel, QSlider, QWidget
+from PyQt6.QtWidgets import QDoubleSpinBox, QHBoxLayout, QLabel, QSlider, QStyle, QStyleOptionSlider, QWidget
 
 from ...theme.tokens import THEME
 
-_SLIDER_STEPS = 100
+_SLIDER_STEPS = 100  # the Default theme's; the Modern theme has more stops across a span (THEME.slider_steps), so a slider moves smoothly
 
 
 class ResettableSlider(QSlider):
@@ -15,6 +15,19 @@ class ResettableSlider(QSlider):
     def __init__(self, reset_to: int = 0, parent: QWidget | None = None):
         super().__init__(Qt.Orientation.Horizontal, parent)
         self._reset_to = reset_to
+
+    def mousePressEvent(self, event: QMouseEvent) -> None:
+        """Modern theme: a click on the groove puts the handle right there (and a drag carries on from it) instead of stepping a page at a time."""
+        if THEME.style == "modern" and event.button() == Qt.MouseButton.LeftButton:
+            option = QStyleOptionSlider()
+            self.initStyleOption(option)
+            handle = self.style().subControlRect(QStyle.ComplexControl.CC_Slider, option, QStyle.SubControl.SC_SliderHandle, self)
+            if not handle.contains(event.position().toPoint()):
+                groove = self.style().subControlRect(QStyle.ComplexControl.CC_Slider, option, QStyle.SubControl.SC_SliderGroove, self)
+                half = handle.width() // 2
+                span = max(1, groove.width() - handle.width())
+                self.setValue(QStyle.sliderValueFromPosition(self.minimum(), self.maximum(), int(event.position().x()) - groove.x() - half, span))
+        super().mousePressEvent(event)
 
     def mouseDoubleClickEvent(self, event: QMouseEvent) -> None:
         if event.button() == Qt.MouseButton.LeftButton:
@@ -53,6 +66,7 @@ class SliderRow(QWidget):
         self._min = -value_range if min_value is None else min_value
         self._max = value_range if max_value is None else max_value
         self._reset_value = reset_value
+        self._steps = THEME.slider_steps
         row = QHBoxLayout(self)
         row.setContentsMargins(0, 0, 0, 0)
         row.setSpacing(THEME.space_sm)
@@ -65,7 +79,9 @@ class SliderRow(QWidget):
         self._updating = False
 
         self._slider = ResettableSlider(reset_to=self._to_slider(self._reset_value))
-        self._slider.setRange(0, _SLIDER_STEPS)
+        self._slider.setRange(0, self._steps)
+        self._slider.setSingleStep(max(1, self._steps // 100))
+        self._slider.setPageStep(self._steps // 10)
         self._slider.setValue(self._to_slider(self._reset_value))
         self._slider.valueChanged.connect(self._on_slider_changed)
         row.addWidget(self._slider, 1)
@@ -81,10 +97,24 @@ class SliderRow(QWidget):
 
     def _to_slider(self, value: float) -> int:
         span = self._max - self._min
-        return round((value - self._min) / span * _SLIDER_STEPS) if span else 0
+        return round((value - self._min) / span * self._steps) if span else 0
 
     def _from_slider(self, raw: int) -> float:
-        return self._min + (raw / _SLIDER_STEPS) * (self._max - self._min)
+        return self._min + (raw / self._steps) * (self._max - self._min)
+
+    def apply_theme(self) -> None:
+        """A theme change can change how many stops the slider has; the value it shows stays put."""
+        if self._steps == THEME.slider_steps:
+            return
+        value = self.value()
+        self._steps = THEME.slider_steps
+        self._updating = True
+        self._slider.setRange(0, self._steps)
+        self._slider.setSingleStep(max(1, self._steps // 100))
+        self._slider.setPageStep(self._steps // 10)
+        self._slider._reset_to = self._to_slider(self._reset_value)
+        self._slider.setValue(self._to_slider(value))
+        self._updating = False
 
     def value(self) -> float:
         return self._spin.value()

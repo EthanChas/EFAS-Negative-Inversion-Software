@@ -1,40 +1,75 @@
 import math
 
-from PyQt6.QtCore import QPoint, QRect, Qt
+from PyQt6.QtCore import QPoint, QRect, QRectF, Qt
 from PyQt6.QtGui import QColor, QPainter, QPaintEvent, QPen, QPolygon
 from PyQt6.QtWidgets import QPushButton, QVBoxLayout, QWidget
 
 from ...theme.tokens import THEME
 
 
+def _bg_role(colour: str | None) -> str:
+    """Which theme colour a panel was asked to be (so it follows a theme change), or the colour itself when it is none of them."""
+    if colour is None:
+        return "bg_app"
+    for role in ("bg_app", "bg_panel", "bg_input"):
+        if getattr(THEME, role).lower() == colour.lower():
+            return role
+    return colour
+
+
 class BevelPanel(QWidget):
-    """A hand-painted 3D bevel panel - raised or sunken."""
+    """A hand-painted panel - a 3D bevel, raised or sunken, in the Default theme; a flat rounded card with a hairline border in the Modern one."""
 
     def __init__(
         self,
         *,
         sunken: bool = True,
         bg: str | None = None,
-        thickness: int = THEME.border_width,
+        thickness: int | None = None,
         margin: int = 0,
         parent: QWidget | None = None,
     ):
         super().__init__(parent)
         self._sunken = sunken
-        self._bg = QColor(bg or THEME.bg_app)
-        self._thickness = thickness
+        self._bevel_bg = _bg_role(bg)
+        self._bevel_thickness = thickness  # None: whatever the theme's border is
+        self._bevel_margin = margin
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(
-            margin + thickness, margin + thickness, margin + thickness, margin + thickness
-        )
+        self.apply_theme()
+
+    def _asked(self) -> int:
+        return THEME.border_width if self._bevel_thickness is None else self._bevel_thickness
+
+    def _edge(self) -> int:
+        return 1 if THEME.style == "modern" else self._asked()
+
+    def apply_theme(self) -> None:
+        edge = self._edge()
+        self.layout().setContentsMargins(self._bevel_margin + edge, self._bevel_margin + edge, self._bevel_margin + edge, self._bevel_margin + edge)
+
+    def _fill_colour(self) -> QColor:
+        name = self._bevel_bg
+        if not name.startswith("#"):
+            if THEME.style == "modern":
+                name = "bg_input" if self._sunken else "bg_panel" if name == "bg_app" else name
+            return QColor(getattr(THEME, name))
+        return QColor(name)
 
     def paintEvent(self, event: QPaintEvent) -> None:
         painter = QPainter(self)
+        if THEME.style == "modern":
+            painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+            painter.setPen(QColor(THEME.border_color))
+            painter.setBrush(self._fill_colour())
+            radius = THEME.radius_sm if self._bevel_thickness == 1 else THEME.radius_md
+            painter.drawRoundedRect(QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5), radius, radius)
+            painter.end()
+            return
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, False)
 
         rect = self.rect()
-        painter.fillRect(rect, self._bg)
+        painter.fillRect(rect, self._fill_colour())
 
         light = QColor(THEME.bevel_light)
         dark = QColor(THEME.border_color)
@@ -42,7 +77,7 @@ class BevelPanel(QWidget):
         bottom_right = light if self._sunken else dark
 
         w, h = rect.width(), rect.height()
-        for i in range(self._thickness):
+        for i in range(self._asked()):
             painter.setPen(top_left)
             painter.drawLine(i, i, w - 1 - i, i)
             painter.drawLine(i, i, i, h - 1 - i)
@@ -97,8 +132,21 @@ class CaptionButton(QPushButton):
         super().__init__(parent)
         self._kind = kind
         self._expanded = True
-        self.setFixedSize(THEME.title_button_size, THEME.title_button_size - 2)
+        self.setProperty("caption", "true")
+        self.setProperty("kind", kind)
         self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.apply_theme()
+
+    def apply_theme(self) -> None:
+        if THEME.style == "modern":
+            if self._kind in ("min", "max", "close"):
+                self.setFixedSize(46, THEME.title_bar_height)  # edge-to-edge caption buttons, like Windows 11's
+            else:
+                self.setFixedSize(24, 22)
+        else:
+            self.setFixedSize(THEME.title_button_size, THEME.title_button_size - 2)
+        self.style().unpolish(self)
+        self.style().polish(self)
 
     def set_expanded(self, expanded: bool) -> None:
         self._expanded = expanded
@@ -107,8 +155,9 @@ class CaptionButton(QPushButton):
     def paintEvent(self, event: QPaintEvent) -> None:
         super().paintEvent(event)
         painter = QPainter(self)
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing, False)
-        painter.setPen(QPen(QColor(THEME.text_primary), 1))
+        modern = THEME.style == "modern"
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, modern)
+        painter.setPen(QPen(QColor(THEME.text_primary), 1.1 if modern else 1))
 
         w, h = self.width(), self.height()
         offset = 1 if self.isDown() else 0

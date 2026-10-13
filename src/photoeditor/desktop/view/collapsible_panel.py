@@ -1,4 +1,4 @@
-from PyQt6.QtCore import QEasingCurve, QPointF, QPropertyAnimation, Qt, QTimer, pyqtSignal
+from PyQt6.QtCore import QEasingCurve, QPointF, QPropertyAnimation, QRectF, Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QAction, QActionGroup, QColor, QLinearGradient, QPainter, QPaintEvent
 from PyQt6.QtWidgets import (
     QAbstractSpinBox, QApplication, QHBoxLayout, QLabel, QLineEdit, QMenu, QMessageBox, QPlainTextEdit, QPushButton, QTextEdit, QVBoxLayout, QWidget,
@@ -24,7 +24,9 @@ class _CollapsibleHeader(QWidget):
     def __init__(self, title: str, collapsible: bool = True, parent: QWidget | None = None):
         super().__init__(parent)
         self._title = title
-        self.setFixedHeight(THEME.font_size_header + THEME.space_lg)
+        self._hovered = False
+        self.setAttribute(Qt.WidgetAttribute.WA_Hover, True)
+        self.apply_theme()
         self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.customContextMenuRequested.connect(self._colour_menu)
 
@@ -61,6 +63,19 @@ class _CollapsibleHeader(QWidget):
         self.help_button = CaptionButton("help")
         row.addWidget(self.help_button, 0, Qt.AlignmentFlag.AlignVCenter)
 
+    def apply_theme(self) -> None:
+        self.setFixedHeight(THEME.font_size_header + THEME.space_lg + (8 if THEME.style == "modern" else 0))
+
+    def enterEvent(self, event) -> None:
+        self._hovered = True
+        self.update()
+        super().enterEvent(event)
+
+    def leaveEvent(self, event) -> None:
+        self._hovered = False
+        self.update()
+        super().leaveEvent(event)
+
     def set_preset_name(self, name: str | None) -> None:
         if not name:
             self.preset_label.hide()
@@ -74,6 +89,18 @@ class _CollapsibleHeader(QWidget):
     def paintEvent(self, event: QPaintEvent) -> None:
         painter = QPainter(self)
         colours = STYLE.gradient(self._title)
+        if THEME.style == "modern":
+            painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+            if self._hovered and self.cursor().shape() == Qt.CursorShape.PointingHandCursor:
+                painter.setPen(Qt.PenStyle.NoPen)
+                painter.setBrush(QColor(THEME.bg_hover))
+                painter.drawRoundedRect(QRectF(self.rect()).adjusted(3, 3, -3, -3), THEME.radius_sm, THEME.radius_sm)
+            if colours is not None:  # the module's colour, as a slim bar down the left edge
+                painter.setPen(Qt.PenStyle.NoPen)
+                painter.setBrush(colours[0].lighter(135))
+                painter.drawRoundedRect(QRectF(5, 7, 3, self.height() - 14), 1.5, 1.5)
+            painter.end()
+            return
         if colours is None:
             painter.fillRect(self.rect(), QColor(THEME.border_color))
             return
@@ -124,7 +151,7 @@ class CollapsiblePanel(BevelPanel):
         collapsible: bool = True,
         parent: QWidget | None = None,
     ):
-        super().__init__(sunken=False, bg=THEME.bg_app, thickness=THEME.border_width, parent=parent)
+        super().__init__(sunken=False, bg=THEME.bg_app, parent=parent)
         self._title = title
         self._help_text = help_text
         self._collapsible = collapsible
