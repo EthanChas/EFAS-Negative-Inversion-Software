@@ -55,6 +55,7 @@ from ..features.geometry import corners as corners_logic
 from ..features.watermark.marks import Marks
 from ..features.open_image.logic import is_raw
 from ..features.open_image.processor import load_image_rgb, make_preview_rgb, to_uint8
+from ..features.support import applog
 from ..features.library import removal as photo_removal
 from ..features.library.index import LibraryIndex
 from ..features.persistence import edit_store, roll_undo
@@ -3518,6 +3519,33 @@ class AppController(QObject):
         if raw is None or raw.shape[:2] != framed.shape[:2]:
             return {"error": "The scan view does not match the measurement."}
         return {"framed": framed, "floor": self._linear[1].info.floor(), "clear": tuple(self.state.linear_clear[0]), "raw": raw}
+
+    def suggest_roll_base(self, max_frames: int = 12) -> dict:
+        """Read the open photo's roll as a whole: the clear border of up to `max_frames` of its frames (spread along the folder), combined into one film base.
+        -> {"found": True, "rgb", "frames", "checked"} or {"found": False, "message"}; nothing is changed."""
+        from ..features.negative import rollbase
+
+        if self.state.image_path is None:
+            return {"found": False, "message": "Open a photo first."}
+        folder = os.path.dirname(self.state.image_path)
+        paths = list_images_in_folder(folder) or [self.state.image_path]
+        if len(paths) > max_frames:
+            paths = [paths[round(i * (len(paths) - 1) / (max_frames - 1))] for i in range(max_frames)]
+
+        def read():
+            frames = []
+            for path in paths:
+                try:
+                    frames.append(to_uint8(make_preview_rgb(load_image_rgb(path), 800)))
+                except Exception as exc:
+                    applog.logger().warning("Roll film base: %s: %s", os.path.basename(path), exc)
+            return rollbase.estimate(frames), len(frames)
+
+        base, checked = run_blocking(read)
+        if base is None:
+            return {"found": False, "message": f"Not enough of this roll's frames show a clear, even film border to read one film base from ({checked} looked at). "
+                                               "Use Sample Film Base and click the unexposed border yourself, or leave it on automatic estimation."}
+        return {"found": True, "rgb": base.rgb, "frames": base.frames, "checked": base.checked}
 
     def apply_suggested_film_base(self, rebate) -> None:
         """Use a found border as this roll's film base, exactly as if it had been clicked."""

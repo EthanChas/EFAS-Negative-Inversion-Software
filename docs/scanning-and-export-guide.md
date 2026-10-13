@@ -18,6 +18,14 @@ The verdict needs a RAW file (or a scan merged here). It can be switched off in 
 
 Negative tab > **Find Film Base Automatically** looks for the clear border of the film in the open scan. It shows the area it found, marked on the scan, with how confident it is and why. **Nothing changes until you press Use This Film Base.** A border beside bare backlight is told apart from the backlight itself; a border with no backlight next to it is offered with lower confidence. If no border is found you are told, and you can still sample one yourself.
 
+## One film base for the whole roll
+
+Negative tab > **Find Film Base for the Whole Roll** reads the clear border of up to 12 frames spread along the open photo's folder and combines them into one film base. The border around a frame is the same film on every frame, so reading several of them steadies the colour from frame to frame, and what is in any single picture (a snow scene, a sunset) cannot pull the reading. Frames without a clear, even border are left out, and a roll is only offered a base when at least two frames have one and most of them agree. You are shown the colour and how many frames it came from; **nothing changes until you confirm**, and Clear goes back to estimating each photo on its own.
+
+## Inverting before the camera's colour matrix (Settings > RAW decoding)
+
+A RAW file is normally opened with the camera's white balance and its camera-to-sRGB colour matrix already applied. The matrix mixes the three channels and clips what falls outside sRGB, and on a negative that happens while the orange mask is still in the picture. Turning on **Invert negatives before the camera's colour matrix** opens RAW files in the camera's own colour channels (white balance still applied), inverts there, and puts the camera's colour matrix on the finished positive, in linear light, so neutrals stay neutral. It is off by default because it changes how photos you have already edited look, so try it on a copy of a roll first. While it is on, a 16-bit TIFF export of a RAW photo is written at 8 bits for the colour-matrix step; the 16-bit tone chain is used when it is off. `tools/compare_decode.py` writes the standard and the linear versions of a RAW file side by side so you can judge it on your own scans.
+
 ## Merging scans (File > Merge Scans)
 
 Two kinds of merge, both from RAW scans, both saved as a new 16-bit linear TIFF with a small sidecar file (`.efas-merge.json`) that lets EFAS read the exact linear values back. Your original scans are never changed.

@@ -8,6 +8,7 @@ from PIL import Image
 
 from ..lut.logic import to_uint8  # noqa: F401  (re-exported: the 8-bit copy of a decoded picture)
 from ..settings import logic as settings
+from . import camera
 from .logic import is_raw
 
 _SIXTEEN_BIT_FILES = (".tif", ".tiff", ".png")
@@ -32,16 +33,21 @@ def _load_16bit_file(path: str):
     return np.ascontiguousarray(data[:, :, ::-1])
 
 
-def load_image_rgb(path: str) -> np.ndarray:
+def load_image_rgb(path: str, standard: bool = False) -> np.ndarray:
     """Decode `path` (standard image or RAW) to an HxWx3 RGB array: uint16 for a RAW file or a 16-bit TIFF/PNG (keeping every level the
-    sensor or scanner recorded - the edit pipeline stretches a negative's narrow range, and 8 bits would show gaps), uint8 for the rest."""
+    sensor or scanner recorded - the edit pipeline stretches a negative's narrow range, and 8 bits would show gaps), uint8 for the rest.
+    A RAW file is opened in the camera's own primaries (tagged with the matrix to apply after inversion) when Settings > RAW decoding asks for it; `standard`
+    forces the usual sRGB decode for the callers that need a finished picture (the curve-informed inversion)."""
     if is_raw(path):
         with rawpy.imread(path) as raw:
+            linear = bool(settings.get("raw_linear")) and not standard
+            extra = dict(output_color=rawpy.ColorSpace.raw) if linear else {}  # the camera's own primaries: the colour matrix comes after the inversion
             rgb = raw.postprocess(
                 use_camera_wb=True, no_auto_bright=not settings.get("raw_auto_bright"), output_bps=16,
-                demosaic_algorithm=getattr(rawpy.DemosaicAlgorithm, settings.DEMOSAIC_CHOICES[settings.get("raw_demosaic")][1]),
+                demosaic_algorithm=getattr(rawpy.DemosaicAlgorithm, settings.DEMOSAIC_CHOICES[settings.get("raw_demosaic")][1]), **extra,
             )
-        return rgb
+            matrix = camera.camera_to_srgb(raw.rgb_xyz_matrix) if linear else None
+        return camera.tag(rgb, matrix) if matrix is not None else rgb
     deep = _load_16bit_file(path)
     if deep is not None:
         return deep
@@ -63,7 +69,7 @@ def make_preview_rgb(pixels: np.ndarray, max_dim: int = 1600) -> np.ndarray:
     scale = max_dim / max(h, w)
     new_size = (max(1, round(w * scale)), max(1, round(h * scale)))
     if pixels.dtype == np.uint8:
-        return np.array(Image.fromarray(pixels).resize(new_size, Image.Resampling.LANCZOS))
+        return np.array(Image.fromarray(np.asarray(pixels)).resize(new_size, Image.Resampling.LANCZOS))
     import cv2
 
-    return cv2.resize(np.ascontiguousarray(pixels), new_size, interpolation=cv2.INTER_AREA)
+    return camera.retag(cv2.resize(np.ascontiguousarray(pixels), new_size, interpolation=cv2.INTER_AREA), pixels)

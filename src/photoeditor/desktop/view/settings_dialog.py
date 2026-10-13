@@ -423,6 +423,13 @@ class SettingsDialog(QDialog):
         self._auto_bright.setChecked(self._initial["raw_auto_bright"])
         self._auto_bright.setToolTip("LibRaw lifts a dark RAW so its brightest part nears white. Turn it off for the camera's own exposure.")
         col.addWidget(self._auto_bright)
+        self._raw_linear = QCheckBox("Invert negatives before the camera's colour matrix (linear camera RGB)")
+        self._raw_linear.setChecked(self._initial["raw_linear"])
+        self._raw_linear.setToolTip("Opens RAW files in the camera's own colour channels, inverts the negative there, and only then applies the camera's colour matrix to the "
+                                    "finished picture. The usual way mixes the channels and clips to sRGB while the orange mask is still in the scan, which can cost colour accuracy.")
+        col.addWidget(self._raw_linear)
+        col.addWidget(_hint("Best for colour negatives photographed or scanned as RAW. The open photo is reopened when you save a change. Photos you have already edited "
+                            "may look a little different, so try it on a copy of a roll first."))
         col.addStretch(1)
         return page
 
@@ -828,7 +835,7 @@ class SettingsDialog(QDialog):
 
     def values(self) -> dict:
         return {
-            "raw_demosaic": self._demosaic.currentData(), "raw_auto_bright": self._auto_bright.isChecked(), "auto_advance": self._auto_advance.isChecked(),
+            "raw_demosaic": self._demosaic.currentData(), "raw_auto_bright": self._auto_bright.isChecked(), "raw_linear": self._raw_linear.isChecked(), "auto_advance": self._auto_advance.isChecked(),
             "check_updates": self._check_updates.isChecked(), "scan_quality": self._scan_quality.isChecked(),
             "hover_modules": self._hover_modules.isChecked(), "workbench_library": self._workbench_library.isChecked(), "hq_always": self._hq_always.isChecked(), "collapse_on_tab_change": self._collapse_on_tab_change.isChecked(), "film_reference_online": self._film_reference_online.isChecked(), "hover_preview": self._hover_preview.isChecked(), "module_colours": self._module_colours.isChecked(),
             "backup_auto": self._backup_auto.isChecked(), "backup_keep": self._backup_keep.value(), "backup_dir": self._backup_dir,
@@ -837,4 +844,4 @@ class SettingsDialog(QDialog):
 
     def decoding_changed(self) -> bool:
         now = self.values()
-        return any(now[k] != self._initial[k] for k in ("raw_demosaic", "raw_auto_bright"))
+        return any(now[k] != self._initial[k] for k in ("raw_demosaic", "raw_auto_bright", "raw_linear"))

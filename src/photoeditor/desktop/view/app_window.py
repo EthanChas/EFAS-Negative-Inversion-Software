@@ -1124,6 +1124,7 @@ class AppWindow(QMainWindow):
         self._negative_tool.base_pick_toggled.connect(self._on_base_pick_toggled)
         self._negative_tool.point_dropper_toggled.connect(self._on_point_dropper_toggled)
         self._negative_tool.auto_base_requested.connect(self._on_auto_base_requested)
+        self._negative_tool.roll_base_requested.connect(self._on_roll_base_requested)
         self._negative_tool.base_cleared.connect(lambda: self.controller.set_film_base(None))
         self.controller.film_base_changed.connect(self._sync_film_base)
         self._negative_tool.rgb_changed.connect(self.controller.set_invert_rgb)
@@ -3192,6 +3193,22 @@ class AppWindow(QMainWindow):
         dlg = RebateDialog(found["raw"], found["rebate"], self)
         if dlg.exec():
             self.controller.apply_suggested_film_base(found["rebate"])
+
+    def _on_roll_base_requested(self) -> None:
+        """Offer one film base read from the clear border of several frames of the roll, and use it only if the user confirms."""
+        self._end_probe()
+        self._end_base_pick()
+        found = self.controller.suggest_roll_base()
+        if not found["found"]:
+            QMessageBox.information(self, "Film base", found["message"])
+            return
+        r, g, b = found["rgb"]
+        ask = QMessageBox.question(
+            self, "Film base for the roll",
+            f"The clear film border of {found['frames']} of the {found['checked']} frames looked at agree on one film base: RGB {r}, {g}, {b}.\n\n"
+            "Use it for every photo in this folder? Clear in the Film Base section goes back to estimating each photo on its own.")
+        if ask == QMessageBox.StandardButton.Yes:
+            self.controller.set_film_base(found["rgb"])
 
     def _on_advanced_toggled(self, on: bool) -> None:
         app_settings.save({"advanced_mode": bool(on)})

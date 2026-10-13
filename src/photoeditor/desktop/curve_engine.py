@@ -88,7 +88,7 @@ def full_positive(path: str, setup: CurveSetup, white) -> np.ndarray:
     """The positive at the original resolution, with the white reference that was used on screen so export matches the preview."""
     scan = dproc.decode_linear(path)
     if scan is None:
-        scan = from_display_referred(load_image_rgb(path), app_settings.get("scan_transfer"))
+        scan = from_display_referred(load_image_rgb(path, standard=True), app_settings.get("scan_transfer"))
     return inversion.invert_to_uint16(scan.rgb, setup.v_base, setup.models, scan.info.floor(), white, setup.flare)
 
 

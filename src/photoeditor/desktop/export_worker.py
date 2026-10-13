@@ -179,7 +179,7 @@ def _render_density(path: str, conn, notes: list[str], state: dict | None = None
     """Density above the film base at the original resolution, from the linear scan; the film base is the roll's sampled one or, failing that, an estimate."""
     scan = dens_processor.decode_linear(path)
     if scan is None:
-        scan = from_display_referred(load_image_rgb(path), app_settings.get("scan_transfer"))
+        scan = from_display_referred(load_image_rgb(path, standard=True), app_settings.get("scan_transfer"))
         notes.append("The source is not a RAW file, so its encoding is assumed and the density is approximate.")
     folder = edit_store.folder_key(path)
     ref = edit_store.get_linear_ref(conn, folder, "base")

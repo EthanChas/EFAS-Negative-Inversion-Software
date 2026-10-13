@@ -17,6 +17,7 @@ from dataclasses import dataclass
 import numpy as np
 from PyQt6.QtCore import QThread, pyqtSignal
 
+from ..features.open_image import camera
 from ..features.color.logic import adjust_saturation, adjust_temperature_tint
 from ..features.contrast.logic import apply_contrast
 from ..features.denoise.logic import apply_chroma_denoise
@@ -464,6 +465,7 @@ class Renderer:
         with self.lock:
             scale = source.shape[1] / base_width
             source16 = None
+            camera_matrix = camera.matrix_of(source)  # a RAW opened in the camera's primaries: its colour matrix goes on after the inversion
             if flatfield is not None:  # evened out at the picture's own depth: a 16-bit scan keeps all its levels
                 source = self._flatfielded(source, token, flatfield)
                 token = (token, flatfield[0])
@@ -498,7 +500,7 @@ class Renderer:
 
             denoise = params.chroma_denoise > 0 and (live is None or "denoise" in live)
             local = params.local_contrast > 0
-            mixing = bool(params.shadows or params.highlights or params.saturation or denoise or local)
+            mixing = bool(params.shadows or params.highlights or params.saturation or denoise or local or camera_matrix)
             wide = pixels16 is not None
             ramp = wide_ramp() if wide else identity_ramp()
             if params.negative_inverted:
@@ -520,6 +522,8 @@ class Renderer:
                     pre = ramp_to_lut(ramp)
                     if not is_identity(pre):
                         pixels = apply_channel_lut(pixels, pre)
+                if camera_matrix:
+                    pixels = camera.apply_matrix(pixels, camera_matrix)
                 if denoise:
                     pixels = apply_chroma_denoise(pixels, params.chroma_denoise, scale)
                 if local:

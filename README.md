@@ -77,6 +77,7 @@ Open a negative (RAW, TIFF, PNG or JPEG), invert it, balance the colour and tone
 - **Find (Ctrl+K)** reaches any control, menu action, preset, module preset or smart collection
 - **Virtual copies** (several edits of one scan), **smart collections**, a **duplicate finder**, and **undo for whole-roll actions**
 - **Proofing tools**: test strip, ring-around, split view, contact sheets
+- **Steadier colour on a roll**: *Find Film Base for the Whole Roll* reads the clear border of several frames into one film base; an optional *linear camera RGB* RAW decode inverts the negative before the camera's colour matrix is applied (see the [scanning guide](docs/scanning-and-export-guide.md))
 - **Export**: JPEG, PNG and TIFF (16-bit supported), size and quality options, metadata and XMP, batch export, output sharpening, export safety checks
 - **Film Colour Reference** (Extra menu, and the Negative tab): search a film stock and see photos shot on it, from lomography.com, in a clean gallery to judge a conversion's colour against (see [Privacy](#privacy))
 - **Command line**: `python -m photoeditor convert|presets|info|check-roll|merge`, using the editor's own data folder

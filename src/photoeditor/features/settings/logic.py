@@ -20,6 +20,7 @@ BACKUP_KEEP_RANGE = (1, 365)
 DEFAULTS: dict[str, Any] = {
     "raw_demosaic": "ahd",
     "raw_auto_bright": True,
+    "raw_linear": False,
     "auto_advance": True,
     "backup_auto": True,
     "check_updates": True,
@@ -61,7 +62,7 @@ def _clean(data: Any) -> dict[str, Any]:
         return out
     if data.get("raw_demosaic") in DEMOSAIC_CHOICES:
         out["raw_demosaic"] = data["raw_demosaic"]
-    for key in ("raw_auto_bright", "auto_advance", "backup_auto", "check_updates", "advanced_mode", "scan_quality", "hover_modules", "module_colours", "workbench_library", "hq_always", "collapse_on_tab_change", "film_reference_online", "crop_roll_same_size", "hover_preview", "error_marks_visible", "histogram_log", "histogram_split"):
+    for key in ("raw_auto_bright", "raw_linear", "auto_advance", "backup_auto", "check_updates", "advanced_mode", "scan_quality", "hover_modules", "module_colours", "workbench_library", "hq_always", "collapse_on_tab_change", "film_reference_online", "crop_roll_same_size", "hover_preview", "error_marks_visible", "histogram_log", "histogram_split"):
         if isinstance(data.get(key), bool):
             out[key] = data[key]
     if isinstance(data.get("theme"), str) and 0 < len(data["theme"]) <= 120:
