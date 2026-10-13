@@ -88,21 +88,21 @@ _SCRIPT = textwrap.dedent(r'''
 
     # the profile manager
     dlg = pdg.ProfilesDialog(c)
-    assert dlg.list.count() == 2
-    for i in range(dlg.list.count()):
-        if "Synthetic" in dlg.list.item(i).text(): dlg.list.setCurrentRow(i)
+    assert len(dlg.list.names_in_view()) == 2
+    for nm in dlg.list.names_in_view():
+        if "Synthetic" in nm: dlg.list.select_name(nm)
     text = dlg.detail.toPlainText()
     assert "Synthetic film" in text and "Test film / C-41" in text and "gamma" in text and "Other rolls of the same film" in text
-    dlg._duplicate(); assert dlg.list.count() == 3
+    dlg._duplicate(); assert len(dlg.list.names_in_view()) == 3
     pdg._ask = lambda parent, title, fields: ["Renamed copy", "Other film", "E-6", "a note"]
     dlg._edit()
-    names = [dlg.list.item(i).text() for i in range(dlg.list.count())]
+    names = dlg.list.names_in_view()
     assert any(n.startswith("Renamed copy") for n in names)
     out = os.path.join(work, "exported.json")
     QFileDialog.getSaveFileName = staticmethod(lambda *a, **k: (out, ""))
     dlg._export(); assert os.path.isfile(out)
     QFileDialog.getOpenFileName = staticmethod(lambda *a, **k: (out, ""))
-    dlg._import(); assert dlg.list.count() == 4
+    dlg._import(); assert len(dlg.list.names_in_view()) == 4
     seen = []
     QInputDialog.getItem = staticmethod(lambda *a, **k: (a[3][0], True))
     pdg.QDialog.exec = lambda self: seen.append(self.windowTitle()) or 0
@@ -111,8 +111,8 @@ _SCRIPT = textwrap.dedent(r'''
     dlg.use_for_photo.connect(lambda i: used.append(i)); dlg.use_in_viewer.connect(lambda i: used.append(i))
     dlg._use(); dlg._view(); assert len(used) == 2
     est = fp.new_profile("A guess", "estimated"); store.save(est); dlg.refresh(est.id)
-    assert not dlg.buttons["use"].isEnabled() and "cannot drive an inversion" in dlg.list.currentItem().text()
-    dlg._delete(); assert dlg.list.count() == 4
+    assert not dlg.buttons["use"].isEnabled() and "cannot drive an inversion" in dlg.list.currentItem().toolTip(0)
+    dlg._delete(); assert len(dlg.list.names_in_view()) == 4
 
     # the comparison dialog changes nothing until the curve-informed method is chosen
     classic_img = c.state.image_rgb.copy()

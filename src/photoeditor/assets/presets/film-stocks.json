@@ -1,0 +1,83 @@
+{
+  "about": "Looks inspired by the character of film stocks. Each is EFAS's own approximation, made by converting the tone, saturation and colour-balance settings of the matching film-look preset from another program's published list into EFAS's sliders (see docs/presets.md); they are not a measurement of the film and not a copy of anyone's profile. They are starting points: adjust by eye.",
+  "presets": [
+    {
+      "name": "Film Stocks/Cinestill/Cinestill",
+      "description": "A CineStill-style look: a little more saturation and punch, slightly deeper shadows and brighter highlights.",
+      "look": {
+        "saturation": 0.1,
+        "temperature": 0.0,
+        "tint": 0.0,
+        "shadows": -0.05,
+        "highlights": 0.05,
+        "print_toe": -0.05,
+        "print_toe_width": 2.5,
+        "print_shoulder": 0.0,
+        "print_shoulder_width": 2.5
+      }
+    },
+    {
+      "name": "Film Stocks/Fuji/Superia",
+      "description": "A Fuji Superia-style look: deeper shadows, a little extra saturation and a faint green-yellow balance.",
+      "look": {
+        "saturation": 0.1,
+        "temperature": 0.026,
+        "tint": -0.026,
+        "shadows": -0.13,
+        "highlights": -0.03,
+        "print_toe": 0.0,
+        "print_toe_width": 2.5,
+        "print_shoulder": 0.0,
+        "print_shoulder_width": 2.5,
+        "invert_r": 0.002
+      }
+    },
+    {
+      "name": "Film Stocks/Kodak/Gold",
+      "description": "A Kodak Gold-style look: a warm, yellow balance with deeper shadows and a little extra saturation.",
+      "look": {
+        "saturation": 0.1,
+        "temperature": 0.07,
+        "tint": 0.0,
+        "shadows": -0.13,
+        "highlights": -0.03,
+        "print_toe": 0.0,
+        "print_toe_width": 2.5,
+        "print_shoulder": 0.0,
+        "print_shoulder_width": 2.5
+      }
+    },
+    {
+      "name": "Film Stocks/Kodak/Portra",
+      "description": "A Kodak Portra-style look: soft, protected highlights, deeper shadows and a hint of warmth.",
+      "look": {
+        "saturation": 0.1,
+        "temperature": 0.028,
+        "tint": 0.0,
+        "shadows": -0.16,
+        "highlights": -0.11,
+        "print_toe": -0.1,
+        "print_toe_width": 2.5,
+        "print_shoulder": 0.05,
+        "print_shoulder_width": 2.5,
+        "invert_r": -0.002
+      }
+    },
+    {
+      "name": "Film Stocks/Kodak/Portra Airy",
+      "description": "A lighter, airier Portra: lifted shadows and highlights with a warm balance and firmer blacks.",
+      "look": {
+        "saturation": 0.1,
+        "temperature": 0.028,
+        "tint": 0.0,
+        "shadows": 0.13,
+        "highlights": 0.1,
+        "print_toe": -0.2,
+        "print_toe_width": 2.5,
+        "print_shoulder": 0.01,
+        "print_shoulder_width": 2.5,
+        "invert_r": -0.002
+      }
+    }
+  ]
+}

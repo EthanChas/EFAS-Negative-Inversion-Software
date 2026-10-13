@@ -13,9 +13,11 @@ from PyQt6.QtWidgets import (
 import photoeditor
 from ...features.densitometry import film_profile as fp, profile_bundle, view_model
 from ...features.densitometry.film_profile import KIND_LABELS
+from ...features.presettree import logic as tree
 from ...theme.tokens import THEME
 from .characterization_dialog import _ask
 from .colour_target_dialog import ColourTargetDialog
+from .preset_tree import PresetTree
 
 
 def _text(p: fp.FilmProfile) -> str:
@@ -69,9 +71,14 @@ class ProfilesDialog(QDialog):
         self.store = controller.profile_store()
         outer = QHBoxLayout(self)
         left = QVBoxLayout()
-        self.list = QListWidget()
+        self.list = PresetTree()  # a profile named "Kodak/Portra 400/Roll 3" sits in the folders Kodak and Portra 400
         self.list.currentItemChanged.connect(self._show)
+        self._ids: dict[str, str] = {}
         left.addWidget(self.list, 1)
+        hint = QLabel("Put slashes in a profile's name (Edit Details) to sort profiles into folders: Kodak/Portra 400/Roll 3.")
+        hint.setWordWrap(True)
+        hint.setProperty("role", "hint")
+        left.addWidget(hint)
         imp = QPushButton("Import...")
         imp.clicked.connect(self._import)
         left.addWidget(imp)
@@ -93,23 +100,27 @@ class ProfilesDialog(QDialog):
         self.refresh()
 
     def _current(self) -> str | None:
-        item = self.list.currentItem()
-        return item.data(Qt.ItemDataRole.UserRole) if item else None
+        return self._ids.get(self.list.selected_name() or "")
 
     def refresh(self, select: str | None = None) -> None:
         keep = select or self._current()
-        self.list.blockSignals(True)
-        self.list.clear()
+        self._ids = {}
+        tips: dict[str, str] = {}
+        keep_name = None
         for r in self.store.list():
+            key = tree.clean_path(r["name"]) or "Unnamed profile"
+            unique, n = key, 1
+            while unique.casefold() in {k.casefold() for k in self._ids}:
+                n += 1
+                unique = f"{key} ({n})"  # two profiles with one name are both shown
+            self._ids[unique] = r["id"]
             tag = "" if r["usable"] else "  (cannot drive an inversion)"
-            item = QListWidgetItem(f"{r['name']}  -  {r['film']}  -  {KIND_LABELS[r['kind']].split(' (')[0]}{tag}")
-            item.setData(Qt.ItemDataRole.UserRole, r["id"])
-            self.list.addItem(item)
+            tips[unique] = f"{r['film']}  -  {KIND_LABELS[r['kind']].split(' (')[0]}{tag}"
             if r["id"] == keep:
-                self.list.setCurrentItem(item)
-        self.list.blockSignals(False)
-        if self.list.currentItem() is None and self.list.count():
-            self.list.setCurrentRow(0)
+                keep_name = unique
+        if keep_name is None and self._ids:
+            keep_name = tree.flatten(tree.build(list(self._ids)))[0]  # the first one in the tree
+        self.list.set_names(list(self._ids), keep_name, tips, "No film profiles yet.")
         self._show()
 
     def _show(self, *_a) -> None:

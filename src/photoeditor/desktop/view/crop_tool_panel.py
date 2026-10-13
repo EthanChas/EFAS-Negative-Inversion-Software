@@ -6,6 +6,7 @@ from ...features.geometry.logic import DISTORTION_LIMIT, FINE_ROTATION_LIMIT
 from ...theme.tokens import THEME
 from ..settings_store import qsettings
 from .collapsible_panel import CollapsiblePanel
+from .dividers import add_divider
 from .slider_row import SliderRow
 
 _PREVIEW_THROTTLE_MS = 33
@@ -110,6 +111,7 @@ class CropToolPanel(CollapsiblePanel):
         self._flip_v_btn.toggled.connect(self.flip_v_toggled)
         flip_row.addWidget(self._flip_v_btn)
         body.addLayout(flip_row)
+        add_divider(body)
 
         auto_btn = QPushButton("Auto Crop && Straighten")
         auto_btn.setToolTip(
@@ -141,6 +143,7 @@ class CropToolPanel(CollapsiblePanel):
         self._auto_adjust_timer.timeout.connect(lambda: self.auto_adjust_changed.emit(self._auto_margin.value(), self._auto_rotate.value()))
         self.set_auto_adjust_enabled(False)
 
+        add_divider(body)
         crop_row = QHBoxLayout()
         crop_row.setSpacing(THEME.space_sm)
         self._crop_btn = QPushButton("Crop")

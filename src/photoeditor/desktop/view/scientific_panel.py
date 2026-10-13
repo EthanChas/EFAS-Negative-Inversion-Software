@@ -12,6 +12,7 @@ from ...features.densitometry import analysis, film_profile, fit, hd, profiles, 
 from ...features.densitometry import diagnostics as diagnostics_mod
 from ...features.densitometry.histogram import DensityHistogram
 from ...features.densitometry.linear import TRANSFER_LABELS, TRANSFERS
+from ...features.presettree import logic as preset_tree
 from ...theme.tokens import THEME
 from .collapsible_panel import CollapsiblePanel
 from .fit_plots import FitPlot, GradientPlot, ResidualPlot
@@ -283,7 +284,7 @@ class AdvancedPanels(QWidget):
         self._profile_combo.clear()
         self._profile_combo.addItem("No profile", "")
         for r in rows:
-            self._profile_combo.addItem(f"{r['name']} ({r['film']})", r["id"])
+            self._profile_combo.addItem(f"{preset_tree.display(r['name'])} ({r['film']})", r["id"])
         self._profile_combo.setCurrentIndex(max(0, self._profile_combo.findData(selected)))
         self._profile_combo.blockSignals(False)
 

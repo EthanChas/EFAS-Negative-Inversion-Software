@@ -1,0 +1,37 @@
+{
+  "about": "Looks inspired by the colour character of minilab scanners. Each is EFAS's own approximation: the settings were worked out by converting the tone, saturation and colour-balance settings of a scanner-look preset from another program's published list into EFAS's sliders (see docs/presets.md); they are not a measurement of the machines and not a copy of anyone's profile. They are starting points: adjust by eye.",
+  "presets": [
+    {
+      "name": "Lab Scanners/Frontier 100",
+      "description": "A Fuji Frontier-style look at full strength: deeper shadows, a soft film-like fade in the blacks, a gentle highlight roll-off, a little extra saturation and a warm, slightly green balance.",
+      "look": {
+        "saturation": 0.10, "temperature": 0.072, "tint": -0.01, "shadows": -0.24, "highlights": -0.06,
+        "print_toe": 0.11, "print_toe_width": 2.5, "print_shoulder": -0.02, "print_shoulder_width": 2.5
+      }
+    },
+    {
+      "name": "Lab Scanners/Crystal 100",
+      "description": "A Fuji Crystal Archive paper-style look at full strength: richer, deeper blacks, a little less shadow detail, more saturation and a touch of warmth in the midtones.",
+      "look": {
+        "saturation": 0.12, "temperature": 0.024, "tint": -0.006, "shadows": -0.13, "highlights": 0.0,
+        "print_toe": -0.19, "print_toe_width": 2.5, "print_shoulder": 0.0, "print_shoulder_width": 2.5
+      }
+    },
+    {
+      "name": "Lab Scanners/Pakon (Clean and Rich)",
+      "description": "A Pakon-style look: clean, bright highlights with a firm white, a slight saturation lift and otherwise neutral tone and colour. Most of what makes a Pakon scan look like one is its colour response, which EFAS cannot copy, so this one is subtle.",
+      "look": {
+        "saturation": 0.10, "temperature": 0.0, "tint": 0.0, "shadows": 0.0, "highlights": 0.12,
+        "print_toe": 0.0, "print_toe_width": 2.5, "print_shoulder": -0.15, "print_shoulder_width": 2.5
+      }
+    },
+    {
+      "name": "Lab Scanners/Noritsu (Green Shadows)",
+      "description": "A Noritsu-style look: lifted shadows and bright, clean highlights with more separation in the highlights, a faint green in the shadows and a modest saturation lift.",
+      "look": {
+        "saturation": 0.08, "temperature": 0.03, "tint": -0.05, "shadows": 0.06, "highlights": 0.16,
+        "print_toe": 0.05, "print_toe_width": 2.5, "print_shoulder": -0.15, "print_shoulder_width": 2.5
+      }
+    }
+  ]
+}

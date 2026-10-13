@@ -32,9 +32,11 @@ DEFAULTS: dict[str, Any] = {
     "film_reference_online": False,
     "crop_roll_same_size": True,
     "error_marks_visible": True,
+    "histogram_log": False,
+    "histogram_split": False,
     "hover_preview": True,
     "plugins_enabled": {},
-    "theme": "classic",
+    "theme": "modern",
     "theme_accent": ACCENTS[0][0],
     "theme_text_scale": 100,
     "module_colours": False,
@@ -59,7 +61,7 @@ def _clean(data: Any) -> dict[str, Any]:
         return out
     if data.get("raw_demosaic") in DEMOSAIC_CHOICES:
         out["raw_demosaic"] = data["raw_demosaic"]
-    for key in ("raw_auto_bright", "auto_advance", "backup_auto", "check_updates", "advanced_mode", "scan_quality", "hover_modules", "module_colours", "workbench_library", "hq_always", "collapse_on_tab_change", "film_reference_online", "crop_roll_same_size", "hover_preview", "error_marks_visible"):
+    for key in ("raw_auto_bright", "auto_advance", "backup_auto", "check_updates", "advanced_mode", "scan_quality", "hover_modules", "module_colours", "workbench_library", "hq_always", "collapse_on_tab_change", "film_reference_online", "crop_roll_same_size", "hover_preview", "error_marks_visible", "histogram_log", "histogram_split"):
         if isinstance(data.get(key), bool):
             out[key] = data[key]
     if isinstance(data.get("theme"), str) and 0 < len(data["theme"]) <= 120:

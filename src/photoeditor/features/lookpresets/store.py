@@ -8,8 +8,9 @@ import os
 from typing import Any
 
 from ..datadir import LOOK_PRESETS_FILE, app_data_dir
+from ..presettree.logic import MAX_PATH, clean_path
 
-MAX_NAME = 60
+MAX_NAME = MAX_PATH
 
 
 def _path() -> str:
@@ -17,7 +18,8 @@ def _path() -> str:
 
 
 def clean_name(name: str) -> str:
-    return " ".join(str(name).split())[:MAX_NAME]
+    """A preset name: a path, so "B&W / Number 1" is Number 1 in the folder B&W (see features/presettree)."""
+    return clean_path(name)
 
 
 def load() -> list[dict[str, Any]]:

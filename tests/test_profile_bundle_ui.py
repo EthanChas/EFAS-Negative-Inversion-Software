@@ -32,7 +32,7 @@ _SCRIPT = textwrap.dedent(r'''
     QFileDialog.getSaveFileName = staticmethod(lambda *a, **k: (out, ""))
     pdg._ask = lambda parent, title, fields: ["Sam", "Portra 160 on my lightbox"]
     dlg = pdg.ProfilesDialog(c)
-    assert dlg.list.count() == 1 and dlg.buttons["share"].isEnabled()
+    assert len(dlg.list.names_in_view()) == 1 and dlg.buttons["share"].isEnabled()
     dlg._share()
     assert os.path.isfile(out) and "fingerprint" in shown[-1]
 
@@ -45,10 +45,10 @@ _SCRIPT = textwrap.dedent(r'''
         ask_calls.append(self.text()); return Box.answer
     QMessageBox.exec = fake_exec
     dlg._import()
-    assert dlg.list.count() == 1 and ask_calls and "Sam" in ask_calls[-1] and "does not show who made it" in ask_calls[-1]
+    assert len(dlg.list.names_in_view()) == 1 and ask_calls and "Sam" in ask_calls[-1] and "does not show who made it" in ask_calls[-1]
     Box.answer = QMessageBox.StandardButton.Yes
     dlg._import()
-    assert dlg.list.count() == 2
+    assert len(dlg.list.names_in_view()) == 2
     ids = [r["id"] for r in store.list()]
     got = [store.load(i) for i in ids if i != mine.id]
     assert len(got) == 1 and got[0].kind == "supplied" and got[0].extras["received"]["author"] == "Sam"
@@ -59,7 +59,7 @@ _SCRIPT = textwrap.dedent(r'''
     bad = os.path.join(work, "bad.efasprofile"); open(bad, "wb").write(b"junk")
     QFileDialog.getOpenFileName = staticmethod(lambda *a, **k: (bad, ""))
     dlg._import()
-    assert dlg.list.count() == 2 and "failed its checks" in shown[-1]
+    assert len(dlg.list.names_in_view()) == 2 and "failed its checks" in shown[-1]
     win.close()
     print("BUNDLE UI OK")
 '''.replace("TESTS", repr(TESTS)))

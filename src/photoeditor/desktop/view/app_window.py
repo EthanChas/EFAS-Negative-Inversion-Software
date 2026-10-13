@@ -89,7 +89,9 @@ from .advanced_preset_dialog import AdvancedPresetDialog
 from .ai_dust_panel import AiDustPanel
 from .look_presets_panel import LookPresetsPanel
 from .error_marks_panel import ErrorMarksPanel
+from .dividers import insert_before_headings
 from ...features.errormarks import logic as error_marks_logic
+from ...features.presettree import logic as preset_tree
 from .module_menu import ModuleMenus
 from .loading_overlay import LoadingOverlay
 from .masking_panel import MaskingToolPanel
@@ -466,6 +468,8 @@ class AppWindow(QMainWindow):
         self._debug_controller = DebugController(self)
         QApplication.instance().installEventFilter(self._debug_controller)
         self._debug_action.toggled.connect(self._debug_controller.set_enabled)
+        for panel in self.findChildren(CollapsiblePanel):
+            insert_before_headings(panel.body())  # a thin line in front of each section heading inside a module
         self._start_plugins()
 
     # ------------------------------------------------------------ plugins
@@ -827,11 +831,20 @@ class AppWindow(QMainWindow):
         self._presets_panel.save_requested.connect(self.controller.save_look_preset)
         self._presets_panel.apply_requested.connect(self.controller.apply_look_preset)
         self._presets_panel.apply_folder_requested.connect(self._on_apply_preset_to_folder)
+        self._presets_panel.clear_requested.connect(self.controller.clear_look)
+        self._presets_panel.apply_builtin_requested.connect(self.controller.apply_builtin_preset)
+        self._presets_panel.apply_builtin_folder_requested.connect(lambda name: self._on_apply_preset_to_folder(name, True))
+        self._presets_panel.copy_builtin_requested.connect(self._on_copy_builtin_preset)
+        self._presets_panel.rename_requested.connect(lambda old, new: self.controller.replace_look_preset(old, new, self.controller.look_preset(old)))
+        self._presets_panel.rename_folder_requested.connect(self.controller.rename_look_folder)
+        self._presets_panel.delete_folder_requested.connect(self.controller.delete_look_folder)
+        self._presets_panel.set_builtin_presets(self.controller.builtin_look_presets(), self.controller.builtin_descriptions())
         self._presets_panel.delete_requested.connect(self.controller.delete_look_preset)
         self._presets_panel.advanced_requested.connect(self._on_advanced_preset_edit)
         self._presets_panel.preview_requested.connect(self._on_preset_hover)
         self._presets_panel.preview_ended.connect(self._on_preset_hover_ended)
         self._preset_hover_name: str | None = None
+        self._preset_hover_builtin = False
         self._preset_previewing = False
         self._preset_hover_timer = QTimer(self)
         self._preset_hover_timer.setSingleShot(True)
@@ -945,7 +958,7 @@ class AppWindow(QMainWindow):
 
         sidebar_content = QWidget()
         sidebar = QVBoxLayout(sidebar_content)
-        sidebar.setContentsMargins(2, THEME.space_md, THEME.space_md, THEME.space_md)
+        sidebar.setContentsMargins(0, 0, 0, THEME.space_md)
         sidebar.setSpacing(THEME.space_md)
 
         sidebar_scroll = QScrollArea()
@@ -989,6 +1002,19 @@ class AppWindow(QMainWindow):
         button_row.addWidget(self._color_btn)
 
         self._mode_group.buttonClicked.connect(self._on_mode_button_clicked)
+        self._hist_log_btn = QPushButton("Log")
+        self._hist_log_btn.setCheckable(True)
+        self._hist_log_btn.setChecked(app_settings.get("histogram_log"))
+        self._hist_log_btn.setToolTip("Logarithmic height: the thin tails of the shadows and highlights show up beside the big peaks")
+        self._hist_log_btn.toggled.connect(self._on_histogram_log_toggled)
+        button_row.addWidget(self._hist_log_btn)
+        self._hist_split_btn = QPushButton("Split")
+        self._hist_split_btn.setCheckable(True)
+        self._hist_split_btn.setChecked(app_settings.get("histogram_split"))
+        self._hist_split_btn.setToolTip("Show red, green and blue one above the other, each on its own scale, instead of blended together (Color graph only)")
+        self._hist_split_btn.toggled.connect(self._on_histogram_split_toggled)
+        button_row.addWidget(self._hist_split_btn)
+        self._mode_before_bw: str | None = None
         button_frame.layout().addLayout(button_row)
         body.addWidget(button_frame)
 
@@ -1010,6 +1036,8 @@ class AppWindow(QMainWindow):
 
         self._histogram_panel = HistogramPanel()
         self._histogram_panel.setFixedHeight(150)
+        self._histogram_panel.set_log(app_settings.get("histogram_log"))
+        self._histogram_panel.set_split(app_settings.get("histogram_split"))
         self._histogram_panel.bin_hovered.connect(self._on_bin_hovered)
         self._histogram_panel.hover_cleared.connect(self._on_graph_hover_cleared)
         self._histogram_panel.range_selected.connect(self._on_range_selected)
@@ -1022,9 +1050,7 @@ class AppWindow(QMainWindow):
         body.addWidget(self._graph_reading_label)
 
         self._stats_panel = ChannelStatsPanel()
-        body.addWidget(self._stats_panel)
-
-        sidebar.addWidget(self._wb_panel)
+        sidebar.addWidget(self._stats_panel)  # the figures scroll with the tools; the graph above them is frozen in place (see sidebar_pane below)
 
         tool_row_host = QWidget()
         tool_row = QHBoxLayout(tool_row_host)
@@ -1232,6 +1258,9 @@ class AppWindow(QMainWindow):
         self._image_view.set_error_marks_visible(app_settings.get("error_marks_visible"))
         self._error_tool_kind = ""
         self.controller.error_marks_changed.connect(self._refresh_error_marks)
+        self.controller.file_changed.connect(self._sync_histogram_for_film)
+        self.controller.negative_state_changed.connect(self._sync_histogram_for_film)
+        self.controller.reverted.connect(self._sync_histogram_for_film)
         self.controller.image_adjusted.connect(self._refresh_error_marks)
         self.controller.reverted.connect(self._refresh_error_marks)
         self.controller.file_changed.connect(self._refresh_error_marks)
@@ -1348,13 +1377,26 @@ class AppWindow(QMainWindow):
         sidebar.addWidget(tool_row_host, 1)
 
         sidebar_content.adjustSize()
-        sidebar_scroll.setMinimumWidth(sidebar_content.minimumSizeHint().width())
+        sidebar_scroll.setMinimumWidth(0)
 
-        self._splitter.addWidget(sidebar_scroll)
+        sidebar_pane = QWidget()
+        pane_col = QVBoxLayout(sidebar_pane)
+        pane_col.setContentsMargins(2, THEME.space_md, THEME.space_md, 0)
+        pane_col.setSpacing(THEME.space_md)
+        frozen = QWidget()  # as wide as the scrolling content below it, which has a scroll bar beside it
+        frozen_col = QVBoxLayout(frozen)
+        frozen_col.setContentsMargins(0, 0, self.style().pixelMetric(self.style().PixelMetric.PM_ScrollBarExtent), 0)
+        frozen_col.addWidget(self._wb_panel)
+        sidebar_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOn)
+        pane_col.addWidget(frozen, 0)  # frozen like the top row of a spreadsheet: it stays in view while the tools below scroll
+        pane_col.addWidget(sidebar_scroll, 1)
+        sidebar_pane.setMinimumWidth(max(sidebar_content.minimumSizeHint().width(), self._wb_panel.minimumSizeHint().width()))
+        self._sidebar_pane = sidebar_pane
+        self._splitter.addWidget(sidebar_pane)
         self._splitter.setStretchFactor(0, 0)
         self._splitter.setStretchFactor(1, 1)
         self._splitter.setStretchFactor(2, 0)
-        for pane in (left_scroll, left_widget, sidebar_scroll):
+        for pane in (left_scroll, left_widget, sidebar_pane):
             pane.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Expanding)
         self._left_last_width = max(_LEFT_WIDTH, left_scroll.minimumWidth())
         self._splitter.setSizes([self._left_last_width, 1000, _SIDEBAR_WIDTH])
@@ -1969,7 +2011,7 @@ class AppWindow(QMainWindow):
         for action, ids in (
             (self._open_folder_action, ("open_folder",)), (self._quick_export_action, ("quick_export",)), (self._undo_action, ("undo",)),
             (self._redo_action, ("redo", "redo_alt")), (self._auto_crop_action, ("auto_crop",)), (self._gradient_crop_action, ("gradient_crop",)), (self._reset_action, ("reset_edits",)),
-            (self._peaking_action, ("peaking",)), (self._hq_action, ("hq",)), (self._copy_settings_action, ("copy_settings",)),
+            (self._peaking_action, ("peaking",)), (self._error_marks_action, ("error_marks",)), (self._hq_action, ("hq",)), (self._copy_settings_action, ("copy_settings",)),
             (self._paste_settings_action, ("paste_settings",)), (self._shortcuts_action, ("shortcuts_menu",)), (self._find_action, ("find",)),
         ):
             action.setShortcuts([k for i in ids for k in seq(i)])
@@ -2030,7 +2072,37 @@ class AppWindow(QMainWindow):
         for top in self._menubar.actions():
             if top.menu() is not None:
                 entries += self._menu_entries(top.menu(), top.text().replace("&", ""))
+        entries += self._preset_entries()
         return entries
+
+    def _preset_entries(self) -> list:
+        """The presets Find can take you to: your own and the built-in ones in the Presets list, the presets of each module, and the Workbench's smart collections."""
+        c = self.controller
+        out = []
+        for builtin, names in ((False, c.look_presets()), (True, c.builtin_look_presets())):
+            for name in names:
+                out.append(find_logic.Entry("preset", preset_tree.display(name), "Built-in Presets" if builtin else "My Presets", "preset look style saved " + name,
+                                            self._presets_panel, {"name": name, "builtin": builtin}))
+        for key, panel in self._module_menus._panels.items():
+            for name in c.module_preset_names(key):
+                out.append(find_logic.Entry("preset", name, f"{c.module_title(key)} presets", "preset module saved", panel, {"module": key}))
+        for name, _state in self._lighttable._collections:
+            out.append(find_logic.Entry("collection", name, "Workbench smart collection", "saved search filter", self._lighttable._collection_box, {"name": name}))
+        return out
+
+    def _arrive_at_preset(self, entry) -> None:
+        """After Find has shown the panel a preset is in: pick the preset in its list (nothing is applied)."""
+        extra = entry.extra or {}
+        if entry.kind == "collection":
+            box = self._lighttable._collection_box
+            index = box.findData(extra.get("name"))
+            if index >= 0:
+                box.setCurrentIndex(index)
+        elif "name" in extra:
+            self._presets_panel.show_builtin(bool(extra.get("builtin")))
+            self._presets_panel._tree.select_name(extra["name"])
+        elif "module" in extra:
+            self._coord_label.setText(f"'{entry.title}' is in the Presets menu in the module's header (the menu button): choose it there to apply it.")
 
     def show_find(self) -> None:
         dialog = FindDialog(self.find_entries(), self)
@@ -2076,6 +2148,8 @@ class AppWindow(QMainWindow):
                 ancestor._pinned = True
                 ancestor.set_expanded(True)
         target = getattr(widget, "_slider", None) or widget
+        if entry.kind in ("preset", "collection"):
+            self._arrive_at_preset(entry)
 
         def arrive() -> None:
             for ancestor in chain:
@@ -2649,8 +2723,9 @@ class AppWindow(QMainWindow):
         return (app_settings.get("hover_preview") and self.controller.state.image_rgb is not None and not self._showing_pre_crop()
                 and self._base_pick_image is None and self._probe_image is None and not self.lighttable_active())
 
-    def _on_preset_hover(self, name: str) -> None:
+    def _on_preset_hover(self, name: str, builtin: bool = False) -> None:
         self._preset_hover_name = name
+        self._preset_hover_builtin = builtin
         if self._preview_allowed():
             self._preset_hover_timer.start()
 
@@ -2658,11 +2733,11 @@ class AppWindow(QMainWindow):
         name = self._preset_hover_name
         if name is None or not self._preview_allowed():
             return
-        image = self.controller.preview_look_preset(name)
+        image = self.controller.preview_look_preset(name, self._preset_hover_builtin)
         if image is not None:
             self._image_view.update_pixels(image)
             self._preset_previewing = True
-            self._coord_label.setText(f"Previewing the preset '{name}': nothing is applied until you press Apply")
+            self._coord_label.setText(f"Previewing the preset '{preset_tree.display(name)}': nothing is applied until you press Apply")
 
     def _on_preset_hover_ended(self) -> None:
         self._preset_hover_name = None
@@ -2814,7 +2889,13 @@ class AppWindow(QMainWindow):
                 new_look["marks"] = look["marks"]
             self.controller.replace_look_preset(name, dialog.name(), new_look)
 
-    def _on_apply_preset_to_folder(self, name: str) -> None:
+    def _on_copy_builtin_preset(self, name: str) -> None:
+        stored = self.controller.copy_builtin_preset(name)
+        if stored:
+            self._presets_panel.show_builtin(False)
+            self._presets_panel.set_presets(self.controller.look_presets(), stored)
+
+    def _on_apply_preset_to_folder(self, name: str, builtin: bool = False) -> None:
         path = self.controller.state.image_path
         if path is None:
             return
@@ -2826,7 +2907,7 @@ class AppWindow(QMainWindow):
             "Each photo keeps its own crop, rotation and dust repairs. This replaces their current tone and color settings.",
         )
         if answer == QMessageBox.StandardButton.Yes:
-            self.controller.apply_look_preset_to_folder(name)
+            (self.controller.apply_builtin_preset_to_folder if builtin else self.controller.apply_look_preset_to_folder)(name)
 
     def _on_paste_settings_to_folder(self) -> None:
         path = self.controller.state.image_path
@@ -3503,9 +3584,34 @@ class AppWindow(QMainWindow):
             self._histogram_panel.set_share_text(f"{share * 100:.1f}%")
         self._graph_reading_label.setText(self._range_summary() or "Hover the graph for a reading.")
 
+    def _on_histogram_log_toggled(self, on: bool) -> None:
+        app_settings.save({"histogram_log": bool(on)})
+        self._histogram_panel.set_log(on)
+
+    def _on_histogram_split_toggled(self, on: bool) -> None:
+        app_settings.save({"histogram_split": bool(on)})
+        self._histogram_panel.set_split(on)
+
+    def _sync_histogram_for_film(self, *_args) -> None:
+        """A black-and-white negative has no colour channels: the Color graph (and Split) are greyed out and the graph shows brightness; it goes back to Color when a colour film is opened."""
+        bw = self.controller.is_black_and_white()
+        self._color_btn.setEnabled(not bw)
+        self._color_btn.setToolTip("A black-and-white negative has no colour channels to show" if bw else "")
+        if bw and self._color_btn.isChecked():
+            self._mode_before_bw = "color"
+            self._exposure_btn.setChecked(True)
+            self._on_mode_button_clicked(self._exposure_btn)
+        elif not bw and self._mode_before_bw == "color" and not self._color_btn.isChecked():
+            self._color_btn.setChecked(True)
+            self._on_mode_button_clicked(self._color_btn)
+        if not bw:
+            self._mode_before_bw = None
+        self._hist_split_btn.setEnabled(self._color_btn.isChecked() and not bw)
+
     def _on_mode_button_clicked(self, button: QPushButton) -> None:
         mode = "exposure" if button is self._exposure_btn else "color"
         self._histogram_panel.set_mode(mode)
+        self._hist_split_btn.setEnabled(mode == "color" and not self.controller.is_black_and_white())
         if mode != "exposure":
             self._image_view.set_range_overlay(None)
         self._clip_row.setVisible(mode == "exposure")

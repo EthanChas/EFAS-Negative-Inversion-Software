@@ -58,6 +58,8 @@ class HistogramPanel(BevelPanel):
         self._rgb_histogram: dict[str, list[int]] | None = None
         self._luminance_histogram: list[int] | None = None
         self._mode = "color"
+        self._log = False
+        self._split = False
         self._marker_value: float | None = None
         self._cursor_value: int | None = None
         self._zoom_min, self._zoom_max = _FULL_RANGE
@@ -69,6 +71,22 @@ class HistogramPanel(BevelPanel):
         self._rgb_histogram = rgb_histogram
         self._luminance_histogram = luminance_histogram
         self.update()
+
+    def set_log(self, on: bool) -> None:
+        """A logarithmic height: small counts (the thin tails of the tones) show up next to the big peaks."""
+        self._log = bool(on)
+        self.update()
+
+    def set_split(self, on: bool) -> None:
+        """Colour mode: draw red, green and blue one above the other, each on its own scale, instead of blended on top of each other."""
+        self._split = bool(on)
+        self.update()
+
+    def log_scale(self) -> bool:
+        return self._log
+
+    def channels_split(self) -> bool:
+        return self._split
 
     def set_mode(self, mode: str) -> None:
         self._mode = mode
@@ -238,12 +256,18 @@ class HistogramPanel(BevelPanel):
         self._draw_header(painter)
 
         if self._mode == "exposure" and self._luminance_histogram:
-            peak = math.sqrt(max(self._luminance_histogram) or 1)
+            peak = max(self._luminance_histogram) or 1
             points = self._series_points(rect, self._luminance_histogram, peak)
             self._fill_series(painter, rect, points, THEME.channel_luminance)
             self._stroke_series(painter, points, THEME.channel_luminance)
+        elif self._mode == "color" and self._rgb_histogram and self._split:
+            for name, band in zip(("r", "g", "b"), self._bands(rect)):
+                counts = self._rgb_histogram[name]
+                points = self._series_points(band, counts, max(counts) or 1)
+                self._fill_series(painter, band, points, _CHANNEL_COLORS[name])
+                self._stroke_series(painter, points, _CHANNEL_COLORS[name])
         elif self._mode == "color" and self._rgb_histogram:
-            peak = math.sqrt(max(max(c) for c in self._rgb_histogram.values()) or 1)
+            peak = max(max(c) for c in self._rgb_histogram.values()) or 1
             series = {
                 name: self._series_points(rect, counts, peak)
                 for name, counts in self._rgb_histogram.items()
@@ -309,11 +333,16 @@ class HistogramPanel(BevelPanel):
             painter.setPen(QColor(THEME.text_secondary))
             painter.drawText(x + 12, y + 11, "Luminance")
 
+        shift = 0
+        if self._log:
+            painter.setPen(QColor(THEME.text_muted))
+            painter.drawText(QRect(self.rect().right() - 34 - THEME.space_sm, y, 34, _LEGEND_HEIGHT), int(Qt.AlignmentFlag.AlignRight), "log")
+            shift = 36
         if self._zoom_min != _FULL_RANGE[0] or self._zoom_max != _FULL_RANGE[1]:
             zoom_text = f"{self.zoom_percent()}% (2x-click reset)"
             painter.setPen(QColor(THEME.text_muted))
             widget_rect = self.rect()
-            label_rect = QRect(widget_rect.right() - 140, y, 140 - THEME.space_sm, _LEGEND_HEIGHT)
+            label_rect = QRect(widget_rect.right() - 140 - shift, y, 140 - THEME.space_sm, _LEGEND_HEIGHT)
             painter.drawText(label_rect, int(Qt.AlignmentFlag.AlignRight), zoom_text)
 
     def _draw_exposure_zones(self, painter: QPainter, rect: QRect) -> None:
@@ -325,14 +354,24 @@ class HistogramPanel(BevelPanel):
             if alpha:
                 painter.fillRect(QRect(int(x1), rect.top(), int(x2 - x1), rect.height()), QColor(255, 255, 255, alpha))
 
+    def _bands(self, rect: QRect) -> list[QRect]:
+        """The plot area cut into three strips, one for each colour channel, with a small gap between."""
+        gap = 3
+        height = (rect.height() - 2 * gap) // 3
+        return [QRect(rect.left(), rect.top() + i * (height + gap), rect.width(), height) for i in range(3)]
+
     def _draw_grid(self, painter: QPainter, rect: QRect) -> None:
         painter.setPen(QPen(QColor(THEME.text_muted), 1, Qt.PenStyle.DotLine))
         for fraction in (0.0, 0.25, 0.5, 0.75, 1.0):
             x = rect.left() + fraction * rect.width()
             painter.drawLine(int(x), rect.top(), int(x), rect.bottom())
-        for fraction in (0.0, 0.5, 1.0):
-            y = rect.top() + fraction * rect.height()
-            painter.drawLine(rect.left(), int(y), rect.right(), int(y))
+        if self._mode == "color" and self._split and self._rgb_histogram:
+            for band in self._bands(rect):
+                painter.drawLine(band.left(), band.bottom(), band.right(), band.bottom())
+        else:
+            for fraction in (0.0, 0.5, 1.0):
+                y = rect.top() + fraction * rect.height()
+                painter.drawLine(rect.left(), int(y), rect.right(), int(y))
 
         font = painter.font()
         font.setPointSize(THEME.font_size_small)
@@ -358,8 +397,10 @@ class HistogramPanel(BevelPanel):
         hi = min(len(counts) - 1, int(math.ceil(self._zoom_max)))
         if hi <= lo:
             return []
+        scale = math.log1p if self._log else math.sqrt  # a log height keeps the thin tails visible; the square root is the gentler default
+        top = scale(peak) or 1.0
         return [
-            (self._x_for_value(rect, i), rect.bottom() - (math.sqrt(counts[i]) / peak) * rect.height())
+            (self._x_for_value(rect, i), rect.bottom() - (scale(counts[i]) / top) * rect.height())
             for i in range(lo, hi + 1)
         ]
 

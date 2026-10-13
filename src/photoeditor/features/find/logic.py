@@ -65,7 +65,7 @@ class Entry:
         return f"{self.title} {self.keywords} {SYNONYMS.get(self.title.casefold(), '')}".casefold()
 
 
-KIND_BONUS = {"control": 6, "module": 4, "action": 2}
+KIND_BONUS = {"control": 6, "module": 4, "preset": 3, "collection": 3, "action": 2}
 
 
 def _words(text: str) -> list[str]:

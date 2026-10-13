@@ -48,7 +48,7 @@ _SCRIPT = textwrap.dedent(r'''
     # hovering the list shows it after a short rest, and says so
     panel = win._presets_panel
     shown.clear()
-    panel.preview_requested.emit("Bright"); pump(0.6)
+    panel.preview_requested.emit("Bright", False); pump(0.6)
     assert shown and shown[-1].mean() > plain.mean() + 10 and win._preset_previewing
     assert "Previewing the preset 'Bright'" in win._coord_label.text()
     assert c.state.exposure_ev == 0.0 and len(c.state.history) == history, "nothing was applied"
@@ -58,16 +58,16 @@ _SCRIPT = textwrap.dedent(r'''
     assert not win._preset_previewing and shown and np.array_equal(shown[-1], c.state.image_rgb)
     # sweeping across the list only shows where the mouse comes to rest
     shown.clear()
-    panel.preview_requested.emit("Bright"); panel.preview_ended.emit(); pump(0.4)
+    panel.preview_requested.emit("Bright", False); panel.preview_ended.emit(); pump(0.4)
     assert not shown, "a quick pass does not render anything"
     # applying while previewing leaves the applied picture, not the preview state
-    panel.preview_requested.emit("Bright"); pump(0.5)
+    panel.preview_requested.emit("Bright", False); pump(0.5)
     c.apply_look_preset("Bright"); pump(0.8)
     assert not win._preset_previewing and abs(c.state.exposure_ev - 1.5) < 1e-6
     # the setting turns it off
     S.save({"hover_preview": False})
     c.set_exposure_ev(0.0); pump(0.6); shown.clear()
-    panel.preview_requested.emit("Bright"); pump(0.5)
+    panel.preview_requested.emit("Bright", False); pump(0.5)
     assert not shown and not win._preset_previewing
     print("ok")
 ''')

@@ -7,7 +7,7 @@ The window keeps the last 5,000 lines, even while it is closed.
 ## What a line looks like
 
 ```
-20:05:45  INFO   [Hello (Lua)] Hello from Hello (Lua) (EFAS 0.6.1)
+20:05:45  INFO   [Hello (Lua)] Hello from Hello (Lua) (EFAS 0.7.0)
 20:06:02  ERROR  [Exposure Steps (Lua)] button 'Darker (-1/3 EV)': main.lua:21: attempt to perform arithmetic on a nil value (field 'exposure_ev')
 ```
 

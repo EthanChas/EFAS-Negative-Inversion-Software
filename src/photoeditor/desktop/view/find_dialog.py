@@ -1,11 +1,11 @@
-"""Find (Ctrl+K): type what you are after and jump to it - a module, a slider, a button or a menu action."""
+"""Find (Ctrl+K): type what you are after and jump to it - a module, a slider, a button, a menu action, a preset or a smart collection."""
 
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtWidgets import QDialog, QLabel, QLineEdit, QListWidget, QListWidgetItem, QVBoxLayout
 
 from ...features.find import logic as F
 
-_KIND_LABEL = {"module": "Module", "control": "Control", "action": "Menu"}
+_KIND_LABEL = {"module": "Module", "control": "Control", "action": "Menu", "preset": "Preset", "collection": "Collection"}
 _ROLE = Qt.ItemDataRole.UserRole
 
 

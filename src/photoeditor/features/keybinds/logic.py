@@ -33,6 +33,7 @@ ACTIONS: tuple[KeyAction, ...] = (
     KeyAction("ring_around", "Ring-around (colour cast)", "Viewing", "Shift+F"),
     KeyAction("toggle_panels", "Hide / show the side panels", "Viewing", "Tab"),
     KeyAction("hq", "High quality (full resolution)", "Viewing", "Ctrl+H", "menu"),
+    KeyAction("error_marks", "Show or hide error marks", "Viewing", "Shift+E", "menu"),
     KeyAction("peaking", "Focus peaking", "Viewing", "Ctrl+Shift+F", "menu"),
     KeyAction("find", "Find a control or action", "Viewing", "Ctrl+K", "menu"),
     KeyAction("shortcuts_help", "Keyboard shortcuts", "Viewing", "?"),

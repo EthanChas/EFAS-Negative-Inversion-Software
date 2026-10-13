@@ -15,7 +15,7 @@ Conventions:
 | Lua | Python | Value |
 |---|---|---|
 | `efas.api_version` | `api.api_version` | The plugin API version of this EFAS (1) |
-| `efas.version` | `api.app_version` | The EFAS version, like `0.6.1` |
+| `efas.version` | `api.app_version` | The EFAS version, like `0.7.0` |
 | `efas.plugin_id` | `api.plugin_id` | The `id` from `plugin.json` |
 | `efas.plugin_name` | `api.plugin_name` | The `name` from `plugin.json` |
 | `efas.plugin_dir` | `api.plugin_dir` | The plugin's folder |

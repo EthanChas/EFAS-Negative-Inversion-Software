@@ -37,7 +37,9 @@ from ..features.flatfield import check as flat_check
 from ..features.flatfield.logic import apply_flatfield, gain_token
 from ..features.flatfield.processor import gain_from_reference
 from ..features.lookpresets import module_store
+from ..features.lookpresets import builtin as builtin_presets
 from ..features.lookpresets import store as look_store
+from ..features.presettree import logic as preset_tree
 from ..features.lookpresets.modules import PANEL_MODULES, SWITCHABLE, panel_defaults, panel_fields
 from ..features.metadata import store as metadata_store
 from ..features.metadata import suggest
@@ -2682,8 +2684,13 @@ class AppController(QObject):
         )
         return image
 
-    def preview_look_preset(self, name: str) -> np.ndarray | None:
-        look = look_store.get(name)
+    def is_black_and_white(self) -> bool:
+        """True when the open photo is a black-and-white negative: chosen as such, or on Auto and detected as one."""
+        s = self.state
+        return s.film_type == "bw" or (s.film_type == "auto" and s.detected_mode == ProcessMode.BW)
+
+    def preview_look_preset(self, name: str, builtin: bool = False) -> np.ndarray | None:
+        look = (builtin_presets if builtin else look_store).get(name)
         return self.preview_look(look) if look is not None else None
 
     def _clean_look(self, look: dict) -> dict:
@@ -2857,6 +2864,84 @@ class AppController(QObject):
             self.notice.emit(f"Applied preset '{name}'")
             return True
         return False
+
+    # ------------------------------------------------------------ the presets that come with EFAS, and folders of presets
+    def clear_look(self) -> bool:
+        """Take the look off the open photo: every module but Negative (the inversion is not part of a look) goes back to its defaults, as one undoable step."""
+        if self.state.preview_rgb is None:
+            return False
+        values: dict = {"marks": {}}
+        for key in SWITCHABLE:
+            values.update(panel_defaults(key))
+        if not self.apply_look(values, "Cleared the look"):
+            return False
+        for key in SWITCHABLE:
+            self._module_preset_in_use.pop((self.state.image_path, key), None)
+        self._save_edit_state()
+        for key in SWITCHABLE:
+            self.module_presets_changed.emit(key)
+        self.notice.emit("Look cleared: every module except Negative is back to its defaults")
+        return True
+
+    def builtin_look_presets(self) -> list[str]:
+        return builtin_presets.names()
+
+    def builtin_descriptions(self) -> dict[str, str]:
+        return {p["name"]: p["description"] for p in builtin_presets.load() if p["description"]}
+
+    def apply_builtin_preset(self, name: str) -> bool:
+        look = builtin_presets.get(name)
+        if look is None:
+            self.notice.emit(f"Built-in preset '{name}' was not found")
+            return False
+        if self.apply_look(copy.deepcopy(look), f"Applied built-in preset '{name}'"):
+            self.notice.emit(f"Applied built-in preset '{name}'")
+            return True
+        return False
+
+    def apply_builtin_preset_to_folder(self, name: str) -> int:
+        look = builtin_presets.get(name)
+        return self.paste_settings_to_folder(copy.deepcopy(look), f"Applied built-in preset '{name}'") if look is not None else 0
+
+    def copy_builtin_preset(self, name: str) -> str | None:
+        """Make an editable copy of a built-in preset among My Presets (under the same name, or the name with ' copy' if that is taken). Returns the name."""
+        look = builtin_presets.get(name)
+        if look is None:
+            return None
+        taken = {n.casefold() for n in look_store.names()}
+        target, n = preset_tree.clean_path(name), 1
+        while target.casefold() in taken:
+            n += 1
+            target = f"{preset_tree.clean_path(name)} copy" if n == 2 else f"{preset_tree.clean_path(name)} copy {n - 1}"
+        stored = look_store.save_preset(target, copy.deepcopy(look))
+        if stored is None:
+            return None
+        self.look_presets_changed.emit(stored)
+        self.notice.emit(f"Copied '{name}' to My Presets as '{stored}'")
+        return stored
+
+    def rename_look_folder(self, folder: str, new_folder: str) -> int:
+        """Rename a folder of My Presets, or move it (and everything in it) somewhere else. Nothing is changed if a name it would take is already used."""
+        names = look_store.names()
+        moves = preset_tree.move_folder(names, folder, new_folder)
+        stay = {n.casefold() for n in names} - {n.casefold() for n in moves}
+        if not moves or any(new.casefold() in stay for new in moves.values()) or len({n.casefold() for n in moves.values()}) != len(moves):
+            self.notice.emit("The folder could not be renamed: a preset with one of the new names already exists")
+            return 0
+        for old, new in moves.items():
+            look_store.replace_preset(old, new, look_store.get(old))
+        self.look_presets_changed.emit("")
+        self.notice.emit(f"Renamed the folder '{folder}' to '{preset_tree.clean_path(new_folder)}'")
+        return len(moves)
+
+    def delete_look_folder(self, folder: str) -> int:
+        gone = preset_tree.in_folder(look_store.names(), folder)
+        for name in gone:
+            look_store.delete_preset(name)
+        if gone:
+            self.look_presets_changed.emit("")
+            self.notice.emit(f"Deleted the folder '{folder}' ({len(gone)} preset{'s' if len(gone) != 1 else ''})")
+        return len(gone)
 
     def apply_look_preset_to_folder(self, name: str) -> int:
         look = look_store.get(name)

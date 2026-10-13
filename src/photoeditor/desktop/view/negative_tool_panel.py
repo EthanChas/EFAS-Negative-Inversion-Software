@@ -6,10 +6,12 @@ from PyQt6.QtWidgets import QCheckBox, QComboBox, QHBoxLayout, QInputDialog, QLa
 
 from ...features.densitometry.quality import COLOURS as QUALITY_COLOURS
 from ...features.negative import lightsource
+from ...features.presettree import logic as preset_tree
 from ...features.negative.logic import FILM_TYPE_LABELS, FILM_TYPES, ProcessMode
 from ...features.negative.metering import DEFAULT_BUFFER, MAX_BUFFER, Metering
 from ...theme.tokens import THEME
 from .collapsible_panel import CollapsiblePanel
+from .dividers import add_divider
 from .icons import eyedropper_icon
 from .slider_row import SliderRow
 
@@ -263,6 +265,7 @@ class NegativeToolPanel(CollapsiblePanel):
         self._meter_settle_timer.timeout.connect(lambda: self.metering_changed.emit(self._metering))
         self.set_metering(Metering())
 
+        add_divider(body)
         trim = QLabel("COLOR TRIM")
         trim.setProperty("role", "subtitle")
         trim_row = QHBoxLayout()
@@ -357,7 +360,7 @@ class NegativeToolPanel(CollapsiblePanel):
         usable = [r for r in profiles if r["usable"]]
         self._engine_profile.clear()
         for r in usable:
-            self._engine_profile.addItem(f"{r['name']} ({r['film']})", r["id"])
+            self._engine_profile.addItem(f"{preset_tree.display(r['name'])} ({r['film']})", r["id"])
         self._engine_setup.clear()
         self._engine_setup.addItem("No camera set-up", "")
         for s in setups:
