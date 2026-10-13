@@ -62,6 +62,7 @@ class SettingsDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle("Settings")
         self.setMinimumSize(760, 640)
+        self.resize(920, 800)
         self._controller = controller
         self._initial = settings.load()
         self._backup_dir = self._initial["backup_dir"]
@@ -211,6 +212,7 @@ class SettingsDialog(QDialog):
             lay.addWidget(card)
             note = _hint(spec.description + ("" if spec.builtin else "  (imported)"))
             note.setFixedWidth(236)
+            note.setMinimumHeight(note.heightForWidth(236) + 6)  # a wrapped label in a fixed-width column would otherwise be given one line
             lay.addWidget(note)
             lay.addStretch(1)
             self._card_grid.addWidget(box, n // 2, n % 2, Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
