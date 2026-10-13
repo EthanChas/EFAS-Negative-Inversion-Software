@@ -31,6 +31,7 @@ Built in **Python** with **PyQt6**. Created by Ethan.
 - **Command line**: `python -m photoeditor convert|presets|info|check-roll|merge`, using the editor's own data folder
 - **Report a problem**: a redacted report you can read, save and attach to a GitHub issue; nothing is sent automatically
 - **Updates**: Info > Version, with a startup notice when a new version is out (see Updates below)
+- **Themes**: Default, Modern, Midnight, Graphite, Darkroom and High contrast, with accent colours and text size, plus your own themes as CSS files (Settings > Themes; see [docs/themes.md](docs/themes.md))
 - **Data safety**: automatic backups, startup health check with restore, and full data export/import (Settings > Data & backup)
 
 ## Privacy

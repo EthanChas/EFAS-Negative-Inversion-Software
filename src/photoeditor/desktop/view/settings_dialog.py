@@ -5,7 +5,7 @@ import time
 from PyQt6.QtCore import QUrl, Qt
 from PyQt6.QtGui import QDesktopServices, QKeySequence
 from PyQt6.QtWidgets import (
-    QCheckBox, QComboBox, QSlider, QDialog, QFileDialog, QFormLayout, QFrame, QHBoxLayout, QKeySequenceEdit, QLabel, QListWidget, QMessageBox, QPushButton,
+    QApplication, QCheckBox, QComboBox, QGridLayout, QSlider, QDialog, QFileDialog, QFormLayout, QFrame, QHBoxLayout, QKeySequenceEdit, QLabel, QListWidget, QMessageBox, QPushButton,
     QScrollArea, QSpinBox, QStackedWidget, QVBoxLayout, QWidget,
 )
 
@@ -15,8 +15,10 @@ from ...features.keybinds import logic as binds
 from ...features.persistence import export as data_export
 from ...features.persistence.backup import backup_database, list_backups
 from ...features.settings import logic as settings
+from ...theme import cssfile as theme_cssfile
 from ...theme import runtime as theme_runtime
-from ...theme.tokens import ACCENTS, MODERN, TEXT_SCALE_RANGE, THEME, THEME_NAMES
+from ...theme import themes as theme_themes
+from ...theme.tokens import ACCENTS, TEXT_SCALE_RANGE, THEME
 from .theme_preview import AccentSwatch, ThemeCard, card_theme
 from ..paths import thumbnail_cache_dir
 
@@ -59,7 +61,7 @@ class SettingsDialog(QDialog):
     def __init__(self, parent: QWidget | None = None, controller=None):
         super().__init__(parent)
         self.setWindowTitle("Settings")
-        self.setMinimumSize(760, 520)
+        self.setMinimumSize(760, 640)
         self._controller = controller
         self._initial = settings.load()
         self._backup_dir = self._initial["backup_dir"]
@@ -96,34 +98,43 @@ class SettingsDialog(QDialog):
         self._check_keys()
 
     def _themes_page(self) -> QWidget:
-        """Settings > Themes: pick the Default look or the Modern one, its accent colour and the text size. Every change shows at once; Cancel puts it back."""
+        """Settings > Themes: choose a look, its accent colour and the text size, then press Apply (restyling the whole program takes a few seconds, so it
+        happens only when asked). Theme files written in CSS can be imported, and any theme can be exported as a starting point."""
         page = QWidget()
         col = QVBoxLayout(page)
         col.setSpacing(THEME.space_md)
-        self._theme_name = self._initial["theme"]
-        self._theme_accent = self._initial["theme_accent"]
-        col.addWidget(_hint("Choose how the program looks. A change shows straight away so you can judge it; Save keeps it and Cancel puts the old look back."))
-        cards = QHBoxLayout()
-        cards.setSpacing(THEME.space_lg)
+        self._applied = {"theme": self._initial["theme"], "theme_accent": self._initial["theme_accent"], "theme_text_scale": self._initial["theme_text_scale"]}
+        self._theme_name = self._applied["theme"]
+        self._theme_accent = self._applied["theme_accent"]
+        col.addWidget(_hint("Pick a look and press Apply. The pictures show what each one will look like with your accent colour and text size."))
         self._theme_cards: dict[str, ThemeCard] = {}
-        notes = {
-            "classic": "The original Windows 98 style: bevelled controls, compact text.",
-            "modern": "Flat, rounded, opaque Windows 11 style: easier to read, roomier, smoother sliders.",
-        }
-        for key in ("classic", "modern"):
-            box = QVBoxLayout()
-            card = ThemeCard(card_theme(key, self._initial), THEME_NAMES[key])
-            card.setChecked(key == self._theme_name)
-            card.clicked.connect(lambda _c=False, k=key: self._pick_theme(k))
-            self._theme_cards[key] = card
-            box.addWidget(card)
-            note = _hint(notes[key])
-            note.setFixedWidth(236)
-            box.addWidget(note)
-            box.addStretch(1)
-            cards.addLayout(box)
-        cards.addStretch(1)
-        col.addLayout(cards)
+        self._card_holder = QWidget()
+        self._card_grid = QGridLayout(self._card_holder)
+        self._card_grid.setContentsMargins(0, 0, 0, 0)
+        self._card_grid.setSpacing(THEME.space_lg)
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setWidget(self._card_holder)
+        scroll.setMinimumHeight(330)
+        col.addWidget(scroll, 1)
+
+        tools = QHBoxLayout()
+        tools.setSpacing(THEME.space_sm)
+        self._import_btn = QPushButton("Import theme file...")
+        self._import_btn.setToolTip("Add a theme written in CSS (a .css file): see 'How to write a theme' in the docs, or export a theme to see the format")
+        self._import_btn.clicked.connect(self._import_theme)
+        self._export_btn = QPushButton("Export theme...")
+        self._export_btn.setToolTip("Save the selected theme as a CSS file: the quickest way to start making your own")
+        self._export_btn.clicked.connect(self._export_theme)
+        self._folder_btn = QPushButton("Open themes folder")
+        self._folder_btn.clicked.connect(self._open_themes_folder)
+        self._remove_btn = QPushButton("Remove theme")
+        self._remove_btn.setToolTip("Delete the selected imported theme (the built-in ones cannot be removed)")
+        self._remove_btn.clicked.connect(self._remove_theme)
+        for b in (self._import_btn, self._export_btn, self._folder_btn, self._remove_btn):
+            tools.addWidget(b)
+        tools.addStretch(1)
+        col.addLayout(tools)
 
         head = QLabel("Accent colour")
         head.setStyleSheet(f"color: {THEME.text_secondary}; font-weight: bold;")
@@ -139,7 +150,7 @@ class SettingsDialog(QDialog):
             swatches.addWidget(swatch)
         swatches.addStretch(1)
         col.addLayout(swatches)
-        self._accent_hint = _hint("The colour of sliders, switches, the selected item and the main button. It belongs to the Modern theme; the Default theme keeps its own blue.")
+        self._accent_hint = _hint("")
         col.addWidget(self._accent_hint)
 
         head = QLabel("Text size")
@@ -161,43 +172,146 @@ class SettingsDialog(QDialog):
         reset.clicked.connect(lambda: self._text_scale.setValue(100))
         size_row.addWidget(reset)
         col.addLayout(size_row)
-        col.addWidget(_hint("Makes all the program's text larger or smaller (100% is as designed). Panels and controls grow with it."))
-        col.addStretch(1)
+
+        apply_row = QHBoxLayout()
+        self._apply_theme_btn = QPushButton("Apply theme")
+        self._apply_theme_btn.setToolTip("Put the chosen look in force now and remember it. Restyling everything takes a few seconds.")
+        self._apply_theme_btn.clicked.connect(self.apply_theme_now)
+        self._apply_note = _hint("")
+        apply_row.addWidget(self._apply_theme_btn)
+        apply_row.addWidget(self._apply_note, 1)
+        col.addLayout(apply_row)
+        self._rebuild_cards()
         self._sync_theme_page()
         return page
 
     def _theme_values(self) -> dict:
         return {"theme": self._theme_name, "theme_accent": self._theme_accent, "theme_text_scale": self._text_scale.value()}
 
-    def _sync_theme_page(self) -> None:
-        modern = self._theme_name == MODERN
-        for button in self._accent_buttons:
-            button.setEnabled(modern)
-        self._text_scale_label.setText(f"{self._text_scale.value()}%")
+    def _spec(self, theme_id: str):
+        return theme_themes.find(theme_id) or theme_themes.BUILTIN[0]
 
-    def _preview_theme(self) -> None:
+    def _rebuild_cards(self) -> None:
+        """One card per theme (the built-in ones, then the imported ones), two to a row, each with its description."""
+        while self._card_grid.count():
+            item = self._card_grid.takeAt(0)
+            if item.widget() is not None:
+                item.widget().deleteLater()
+        self._theme_cards = {}
+        values = self._theme_values()
+        for n, spec in enumerate(theme_themes.all_specs()):
+            box = QWidget()
+            lay = QVBoxLayout(box)
+            lay.setContentsMargins(0, 0, 0, 0)
+            lay.setSpacing(2)
+            card = ThemeCard(card_theme(spec, values), spec.name)
+            card.setChecked(spec.id == self._theme_name)
+            card.clicked.connect(lambda _c=False, k=spec.id: self._pick_theme(k))
+            self._theme_cards[spec.id] = card
+            lay.addWidget(card)
+            note = _hint(spec.description + ("" if spec.builtin else "  (imported)"))
+            note.setFixedWidth(236)
+            lay.addWidget(note)
+            lay.addStretch(1)
+            self._card_grid.addWidget(box, n // 2, n % 2, Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
+        self._card_grid.setColumnStretch(2, 1)
+
+    def _sync_theme_page(self) -> None:
+        spec = self._spec(self._theme_name)
         values = self._theme_values()
         for key, card in self._theme_cards.items():
-            card.set_theme(card_theme(key, values))
-        self._sync_theme_page()
-        theme_runtime.apply(None, values)
+            card.set_theme(card_theme(self._spec(key), values))
+        for button in self._accent_buttons:
+            button.setEnabled(spec.accent_editable)
+        self._accent_hint.setText(
+            "The colour of sliders, switches, the selected item and the main button." if spec.accent_editable
+            else f"{spec.name} has its own accent colour, so this does not change it."
+        )
+        self._text_scale_label.setText(f"{self._text_scale.value()}%")
+        self._remove_btn.setEnabled(not spec.builtin)
+        pending = values != self._applied
+        self._apply_theme_btn.setEnabled(pending)
+        self._apply_note.setText("Press Apply to switch (it takes a few seconds)." if pending else "This is the look in use.")
 
-    def _pick_theme(self, name: str) -> None:
-        self._theme_name = name
-        self._theme_cards[name].setChecked(True)
-        self._preview_theme()
+    def _pick_theme(self, theme_id: str) -> None:
+        self._theme_name = theme_id
+        if theme_id in self._theme_cards:
+            self._theme_cards[theme_id].setChecked(True)
+        self._sync_theme_page()
 
     def _pick_accent(self, name: str) -> None:
         self._theme_accent = name
-        self._preview_theme()
+        self._sync_theme_page()
 
     def _pick_scale(self, _value: int) -> None:
-        self._preview_theme()
+        self._sync_theme_page()
 
-    def reject(self) -> None:
-        """Cancel: whatever look was being previewed goes back to the saved one."""
-        theme_runtime.apply(None, self._initial)
-        super().reject()
+    def apply_theme_now(self) -> None:
+        """Apply: restyle the whole program with the chosen look and remember it (Cancel does not undo it; choose another and Apply again)."""
+        values = self._theme_values()
+        if values == self._applied:
+            return
+        QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+        self._apply_theme_btn.setEnabled(False)
+        self._apply_note.setText("Applying...")
+        QApplication.processEvents()
+        try:
+            theme_runtime.apply(None, values)
+            settings.save(values)
+            self._applied = dict(values)
+        finally:
+            QApplication.restoreOverrideCursor()
+        self._sync_theme_page()
+
+    def accept(self) -> None:
+        """Save: a look that was chosen but not applied yet is applied first."""
+        self.apply_theme_now()
+        super().accept()
+
+    def _import_theme(self) -> None:
+        path, _ = QFileDialog.getOpenFileName(self, "Import theme file", "", "Theme files (*.css *.qss *.efastheme);;All files (*)")
+        if not path:
+            return
+        spec, errors, warnings = theme_themes.import_file(path)
+        if spec is None:
+            QMessageBox.warning(self, "Import theme file", "That theme could not be imported:\n\n- " + "\n- ".join(errors))
+            return
+        self._theme_name = spec.id
+        self._rebuild_cards()
+        self._sync_theme_page()
+        text = f"Imported '{spec.name}'. Press Apply to use it."
+        if warnings:
+            text += "\n\nNotes:\n- " + "\n- ".join(warnings)
+        QMessageBox.information(self, "Import theme file", text)
+
+    def _export_theme(self) -> None:
+        spec = self._spec(self._theme_name)
+        theme = theme_themes.build(spec, self._theme_accent, 100)
+        path, _ = QFileDialog.getSaveFileName(self, "Export theme", f"{theme_themes.safe_file_name(spec.name)}.css", "CSS theme file (*.css)")
+        if not path:
+            return
+        text = theme_cssfile.export(theme, spec.name + (" (copy)" if spec.builtin else ""), spec.description, spec.base)
+        try:
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(text)
+        except OSError as exc:
+            QMessageBox.warning(self, "Export theme", f"The file could not be written ({exc}).")
+
+    def _open_themes_folder(self) -> None:
+        folder = theme_themes.themes_folder()
+        os.makedirs(folder, exist_ok=True)
+        QDesktopServices.openUrl(QUrl.fromLocalFile(folder))
+
+    def _remove_theme(self) -> None:
+        spec = self._spec(self._theme_name)
+        if spec.builtin:
+            return
+        if QMessageBox.question(self, "Remove theme", f"Delete the imported theme '{spec.name}'?") != QMessageBox.StandardButton.Yes:
+            return
+        theme_themes.remove_user_theme(spec.id)
+        self._theme_name = theme_themes.BUILTIN[0].id
+        self._rebuild_cards()
+        self._sync_theme_page()
 
     def _general_page(self) -> QWidget:
         page = QWidget()

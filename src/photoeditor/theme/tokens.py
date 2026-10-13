@@ -103,10 +103,16 @@ def classic_theme() -> ThemeConfig:
     return ThemeConfig()
 
 
-def modern_theme(accent: str = ACCENTS[0][1]) -> ThemeConfig:
-    """An opaque Windows 11 dark look: flat layered surfaces, rounded corners, one accent colour, Segoe UI at a comfortable size, smooth sliders."""
-    panel = "#2b2b2b"
-    return ThemeConfig(
+def pick_on(accent: str) -> str:
+    """The text colour (near-black or white) that reads best on a filled accent colour."""
+    return "#06131c" if contrast("#06131c", accent) >= contrast("#ffffff", accent) else "#ffffff"
+
+
+def modern_theme(accent: str = ACCENTS[0][1], **overrides) -> ThemeConfig:
+    """An opaque Windows 11 dark look: flat layered surfaces, rounded corners, one accent colour, Segoe UI at a comfortable size, smooth sliders.
+    `overrides` are ThemeConfig fields to change (another palette, say); what follows from the accent is worked out afterwards unless given."""
+    panel = overrides.get("bg_panel", "#2b2b2b")
+    base = dict(
         name=MODERN, style=MODERN,
         font_family=pick("Segoe UI Variable Text", "Helvetica Neue", "DejaVu Sans"), font_family_fallback=pick("Segoe UI", "Helvetica", "Sans Serif"),
         font_size_small=pick(9, 10, 9), font_size_base=pick(10, 11, 10), font_size_header=pick(10, 12, 10), font_size_title=pick(10, 11, 10),
@@ -118,6 +124,17 @@ def modern_theme(accent: str = ACCENTS[0][1]) -> ThemeConfig:
         status_success="#6ccb5f", status_warning="#fcb040", status_critical="#ff7a70",
         radius_sm=4, radius_md=8, border_width=1, window_border_width=1, title_bar_height=34, title_button_size=26, slider_steps=1000,
     )
+    base.update(overrides)
+    selected = _mix(base["bg_panel"], accent, 0.30)
+    for t in (0.26, 0.22, 0.18, 0.14, 0.10):  # a selected row keeps the text on it easy to read, however light the panel
+        if contrast(base["text_primary"], selected) >= 7:
+            break
+        selected = _mix(base["bg_panel"], accent, t)
+    for key, value in (("accent_primary", accent), ("border_focus", accent), ("accent_hover", _mix(accent, "#ffffff", 0.25)), ("on_accent", pick_on(accent)),
+                       ("bg_selected", selected)):
+        if key not in overrides:
+            base[key] = value
+    return ThemeConfig(**base)
 
 
 def scaled(theme: ThemeConfig, percent: int) -> ThemeConfig:

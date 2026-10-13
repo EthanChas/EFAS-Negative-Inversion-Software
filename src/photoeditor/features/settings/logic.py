@@ -56,8 +56,8 @@ def _clean(data: Any) -> dict[str, Any]:
     for key in ("raw_auto_bright", "auto_advance", "backup_auto", "check_updates", "advanced_mode", "scan_quality", "hover_modules", "module_colours", "workbench_library", "hq_always"):
         if isinstance(data.get(key), bool):
             out[key] = data[key]
-    if data.get("theme") in ("classic", "modern"):
-        out["theme"] = data["theme"]
+    if isinstance(data.get("theme"), str) and 0 < len(data["theme"]) <= 120:
+        out["theme"] = data["theme"]  # a built-in theme's id, or "user:<file>" for one the user imported (a missing one falls back to Default when applied)
     if data.get("theme_accent") in [name for name, _c in ACCENTS]:
         out["theme_accent"] = data["theme_accent"]
     scale = data.get("theme_text_scale")

@@ -59,6 +59,7 @@ from ...features.export import logic as export_logic
 from ...features.proofs import logic as proof_logic
 from ...features.keybinds import logic as key_logic
 from ...features.settings import logic as app_settings
+from ...theme import runtime as theme_runtime
 from ...features.library.index import LibraryIndex
 from ...features.focuspeaking.logic import overlay_from_levels
 from ...features.whitebalance.logic import range_overlay, range_share
@@ -236,7 +237,7 @@ class _HotkeyFilter(QObject):
 
     def eventFilter(self, watched, event) -> bool:
         window = self._window
-        if event.type() == QEvent.Type.KeyRelease:
+        if theme_runtime.BUSY or event.type() == QEvent.Type.KeyRelease:
             return False
         if event.type() != QEvent.Type.KeyPress or not window.isActiveWindow():
             return False

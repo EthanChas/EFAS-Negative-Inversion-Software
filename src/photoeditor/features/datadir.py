@@ -29,6 +29,7 @@ GEAR_DIR = "camera-and-lens-lists"                # gear
 FILM_PROFILES_DIR = "film-profiles"               # film_profiles
 CAMERA_SETUPS_DIR = "camera-setups"               # camera_setups
 AI_DUST_CACHE_DIR = "ai-dust-cache"               # ai_dust_cache
+THEMES_DIR = "themes"                              # (new) the theme files the user imported
 LOG_DIR = "logs"                                  # logs
 RESTORE_PENDING_DIR = "restore-pending"           # restore_pending
 THUMBNAIL_DIR = "thumbnail-cache"                 # (the system's cache folder)

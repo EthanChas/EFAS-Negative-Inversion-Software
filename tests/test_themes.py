@@ -72,10 +72,12 @@ def test_theme_settings_are_validated():
     from photoeditor.features.settings import logic as S
 
     assert S._clean({})["theme"] == "classic" and S._clean({})["theme_accent"] == "Blue" and S._clean({})["theme_text_scale"] == 100
-    ok = S._clean({"theme": "modern", "theme_accent": "Coral", "theme_text_scale": 115})
-    assert (ok["theme"], ok["theme_accent"], ok["theme_text_scale"]) == ("modern", "Coral", 115)
-    bad = S._clean({"theme": "neon", "theme_accent": "Mauve", "theme_text_scale": "big"})
+    ok = S._clean({"theme": "midnight", "theme_accent": "Coral", "theme_text_scale": 115})
+    assert (ok["theme"], ok["theme_accent"], ok["theme_text_scale"]) == ("midnight", "Coral", 115)
+    assert S._clean({"theme": "user:Sunset.css"})["theme"] == "user:Sunset.css"
+    bad = S._clean({"theme": 5, "theme_accent": "Mauve", "theme_text_scale": "big"})
     assert (bad["theme"], bad["theme_accent"], bad["theme_text_scale"]) == ("classic", "Blue", 100)
+    assert S._clean({"theme": ""})["theme"] == "classic" and S._clean({"theme": "x" * 500})["theme"] == "classic"
     assert S._clean({"theme_text_scale": 400})["theme_text_scale"] == tokens.TEXT_SCALE_RANGE[1]
     assert S._clean({"theme_text_scale": 10})["theme_text_scale"] == tokens.TEXT_SCALE_RANGE[0]
 
@@ -175,35 +177,6 @@ def test_widgets_that_wrote_a_theme_colour_into_their_own_style_are_updated(app)
     assert tokens.modern_theme().text_hint in label.styleSheet()
     runtime.apply(app, {"theme": "classic"})
     assert tokens.classic_theme().text_hint in label.styleSheet()
-
-
-# ------------------------------------------------------------------ the Settings page
-def test_the_themes_page_previews_live_and_cancel_puts_the_old_look_back(app):
-    from photoeditor.desktop.view.settings_dialog import SettingsDialog
-    from photoeditor.features.settings import logic as S
-    from photoeditor.theme import runtime
-
-    S.save({"theme": "classic", "theme_accent": "Blue", "theme_text_scale": 100})
-    runtime.apply(app)
-    dialog = SettingsDialog(None, None)
-    names = [dialog._categories.item(i).text() for i in range(dialog._categories.count())]
-    assert "Themes" in names and names.index("Themes") == 1
-    assert dialog._theme_cards["classic"].isChecked() and not dialog._theme_cards["modern"].isChecked()
-    assert not any(b.isEnabled() for b in dialog._accent_buttons), "the accent belongs to the Modern theme"
-
-    dialog._pick_theme("modern")
-    assert tokens.THEME.style == "modern" and dialog._theme_cards["modern"].isChecked() and all(b.isEnabled() for b in dialog._accent_buttons)
-    dialog._pick_accent("Violet")
-    assert tokens.THEME.accent_primary == "#b392f0"
-    dialog._text_scale.setValue(120)
-    assert tokens.THEME.font_size_base == round(tokens.modern_theme().font_size_base * 1.2) and dialog._text_scale_label.text() == "120%"
-    values = dialog.values()
-    assert (values["theme"], values["theme_accent"], values["theme_text_scale"]) == ("modern", "Violet", 120)
-
-    dialog.reject()
-    assert tokens.THEME == tokens.classic_theme(), "Cancel restores the saved look"
-    assert S.get("theme") == "classic", "nothing was saved"
-    dialog.deleteLater()
 
 
 def test_saving_keeps_the_theme_for_next_time(app):

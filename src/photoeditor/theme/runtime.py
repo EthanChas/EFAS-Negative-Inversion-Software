@@ -9,9 +9,11 @@ from PyQt6.QtWidgets import QApplication
 
 from ..features.datadir import app_data_dir
 from ..features.settings import logic as settings
-from . import tokens
+from . import cssfile, themes, tokens
 from .build_qss import load_stylesheet
 from .tokens import ACCENTS, CLASSIC, MODERN, THEME, ThemeConfig
+
+BUSY = False  # True while a theme is being put in force: the program's own event filters stand aside (they would only slow it down)
 
 ICON_DIR_NAME = "theme-icons"
 _ICON_SIZE = 18
@@ -21,10 +23,14 @@ def accent_hex(name: str) -> str:
     return dict(ACCENTS).get(name, ACCENTS[0][1])
 
 
+def spec_for(values: dict) -> themes.ThemeSpec:
+    """The theme the settings name; the Default one when it is gone (a deleted theme file, say)."""
+    return themes.find(str(values.get("theme", CLASSIC))) or themes.BUILTIN[0]
+
+
 def build_theme(values: dict) -> ThemeConfig:
     """The ThemeConfig the saved settings (theme, theme_accent, theme_text_scale) describe."""
-    base = tokens.modern_theme(accent_hex(values.get("theme_accent", ACCENTS[0][0]))) if values.get("theme") == MODERN else tokens.classic_theme()
-    return tokens.scaled(base, int(values.get("theme_text_scale", 100)))
+    return themes.build(spec_for(values), values.get("theme_accent", ACCENTS[0][0]), int(values.get("theme_text_scale", 100)))
 
 
 # ---------------------------------------------------------------- pictures for the Modern theme
@@ -152,30 +158,44 @@ def _remap_widget_styles(app: QApplication, changes: list[tuple[str, str]]) -> N
 
 def apply(app: QApplication | None = None, values: dict | None = None) -> ThemeConfig:
     """Put the theme described by `values` (default: the saved settings) in force and restyle everything that is open. Returns the theme now in force."""
+    global BUSY
     values = settings.load() if values is None else values
-    theme = build_theme(values)
+    spec = spec_for(values)
+    theme = themes.build(spec, values.get("theme_accent", ACCENTS[0][0]), int(values.get("theme_text_scale", 100)))
     if theme.style == MODERN:
         theme = dataclasses.replace(theme, icon_dir=icon_folder(theme))
     before = tokens.use(theme)
     app = app or QApplication.instance()
     if app is None:
         return THEME
-    font = QFont(THEME.font_family, THEME.font_size_base)
-    font.setFamilies([THEME.font_family, THEME.font_family_fallback])
-    app.setFont(font)
-    app.setPalette(_palette(THEME))
-    _remap_widget_styles(app, _colour_changes(before, THEME))
-    app.setStyleSheet(load_stylesheet(THEME))
-    for widget in app.allWidgets():
-        hook = getattr(widget, "apply_theme", None)
-        if hook is not None:
-            hook()
-        widget.updateGeometry()
-        widget.update()
-    for widget in app.topLevelWidgets():  # sizes the new look asks for ripple through the layouts
-        if widget.layout() is not None:
-            widget.layout().invalidate()
-            widget.layout().activate()
+    BUSY = True
+    tops = app.topLevelWidgets()
+    try:
+        for widget in tops:
+            widget.setUpdatesEnabled(False)  # nothing is painted until it is all done
+        font = QFont(THEME.font_family, THEME.font_size_base)
+        font.setFamilies([THEME.font_family, THEME.font_family_fallback])
+        app.setFont(font)
+        app.setPalette(_palette(THEME))
+        _remap_widget_styles(app, _colour_changes(before, THEME))
+        sheet = load_stylesheet(THEME)
+        if spec.extra_qss:
+            sheet += "\n/* the theme file's own rules */\n" + cssfile.substitute_vars(spec.extra_qss, THEME)
+        app.setStyleSheet(sheet)
+        for widget in app.allWidgets():
+            hook = getattr(widget, "apply_theme", None)
+            if hook is not None:
+                hook()
+            widget.updateGeometry()
+        for widget in tops:  # sizes the new look asks for ripple through the layouts
+            if widget.layout() is not None:
+                widget.layout().invalidate()
+                widget.layout().activate()
+    finally:
+        for widget in tops:
+            widget.setUpdatesEnabled(True)
+            widget.update()
+        BUSY = False
     return THEME
 
 

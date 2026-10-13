@@ -2,6 +2,7 @@ from PyQt6.QtCore import QEvent, QObject, Qt
 from PyQt6.QtGui import QColor, QCursor, QMouseEvent, QPainter, QPaintEvent
 from PyQt6.QtWidgets import QVBoxLayout, QWidget
 
+from ...theme import runtime as theme_runtime
 from ...theme.tokens import THEME
 
 _RESIZE_MARGIN = 6
@@ -125,6 +126,6 @@ class CursorSyncFilter(QObject):
         self._frame = frame
 
     def eventFilter(self, watched, event) -> bool:
-        if event.type() == QEvent.Type.MouseMove:
+        if not theme_runtime.BUSY and event.type() == QEvent.Type.MouseMove:
             self._frame.sync_cursor()
         return False

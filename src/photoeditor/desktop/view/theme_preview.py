@@ -3,7 +3,7 @@ from PyQt6.QtCore import QPointF, QRectF, Qt
 from PyQt6.QtGui import QColor, QFont, QLinearGradient, QPainter, QPen
 from PyQt6.QtWidgets import QAbstractButton, QSizePolicy, QWidget
 
-from ...theme import runtime
+from ...theme import themes
 from ...theme.tokens import ThemeConfig
 
 
@@ -136,6 +136,6 @@ class AccentSwatch(QAbstractButton):
         p.end()
 
 
-def card_theme(name: str, values: dict) -> ThemeConfig:
-    """The theme a card for `name` should show, with the user's accent and text size."""
-    return runtime.build_theme({**values, "theme": name})
+def card_theme(spec, values: dict) -> ThemeConfig:
+    """The theme a card for `spec` should show, with the user's accent (where the theme lets them choose) and text size."""
+    return themes.build(spec, values.get("theme_accent", "Blue"), int(values.get("theme_text_scale", 100)))
