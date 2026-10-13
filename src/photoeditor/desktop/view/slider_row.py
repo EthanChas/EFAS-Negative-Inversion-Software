@@ -61,6 +61,7 @@ class SliderRow(QWidget):
         decimals: int = 2,
         step: float = 0.01,
         parent: QWidget | None = None,
+        label_width: int = 80,
     ):
         super().__init__(parent)
         self._min = -value_range if min_value is None else min_value
@@ -73,7 +74,7 @@ class SliderRow(QWidget):
 
         self.label_text = label
         name = QLabel(label)
-        name.setFixedWidth(80)
+        name.setFixedWidth(label_width)
         row.addWidget(name)
 
         self._updating = False

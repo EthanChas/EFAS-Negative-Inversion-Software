@@ -38,6 +38,7 @@ from .collapsible_panel import CollapsiblePanel
 from .contrast_panel import ContrastToolPanel
 from .denoise_panel import ChromaDenoiseToolPanel
 from .local_contrast_panel import LocalContrastToolPanel
+from .print_response_panel import PrintResponseToolPanel
 from ...features.metadata.source_exif import read_exif_from_file
 from .contact_sheet_dialog import ContactSheetDialog
 from .credits_dialog import CreditsDialog
@@ -426,7 +427,7 @@ class AppWindow(QMainWindow):
 
         self._module_menus = ModuleMenus(self.controller, self)
         for key, panel in (
-            ("exposure", self._exposure_tool), ("contrast", self._contrast_tool), ("tonecurve", self._curve_tool),
+            ("exposure", self._exposure_tool), ("contrast", self._contrast_tool), ("printresponse", self._print_response_tool), ("tonecurve", self._curve_tool),
             ("shadows_highlights", self._shadows_highlights_tool), ("color", self._color_tool), ("sharpening", self._sharpening_tool),
             ("localcontrast", self._local_contrast_tool), ("denoise", self._denoise_tool), ("negative", self._negative_tool),
             ("watermark", self._watermark_tool), ("finishing", self._finishing_tool),
@@ -1055,6 +1056,11 @@ class AppWindow(QMainWindow):
         self._contrast_tool.changed.connect(self.controller.set_contrast)
         self._contrast_tool.preview_requested.connect(self.controller.preview_contrast)
         tools_col.addWidget(self._contrast_tool)
+
+        self._print_response_tool = PrintResponseToolPanel()
+        self._print_response_tool.changed.connect(self.controller.set_print_response)
+        self._print_response_tool.preview_requested.connect(self.controller.preview_print_response)
+        tools_col.addWidget(self._print_response_tool)
 
         self._curve_tool = ToneCurveToolPanel()
         self._curve_tool.curve_changed.connect(self.controller.set_tone_curve)
@@ -2426,6 +2432,8 @@ class AppWindow(QMainWindow):
         self._denoise_tool.set_value(state.chroma_denoise)
         self._local_contrast_tool.reset()
         self._local_contrast_tool.set_value(state.local_contrast)
+        self._print_response_tool.reset()
+        self._print_response_tool.set_values(*self.controller._print_values())
         self._watermark_tool.set_values(
             state.wm_film, state.wm_texture, state.wm_size, state.wm_position, state.wm_info, state.wm_camera, state.wm_lens
         )
@@ -2965,6 +2973,7 @@ class AppWindow(QMainWindow):
         self._shadows_highlights_tool.set_values(state.shadows, state.highlights)
         self._denoise_tool.set_value(state.chroma_denoise)
         self._local_contrast_tool.set_value(state.local_contrast)
+        self._print_response_tool.set_values(*self.controller._print_values())
         self._watermark_tool.set_values(
             state.wm_film, state.wm_texture, state.wm_size, state.wm_position, state.wm_info, state.wm_camera, state.wm_lens
         )

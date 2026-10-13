@@ -9,6 +9,7 @@ from ..denoise.logic import CHROMA_DENOISE_MAX
 from ..exposure.logic import EV_RANGE
 from ..finishing.logic import BORDER_COLORS, BORDER_MAX, DEFAULT_BORDER_COLOR, DEFAULT_VIGNETTE_SIZE
 from ..negative.logic import FILM_TYPE_LABELS, FILM_TYPES
+from ..printresponse import logic as print_response
 from ..sharpening.logic import DEFAULT_METHOD, METHOD_LABELS, SharpenMethod
 from ..tonecurve.logic import DEFAULT_POINTS
 from ..watermark.logic import DEFAULT_POSITION, DEFAULT_SIZE, DEFAULT_TEXTURE, FILMS, POSITIONS, SIZES, TEXTURES, WATERMARK_OFF
@@ -45,6 +46,13 @@ MODULES: tuple[ModuleSpec, ...] = (
     )),
     ModuleSpec("exposure", "Exposure", (FieldSpec("exposure_ev", "Exposure", "float", 0.0, -EV_RANGE, EV_RANGE),)),
     ModuleSpec("whitebalance", "White balance", (_trim("temperature", "Temperature"), _trim("tint", "Tint"))),
+    ModuleSpec("printresponse", "Print response", (
+        FieldSpec("print_snap", "Snap", "float", 0.0, -print_response.SNAP_RANGE, print_response.SNAP_RANGE),
+        FieldSpec("print_toe", "Toe", "float", 0.0, -print_response.TOE_RANGE, print_response.TOE_RANGE),
+        FieldSpec("print_toe_width", "Toe width", "float", print_response.WIDTH_DEFAULT, print_response.WIDTH_MIN, print_response.WIDTH_MAX, 0.1),
+        FieldSpec("print_shoulder", "Shoulder", "float", 0.0, -print_response.SHOULDER_RANGE, print_response.SHOULDER_RANGE),
+        FieldSpec("print_shoulder_width", "Shoulder width", "float", print_response.WIDTH_DEFAULT, print_response.WIDTH_MIN, print_response.WIDTH_MAX, 0.1),
+    )),
     ModuleSpec("tonecurve", "Tone curve", (FieldSpec("tone_curve_points", "Curve", "curve", DEFAULT_POINTS),)),
     ModuleSpec("contrast", "Contrast", (_trim("contrast", "Contrast"),)),
     ModuleSpec("localcontrast", "Local contrast", (FieldSpec("local_contrast", "Amount", "float", 0.0, 0.0, 1.0),)),
@@ -79,6 +87,7 @@ LOOK_KEYS = tuple(f.key for m in MODULES for f in m.fields)
 PANEL_MODULES: dict[str, tuple[str, tuple[str, ...]]] = {
     "exposure": ("Exposure", ("exposure",)),
     "contrast": ("Contrast", ("contrast",)),
+    "printresponse": ("Print Response", ("printresponse",)),
     "tonecurve": ("Tone Curve", ("tonecurve",)),
     "shadows_highlights": ("Shadows & Highlights", ("shadows_highlights",)),
     "color": ("Color", ("whitebalance", "color")),

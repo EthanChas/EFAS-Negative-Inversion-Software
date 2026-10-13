@@ -21,6 +21,7 @@ from ..features.color.logic import adjust_saturation, adjust_temperature_tint
 from ..features.contrast.logic import apply_contrast
 from ..features.denoise.logic import apply_chroma_denoise
 from ..features.localcontrast.logic import apply_local_contrast
+from ..features.printresponse.logic import apply_print_response
 from ..features.negative.metering import Metering
 from ..features.lookpresets.modules import off_overrides
 from ..features.aidust import logic as aidust
@@ -114,6 +115,11 @@ class EditParams:
     wm_lens: str
     film_base: tuple | None
     local_contrast: float = 0.0
+    print_snap: float = 0.0
+    print_toe: float = 0.0
+    print_toe_width: float = 2.5
+    print_shoulder: float = 0.0
+    print_shoulder_width: float = 2.5
     vignette: float = 0.0
     vignette_size: float = 0.5
     border: float = 0.0
@@ -184,6 +190,11 @@ class EditParams:
             wm_lens=s.wm_lens or getattr(s, "roll_lens", ""),
             film_base=tuple(getattr(s, "film_base", None) or ()) or None,
             local_contrast=getattr(s, "local_contrast", 0.0),
+            print_snap=float(getattr(s, "print_snap", 0.0)),
+            print_toe=float(getattr(s, "print_toe", 0.0)),
+            print_toe_width=float(getattr(s, "print_toe_width", 2.5)),
+            print_shoulder=float(getattr(s, "print_shoulder", 0.0)),
+            print_shoulder_width=float(getattr(s, "print_shoulder_width", 2.5)),
             vignette=float(getattr(s, "vignette", 0.0)),
             vignette_size=float(getattr(s, "vignette_size", 0.5)),
             border=float(getattr(s, "border", 0.0)),
@@ -500,6 +511,7 @@ class Renderer:
             ramp = adjust_temperature_tint(ramp, params.temperature, params.tint)
             ramp = apply_exposure(ramp, params.exposure_ev)
             ramp = apply_contrast(ramp, params.contrast)
+            ramp = apply_print_response(ramp, params.print_snap, params.print_toe, params.print_toe_width, params.print_shoulder, params.print_shoulder_width)
             curve = list(params.tone_curve_points)
             if mixing:
                 if wide:

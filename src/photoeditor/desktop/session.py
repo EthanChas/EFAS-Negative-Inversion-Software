@@ -57,6 +57,11 @@ class HistoryEntry:
     wm_camera: str
     wm_lens: str
     local_contrast: float = 0.0
+    print_snap: float = 0.0
+    print_toe: float = 0.0
+    print_toe_width: float = 2.5
+    print_shoulder: float = 0.0
+    print_shoulder_width: float = 2.5
     keystone_v: float = 0.0
     keystone_h: float = 0.0
     metering: Metering = field(default_factory=Metering)
@@ -151,6 +156,11 @@ class AppState:
     contrast: float = 0.0
     chroma_denoise: float = 0.0
     local_contrast: float = 0.0
+    print_snap: float = 0.0
+    print_toe: float = 0.0
+    print_toe_width: float = 2.5
+    print_shoulder: float = 0.0
+    print_shoulder_width: float = 2.5
     vignette: float = 0.0
     vignette_size: float = 0.5
     border: float = 0.0

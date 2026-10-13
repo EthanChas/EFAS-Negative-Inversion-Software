@@ -124,6 +124,11 @@ def apply_edits_to_document(root: ET.Element, state: dict, frame_size: tuple[int
     pe("KeystoneH", _fmt(state.get("keystone_h", 0.0)))
     pe("ChromaDenoise", _fmt(state["chroma_denoise"]))
     pe("LocalContrast", _fmt(state.get("local_contrast", 0.0)))
+    pe("PrintSnap", _fmt(state.get("print_snap", 0.0)))
+    pe("PrintToe", _fmt(state.get("print_toe", 0.0)))
+    pe("PrintToeWidth", _fmt(state.get("print_toe_width", 2.5)))
+    pe("PrintShoulder", _fmt(state.get("print_shoulder", 0.0)))
+    pe("PrintShoulderWidth", _fmt(state.get("print_shoulder_width", 2.5)))
     pe("Metering", json.dumps(state.get("metering", {})))
     pe("WmFilm", state["wm_film"])
     pe("WmTexture", state["wm_texture"])
@@ -245,6 +250,11 @@ def read_sidecar(image_path: str) -> dict | None:
             "keystone_h": float(get("KeystoneH") or 0.0),
             "chroma_denoise": float(get("ChromaDenoise") or 0.0),
             "local_contrast": float(get("LocalContrast") or 0.0),
+            "print_snap": float(get("PrintSnap") or 0.0),
+            "print_toe": float(get("PrintToe") or 0.0),
+            "print_toe_width": float(get("PrintToeWidth") or 2.5),
+            "print_shoulder": float(get("PrintShoulder") or 0.0),
+            "print_shoulder_width": float(get("PrintShoulderWidth") or 2.5),
             "metering": json.loads(get("Metering") or "{}"),
             "wm_film": get("WmFilm") or "off",
             "wm_texture": get("WmTexture") or "plastic",
