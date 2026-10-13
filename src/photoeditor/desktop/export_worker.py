@@ -13,7 +13,7 @@ from PyQt6.QtCore import QThread, pyqtSignal
 
 from ..features.aidust import logic as aidust
 from ..features.export.logic import ExportOptions, deep_requested, read_exif_bytes, resolve_output_path, save_image, target_size, unique_path
-from ..features.flatfield.logic import gain_token
+from ..features.flatfield.logic import apply_flatfield, gain_token
 from ..features.metadata import store as metadata_store
 from ..features.metadata.export import embed_into_file
 from ..features.metadata.models import MetadataConfig
@@ -160,7 +160,7 @@ def render_alternate(path: str, conn, kind: str, state: dict | None = None):
     if full.dtype == np.uint8 and not positive:
         notes.append("The source is an 8-bit file, so this output has 8-bit precision.")
     if flatfield is not None and not positive:
-        notes.append("Flat-field correction was not applied to this output.")
+        full = apply_flatfield(full, flatfield[1])  # at the scan's own depth, so a 16-bit scan stays 16-bit
     flat = alt_export.flat16(full, params, preview.shape[1], already_positive=positive)
     if kind == "linear":
         notes.append("Linear light assumes the conversion's output is sRGB-encoded." + (" The values are the reconstructed relative exposure." if positive else ""))

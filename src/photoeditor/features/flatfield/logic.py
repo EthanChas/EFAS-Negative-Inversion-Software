@@ -22,7 +22,8 @@ def _cv():
 
 
 def _to_linear(pixels: np.ndarray) -> np.ndarray:
-    return np.power(pixels.astype(np.float32) * np.float32(1.0 / 255.0), np.float32(_GAMMA))
+    top = 65535.0 if pixels.dtype == np.uint16 else 255.0
+    return np.power(pixels.astype(np.float32) * np.float32(1.0 / top), np.float32(_GAMMA))
 
 
 def _shrink(frame: np.ndarray) -> np.ndarray:
@@ -70,7 +71,8 @@ def gain_token(gain: np.ndarray) -> str:
 
 
 def apply_flatfield(pixels: np.ndarray, gain: np.ndarray) -> np.ndarray:
-    """Multiply the scan (uint8 sRGB) by the gain map in linear light and return uint8 again."""
+    """Multiply the scan (uint8 or uint16 sRGB) by the gain map in linear light and return the same depth again - a 16-bit scan stays 16-bit, so a
+    negative's narrow range is not squeezed into 256 levels before it is stretched."""
     cv2 = _cv()
     h, w = pixels.shape[:2]
     if gain.shape[:2] != (h, w):
@@ -79,5 +81,8 @@ def apply_flatfield(pixels: np.ndarray, gain: np.ndarray) -> np.ndarray:
     lin *= gain
     np.clip(lin, 0.0, 1.0, out=lin)
     out = np.power(lin, np.float32(1.0 / _GAMMA))
+    if pixels.dtype == np.uint16:
+        out *= np.float32(65535.0)
+        return (out + np.float32(0.5)).astype(np.uint16)
     out *= np.float32(255.0)
     return (out + np.float32(0.5)).astype(np.uint8)

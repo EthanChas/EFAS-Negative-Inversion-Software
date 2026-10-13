@@ -441,13 +441,12 @@ class Renderer:
         with self.lock:
             scale = source.shape[1] / base_width
             source16 = None
-            if source.dtype == np.uint16:
-                if flatfield is None:
-                    source16 = source
-                source = self._as_uint8(source, token)
-            if flatfield is not None:
+            if flatfield is not None:  # evened out at the picture's own depth: a 16-bit scan keeps all its levels
                 source = self._flatfielded(source, token, flatfield)
                 token = (token, flatfield[0])
+            if source.dtype == np.uint16:
+                source16 = source
+                source = self._as_uint8(source, token)
             retouched = self._retouched(source, params, token, overlay)
             pixels = retouched.pixels
             pixels16 = self._retouched16(source16, source, retouched, token) if source16 is not None else None

@@ -120,3 +120,36 @@ def test_old_thumbnail_caches_are_merged_into_the_data_folder(tmp_path):
     assert (new / "a_edited.jpg").read_bytes() == b"cropped"
     assert not old1.exists() and not old2.exists(), "the emptied old cache folders are removed"
     assert (tmp_path / "python").exists(), "the shared python folder itself is left alone"
+
+
+def _narrow_negative16(h=200, w=600):
+    x = np.linspace(0, 1, w, dtype=np.float32)[None, :, None] * np.ones((h, 1, 3), np.float32)
+    return (24000 + 20000 * x).astype(np.uint16)  # a scan using only a third of the 16-bit range, smooth
+
+
+def test_flat_field_keeps_a_16_bit_scan_16_bit():
+    from photoeditor.features.flatfield.logic import apply_flatfield
+
+    scan = _narrow_negative16()
+    out = apply_flatfield(scan, np.ones((10, 10, 3), np.float32))
+    assert out.dtype == np.uint16 and np.abs(out.astype(int) - scan.astype(int)).max() <= 1
+    assert apply_flatfield(scan.astype(np.uint8), np.ones((4, 4, 3), np.float32)).dtype == np.uint8
+
+
+def test_rendering_with_a_flat_field_keeps_every_level_of_a_narrow_range_negative():
+    """The flat field used to drop the render to 8 bits first: the stretched negative then had ~40 levels instead of 256 (visible banding)."""
+    from photoeditor.desktop.render import EditParams, Renderer
+    from photoeditor.features.flatfield.logic import gain_token
+
+    scan = _narrow_negative16()
+    from photoeditor.desktop.session import AppState
+
+    state = AppState()
+    state.negative_inverted = True
+    params = EditParams.from_state(state)
+    plain = Renderer().render(scan, params, "a", scan.shape[1], want_stats=False)[0]
+    gain = np.ones((10, 10, 3), np.float32)
+    flat = Renderer().render(scan, params, "a", scan.shape[1], want_stats=False, flatfield=(gain_token(gain), gain))[0]
+    levels = lambda im: len(np.unique(im[..., 0]))
+    assert levels(plain) > 200 and levels(flat) > 200, (levels(plain), levels(flat))
+    assert np.abs(flat.astype(int) - plain.astype(int)).max() <= 1
