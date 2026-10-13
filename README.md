@@ -362,7 +362,6 @@ The interface and module layout are based on and inspired by darktable. The edit
 | CineStill CS Negative+ Convert Tools | The idea of a fast, accurate film-scan conversion workflow | [cinestillfilm.com](https://cinestillfilm.com), [PetaPixel write-up](https://petapixel.com/2025/07/01/cinestills-new-film-scan-conversion-software-is-fast-accurate-and-free) |
 | NegPy | Negative inversion and metering approach, dust and scratch repair, local contrast (CLAHE), clone tool, the Snap / Toe / Shoulder response. Parts of this app are adapted from its code (GPL-3.0) | [github.com/marcinz606/NegPy](https://github.com/marcinz606/NegPy) |
 | DarkSlide | Ideas for roll-wide same-size crops, previewing a profile on hover and scanning-light settings | [github.com/kilianvivien/DarkSlide](https://github.com/kilianvivien/DarkSlide) |
-| Negative Lab Pro | The scanner-look and film-look presets in the published list that the built-in presets were converted from (EFAS's own approximations; none of its files or colour tables are included) | [negativelabpro.com](https://www.negativelabpro.com) |
 | FilmDefectNet | The small ONNX model behind AI dust detection | FilmDefectNet project |
 
 Also built on [PyQt6](https://pypi.org/project/PyQt6/), [Pillow](https://python-pillow.org), [rawpy](https://github.com/letmaik/rawpy), [NumPy](https://numpy.org), [OpenCV](https://opencv.org), [ONNX Runtime](https://onnxruntime.ai) and [Lupa](https://github.com/scoder/lupa) (Lua).
