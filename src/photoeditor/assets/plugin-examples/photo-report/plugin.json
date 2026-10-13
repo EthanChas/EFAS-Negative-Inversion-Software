@@ -1,0 +1,9 @@
+{
+  "id": "efas.example.photo-report",
+  "name": "Photo Report (Python)",
+  "version": "1.0",
+  "author": "EFAS",
+  "description": "A menu item that reports the open photo's size and how bright it is, and can save the report to a text file. Shows photo(), statistics(), save dialogs and write_text.",
+  "entry": "main.py",
+  "api": 1
+}

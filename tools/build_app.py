@@ -17,7 +17,7 @@ EXCLUDE = ("torch", "transformers", "tensorflow", "scipy", "numba", "matplotlib"
 
 def command() -> list[str]:
     cmd = [sys.executable, "-m", "PyInstaller", "--noconfirm", "--windowed", "--name", NAME, "--paths", "src",
-           "--add-data", f"src/photoeditor/assets{os.pathsep}photoeditor/assets", "--hidden-import", "onnxruntime"]
+           "--add-data", f"src/photoeditor/assets{os.pathsep}photoeditor/assets", "--hidden-import", "onnxruntime", "--hidden-import", "lupa.lua54", "--collect-all", "lupa"]
     cmd.append("--onedir" if sys.platform == "darwin" else "--onefile")
     for module in EXCLUDE:
         cmd += ["--exclude-module", module]

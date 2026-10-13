@@ -1,6 +1,7 @@
 import atexit
 import dataclasses
 import os
+import time
 import weakref
 
 import numpy as np
@@ -76,7 +77,7 @@ from .flatfield_panel import FlatFieldPanel
 from .histogram_panel import HistogramPanel
 from .history_panel import HistoryPanel
 from .app_icon import APP_NAME, app_icon
-from .icons import correction_icon, eyedropper_cursor, metadata_icon, negative_icon, sun_icon, watermark_icon
+from .icons import correction_icon, eyedropper_cursor, metadata_icon, negative_icon, plugin_icon, sun_icon, watermark_icon
 from .image_view import ImageView
 from .import_window import ImportWindow
 from .library_panel import LibraryPanel
@@ -121,6 +122,9 @@ from .title_bar import TitleBar
 from .tone_curve_panel import ToneCurveToolPanel
 from .film_reference_dialog import FilmReferenceDialog
 from .tool_rail import SlideOutPanel, ToolRail
+from .plugin_host import WindowPluginHost
+from .plugin_log_window import PluginLogWindow
+from ...plugins.manager import PluginManager
 from .window_frame import CursorSyncFilter, WindowFrame
 
 _SIDEBAR_WIDTH = 300
@@ -352,6 +356,11 @@ class AppWindow(QMainWindow):
         self._measure_timer.timeout.connect(self._run_measurement)
         self._session = session_store.load()
         self._open_tab = ""
+        self._plugin_manager: PluginManager | None = None
+        self._plugin_host: WindowPluginHost | None = None
+        self._plugin_log: PluginLogWindow | None = None
+        self._plugins_panel = None
+        self._plugin_edit_quiet_until = 0.0
         self._filmstrip_folder = ""
         self.setAcceptDrops(True)
 
@@ -453,6 +462,88 @@ class AppWindow(QMainWindow):
         self._debug_controller = DebugController(self)
         QApplication.instance().installEventFilter(self._debug_controller)
         self._debug_action.toggled.connect(self._debug_controller.set_enabled)
+        self._start_plugins()
+
+    # ------------------------------------------------------------ plugins
+    def _start_plugins(self) -> None:
+        """Create the plugin manager over this window and load the plugins that are switched on (each of them starts switched off)."""
+        self._plugin_host = WindowPluginHost(self, self._plugins_menu, self._plugin_menu_anchor, self._tab_columns, self._plugin_tab_changed)
+        self._plugin_manager = PluginManager(self._plugin_host, __version__, parent=self)
+        self._plugin_manager.record_added.connect(self._on_plugin_record)
+        self._plugin_edit_timer = QTimer(self)
+        self._plugin_edit_timer.setSingleShot(True)
+        self._plugin_edit_timer.setInterval(150)
+        self._plugin_edit_timer.timeout.connect(lambda: self._plugin_emit("edit_changed", {"path": self.controller.state.image_path or ""}))
+        self.controller.file_changed.connect(self._on_plugin_photo_opened)
+        self.controller.image_adjusted.connect(self._on_plugin_edit_changed)
+        self._plugin_manager.load_enabled()
+        QTimer.singleShot(0, lambda: self._plugin_emit("app_started", {}))
+
+    def _plugin_emit(self, event: str, payload: dict) -> None:
+        if self._plugin_manager is not None:
+            self._plugin_manager.emit(event, payload)
+
+    def _on_plugin_photo_opened(self) -> None:
+        path = self.controller.state.image_path
+        if path:
+            self._plugin_emit("photo_opened", {"path": path, "name": os.path.basename(path), "folder": os.path.dirname(path)})
+
+    def _on_plugin_edit_changed(self) -> None:
+        """The edit moved (sliders, undo, presets): tell the plugins once it has settled. Edits a plugin made itself are not announced, so it cannot trigger itself."""
+        if time.monotonic() < self._plugin_edit_quiet_until or self._plugin_manager is None:
+            return
+        self._plugin_edit_timer.start()
+
+    def plugin_edit_made(self) -> None:
+        """Called by the plugin host after a plugin changed the edit: the changes that follow (they arrive a moment later) are not announced."""
+        self._plugin_edit_quiet_until = time.monotonic() + 0.8
+        self._plugin_edit_timer.stop()
+
+    def _plugin_tab_changed(self, tab: str, count: int) -> None:
+        """A tool tab gained or lost a plugin module. The Plugins tab only shows while it has one."""
+        if tab != "plugins":
+            return
+        self._tool_rail.set_tab_visible("plugins", count > 0)
+        if count == 0 and self._plugins_panel is not None and self._plugins_panel._is_open:
+            self._tool_rail.set_tab_checked("plugins", False)
+            self._on_tool_tab_toggled("plugins", False)
+
+    def _apply_plugin_choices(self, choices: dict) -> None:
+        manager = self._plugin_manager
+        if manager is None:
+            return
+        for plugin_id, wanted in choices.items():
+            entry = manager.entry(plugin_id)
+            if entry is not None and entry.enabled != wanted:
+                manager.set_enabled(plugin_id, wanted)
+
+    def set_plugin_output_visible(self, visible: bool) -> None:
+        """View > Plugin Output: show or hide the window with the plugins' output."""
+        if self._plugin_manager is None:
+            return
+        if visible:
+            if self._plugin_log is None:
+                self._plugin_log = PluginLogWindow(self._plugin_manager.logbook, self)
+                self._plugin_log.closed.connect(lambda: self._plugin_output_action.setChecked(False))
+            self._plugin_log.show()
+            self._plugin_log.raise_()
+            self._plugin_log.activateWindow()
+        elif self._plugin_log is not None:
+            self._plugin_log.hide()
+        if self._plugin_output_action.isChecked() != visible:
+            self._plugin_output_action.setChecked(visible)
+
+    def _on_plugin_record(self, record) -> None:
+        if self._plugin_log is not None:
+            self._plugin_log.add_record(record)
+
+    def _shutdown_plugins(self) -> None:
+        if self._plugin_manager is not None:
+            self._plugin_emit("app_closing", {})
+            self._plugin_manager.shutdown()
+        if self._plugin_log is not None:
+            self._plugin_log.close()
+
 
     def _build_menu(self) -> QMenuBar:
         menubar = QMenuBar()
@@ -606,6 +697,20 @@ class AppWindow(QMainWindow):
         self._film_reference_action.triggered.connect(lambda _c=False: self.show_film_reference())
         extra_menu.addAction(self._film_reference_action)
 
+        self._plugins_menu = menubar.addMenu("Plugins")
+        self._plugin_menu_anchor = self._plugins_menu.addSeparator()
+        manage_plugins = QAction("Manage Plugins...", self)
+        manage_plugins.setToolTip("Switch plugins on or off, open the plugins folder, install the examples")
+        manage_plugins.triggered.connect(lambda _c=False: self.show_settings("Plugins"))
+        self._plugins_menu.addAction(manage_plugins)
+        reload_plugins = QAction("Reload Plugins", self)
+        reload_plugins.setToolTip("Unload and load the switched-on plugins again, after editing one")
+        reload_plugins.triggered.connect(lambda _c=False: self._plugin_manager and self._plugin_manager.reload_all())
+        self._plugins_menu.addAction(reload_plugins)
+        open_plugins = QAction("Open Plugins Folder", self)
+        open_plugins.triggered.connect(lambda _c=False: self._plugin_manager and QDesktopServices.openUrl(QUrl.fromLocalFile(self._plugin_manager.folder())))
+        self._plugins_menu.addAction(open_plugins)
+
         info_menu = menubar.addMenu("Info")
         shortcuts_action = self._shortcuts_action = QAction("Keyboard Shortcuts", self)
         shortcuts_action.triggered.connect(self.show_shortcuts)
@@ -639,6 +744,12 @@ class AppWindow(QMainWindow):
         self._editor_action = QAction("Editor   (D)", self)
         self._editor_action.triggered.connect(lambda: self.set_view("editor"))
         view_menu_anchor.addAction(self._editor_action)
+        view_menu_anchor.addSeparator()
+        self._plugin_output_action = QAction("Plugin Output", self)
+        self._plugin_output_action.setCheckable(True)
+        self._plugin_output_action.setToolTip("A window with everything the plugins print and log, and the errors found in them")
+        self._plugin_output_action.toggled.connect(self.set_plugin_output_visible)
+        view_menu_anchor.addAction(self._plugin_output_action)
 
         corner = QWidget()
         corner_row = QHBoxLayout(corner)
@@ -908,6 +1019,8 @@ class AppWindow(QMainWindow):
         self._tool_rail.add_tab("negative", negative_icon(18), "Negative")
         self._tool_rail.add_tab("watermark", watermark_icon(18), "Watermark")
         self._tool_rail.add_tab("metadata", metadata_icon(18), "Roll Card")
+        self._tool_rail.add_tab("plugins", plugin_icon(18), "Plugins")
+        self._tool_rail.set_tab_visible("plugins", False)
         self._tool_rail.tab_toggled.connect(self._on_tool_tab_toggled)
         tool_row.addWidget(self._tool_rail, 0, Qt.AlignmentFlag.AlignTop)
 
@@ -1173,6 +1286,23 @@ class AppWindow(QMainWindow):
         self._metadata_panel = SlideOutPanel(metadata_scroll)
         tool_row.addWidget(self._metadata_panel, 0)
 
+        plugins_content = QWidget()
+        plugins_col = QVBoxLayout(plugins_content)
+        plugins_col.setContentsMargins(0, 0, 0, 0)
+        plugins_col.setSpacing(THEME.space_sm)
+        plugins_col.addStretch(1)
+        plugins_scroll = _ToolListScroll()
+        plugins_scroll.setWidgetResizable(True)
+        plugins_scroll.setFrameShape(QScrollArea.Shape.NoFrame)
+        plugins_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        plugins_scroll.setMinimumHeight(_TOOL_LIST_MIN_HEIGHT)
+        plugins_scroll.setMinimumWidth(_TOOL_LIST_MIN_WIDTH)
+        plugins_scroll.setWidget(plugins_content)
+        self._plugins_panel = SlideOutPanel(plugins_scroll)
+        tool_row.addWidget(self._plugins_panel, 0)
+        self._tab_columns = {"plugins": plugins_col, "exposure": tools_col, "correction": correction_col, "negative": negative_tools_col,
+                             "watermark": watermark_col, "metadata": metadata_col}
+
         tool_row.addStretch(1)
 
         sidebar.addWidget(tool_row_host, 1)
@@ -1321,6 +1451,7 @@ class AppWindow(QMainWindow):
             self._image_view.setFocus()
         for key, btn in self._view_buttons.items():
             btn.setChecked((key == "lighttable") == want_lighttable)
+        self._plugin_emit("view_changed", {"view": "workbench" if want_lighttable else "editor"})
 
     def _photo_action_for_open(self, action) -> None:
         path = self.controller.state.image_path
@@ -1897,13 +2028,17 @@ class AppWindow(QMainWindow):
                              else old + f"{widget.metaObject().className()} {{ border: 2px solid {THEME.accent_primary}; }}")
         QTimer.singleShot(1300, lambda: widget.setStyleSheet(old))
 
-    def show_settings(self) -> None:
-        dialog = SettingsDialog(self, self.controller)
+    def show_settings(self, page: str = "") -> None:
+        dialog = SettingsDialog(self, self.controller, plugins=self._plugin_manager, start_page=page if isinstance(page, str) else "")
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return
+        old_theme = app_settings.get("theme")
         changed = dialog.decoding_changed()
         app_settings.save(dialog.values())
         module_style.STYLE.apply(app_settings.load())
+        self._apply_plugin_choices(dialog.plugin_choices())
+        if app_settings.get("theme") != old_theme:
+            self._plugin_emit("theme_changed", {"theme": app_settings.get("theme")})
         self._lighttable.set_library_visible(app_settings.get("workbench_library"))
         self.apply_keybinds()
         path = self.controller.state.image_path
@@ -3223,6 +3358,7 @@ class AppWindow(QMainWindow):
             "correction": self._correction_panel,
             "watermark": self._watermark_panel,
             "metadata": self._metadata_panel,
+            "plugins": self._plugins_panel,
         }
         if tab_id not in panels:
             return
@@ -3505,6 +3641,7 @@ class AppWindow(QMainWindow):
             self._coord_label.setText("Quick export: " + (f"saved {os.path.basename(done[0])}" if done else ". ".join(parts)))
 
     def closeEvent(self, event) -> None:
+        self._shutdown_plugins()
         self._measure_timer.stop()
         self.controller.wait_linear_workers()
         if self._update_worker is not None:

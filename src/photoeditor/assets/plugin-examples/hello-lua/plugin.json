@@ -1,0 +1,9 @@
+{
+  "id": "efas.example.hello-lua",
+  "name": "Hello (Lua)",
+  "version": "1.0",
+  "author": "EFAS",
+  "description": "The smallest useful Lua plugin: a menu item, a button that counts clicks (remembered between runs) and a line in the Plugin Output window.",
+  "entry": "main.lua",
+  "api": 1
+}

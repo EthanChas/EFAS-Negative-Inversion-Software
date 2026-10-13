@@ -1,0 +1,9 @@
+{
+  "id": "efas.example.hello-python",
+  "name": "Hello (Python)",
+  "version": "1.0",
+  "author": "EFAS",
+  "description": "The smallest useful Python plugin: a menu item with a shortcut, a slider and a check box in the Plugins tab, and output in the Plugin Output window.",
+  "entry": "main.py",
+  "api": 1
+}

@@ -14,6 +14,7 @@ dependencies = [
     "onnxruntime>=1.17",
     "piexif>=1.1",
     "tifffile>=2023.1",
+    "lupa>=2.0",
     "send2trash>=1.8; sys_platform != 'win32'",
 ]
 

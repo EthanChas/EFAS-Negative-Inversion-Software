@@ -6,7 +6,7 @@ from PyQt6.QtCore import QUrl, Qt
 from PyQt6.QtGui import QDesktopServices, QKeySequence
 from PyQt6.QtWidgets import (
     QApplication, QButtonGroup, QCheckBox, QComboBox, QGridLayout, QSlider, QDialog, QFileDialog, QFormLayout, QFrame, QHBoxLayout, QKeySequenceEdit, QLabel, QListWidget, QMessageBox, QPushButton,
-    QScrollArea, QSpinBox, QStackedWidget, QVBoxLayout, QWidget,
+    QInputDialog, QScrollArea, QSpinBox, QStackedWidget, QVBoxLayout, QWidget,
 )
 
 from ...features.aidust import logic as aidust
@@ -15,6 +15,7 @@ from ...features.keybinds import logic as binds
 from ...features.persistence import export as data_export
 from ...features.persistence.backup import backup_database, list_backups
 from ...features.settings import logic as settings
+from ...plugins import templates as plugin_templates
 from ...theme import cssfile as theme_cssfile
 from ...theme import runtime as theme_runtime
 from ...theme import themes as theme_themes
@@ -58,12 +59,15 @@ def _seq_text(edit: QKeySequenceEdit) -> str:
 class SettingsDialog(QDialog):
     """Settings > Preferences: the app's own options, in categories on the left."""
 
-    def __init__(self, parent: QWidget | None = None, controller=None):
+    def __init__(self, parent: QWidget | None = None, controller=None, plugins=None, start_page: str = ""):
         super().__init__(parent)
         self.setWindowTitle("Settings")
         self.setMinimumSize(760, 640)
         self.resize(920, 800)
         self._controller = controller
+        self._plugins = plugins  # the PluginManager (None in tests that have no window)
+        self._plugin_checks: dict[str, QCheckBox] = {}
+        self._plugin_pending: dict[str, bool] = {}
         self._initial = settings.load()
         self._backup_dir = self._initial["backup_dir"]
 
@@ -76,12 +80,13 @@ class SettingsDialog(QDialog):
         self._pages = QStackedWidget()
         for title, page in (
             ("General", self._general_page()), ("Themes", self._themes_page()), ("Image decoding", self._decoding_page()), ("Keybinds", self._keybinds_page()),
-            ("Data & backup", self._data_page()), ("Storage", self._storage_page()),
+            ("Data & backup", self._data_page()), ("Storage", self._storage_page()), ("Plugins", self._plugins_page()),
         ):
             self._categories.addItem(title)
             self._pages.addWidget(page)
         self._categories.currentRowChanged.connect(self._pages.setCurrentIndex)
-        self._categories.setCurrentRow(0)
+        titles = [self._categories.item(i).text() for i in range(self._categories.count())]
+        self._categories.setCurrentRow(titles.index(start_page) if start_page in titles else 0)
         body.addWidget(self._categories)
         body.addWidget(self._pages, 1)
         outer.addLayout(body, 1)
@@ -704,6 +709,117 @@ class SettingsDialog(QDialog):
     def _clear(self, key: str, path: str) -> None:
         shutil.rmtree(path, ignore_errors=True)
         self._refresh_size(key, path)
+
+    # ------------------------------------------------------------ plugins
+    def _plugins_page(self) -> QWidget:
+        page = QWidget()
+        col = QVBoxLayout(page)
+        col.setSpacing(THEME.space_md)
+        col.addWidget(_hint("Plugins add menu items, modules and tools to the editor. They are small programs written in Python or Lua and live in the plugins folder. "
+                            "Every plugin starts switched off. A plugin can read and change the photo you have open (its edit, its tags) and what it measures, so switch on "
+                            "only plugins from someone you trust. Python plugins run with the same access as EFAS itself; Lua plugins are kept in a box with no access to your files."))
+        self._plugin_rows = QVBoxLayout()
+        self._plugin_rows.setSpacing(THEME.space_sm)
+        holder = QWidget()
+        holder.setLayout(self._plugin_rows)
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setWidget(holder)
+        col.addWidget(scroll, 1)
+        buttons = QHBoxLayout()
+        for text, tip, handler in (
+            ("Open plugins folder", "Where plugins live: one folder each, with a plugin.json and a main.py or main.lua", self._open_plugins_folder),
+            ("Look for plugins again", "Pick up plugin folders added or removed since this window opened", self._rescan_plugins),
+            ("Install examples", "Copy the example plugins into the plugins folder (they start switched off)", self._install_plugin_examples),
+            ("New plugin...", "Make a new plugin folder with a short working program to start from", self._new_plugin),
+        ):
+            button = QPushButton(text)
+            button.setToolTip(tip)
+            button.clicked.connect(lambda _checked=False, fn=handler: fn())
+            buttons.addWidget(button)
+        buttons.addStretch(1)
+        col.addLayout(buttons)
+        self._build_plugin_rows()
+        return page
+
+    def _build_plugin_rows(self) -> None:
+        while self._plugin_rows.count():
+            item = self._plugin_rows.takeAt(0)
+            if item.widget() is not None:
+                item.widget().deleteLater()
+        self._plugin_checks.clear()
+        entries = self._plugins.entries() if self._plugins is not None else []
+        if not entries:
+            where = self._plugins.folder() if self._plugins is not None else ""
+            self._plugin_rows.addWidget(_hint(f"No plugins yet. Put a plugin's folder in {where}, or press Install examples to try some. "
+                                              "The documentation (docs/plugins on GitHub) shows how to write one."))
+        for entry in entries:
+            manifest = entry.found.manifest
+            row = QVBoxLayout()
+            row.setSpacing(2)
+            if manifest is None:
+                title = QLabel(f"{entry.name}  -  not a usable plugin")
+                title.setToolTip(entry.found.folder)
+                row.addWidget(title)
+                row.addWidget(_hint(entry.error))
+            else:
+                language = "Python" if manifest.language == "python" else "Lua"
+                box = QCheckBox(f"{manifest.name}   {manifest.version}   ({language})" + (f"   by {manifest.author}" if manifest.author else ""))
+                box.setChecked(self._plugin_pending.get(manifest.id, entry.enabled))
+                box.setToolTip(f"{manifest.id}\n{entry.found.folder}")
+                box.toggled.connect(lambda checked, pid=manifest.id: self._plugin_pending.__setitem__(pid, checked))
+                self._plugin_checks[manifest.id] = box
+                row.addWidget(box)
+                if manifest.description:
+                    row.addWidget(_hint(manifest.description))
+                if entry.state == "error":
+                    problem = _hint(f"It could not be loaded: {entry.error} (see View > Plugin Output)")
+                    problem.setStyleSheet("color: #e5484d;")
+                    row.addWidget(problem)
+            frame = QFrame()
+            frame.setFrameShape(QFrame.Shape.StyledPanel)
+            frame.setLayout(row)
+            self._plugin_rows.addWidget(frame)
+        self._plugin_rows.addStretch(1)
+
+    def plugin_choices(self) -> dict[str, bool]:
+        """Which plugins are ticked now (only those the list shows)."""
+        return {pid: box.isChecked() for pid, box in self._plugin_checks.items()}
+
+    def _open_plugins_folder(self) -> None:
+        if self._plugins is not None:
+            self._open(self._plugins.folder())
+
+    def _rescan_plugins(self) -> None:
+        if self._plugins is not None:
+            self._plugins.refresh()
+            self._build_plugin_rows()
+
+    def _install_plugin_examples(self) -> None:
+        if self._plugins is None:
+            return
+        added = plugin_templates.install_examples(self._plugins.folder())
+        self._rescan_plugins()
+        QMessageBox.information(self, "Plugins", (f"Added {len(added)} example plugin{'s' if len(added) != 1 else ''}. Tick the ones you want and press Save."
+                                                  if added else "The example plugins are already in the plugins folder."))
+
+    def _new_plugin(self) -> None:
+        if self._plugins is None:
+            return
+        name, ok = QInputDialog.getText(self, "New plugin", "Name of the plugin:")
+        if not ok or not name.strip():
+            return
+        language, ok = QInputDialog.getItem(self, "New plugin", "Language:", ["Python", "Lua"], 0, False)
+        if not ok:
+            return
+        try:
+            folder = plugin_templates.create_template(self._plugins.folder(), name, language.lower())
+        except ValueError as exc:
+            QMessageBox.warning(self, "New plugin", str(exc))
+            return
+        self._rescan_plugins()
+        self._open(folder)
 
     def values(self) -> dict:
         return {

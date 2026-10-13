@@ -1,0 +1,9 @@
+{
+  "id": "efas.example.tag-by-exposure",
+  "name": "Tag by Exposure (Lua)",
+  "version": "1.0",
+  "author": "EFAS",
+  "description": "A menu item that tags the open photo Exposure/Dark, Exposure/Normal or Exposure/Bright (and Exposure/Blown highlights) from how it measures. Shows statistics() and add_tags().",
+  "entry": "main.lua",
+  "api": 1
+}

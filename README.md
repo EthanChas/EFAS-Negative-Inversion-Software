@@ -33,7 +33,16 @@ Built in **Python** with **PyQt6**. Created by Ethan.
 - **Updates**: Info > Version, with a startup notice when a new version is out (see Updates below)
 - **Themes**: Default, Modern, Midnight, Graphite, Darkroom and High contrast, with accent colours and text size, plus your own themes as CSS files (Settings > Themes; see [docs/themes.md](docs/themes.md))
 - **Film Colour Reference** (Extra menu, and the Negative tab): search a film stock and see photos shot on it, from lomography.com, in a clean gallery to judge a conversion's colour against (see Privacy below)
+- **Plugins** in **Python and Lua**: add menu items, modules, buttons and sliders to the editor, read and change the open photo, react to events, with a **Plugin Output** window under View (Settings > Plugins; see [docs/plugins](docs/plugins/README.md))
 - **Data safety**: automatic backups, startup health check with restore, and full data export/import (Settings > Data & backup)
+
+## Plugins
+
+EFAS can be extended with plugins written in **Python** or **Lua** (Lua 5.4 is built in; nothing to install). A plugin can add menu items and modules (buttons, sliders, check boxes, drop-downs, text boxes) to the editor, read the open photo and change its edit the way the sliders do, measure the picture, apply presets, add tags, and react to events. Every plugin starts switched off; turn each on in **Settings > Plugins**, which also opens the plugins folder, installs five examples and makes an empty plugin to start from. **View > Plugin Output** opens a window with everything the plugins print and every error found in them.
+
+Lua plugins run in a sandbox (no files, no programs, no internet, time-limited); Python plugins run with the same access as EFAS itself, so only switch on Python plugins you trust.
+
+The documentation for plugin authors is in [docs/plugins](docs/plugins/README.md): [getting started](docs/plugins/getting-started.md), [the manifest](docs/plugins/manifest.md), [API reference](docs/plugins/api-reference.md), [UI and modules](docs/plugins/ui-and-modules.md), [events](docs/plugins/events.md), [Lua](docs/plugins/lua.md), [Python](docs/plugins/python.md), [Plugin Output and debugging](docs/plugins/plugin-output.md), [security](docs/plugins/security.md) and [examples](docs/plugins/examples.md).
 
 ## Privacy
 
@@ -77,7 +86,7 @@ Also built on [PyQt6](https://pypi.org/project/PyQt6/), [Pillow](https://python-
 ## Requirements
 
 - **Python 3.10 or newer** (developed and tested on 3.13)
-- Dependencies: PyQt6 >= 6.6, Pillow >= 10, rawpy >= 0.19, numpy >= 1.26, opencv-python-headless >= 4.8, onnxruntime >= 1.17, piexif >= 1.1, tifffile >= 2023.1
+- Dependencies: PyQt6 >= 6.6, Pillow >= 10, rawpy >= 0.19, numpy >= 1.26, opencv-python-headless >= 4.8, onnxruntime >= 1.17, piexif >= 1.1, tifffile >= 2023.1, lupa >= 2.0 (the Lua interpreter for plugins)
 
 ## Supported systems
 
@@ -98,7 +107,7 @@ Grab the single-file `.exe` from the [Releases](../../releases) page. There is n
 ```bash
 git clone https://github.com/EthanChas/EFAS-Negative-Inversion-Software.git
 cd EFAS-Negative-Inversion-Software
-python -m pip install PyQt6 Pillow rawpy numpy opencv-python-headless onnxruntime piexif tifffile
+python -m pip install PyQt6 Pillow rawpy numpy opencv-python-headless onnxruntime piexif tifffile lupa
 ```
 
 On Linux and macOS also install `send2trash` (needed to move deleted photos to the Trash). On Linux, Qt needs a few system libraries; on Debian or Ubuntu: `sudo apt install libegl1 libxkbcommon-x11-0 libxcb-cursor0 libxcb-icccm4 libxcb-keysyms1 libxcb-shape0`.
@@ -117,7 +126,7 @@ On Windows PowerShell set the path first: `$env:PYTHONPATH = "src"`.
 
 ```bash
 python -m pip install pyinstaller
-python -m PyInstaller --noconfirm --onefile --windowed --name "EFAS Negative Inversion Software" --paths src --add-data "src/photoeditor/assets;photoeditor/assets" --hidden-import onnxruntime --exclude-module torch --exclude-module transformers --exclude-module tensorflow --exclude-module scipy --exclude-module numba --exclude-module matplotlib --exclude-module pandas --exclude-module tkinter --exclude-module sklearn --exclude-module sympy --exclude-module onnx run_app.py
+python -m PyInstaller --noconfirm --onefile --windowed --name "EFAS Negative Inversion Software" --paths src --add-data "src/photoeditor/assets;photoeditor/assets" --hidden-import onnxruntime --hidden-import lupa.lua54 --collect-all lupa --exclude-module torch --exclude-module transformers --exclude-module tensorflow --exclude-module scipy --exclude-module numba --exclude-module matplotlib --exclude-module pandas --exclude-module tkinter --exclude-module sklearn --exclude-module sympy --exclude-module onnx run_app.py
 ```
 
 The result is `dist/EFAS Negative Inversion Software.exe`. The excluded modules only keep the build small and fast.

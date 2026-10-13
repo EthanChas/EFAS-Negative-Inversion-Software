@@ -33,6 +33,7 @@ class ToolRail(QWidget):
         self._layout.addStretch(1)
 
         self._buttons: dict[str, QToolButton] = {}
+        self._frames: dict[str, QWidget] = {}
 
         self._max_animation = QPropertyAnimation(self, b"maximumWidth", self)
         self._max_animation.setDuration(_HOVER_DURATION_MS)
@@ -59,7 +60,14 @@ class ToolRail(QWidget):
 
         frame = thin_sunken_panel(h_margin=1, v_margin=1)
         frame.layout().addWidget(button)
+        self._frames[tab_id] = frame
         self._layout.insertWidget(self._layout.count() - 1, frame)
+
+    def set_tab_visible(self, tab_id: str, visible: bool) -> None:
+        """Show or hide a tab's button (the Plugins tab is only there while a plugin has put something in it)."""
+        frame = self._frames.get(tab_id)
+        if frame is not None:
+            frame.setVisible(visible)
 
     def set_tab_checked(self, tab_id: str, checked: bool) -> None:
         """Sync a tab's checked look to an external toggle without

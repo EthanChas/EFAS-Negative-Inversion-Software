@@ -30,6 +30,7 @@ DEFAULTS: dict[str, Any] = {
     "hq_always": False,
     "collapse_on_tab_change": True,
     "film_reference_online": False,
+    "plugins_enabled": {},
     "theme": "classic",
     "theme_accent": ACCENTS[0][0],
     "theme_text_scale": 100,
@@ -74,6 +75,8 @@ def _clean(data: Any) -> dict[str, Any]:
         out["backup_dir"] = data["backup_dir"].strip()
     if isinstance(data.get("module_colour_choices"), dict):
         out["module_colour_choices"] = {str(k): v for k, v in data["module_colour_choices"].items() if isinstance(v, str)}
+    if isinstance(data.get("plugins_enabled"), dict):
+        out["plugins_enabled"] = {str(k): v for k, v in data["plugins_enabled"].items() if isinstance(v, bool)}
     if isinstance(data.get("keybinds"), dict):
         out["keybinds"] = {str(k): v for k, v in data["keybinds"].items() if isinstance(v, str)}
     return out

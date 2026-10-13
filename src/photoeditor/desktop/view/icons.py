@@ -180,6 +180,25 @@ def metadata_icon(size: int = 16) -> QPixmap:
     return pix
 
 
+def plugin_icon(size: int = 16) -> QPixmap:
+    """A tiny hand-painted jigsaw piece (body with a knob on top and on the right) for the Plugins tool tab."""
+    pix = QPixmap(size, size)
+    pix.fill(Qt.GlobalColor.transparent)
+    painter = QPainter(pix)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing, False)
+    painter.setPen(Qt.PenStyle.NoPen)
+    painter.setBrush(QColor(THEME.channel_luminance))
+    x0, y0, w = round(size * 0.14), round(size * 0.30), round(size * 0.58)
+    knob = max(3, round(size * 0.22))
+    painter.drawRect(x0, y0, w, w)
+    painter.drawRect(x0 + w // 2 - knob // 2, y0 - knob + 1, knob, knob)
+    painter.drawRect(x0 + w - 1, y0 + w // 2 - knob // 2, knob, knob)
+    painter.setBrush(QColor(THEME.bg_app))
+    painter.drawRect(x0 + 2, y0 + w - 4, 3, 2)
+    painter.end()
+    return pix
+
+
 def eyedropper_cursor(size: int = 28) -> QCursor:
     """The custom cursor shown over the image while the tone curve's
     eyedropper is active - the same icon, hot-spot at its pick-point tip
