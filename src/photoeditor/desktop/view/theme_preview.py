@@ -14,8 +14,7 @@ class ThemeCard(QAbstractButton):
         super().__init__(parent)
         self._theme = theme
         self._title = title
-        self.setCheckable(True)
-        self.setAutoExclusive(True)
+        self.setCheckable(True)  # made exclusive by the group the Themes page puts the cards in
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
         self.setFixedSize(236, 168)
@@ -113,8 +112,7 @@ class AccentSwatch(QAbstractButton):
     def __init__(self, name: str, colour: str, parent: QWidget | None = None):
         super().__init__(parent)
         self.name, self._colour = name, colour
-        self.setCheckable(True)
-        self.setAutoExclusive(True)
+        self.setCheckable(True)  # exclusive through the Themes page's button group
         self.setToolTip(name)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setFixedSize(34, 34)

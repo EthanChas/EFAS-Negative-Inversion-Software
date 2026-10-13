@@ -5,7 +5,7 @@ import time
 from PyQt6.QtCore import QUrl, Qt
 from PyQt6.QtGui import QDesktopServices, QKeySequence
 from PyQt6.QtWidgets import (
-    QApplication, QCheckBox, QComboBox, QGridLayout, QSlider, QDialog, QFileDialog, QFormLayout, QFrame, QHBoxLayout, QKeySequenceEdit, QLabel, QListWidget, QMessageBox, QPushButton,
+    QApplication, QButtonGroup, QCheckBox, QComboBox, QGridLayout, QSlider, QDialog, QFileDialog, QFormLayout, QFrame, QHBoxLayout, QKeySequenceEdit, QLabel, QListWidget, QMessageBox, QPushButton,
     QScrollArea, QSpinBox, QStackedWidget, QVBoxLayout, QWidget,
 )
 
@@ -143,11 +143,14 @@ class SettingsDialog(QDialog):
         swatches = QHBoxLayout()
         swatches.setSpacing(THEME.space_sm)
         self._accent_buttons: list[AccentSwatch] = []
+        self._accent_group = QButtonGroup(self)
+        self._accent_group.setExclusive(True)
         for name, colour in ACCENTS:
             swatch = AccentSwatch(name, colour)
             swatch.setChecked(name == self._theme_accent)
             swatch.clicked.connect(lambda _c=False, n=name: self._pick_accent(n))
             self._accent_buttons.append(swatch)
+            self._accent_group.addButton(swatch)
             swatches.addWidget(swatch)
         swatches.addStretch(1)
         col.addLayout(swatches)
@@ -199,6 +202,13 @@ class SettingsDialog(QDialog):
             if item.widget() is not None:
                 item.widget().deleteLater()
         self._theme_cards = {}
+        # Each card sits in its own box, so Qt's "auto-exclusive" (which only works between buttons with the same parent) let several be ticked at once: one
+        # group makes them exclusive however they are laid out.
+        if getattr(self, "_card_group", None) is None:
+            self._card_group = QButtonGroup(self)
+            self._card_group.setExclusive(True)
+        for old in list(self._card_group.buttons()):  # the cards being replaced are only deleted later: take them out now
+            self._card_group.removeButton(old)
         values = self._theme_values()
         for n, spec in enumerate(theme_themes.all_specs()):
             box = QWidget()
@@ -209,6 +219,7 @@ class SettingsDialog(QDialog):
             card.setChecked(spec.id == self._theme_name)
             card.clicked.connect(lambda _c=False, k=spec.id: self._pick_theme(k))
             self._theme_cards[spec.id] = card
+            self._card_group.addButton(card)
             lay.addWidget(card)
             note = _hint(spec.description + ("" if spec.builtin else "  (imported)"))
             note.setFixedWidth(236)

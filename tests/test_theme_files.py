@@ -299,3 +299,38 @@ def test_the_examples_in_the_theme_guide_really_import(app):
     every = re.findall(r"`(--[a-z-]+)`", guide)
     known = {"--" + f.replace("_", "-") for f in (*cssfile.COLOUR_FIELDS, *cssfile.NUMBER_FIELDS, *cssfile.TEXT_FIELDS)} | {"--accent", "--name", "--description", "--base"}
     assert set(every) <= known, sorted(set(every) - known)
+
+
+def test_only_one_theme_and_one_accent_can_be_selected(app, tmp_path, monkeypatch):
+    """Regression: each card sat in its own box, so Qt's auto-exclusive did nothing and several themes could be ticked at once."""
+    from PyQt6.QtWidgets import QFileDialog, QMessageBox
+
+    from photoeditor.desktop.view.settings_dialog import SettingsDialog
+
+    dialog = SettingsDialog(None, None)
+
+    def ticked():
+        return [k for k, c in dialog._theme_cards.items() if c.isChecked()]
+
+    assert ticked() == ["classic"]
+    for name in ("modern", "midnight", "graphite", "darkroom", "contrast", "classic", "midnight"):
+        dialog._theme_cards[name].click()
+        assert ticked() == [name], (name, ticked())
+    dialog._theme_cards["midnight"].click()  # clicking the chosen one again keeps it chosen
+    assert ticked() == ["midnight"] and dialog._theme_name == "midnight"
+
+    src = tmp_path / "Sunset.css"
+    src.write_text(SUNSET, encoding="utf-8")
+    monkeypatch.setattr(QFileDialog, "getOpenFileName", staticmethod(lambda *a, **k: (str(src), "")))
+    monkeypatch.setattr(QMessageBox, "information", staticmethod(lambda *a, **k: QMessageBox.StandardButton.Ok))
+    dialog._import_btn.click()  # the cards are rebuilt with the imported one in the list
+    assert ticked() == ["user:Sunset.css"]
+    dialog._theme_cards["modern"].click()
+    assert ticked() == ["modern"]
+    assert len(dialog._card_group.buttons()) == len(dialog._theme_cards)
+
+    assert [b.name for b in dialog._accent_buttons if b.isChecked()] == ["Blue"]
+    for button in dialog._accent_buttons:
+        button.click()
+        assert [b.name for b in dialog._accent_buttons if b.isChecked()] == [button.name]
+    dialog.deleteLater()
