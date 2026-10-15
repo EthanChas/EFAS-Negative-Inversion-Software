@@ -26,7 +26,7 @@ class PresetTree(QTreeWidget):
         self.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.setMouseTracking(True)
         self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
-        self._open: set[str] = set()  # folders left open (casefolded paths)
+        self._open: set[str] = set()  # folders the person opened (casefolded paths); the rest start closed
         self._known: set[str] = set()
         self._tips: dict[str, str] = {}
         self.itemEntered.connect(self._on_entered)
@@ -38,7 +38,7 @@ class PresetTree(QTreeWidget):
 
     # ------------------------------------------------------------ filling
     def set_names(self, names: list[str], select: str | None = None, tips: dict[str, str] | None = None, empty_text: str = "") -> None:
-        """Show these names as a tree. A folder seen for the first time starts open; one the person closed stays closed. `select` is a name to select."""
+        """Show these names as a tree. A folder seen for the first time starts closed; one the person opened stays open, and the folders above a selected preset are opened to show it. `select` is a name to select."""
         self.blockSignals(True)
         self.clear()
         self._tips = {tree.clean_path(k).casefold(): v for k, v in (tips or {}).items()}
@@ -60,9 +60,7 @@ class PresetTree(QTreeWidget):
                 for child in node.children:
                     add(child, item)
                 key = node.path.casefold()
-                if key not in self._known:
-                    self._known.add(key)
-                    self._open.add(key)
+                self._known.add(key)
                 item.setExpanded(key in self._open)
             else:
                 item.setData(0, NAME_ROLE, node.full)

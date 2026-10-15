@@ -5,14 +5,14 @@ from PyQt6.QtGui import QIcon
 from PyQt6.QtWidgets import QCheckBox, QComboBox, QHBoxLayout, QInputDialog, QLabel, QMenu, QPushButton, QVBoxLayout, QWidget
 
 from ...features.densitometry.quality import COLOURS as QUALITY_COLOURS
-from ...features.negative import lightsource
+from ...features.negative import lightsource, printengine
 from ...features.presettree import logic as preset_tree
 from ...features.negative.logic import FILM_TYPE_LABELS, FILM_TYPES, ProcessMode
 from ...features.negative.metering import DEFAULT_BUFFER, MAX_BUFFER, Metering
 from ...theme.tokens import THEME
 from .collapsible_panel import CollapsiblePanel
 from .dividers import add_divider
-from .icons import eyedropper_icon
+from . import panel_icons
 from .slider_row import SliderRow
 
 _MODE_LABELS = {
@@ -195,6 +195,61 @@ class NegativeToolPanel(CollapsiblePanel):
         self._advanced.toggled.connect(self.advanced_toggled)
         body.addWidget(self._advanced)
 
+        conv_title = QLabel("CONVERSION")
+        conv_title.setProperty("role", "subtitle")
+        body.addWidget(conv_title)
+        conv_row = QHBoxLayout()
+        conv_label = QLabel("Method")
+        conv_label.setFixedWidth(80)
+        conv_row.addWidget(conv_label)
+        self._conversion = QComboBox()
+        self._conversion.addItem("Modern (film & paper)", "print")
+        self._conversion.addItem("Original (stretch)", "standard")
+        self._conversion.setToolTip(
+            "Modern treats the film, the scene and the paper separately: it takes out the dyes' crosstalk, puts back part of the film's toe and shoulder, balances the "
+            "channels, and prints through a paper curve with a toe and a shoulder, so highlights roll off instead of clipping. Original is the earlier conversion: it "
+            "stretches each colour channel in a straight line between its darkest and lightest readings. Photos edited before Modern existed keep Original.")
+        self._conversion.currentIndexChanged.connect(self._on_metering_slider)
+        conv_row.addWidget(self._conversion, 1)
+        body.addLayout(conv_row)
+        film_row = QHBoxLayout()
+        film_label = QLabel("Film")
+        film_label.setFixedWidth(80)
+        film_row.addWidget(film_label)
+        self._film = QComboBox()
+        for key, info in printengine.profiles().items():
+            self._film.addItem(info["name"], key)
+        self._film.setToolTip(
+            "Which film's dye crosstalk to take out. Each film's three dyes absorb a little in each other's bands; these profiles are read off the film makers' published "
+            "dye curves, so they are approximations, and your own scanning light and camera add some mixing of their own. Generic colour negative is a middle-of-the-road "
+            "correction when the film is not listed. Put your own profiles in the crosstalk folder of the EFAS data folder.")
+        self._film.currentIndexChanged.connect(self._on_metering_slider)
+        film_row.addWidget(self._film, 1)
+        body.addLayout(film_row)
+        self._print_rows = {
+            "crosstalk": SliderRow("Crosstalk", min_value=0.0, max_value=1.0, reset_value=1.0),
+            "film_curve": SliderRow("Film curve", min_value=0.0, max_value=1.0, reset_value=0.4),
+            "grade": SliderRow("Grade", min_value=-0.5, max_value=0.5, reset_value=0.0),
+            "density": SliderRow("Print density", min_value=-1.0, max_value=1.0, reset_value=0.0),
+            "paper_toe": SliderRow("Paper toe", min_value=-1.0, max_value=1.0, reset_value=0.0),
+            "paper_shoulder": SliderRow("Paper shoulder", min_value=-1.0, max_value=1.0, reset_value=0.0),
+        }
+        tips = {
+            "crosstalk": "How much of the dyes' crosstalk is taken out. Each dye also absorbs in its neighbours' bands, which muddies colour; 1 corrects it fully, 0 leaves it.",
+            "film_curve": "How much of the film's own toe and shoulder is put back before printing (more shadow depth and highlight separation). It works best with a sampled film base.",
+            "grade": "Paper contrast on top of the automatic grade: + harder, - softer. The automatic grade fits the picture's own range to the paper.",
+            "density": "How dark the print is, as a darkroom's density: + darker, - lighter. The picture's middle is placed automatically.",
+            "paper_toe": "How the shadows roll into paper black: + lifts and softens them, - makes the roll-off tighter.",
+            "paper_shoulder": "How the highlights roll into paper white: + holds them back from pure white, - makes the roll-off tighter.",
+        }
+        for key, row in self._print_rows.items():
+            row.setToolTip(tips[key])
+            body.addWidget(row)
+        self._trim_rows = [SliderRow(f"{name} grade", min_value=-0.3, max_value=0.3, reset_value=0.0) for name in ("Red", "Green", "Blue")]
+        for name, row in zip(("red", "green", "blue"), self._trim_rows):
+            row.setToolTip(f"Contrast of the {name} layer on its own, around the picture's middle. Fixes colour crossover: when shadows lean one colour and highlights lean "
+                           "the opposite one, harden or soften one layer until both go neutral. The middle tones do not move.")
+            body.addWidget(row)
         meter_title = QLabel("METERING")
         meter_title.setProperty("role", "subtitle")
         body.addWidget(meter_title)
@@ -244,7 +299,7 @@ class NegativeToolPanel(CollapsiblePanel):
         for kind, label in (("white", "White dropper"), ("black", "Black dropper")):
             button = QPushButton(label)
             button.setCheckable(True)
-            button.setIcon(QIcon(eyedropper_icon(14)))
+            button.setIcon(QIcon(panel_icons.pixmap(panel_icons.OTHER["dropper"], 14, THEME.text_primary)))
             button.setToolTip(f"Click, then click the spot in the picture that should be pure {kind}: the {kind} point is set from it and the dropper puts itself away")
             button.toggled.connect(lambda on, k=kind: self._on_dropper_toggled(k, on))
             self._droppers[kind] = button
@@ -258,7 +313,7 @@ class NegativeToolPanel(CollapsiblePanel):
         self._meter_reset.clicked.connect(self.metering_reset_requested)
         body.addWidget(self._meter_reset)
         self._metering = Metering()
-        for row in (self._margin, self._range, self._cast, self._white, self._black):
+        for row in (self._margin, self._range, self._cast, self._white, self._black, *self._print_rows.values(), *self._trim_rows):
             row.value_changed.connect(self._on_metering_slider)
         self._pending_metering: Metering | None = None
         self._meter_preview_timer = QTimer(self)
@@ -443,9 +498,18 @@ class NegativeToolPanel(CollapsiblePanel):
     def set_metering(self, metering: Metering) -> None:
         """Show a Metering in the controls without emitting anything."""
         self._metering = metering
-        widgets = (self._margin, self._range, self._cast, self._white, self._black)
+        widgets = (self._margin, self._range, self._cast, self._white, self._black, self._conversion, self._film, *self._print_rows.values(), *self._trim_rows)
         for w in widgets:
             w.blockSignals(True)
+        self._conversion.setCurrentIndex(max(0, self._conversion.findData(metering.engine)))
+        if self._film.findData(metering.film) < 0:   # a profile that is no longer there reads as the generic one
+            self._film.addItem(f"{metering.film} (missing: generic used)", metering.film)
+        self._film.setCurrentIndex(self._film.findData(metering.film))
+        for key, row in self._print_rows.items():
+            row.set_value(getattr(metering, key))
+        for row, value in zip(self._trim_rows, metering.grade_trim):
+            row.set_value(value)
+        self._sync_engine_controls(metering.engine)
         self._margin.set_value(metering.buffer)
         self._range.set_value(metering.range_clip)
         self._cast.set_value(metering.cast_removal)
@@ -456,6 +520,19 @@ class NegativeToolPanel(CollapsiblePanel):
         self._region_label.setText(
             "Reading your region." if metering.rect is not None else "Reading the whole frame, less the margin."
         )
+
+    def _sync_engine_controls(self, engine: str) -> None:
+        """The Modern conversion has its own grade and density; the stretch's range clip, colour cast and white / black points belong to Original and are put away under Modern."""
+        modern = engine == "print"
+        self._film.setEnabled(modern)
+        for row in (*self._print_rows.values(), *self._trim_rows):
+            row.setEnabled(modern)
+        original_only = (self._range, self._cast, self._white, self._black, self._channel, *self._droppers.values())
+        for w in original_only:
+            w.setEnabled(not modern)
+        note = "Belongs to the Original conversion; Modern uses Grade and Print density." if modern else ""
+        for w in (self._range, self._cast, self._white, self._black):
+            w.setToolTip(w.toolTip().split("  [")[0] + (f"  [{note}]" if note else ""))
 
     def set_region_draw_active(self, active: bool) -> None:
         """Sync the Draw Region button without emitting anything."""
@@ -484,7 +561,10 @@ class NegativeToolPanel(CollapsiblePanel):
             wt, bt = list(m.white_trim), list(m.black_trim)
             wt[index - 1], bt[index - 1] = white, black
             m = dataclasses.replace(m, white_trim=tuple(wt), black_trim=tuple(bt))
-        return dataclasses.replace(m, buffer=self._margin.value(), range_clip=self._range.value(), cast_removal=self._cast.value())
+        engine = self._conversion.currentData() or "standard"
+        self._sync_engine_controls(engine)
+        return dataclasses.replace(m, film=self._film.currentData() or "generic", buffer=self._margin.value(), range_clip=self._range.value(), cast_removal=self._cast.value(), engine=engine,
+                                   grade_trim=tuple(row.value() for row in self._trim_rows), **{key: row.value() for key, row in self._print_rows.items()})
 
     def _on_metering_slider(self, _value: float) -> None:
         self._metering = self._collect()

@@ -129,6 +129,9 @@ def measure_reading(
     return floors, ceils
 
 
+analysis_region = _analysis_region  # the part of a picture the inversion reads (public name for the other engines)
+
+
 def point_from_pixel(kind: str, scan_rgb: tuple[float, float, float], floors: list[float], ceils: list[float], metering: Metering) -> Metering | None:
     """The metering that makes one scan pixel (each channel 0-1, as the scanner recorded it) pure white (kind "white") or pure black ("black") in the
     inversion: each channel's point goes where that pixel's density is, so all three channels reach the end together and the pixel comes out neutral. The

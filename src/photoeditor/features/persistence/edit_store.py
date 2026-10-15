@@ -410,7 +410,13 @@ def load_edit_state(conn: sqlite3.Connection, path: str) -> dict | None:
     row = conn.execute(f"SELECT {', '.join(names)} FROM edits WHERE path = ?", (path,)).fetchone()
     if row is None:
         return None
-    return {name: _decode(value, kind, name) for (name, kind), value in zip(_FIELDS, row)}
+    state = {name: _decode(value, kind, name) for (name, kind), value in zip(_FIELDS, row)}
+    if state.get("metering") == {}:
+        from ..tonecurve.logic import DEFAULT_POINTS
+
+        if is_untouched(state, DEFAULT_POINTS):
+            state["metering"] = {"engine": "print"}   # opened once and never edited: it takes today's default conversion, not the one it was opened under
+    return state
 
 
 def edited_paths(conn: sqlite3.Connection, paths: list[str]) -> set[str]:
@@ -904,7 +910,7 @@ _UNTOUCHED = {
     "exposure_ev": 0.0, "rotation_quarter_turns": 0, "flip_h": False, "flip_v": False, "crop_rect": None, "saturation": 0.0,
     "temperature": 0.0, "tint": 0.0, "shadows": 0.0, "highlights": 0.0, "sharpen_amount": 0.0, "dust_auto": False,
     "scratch_lines": [], "heal_strokes": [], "clone_strokes": [], "dust_excluded": [], "error_marks": [], "modules_off": [], "ai_dust": False, "marks": {}, "film_type": "auto", "invert_r": 0.0, "invert_g": 0.0, "invert_b": 0.0, "contrast": 0.0,
-    "fine_rotation": 0.0, "distortion": 0.0, "keystone_v": 0.0, "keystone_h": 0.0, "chroma_denoise": 0.0, "local_contrast": 0.0, "print_snap": 0.0, "print_toe": 0.0, "print_toe_width": 2.5, "print_shoulder": 0.0, "print_shoulder_width": 2.5, "metering": {}, "wm_film": "off",
+    "fine_rotation": 0.0, "distortion": 0.0, "keystone_v": 0.0, "keystone_h": 0.0, "chroma_denoise": 0.0, "local_contrast": 0.0, "print_snap": 0.0, "print_toe": 0.0, "print_toe_width": 2.5, "print_shoulder": 0.0, "print_shoulder_width": 2.5, "wm_film": "off",
     "vignette": 0.0, "border": 0.0,
 }
 
@@ -912,6 +918,8 @@ _UNTOUCHED = {
 def is_untouched(state: dict, default_curve) -> bool:
     """True when a saved edit state is still what opening the photo gave it - nothing was changed."""
     if [tuple(p) for p in state["tone_curve_points"]] != [tuple(p) for p in default_curve]:
+        return False
+    if state.get("metering") not in (None, {}, {"engine": "print"}):
         return False
     return all(state[k] == v for k, v in _UNTOUCHED.items() if k in state)
 

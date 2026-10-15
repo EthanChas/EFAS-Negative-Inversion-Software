@@ -85,7 +85,9 @@ _SCRIPT = textwrap.dedent(r'''
 
     # select a built-in: its description shows; applying it sets the slider values as one undoable step
     folder = next(tree.topLevelItem(i) for i in range(tree.topLevelItemCount()) if tree.topLevelItem(i).text(0) == "Lab Scanners")
-    assert folder.isExpanded()
+    assert not any(tree.topLevelItem(i).isExpanded() for i in range(tree.topLevelItemCount())), "the folders start closed"
+    folder.setExpanded(True); pump(0.05)
+    assert folder.isExpanded() and not tree.topLevelItem(0).isExpanded(), "opening one leaves the others closed"
     item = folder.child(0)
     tree.setCurrentItem(item); pump(0.1)
     assert panel.selected() == "Lab Scanners/Frontier 100" and "Frontier" in panel._note.text() and not panel._note.isHidden()

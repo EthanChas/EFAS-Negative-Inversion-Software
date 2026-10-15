@@ -78,7 +78,8 @@ from .flatfield_panel import FlatFieldPanel
 from .histogram_panel import HistogramPanel
 from .history_panel import HistoryPanel
 from .app_icon import APP_NAME, app_icon
-from .icons import correction_icon, eyedropper_cursor, metadata_icon, negative_icon, plugin_icon, sun_icon, watermark_icon
+from . import panel_icons
+from .icons import eyedropper_cursor
 from .image_view import ImageView
 from .import_window import ImportWindow
 from .library_panel import LibraryPanel
@@ -1058,12 +1059,12 @@ class AppWindow(QMainWindow):
         tool_row.setSpacing(THEME.space_sm)
 
         self._tool_rail = ToolRail()
-        self._tool_rail.add_tab("exposure", sun_icon(18), "WB Correction")
-        self._tool_rail.add_tab("correction", correction_icon(18), "Correction")
-        self._tool_rail.add_tab("negative", negative_icon(18), "Negative")
-        self._tool_rail.add_tab("watermark", watermark_icon(18), "Watermark")
-        self._tool_rail.add_tab("metadata", metadata_icon(18), "Roll Card")
-        self._tool_rail.add_tab("plugins", plugin_icon(18), "Plugins")
+        self._tool_rail.add_tab("exposure", panel_icons.for_tab("exposure", 18, THEME.text_primary), "WB Correction")
+        self._tool_rail.add_tab("correction", panel_icons.for_tab("correction", 18, THEME.text_primary), "Correction")
+        self._tool_rail.add_tab("negative", panel_icons.for_tab("negative", 18, THEME.text_primary), "Negative")
+        self._tool_rail.add_tab("watermark", panel_icons.for_tab("watermark", 18, THEME.text_primary), "Watermark")
+        self._tool_rail.add_tab("metadata", panel_icons.for_tab("metadata", 18, THEME.text_primary), "Roll Card")
+        self._tool_rail.add_tab("plugins", panel_icons.for_tab("plugins", 18, THEME.text_primary), "Plugins")
         self._tool_rail.set_tab_visible("plugins", False)
         self._tool_rail.tab_toggled.connect(self._on_tool_tab_toggled)
         tool_row.addWidget(self._tool_rail, 0, Qt.AlignmentFlag.AlignTop)

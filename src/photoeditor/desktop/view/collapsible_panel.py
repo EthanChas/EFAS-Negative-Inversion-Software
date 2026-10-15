@@ -6,6 +6,7 @@ from PyQt6.QtWidgets import (
 
 from ...theme.tokens import THEME
 from .bevel_widgets import BevelPanel, CaptionButton
+from . import panel_icons
 from .module_style import AUTOMATIC, NAMED, PLAIN, STYLE
 
 _NO_MAX = 16777215
@@ -78,8 +79,9 @@ class _CollapsibleHeader(QWidget):
         self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.customContextMenuRequested.connect(self._colour_menu)
 
-        row = QHBoxLayout(self)
-        row.setContentsMargins(THEME.space_sm, 0, THEME.space_sm, 0)
+        self._row = row = QHBoxLayout(self)
+        self._collapsible = collapsible
+        self._set_margins()
         row.setSpacing(THEME.space_sm)
 
         self.arrow_button: CaptionButton | None = None
@@ -90,6 +92,12 @@ class _CollapsibleHeader(QWidget):
 
         self.power_light = _PowerLight()
         row.addWidget(self.power_light, 0, Qt.AlignmentFlag.AlignVCenter)
+
+        self._icon_label = QLabel()
+        self._icon_label.setFixedSize(16, 16)
+        self._icon_label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        row.addWidget(self._icon_label, 0, Qt.AlignmentFlag.AlignVCenter)
+        self._show_icon()
 
         label = QLabel(title)
         label.setProperty("role", "mini_header_text")
@@ -114,8 +122,22 @@ class _CollapsibleHeader(QWidget):
         self.help_button = CaptionButton("help")
         row.addWidget(self.help_button, 0, Qt.AlignmentFlag.AlignVCenter)
 
+    def _set_margins(self) -> None:
+        """A header with no collapse arrow starts with its icon, which has to clear the module's colour bar down the left edge in the modern themes."""
+        bar = 0 if (self._collapsible or THEME.style != "modern") else THEME.space_md + 2
+        self._row.setContentsMargins(THEME.space_sm + bar, 0, THEME.space_sm, 0)
+
+    def _show_icon(self) -> None:
+        """The icon file for this module's title, in the theme's colour; no icon (and no gap) for a title that has none."""
+        pix = panel_icons.for_title(self._title, 16, THEME.text_primary)
+        self._icon_label.setPixmap(pix)
+        self._icon_label.setVisible(not pix.isNull())
+
     def apply_theme(self) -> None:
         self.setFixedHeight(THEME.font_size_header + THEME.space_lg + (8 if THEME.style == "modern" else 0))
+        if hasattr(self, "_icon_label"):
+            self._set_margins()
+            self._show_icon()
 
     def enterEvent(self, event) -> None:
         self._hovered = True

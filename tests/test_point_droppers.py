@@ -102,6 +102,7 @@ _SCRIPT = textwrap.dedent(r"""
     import numpy as np, cv2
     from PyQt6.QtWidgets import QApplication
     from photoeditor.features.settings import logic as S
+    from photoeditor.features.negative.metering import Metering
     S.save({"scan_quality": False})
     rng = np.random.default_rng(0)
     h, w = 300, 450
@@ -117,6 +118,7 @@ _SCRIPT = textwrap.dedent(r"""
         end = time.time() + s
         while time.time() < end: app.processEvents(); time.sleep(0.01)
     pump(2)
+    c.set_metering(Metering(engine="standard")); pump(0.5)   # the droppers belong to the Original conversion
     shown = lambda: c.state.image_rgb
     luma = lambda px: float(px.astype(np.float32).mean())
 
@@ -125,7 +127,7 @@ _SCRIPT = textwrap.dedent(r"""
     nt._droppers["white"].setChecked(True)
     assert win._point_dropper == "white" and win._image_view._label._pick_mode, "armed"
     win._on_pixel_picked(300, 100, (0, 0, 0))
-    assert c.state.metering == c.state.metering.__class__(), c.state.metering
+    assert c.state.metering == Metering(engine="standard"), c.state.metering
     assert win._point_dropper is None and not nt._droppers["white"].isChecked(), "one click and the tool deselects"
     assert not win._image_view._label._pick_mode
     assert "Invert" in win._coord_label.text(), (win._coord_label.text(), c.state.negative_inverted)

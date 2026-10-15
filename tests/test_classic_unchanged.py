@@ -51,6 +51,8 @@ _SCRIPT = textwrap.dedent(r'''
     from photoeditor.desktop.render import EditParams, Renderer
     from photoeditor.desktop.session import AppState
     st = AppState(); st.negative_inverted = True
+    from photoeditor.features.negative.metering import Metering
+    st.metering = Metering(engine="standard")   # this test pins the Original conversion
     params = EditParams.from_state(st)
     out["params_inverted"] = str(bool(params.negative_inverted))
     for tag, arr in (("render8", img8), ("render16", img16)):

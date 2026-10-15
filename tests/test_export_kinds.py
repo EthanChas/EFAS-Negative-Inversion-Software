@@ -127,6 +127,8 @@ _SCRIPT = textwrap.dedent(r'''
     win = AppWindow(); c = win.controller
     c.open_file(photo)
     c.set_film_base((200, 150, 100), pick=(10, 100))
+    from photoeditor.features.negative.metering import Metering
+    c.set_metering(Metering(engine="standard"))   # a flat export is made with the Original conversion, so it is what the standard export must match
     db = os.path.join(data, "photo-edits.db")
     conn = edit_store.connect(db)
 

@@ -910,7 +910,8 @@ class AppController(QObject):
             self._log("Metering region set" if rect is not None else "Metering region cleared")
 
     def reset_metering(self) -> None:
-        self.set_metering(Metering())
+        """Back to the default metering; the conversion method chosen for the photo stays."""
+        self.set_metering(Metering(engine=self.state.metering.engine))
 
     def set_point_from_pixel(self, kind: str, x: int, y: int, shape: tuple[int, int], uncropped: bool = False) -> str:
         """The white / black point dropper: the pixel clicked at (x, y) of the picture on screen (shape = its (height, width); uncropped when the view is showing the

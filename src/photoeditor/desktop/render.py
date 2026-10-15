@@ -23,6 +23,7 @@ from ..features.contrast.logic import apply_contrast
 from ..features.denoise.logic import apply_chroma_denoise
 from ..features.localcontrast.logic import apply_local_contrast
 from ..features.printresponse.logic import apply_print_response
+from ..features.negative import printengine
 from ..features.negative.metering import Metering
 from ..features.lookpresets.modules import off_overrides
 from ..features.aidust import logic as aidust
@@ -44,6 +45,7 @@ from ..features.lut.logic import (
 )
 from ..features.flatfield.logic import apply_flatfield
 from ..features.negative.logic import (
+    analysis_region,
     apply_channel_offsets,
     apply_invert_lut,
     compute_invert_lut,
@@ -268,6 +270,11 @@ def _scale_rect(rect, scale: float, width: int, height: int):
     return (max(0, min(x1, width)), max(0, min(y1, height)), max(0, min(x2, width)), max(0, min(y2, height)))
 
 
+def print_settings(m: Metering) -> "printengine.Settings":
+    """The Print Engine's settings for a photo's metering."""
+    return printengine.Settings(unmix_matrix=printengine.matrix_for(m.film), unmix_strength=m.crosstalk, restore=m.film_curve, grade=m.grade, density=m.density, toe=m.paper_toe, shoulder=m.paper_shoulder, trims=m.grade_trim)
+
+
 class Renderer:
     """Runs the edit pipeline."""
 
@@ -280,6 +287,7 @@ class Renderer:
         self._flat: OrderedDict = OrderedDict()
         self._eight: OrderedDict = OrderedDict()
         self._patched: OrderedDict = OrderedDict()
+        self._density: tuple | None = None
         self._dust_stats = DustStatsCache()
 
     def reset(self) -> None:
@@ -290,6 +298,7 @@ class Renderer:
             self._flat.clear()
             self._eight.clear()
             self._patched.clear()
+            self._density = None
             self._dust_stats = DustStatsCache()
 
     def _as_uint8(self, source16: np.ndarray, token) -> np.ndarray:
@@ -334,6 +343,15 @@ class Renderer:
             self._flat.popitem(last=False)
         return result
 
+    def _density_image(self, pixels: np.ndarray, settings: "printengine.Settings") -> np.ndarray:
+        """The scan as a density image for the Print Engine (the dyes' crosstalk taken out), kept while the same picture is rendered again."""
+        key = (id(pixels), pixels.shape, pixels.dtype.str, settings.unmix_matrix, settings.unmix_strength, settings.transfer)
+        if self._density is not None and self._density[0] == key:
+            return self._density[2]
+        codes = printengine.density_codes(pixels, settings)
+        self._density = (key, pixels, codes)  # holding the source keeps its id from being reused
+        return codes
+
     def _get_invert_lut(self, pixels, params: EditParams, rect, token):
         key = (token, pixels.dtype.str, params.film_type == "bw", params.rotation_quarter_turns, params.flip_h, params.flip_v, params.crop_rect, params.film_base, params.metering)
         if self._invert_lut is None or self._invert_key != key:
@@ -341,7 +359,13 @@ class Renderer:
             if base is not None and params.film_type == "bw":
                 gray = round(0.299 * base[0] + 0.587 * base[1] + 0.114 * base[2])
                 base = (gray, gray, gray)
-            self._invert_lut = compute_invert_lut(pixels, rect, base, params.metering)
+            if params.metering.engine == "print":
+                settings = print_settings(params.metering)
+                sampled = None if base is None else printengine.base_density(base, settings, 255.0)
+                block = analysis_region(pixels, rect, params.metering.buffer)
+                self._invert_lut = printengine.build_lut(block, settings, sampled)
+            else:
+                self._invert_lut = compute_invert_lut(pixels, rect, base, params.metering)
             self._invert_key = key
         return self._invert_lut
 
@@ -495,6 +519,9 @@ class Renderer:
                 geometry(flip_horizontal)
             if params.flip_v:
                 geometry(flip_vertical)
+            if params.negative_inverted and params.metering.engine == "print":
+                deep = deep and pixels16 is not None   # an 8-bit source has no more levels to keep, whatever depth the density image is held at
+                pixels16 = self._density_image(pixels16 if pixels16 is not None else pixels, print_settings(params.metering))
             frame = pixels16 if pixels16 is not None else pixels
             rect = _scale_rect(params.crop_rect, scale, frame.shape[1], frame.shape[0])
 
