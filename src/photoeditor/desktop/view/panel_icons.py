@@ -7,7 +7,7 @@ import os
 from pathlib import Path
 
 from PyQt6.QtCore import QByteArray, Qt
-from PyQt6.QtGui import QGuiApplication, QPixmap
+from PyQt6.QtGui import QGuiApplication, QImage, QPainter, QPixmap
 from PyQt6.QtSvg import QSvgRenderer
 
 from ...theme.tokens import THEME
@@ -28,13 +28,32 @@ BY_TAB = {"exposure": "thermometer-sun", "correction": "crop", "negative": "film
 OTHER = {"dropper": "pipette"}
 NAMES = frozenset(BY_TITLE.values()) | frozenset(BY_TAB.values()) | frozenset(OTHER.values())
 
-_cache: dict[tuple, QPixmap] = {}
+_cache: dict[tuple, QImage] = {}   # images, not pixmaps: a pixmap that outlives the application crashes Qt on some platforms when the program exits
 
 
 def _ratio() -> float:
     app = QGuiApplication.instance()
     screen = app.primaryScreen() if app is not None else None
     return max(1.0, min(3.0, screen.devicePixelRatio())) if screen is not None else 1.0
+
+
+def _render(name: str, size: int, colour: str, ratio: float) -> QImage:
+    image = QImage()
+    try:
+        data = (ICON_DIR / f"{name}.svg").read_text(encoding="utf-8").replace("currentColor", colour)
+    except OSError:
+        return image
+    renderer = QSvgRenderer(QByteArray(data.encode("utf-8")))
+    if not renderer.isValid():
+        return image
+    side = round(size * ratio)
+    image = QImage(side, side, QImage.Format.Format_ARGB32_Premultiplied)
+    image.fill(Qt.GlobalColor.transparent)
+    painter = QPainter(image)
+    renderer.render(painter)
+    painter.end()
+    image.setDevicePixelRatio(ratio)
+    return image
 
 
 def pixmap(name: str | None, size: int = 16, colour: str | None = None) -> QPixmap:
@@ -44,27 +63,10 @@ def pixmap(name: str | None, size: int = 16, colour: str | None = None) -> QPixm
     colour = colour or THEME.text_secondary
     ratio = _ratio()
     key = (name, size, colour, ratio)
-    if key in _cache:
-        return _cache[key]
-    path = ICON_DIR / f"{name}.svg"
-    pix = QPixmap()
-    try:
-        data = path.read_text(encoding="utf-8").replace("currentColor", colour)
-        renderer = QSvgRenderer(QByteArray(data.encode("utf-8")))
-        if renderer.isValid():
-            side = round(size * ratio)
-            pix = QPixmap(side, side)
-            pix.fill(Qt.GlobalColor.transparent)
-            from PyQt6.QtGui import QPainter
-
-            painter = QPainter(pix)
-            renderer.render(painter)
-            painter.end()
-            pix.setDevicePixelRatio(ratio)
-    except OSError:
-        pass
-    _cache[key] = pix
-    return pix
+    if key not in _cache:
+        _cache[key] = _render(name, size, colour, ratio)
+    image = _cache[key]
+    return QPixmap() if image.isNull() else QPixmap.fromImage(image)
 
 
 def for_title(title: str, size: int = 16, colour: str | None = None) -> QPixmap:

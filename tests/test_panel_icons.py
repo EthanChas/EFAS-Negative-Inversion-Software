@@ -43,7 +43,8 @@ def test_icons_are_loaded_from_the_files_recoloured_and_kept():
             assert c.red() > 200 and c.green() < 60 and c.blue() < 60, (name, c.name(), "the stroke takes the colour asked for")
         green = P.pixmap("library", 16, "#00ff00").toImage()
         assert max((green.pixelColor(x, y).alpha(), green.pixelColor(x, y).green()) for x in range(16) for y in range(16))[1] > 200
-        assert P.pixmap("library", 16, "#ff0000") is P.pixmap("library", 16, "#ff0000"), "made once"
+        P.pixmap("library", 16, "#ff0000"); n = len(P._cache); P.pixmap("library", 16, "#ff0000")
+        assert len(P._cache) == n and all(type(v).__name__ == "QImage" for v in P._cache.values()), "rendered once, kept as images (a kept pixmap can crash Qt at exit)"
         assert P.pixmap("no-such-icon", 16).isNull() and P.pixmap(None).isNull() and P.for_title("A Title With No Icon").isNull()
         assert not P.for_title("Library").isNull() and not P.for_tab("negative").isNull()
         print("OK")
