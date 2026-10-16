@@ -1,11 +1,12 @@
 import math
 
-from PyQt6.QtCore import QRect, Qt, pyqtSignal
+from PyQt6.QtCore import QPointF, QRect, Qt, pyqtSignal
 from PyQt6.QtGui import (
-    QBrush, QColor, QMouseEvent, QPainter, QPainterPath, QPaintEvent, QPen, QWheelEvent,
+    QBrush, QColor, QMouseEvent, QPainter, QPainterPath, QPaintEvent, QPen, QPolygonF, QWheelEvent,
 )
 from PyQt6.QtWidgets import QWidget
 
+from ...features.whitebalance.logic import CLIP_HIGHLIGHT_MIN, CLIP_SHADOW_MAX
 from ...theme.tokens import THEME
 from .bevel_widgets import BevelPanel
 
@@ -22,6 +23,8 @@ _LEGEND_HEIGHT = 14
 _FULL_RANGE = (0.0, 255.0)
 _MIN_ZOOM_SPAN = 8.0
 _ZOOM_STEP = 0.85
+_CLIP_SHADOW_COLOUR = "#3270ff"      # the colours the clipping marks on the picture use (features/whitebalance/logic.py)
+_CLIP_HIGHLIGHT_COLOUR = "#ff2828"
 
 
 class HistogramPanel(BevelPanel):
@@ -50,6 +53,7 @@ class HistogramPanel(BevelPanel):
     hover_cleared = pyqtSignal()
     range_selected = pyqtSignal(int, int)
     range_cleared = pyqtSignal()
+    clip_toggled = pyqtSignal(str)   # "shadows" or "highlights": the arrow beside a clipped share was clicked
 
     def __init__(self, parent: QWidget | None = None):
         super().__init__(sunken=True, bg=THEME.bg_input, thickness=1, parent=parent)
@@ -66,10 +70,24 @@ class HistogramPanel(BevelPanel):
         self._selection: tuple[int, int] | None = None
         self._drag_anchor: tuple[int, int] | None = None
         self._share_text = ""
+        self._clip_share = (0.0, 0.0)        # percent of the picture in the blocked shadows / blown highlights
+        self._clip_marking = (False, False)  # whether each is marked on the picture
+        self._clip_rects: dict[str, QRect] = {}
 
     def set_data(self, rgb_histogram: dict[str, list[int]], luminance_histogram: list[int]) -> None:
         self._rgb_histogram = rgb_histogram
         self._luminance_histogram = luminance_histogram
+        total = float(sum(luminance_histogram)) if luminance_histogram else 0.0
+        self._clip_share = ((100.0 * sum(luminance_histogram[:CLIP_SHADOW_MAX + 1]) / total), (100.0 * sum(luminance_histogram[CLIP_HIGHLIGHT_MIN:]) / total)) if total else (0.0, 0.0)
+        self.update()
+
+    def clip_share(self) -> tuple[float, float]:
+        """The percent of the picture in the blocked shadows and in the blown highlights (the tones the clipping marks cover)."""
+        return self._clip_share
+
+    def set_clip_marking(self, shadows: bool, highlights: bool) -> None:
+        """Which of the two kinds of clipping are marked on the picture now, so the arrows show it."""
+        self._clip_marking = (bool(shadows), bool(highlights))
         self.update()
 
     def set_log(self, on: bool) -> None:
@@ -115,7 +133,17 @@ class HistogramPanel(BevelPanel):
         fraction = min(1.0, max(0.0, (x - rect.left()) / rect.width())) if rect.width() > 0 else 0.0
         return min(max(int(round(self._zoom_min + fraction * (self._zoom_max - self._zoom_min))), 0), 255)
 
+    def _clip_at(self, pos) -> str | None:
+        point = pos.toPoint()
+        return next((kind for kind, rect in self._clip_rects.items() if rect.contains(point)), None)
+
     def mousePressEvent(self, event: QMouseEvent) -> None:
+        if event.button() == Qt.MouseButton.LeftButton:
+            kind = self._clip_at(event.position())
+            if kind is not None:
+                self.clip_toggled.emit(kind)
+                event.accept()
+                return
         if event.button() == Qt.MouseButton.LeftButton and self._mode == "exposure" and self._luminance_histogram:
             pos = event.position()
             value = self._value_at_x(int(pos.x()), int(pos.y()))
@@ -144,6 +172,7 @@ class HistogramPanel(BevelPanel):
     def clear(self) -> None:
         self._rgb_histogram = None
         self._luminance_histogram = None
+        self._clip_share = (0.0, 0.0)
         self._marker_value = None
         self._cursor_value = None
         self._zoom_min, self._zoom_max = _FULL_RANGE
@@ -179,6 +208,12 @@ class HistogramPanel(BevelPanel):
 
     def mouseMoveEvent(self, event: QMouseEvent) -> None:
         super().mouseMoveEvent(event)
+        over = self._clip_at(event.position())
+        self.setCursor(Qt.CursorShape.PointingHandCursor if over else Qt.CursorShape.ArrowCursor)
+        if over:
+            share = self._clip_share[0 if over == "shadows" else 1]
+            self.setToolTip(f"{share:.2f}% of the picture is in the {'blocked shadows' if over == 'shadows' else 'blown highlights'}. Click to mark "
+                            f"{'them in blue' if over == 'shadows' else 'them in red'} on the picture.")
         if not self._active_series():
             return
         pos = event.position()
@@ -333,17 +368,53 @@ class HistogramPanel(BevelPanel):
             painter.setPen(QColor(THEME.text_secondary))
             painter.drawText(x + 12, y + 11, "Luminance")
 
-        shift = 0
+        shift = self._draw_clip_shares(painter, y)
         if self._log:
             painter.setPen(QColor(THEME.text_muted))
             painter.drawText(QRect(self.rect().right() - 34 - THEME.space_sm, y, 34, _LEGEND_HEIGHT), int(Qt.AlignmentFlag.AlignRight), "log")
-            shift = 36
+            shift += 36
         if self._zoom_min != _FULL_RANGE[0] or self._zoom_max != _FULL_RANGE[1]:
             zoom_text = f"{self.zoom_percent()}% (2x-click reset)"
             painter.setPen(QColor(THEME.text_muted))
             widget_rect = self.rect()
             label_rect = QRect(widget_rect.right() - 140 - shift, y, 140 - THEME.space_sm, _LEGEND_HEIGHT)
             painter.drawText(label_rect, int(Qt.AlignmentFlag.AlignRight), zoom_text)
+
+    def _draw_clip_shares(self, painter: QPainter, y: int) -> int:
+        """\u25c0 shadows % and highlights % \u25b6 in the header's right corner, each lit in its marking colour while that clipping is marked on the picture.
+        Returns the width taken from the right edge."""
+        def text_of(share: float) -> str:
+            return "0%" if share < 0.005 else f"{share:.1f}%" if share >= 0.1 else f"{share:.2f}%"
+
+        left_text, right_text = text_of(self._clip_share[0]), text_of(self._clip_share[1])
+        metrics = painter.fontMetrics()
+        arrow = 10
+        gap = THEME.space_sm
+        left_w = arrow + 3 + metrics.horizontalAdvance(left_text)
+        right_w = metrics.horizontalAdvance(right_text) + 3 + arrow
+        edge = self.rect().right() - THEME.border_width - THEME.space_sm
+        right_rect = QRect(edge - right_w, y, right_w, _LEGEND_HEIGHT)
+        left_rect = QRect(right_rect.left() - gap - left_w, y, left_w, _LEGEND_HEIGHT)
+        self._clip_rects = {"shadows": left_rect, "highlights": right_rect}
+        for kind, rect, text, colour, on, share in (
+            ("shadows", left_rect, left_text, _CLIP_SHADOW_COLOUR, self._clip_marking[0], self._clip_share[0]),
+            ("highlights", right_rect, right_text, _CLIP_HIGHLIGHT_COLOUR, self._clip_marking[1], self._clip_share[1]),
+        ):
+            lit = QColor(colour) if on else QColor(THEME.text_secondary if share >= 0.005 else THEME.text_muted)
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(lit)
+            cy = rect.center().y() + 1
+            if kind == "shadows":
+                x0 = rect.left()
+                painter.drawPolygon(QPolygonF([QPointF(x0 + arrow - 1, cy - 4), QPointF(x0 + arrow - 1, cy + 4), QPointF(x0, cy)]))
+                text_rect = QRect(rect.left() + arrow + 3, rect.top(), rect.width() - arrow - 3, rect.height())
+            else:
+                x0 = rect.right() - arrow + 1
+                painter.drawPolygon(QPolygonF([QPointF(x0, cy - 4), QPointF(x0, cy + 4), QPointF(x0 + arrow - 1, cy)]))
+                text_rect = QRect(rect.left(), rect.top(), rect.width() - arrow - 3, rect.height())
+            painter.setPen(lit)
+            painter.drawText(text_rect, int((Qt.AlignmentFlag.AlignLeft if kind == "shadows" else Qt.AlignmentFlag.AlignRight) | Qt.AlignmentFlag.AlignVCenter), text)
+        return right_rect.right() - left_rect.left() + THEME.space_md
 
     def _draw_exposure_zones(self, painter: QPainter, rect: QRect) -> None:
         for lo, hi, alpha in ((0, 85, 18), (85, 170, 0), (170, 255, 18)):

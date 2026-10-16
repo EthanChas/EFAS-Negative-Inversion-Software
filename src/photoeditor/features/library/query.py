@@ -7,6 +7,7 @@ from datetime import date, timedelta
 from dataclasses import dataclass, field
 from typing import Any, Optional
 
+from ..errormarks import logic as error_logic
 from ..metadata.roll import KNOWN_FILMS
 from ..tags import logic as tag_logic
 
@@ -30,6 +31,7 @@ class Meta:
     tags: dict[str, list[str]] = field(default_factory=dict)
     film_iso: dict[str, int] = field(default_factory=dict)
     versions: dict[str, int] = field(default_factory=dict)
+    errors: dict[str, list[str]] = field(default_factory=dict)   # the kinds of fault marked on each photo (Negative tab > Error marking), one entry per mark
 
 
 def load_meta(conn, records: list[dict]) -> Meta:
@@ -52,6 +54,18 @@ def load_meta(conn, records: list[dict]) -> Meta:
         card = edit_store.get_folder_roll(conn, edit_store.folder_key(folder, is_file=False))
         if card:
             meta.rolls[norm(folder)] = card
+    try:
+        import json
+
+        for p, raw in conn.execute("SELECT path, error_marks FROM edits WHERE error_marks IS NOT NULL AND error_marks != '[]' AND error_marks != ''"):
+            try:
+                kinds = [m["kind"] for m in error_logic.clean(json.loads(raw))]
+            except (TypeError, ValueError):
+                continue
+            if kinds:
+                meta.errors[norm(p)] = kinds
+    except Exception:
+        pass
     try:
         import json
 
@@ -80,6 +94,7 @@ def build_rows(records: list[dict], meta: Meta) -> list[dict]:
         card = meta.rolls.get(norm(rec["folder"]), {})
         note, place = meta.notes.get(key, ("", ""))
         tags = meta.tags.get(key, [])
+        errors = meta.errors.get(key, [])
         film_iso = int(card.get("iso") or 0) or KNOWN_FILMS.get(str(card.get("film", "")).strip(), (0,))[0] or meta.film_iso.get(key, 0)
         row.update(
             exif_iso=rec["iso"], iso=film_iso, iso_from_film=bool(film_iso),
@@ -87,7 +102,8 @@ def build_rows(records: list[dict], meta: Meta) -> list[dict]:
             film=str(card.get("film", "") or ""), roll=str(card.get("name", "") or ""),
             roll_camera=str(card.get("camera", "") or ""), roll_lens=str(card.get("lens", "") or ""),
             shot_from=str(card.get("shot_from", "") or ""), shot_to=str(card.get("shot_to", "") or ""),
-            note=note, place=place, tags=tags, tags_text=" ".join(tags), day=rec["taken"][:10], folder_name=os.path.basename(rec["folder"].rstrip("\\/")) or rec["folder"],
+            note=note, place=place, tags=tags, tags_text=" ".join(tags), errors=errors, error_count=len(errors),
+            errors_text=" ".join(sorted({f"{k} {error_logic.kind(k).label.lower()}" for k in errors})), day=rec["taken"][:10], folder_name=os.path.basename(rec["folder"].rstrip("\\/")) or rec["folder"],
         )
         row["_blob"] = " ".join(str(v) for v in (
             rec["name"], rec["ext"], row["folder_name"], rec["camera"], row["roll_camera"], rec["lens"], row["roll_lens"], row["film"], row["roll"],
@@ -105,6 +121,9 @@ _TEXT_KEYS = {
     "roll": ("roll",), "folder": ("folder_name", "folder"), "name": ("name",), "file": ("name",), "note": ("note",), "place": ("place",), "ext": ("ext",),
     "tag": ("tags_text",), "tags": ("tags_text",), "keyword": ("tags_text",),
 }
+_ERROR_KEYS = ("error", "errors", "fault", "faults")   # error:yes  error:none  error:scratch  error:"transport lines"
+_YES = ("yes", "y", "true", "1", "any")
+_NO = ("no", "n", "none", "false", "0", "clean")
 
 
 def parse_terms(text: str) -> list[tuple[bool, Optional[str], str]]:
@@ -113,7 +132,7 @@ def parse_terms(text: str) -> list[tuple[bool, Optional[str], str]]:
     for neg, key, quoted, bare in _TOKEN.findall(text or ""):
         value = quoted if quoted else bare
         key = key.lower() if key else None
-        if key and key not in _NUM_KEYS and key not in _TEXT_KEYS and key not in (*_DATE_KEYS, "flag", "edited"):
+        if key and key not in _NUM_KEYS and key not in _TEXT_KEYS and key not in (*_DATE_KEYS, *_ERROR_KEYS, "flag", "edited"):
             value, key = f"{key}:{value}", None
         if value:
             terms.append((bool(neg), key, value))
@@ -166,6 +185,17 @@ def _date_match(day: str, spec: str) -> bool:
     return bool(b and b[0] <= day <= b[1])
 
 
+def errors_match(row: dict, value: str) -> bool:
+    """Does the photo have the error marks asked for: yes / any, none, or a kind (by id or by name, in part: scratch, transport)?"""
+    value = value.strip().lower()
+    marked = bool(row.get("error_count"))
+    if value in _YES:
+        return marked
+    if value in _NO:
+        return not marked
+    return value in str(row.get("errors_text", ""))
+
+
 def _term_match(row: dict, key: Optional[str], value: str) -> bool:
     v = value.lower()
     if key is None:
@@ -196,6 +226,8 @@ def _term_match(row: dict, key: Optional[str], value: str) -> bool:
         return (flag is None) if v in ("none", "unflagged", "no") else (flag == v or (v == "keep" and flag == FLAG_KEEPER) or (v == "reject" and flag == FLAG_REJECTED))
     if key == "edited":
         return bool(row.get("edited")) == (v in ("yes", "y", "true", "1"))
+    if key in _ERROR_KEYS:
+        return errors_match(row, v)
     return True
 
 
@@ -216,10 +248,11 @@ class Query:
     sort: str = "taken"
     descending: bool = False
     under: str = ""
+    errors: str = ""   # "" any photo, "any" marked ones, "none" unmarked ones, or a kind of fault
 
     def is_filtering(self) -> bool:
         return bool(self.text.strip() or self.rating_min or self.flags or self.edited is not None or self.camera or self.lens or self.film
-                    or self.folder or self.tag or self.iso or self.date_from or self.date_to or self.under)
+                    or self.folder or self.tag or self.iso or self.date_from or self.date_to or self.under or self.errors)
 
 
 FLAG_FILTERS = {"any": (), "keeper": ("keeper",), "not_rejected": ("keeper", "none"), "rejected": ("rejected",), "none": ("none",)}
@@ -228,7 +261,7 @@ FLAG_FILTERS = {"any": (), "keeper": ("keeper",), "not_rejected": ("keeper", "no
 def default_state() -> dict:
     """The filter panel with nothing set: what a smart collection stores, field for field."""
     return {"text": "", "rating": 0, "flag": "any", "edited": None, "folder": "", "camera": "", "lens": "", "film": "", "iso": 0, "tag": "",
-            "when": "", "date_from": "", "date_to": "", "sort": "taken", "descending": False, "under": ""}
+            "when": "", "date_from": "", "date_to": "", "sort": "taken", "descending": False, "under": "", "errors": ""}
 
 
 def clean_state(data) -> dict:
@@ -251,6 +284,8 @@ def clean_state(data) -> dict:
         out["flag"] = "any"
     if out["sort"] not in SORT_KEYS:
         out["sort"] = "taken"
+    if out["errors"] not in ("", "any", "none") and out["errors"] not in error_logic.KIND_IDS:
+        out["errors"] = ""
     return out
 
 
@@ -273,7 +308,7 @@ def query_from_state(state: dict, today: date | None = None) -> Query:
     date_from, date_to = when_range(s["when"], s["date_from"], s["date_to"], today)
     return Query(
         text=s["text"], rating_min=s["rating"], flags=FLAG_FILTERS[s["flag"]], edited=s["edited"], camera=s["camera"], lens=s["lens"], film=s["film"],
-        folder=s["folder"], tag=s["tag"], iso=s["iso"], date_from=date_from, date_to=date_to, sort=s["sort"], descending=s["descending"], under=s["under"],
+        folder=s["folder"], tag=s["tag"], iso=s["iso"], date_from=date_from, date_to=date_to, sort=s["sort"], descending=s["descending"], under=s["under"], errors=s["errors"],
     )
 
 
@@ -296,6 +331,8 @@ def describe_state(state: dict) -> str:
         parts.append(f"flag: {s['flag'].replace('_', ' ')}")
     if s["edited"] is not None:
         parts.append("edited" if s["edited"] else "not edited")
+    if s["errors"]:
+        parts.append({"any": "with error marks", "none": "without error marks"}.get(s["errors"], f"marked: {error_logic.kind(s['errors']).label.lower()}"))
     if s["when"]:
         parts.append({"today": "today", "7": "last 7 days", "30": "last 30 days", "year": "this year", "custom": f"{s['date_from']} to {s['date_to']}"}.get(s["when"], s["when"]))
     return ", ".join(parts) if parts else "everything"
@@ -320,6 +357,8 @@ def matches(row: dict, q: Query, terms: list | None = None) -> bool:
         if flag not in q.flags:
             return False
     if q.edited is not None and row["edited"] != q.edited:
+        return False
+    if q.errors and not errors_match(row, q.errors):
         return False
     if q.camera and q.camera not in (row["camera"], row["roll_camera"]):
         return False

@@ -2,12 +2,13 @@ import os
 
 from datetime import datetime
 
-from PyQt6.QtCore import QPoint, Qt, QUrl, pyqtSignal
-from PyQt6.QtGui import QColor, QDesktopServices
+from PyQt6.QtCore import QPoint, QSize, Qt, QUrl, pyqtSignal
+from PyQt6.QtGui import QColor, QDesktopServices, QIcon
 from PyQt6.QtWidgets import QMenu, QTreeWidget, QTreeWidgetItem
 
 from ...features.browse.logic import DEFAULT_SORT, SORT_MODES, folder_stats, list_subfolders, sort_fact
 from ...theme.tokens import THEME
+from . import panel_icons
 
 _PLACEHOLDER = "__loading__"
 ROOTS_SETTINGS_KEY = "library/roots"
@@ -59,9 +60,15 @@ class FolderTree(QTreeWidget):
         self.setHeaderHidden(True)
         self.setColumnCount(2)
         self.header().setStretchLastSection(False)
+        self.setIconSize(QSize(16, 16))
         self.itemExpanded.connect(self._on_expanded)
+        self.itemCollapsed.connect(lambda item: item.setIcon(0, self._folder_icon(False)))
         self.itemClicked.connect(self._on_clicked)
         self.itemDoubleClicked.connect(self._on_double_clicked)
+
+    def _folder_icon(self, opened: bool) -> QIcon:
+        """The folder icon beside a name (a Lucide file from assets/icon): shut, or open while the folder is expanded."""
+        return QIcon(panel_icons.pixmap("folder-open" if opened else "folder", 16, THEME.text_secondary))
 
     def set_sort(self, mode: str) -> None:
         """List the folders (the roots, and the subfolders under each) by name, date, number of photos, or as they were added."""
@@ -145,6 +152,7 @@ class FolderTree(QTreeWidget):
         label = _count_label(images, subfolders)
         item = _FolderItem([name, label])
         item.setData(0, Qt.ItemDataRole.UserRole, folder)
+        item.setIcon(0, self._folder_icon(False))
         item.setData(0, _ROLE_NAME, name.lower())
         item.setData(0, _ROLE_DATE, newest)
         item.setData(0, _ROLE_COUNT, images)
@@ -183,6 +191,7 @@ class FolderTree(QTreeWidget):
         return False
 
     def _on_expanded(self, item: QTreeWidgetItem) -> None:
+        item.setIcon(0, self._folder_icon(True))
         if item.childCount() != 1 or item.child(0).data(0, Qt.ItemDataRole.UserRole) != _PLACEHOLDER:
             return
         item.takeChildren()

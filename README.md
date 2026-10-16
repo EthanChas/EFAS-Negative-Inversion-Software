@@ -49,6 +49,7 @@ Open a negative (RAW, TIFF, PNG or JPEG), invert it, balance the colour and tone
 - **Tone Curve** (Tone tab): an **RGB** curve and a **Red**, **Green** and **Blue** curve, each with its own tab, a graph you click to add a point, drag to move and double-click to remove, and **In** / **Out** boxes for the selected point. **Black**, **Grey** and **White** point pickers set the three colour curves from a spot you click on the picture (so that spot prints black, neutral grey or white), **Auto** sets each channel's black and white points from the picture, and **Reset** / **Reset All** put the curve, or all four, back to a straight line. The colour curves are saved, undone, copied and put in presets like the rest (see [how the modules stack](docs/how-modules-stack.md))
 - **Print Response** (Tone tab): **Snap**, **Toe** and **Shoulder**, with a width for each roll-off, shape the picture's response curve the way a print's characteristic curve is shaped, drawn as a small graph
 - **Module on/off lights**: a light beside each editing module's name (a square in the Classic theme, a circle with a grey border in the others); green is on, red is off. Click it to make the picture without that module while keeping its settings
+- **Clipped shares on the histogram**: a ◀ and a ▶ in the graph's corner give the percent of the picture in the blocked shadows and the blown highlights; click one to mark those tones on the picture in blue or red (the same marks as the Shadow / Highlight Clipping buttons)
 - **Histogram**: stays in view while the sidebar scrolls; **Log** scale and **Split** (red, green and blue in separate strips) buttons; the Color graph is greyed out for a black-and-white negative
 - **A short written read-out under the histogram**: exposure, contrast, range, clipping, colour, saturation and the channel averages, then the scan quality; hover a row for the full detail
 
@@ -75,6 +76,9 @@ Open a negative (RAW, TIFF, PNG or JPEG), invert it, balance the colour and tone
 
 - **Library**: a Workbench grid with search by camera, lens, film, ISO, date, roll, rating and flag; stars, flags, tags, snapshots, history; sort by name, date or number of photos
 - **Tags** nest (`People/Family`; searching People finds everything inside it), with a drop-down of every tag you have made, a quick tag bar (`T`), and a Tagging panel like darktable's with Lightroom keyword import and export
+- **Error marks in the Workbench**: search `error:yes`, `error:none`, `error:scratch` (or `-error:...`), pick **Errors** under Rating & Status, or save it in a smart collection, to find the photos that have faults marked on them (Negative tab > Error marking)
+- **Folder icons** beside the folders in the editor's and the Workbench's Library, shut or open (Lucide icons from the icon folder)
+- **Slideshow, Maps and Classroom** buttons beside Workbench and Editor: pages that say *Soon™* for now
 - **Find (Ctrl+K)** reaches any control, menu action, preset, module preset or smart collection
 - **Virtual copies** (several edits of one scan), **smart collections**, a **duplicate finder**, and **undo for whole-roll actions**
 - **Proofing tools**: test strip, ring-around, split view, contact sheets

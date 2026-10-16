@@ -15,6 +15,7 @@ from PyQt6.QtWidgets import (
     QMenu, QStyle, QStyledItemDelegate, QVBoxLayout, QWidget,
 )
 
+from ...features.errormarks import logic as error_logic
 from ...features import platform
 from ...features.library import query as Q
 from ...features.library import suggest
@@ -403,7 +404,7 @@ class LighttableView(QWidget):
             "Type plain words - every word must appear somewhere in a photo's name, folder, camera, lens, film, roll, note, place or date. Add field "
             "terms to be exact: camera:canon  lens:100  film:delta  roll:tokyo  folder:hotstack  name:7077  note:\"light leak\"  place:shibuya  ext:cr2 "
             "iso:400  iso:>=800  iso:100-400  date:2026  date:2026-10  date:2026-10-05  date:2026-09..2026-10  shot:1998 (the roll's shot dates)  "
-            "rating:>=3  flag:keeper  flag:none  edited:yes. A leading minus leaves matches out: -camera:canon.",
+            "rating:>=3  flag:keeper  flag:none  edited:yes  error:yes  error:none  error:scratch (the faults marked under Negative > Error marking). A leading minus leaves matches out: -camera:canon.",
             reset=lambda: self._search.clear(),
         )
         self._search = QLineEdit()
@@ -457,11 +458,13 @@ class LighttableView(QWidget):
         self._row(body, "To", self._to)
 
         body = self._section(col, "Rating & Status", "Show only photos with at least this many stars, a flag, or that have been edited.",
-                             reset=lambda: self._reset_combos(self._rating, self._flag, self._edited))
+                             reset=lambda: self._reset_combos(self._rating, self._flag, self._edited, self._errors))
         self._rating = self._combo([("Any", 0)] + [(f"{n}+ star" + ("s" if n > 1 else ""), n) for n in range(1, 6)])
         self._flag = self._combo([("Any", "any"), ("Keepers", "keeper"), ("Not rejected", "not_rejected"), ("Rejected", "rejected"), ("Unflagged", "none")])
         self._edited = self._combo([("Any", None), ("Edited", True), ("Not edited", False)])
-        for label, w in (("Rating", self._rating), ("Flag", self._flag), ("Edited", self._edited)):
+        self._errors = self._combo([("Any", ""), ("With error marks", "any"), ("Without error marks", "none")] + [(k.label, k.id) for k in error_logic.KINDS])
+        self._errors.setToolTip("Photos with faults marked on them (Negative tab > Error marking): any, none, or one kind of fault")
+        for label, w in (("Rating", self._rating), ("Flag", self._flag), ("Edited", self._edited), ("Errors", self._errors)):
             self._row(body, label, w)
 
         body = self._section(col, "Sort", reset=self._reset_sort)
@@ -482,6 +485,7 @@ class LighttableView(QWidget):
             ("Flag", [("Keepers", "flag:keeper"), ("Rejected", "flag:rejected"), ("Unflagged", "flag:none")]),
             ("Rating", [("4+ stars", "rating:>=4"), ("Unrated", "rating:0")]),
             ("Edits", [("Edited", "edited:yes"), ("Not edited", "edited:no")]),
+            ("Error marks", [("With error marks", "error:yes"), ("Without error marks", "error:none")] + [(k.label, f"error:{k.id}") for k in error_logic.KINDS]),
             ("Date taken", [("Today", f"date:{today:%Y-%m-%d}"), ("This month", f"date:{today:%Y-%m}"), ("This year", f"date:{today:%Y}")]),
             ("Start a field", [("camera:", "camera:"), ("lens:", "lens:"), ("film:", "film:"), ("iso:", "iso:"), ("roll:", "roll:"), ("folder:", "folder:"), ("tag:", "tag:")]),
         ]
@@ -791,6 +795,7 @@ class LighttableView(QWidget):
             text=self._search.text(), rating_min=self._rating.currentData(), flags=Q.FLAG_FILTERS.get(self._flag.currentData() or "any", ()), edited=self._edited.currentData(),
             camera=self._camera.currentData(), lens=self._lens.currentData(), film=self._film.currentData(), folder=self._folder.currentData(), tag=self._tag.currentData(),
             iso=self._iso.currentData(), date_from=date_from, date_to=date_to, sort=self._sort.currentData(), descending=self._order.isChecked(), under=self._under,
+            errors=self._errors.currentData() or "",
         )
 
     def filter_state(self) -> dict:
@@ -800,7 +805,7 @@ class LighttableView(QWidget):
             "folder": self._folder.currentData() or "", "camera": self._camera.currentData() or "", "lens": self._lens.currentData() or "", "film": self._film.currentData() or "",
             "iso": self._iso.currentData() or 0, "tag": self._tag.currentData() or "", "when": self._when.currentData() or "",
             "date_from": self._from.date().toString("yyyy-MM-dd"), "date_to": self._to.date().toString("yyyy-MM-dd"), "sort": self._sort.currentData() or "taken",
-            "descending": self._order.isChecked(), "under": self._under,
+            "descending": self._order.isChecked(), "under": self._under, "errors": self._errors.currentData() or "",
         }
 
     def set_filter_state(self, state: dict) -> None:
@@ -809,7 +814,7 @@ class LighttableView(QWidget):
         self._loading = True
         self._search.setText(s["text"])
         for combo, key in ((self._folder, "folder"), (self._camera, "camera"), (self._lens, "lens"), (self._film, "film"), (self._iso, "iso"), (self._tag, "tag"),
-                           (self._rating, "rating"), (self._flag, "flag"), (self._edited, "edited"), (self._when, "when"), (self._sort, "sort")):
+                           (self._rating, "rating"), (self._flag, "flag"), (self._edited, "edited"), (self._errors, "errors"), (self._when, "when"), (self._sort, "sort")):
             self._select_data(combo, s[key])
         for edit, key in ((self._from, "date_from"), (self._to, "date_to")):
             parsed = QDate.fromString(s[key], "yyyy-MM-dd")
@@ -880,7 +885,7 @@ class LighttableView(QWidget):
         self._under = ""
         self._library.clear_selection()
         self._search.clear()
-        for combo in (self._folder, self._camera, self._lens, self._film, self._iso, self._tag, self._rating, self._flag, self._edited, self._when):
+        for combo in (self._folder, self._camera, self._lens, self._film, self._iso, self._tag, self._rating, self._flag, self._edited, self._errors, self._when):
             combo.setCurrentIndex(0)
         self._loading = False
         self._from.setEnabled(False)

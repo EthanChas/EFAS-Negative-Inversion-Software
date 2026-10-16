@@ -12,6 +12,7 @@ FIELD_HELP = (
     ("note:", "words in a note"), ("place:", "place"), ("ext:", "file type"), ("tag:", "tag"), ("iso:", "film ISO"), ("date:", "date taken"),
     ("rating:", "star rating"), ("flag:", "keeper or rejected"), ("edited:", "has saved edits"), ("focal:", "focal length (mm)"), ("aperture:", "f-number"),
     ("shot:", "the roll's shot dates"), ("versions:", "number of versions (virtual copies)"),
+    ("error:", "marked faults: yes, none or a kind (scratch, newton...)"),
 )
 FIXED = (
     ("rating:>=1", "1 star or more"), ("rating:>=2", "2 stars or more"), ("rating:>=3", "3 stars or more"), ("rating:>=4", "4 stars or more"),
@@ -21,6 +22,9 @@ FIXED = (
     ("iso:>=100", "ISO 100 or more"), ("iso:>=400", "ISO 400 or more"), ("iso:>=800", "ISO 800 or more"), ("iso:100-400", "ISO 100 to 400"),
     ("focal:>=50", "50 mm or longer"), ("focal:<=35", "35 mm or wider"), ("aperture:<=2.8", "f/2.8 or wider"),
     ("versions:>1", "has virtual copies"),
+    ("error:yes", "has error marks"), ("error:none", "no error marks"),
+    ("error:scratch", "scratches marked"), ("error:watermark", "watermarks marked"), ("error:transport", "transport lines marked"), ("error:newton", "Newton rings marked"),
+    ("error:lightleak", "light leaks marked"), ("error:dust", "dust and hairs marked"), ("error:fingerprint", "fingerprints marked"),
 )
 MAX_SHOWN = 30
 MAX_TAGS = 400

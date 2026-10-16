@@ -320,6 +320,29 @@ class _HotkeyFilter(QObject):
         return True
 
 
+# the views the buttons in the menu bar's corner switch between: the page each shows in the window's stack
+_VIEW_PAGES = {"editor": 0, "lighttable": 1, "slideshow": 2, "maps": 3, "classroom": 4}
+_SOON_VIEWS = {"slideshow": "Slideshow", "maps": "Maps", "classroom": "Classroom"}
+
+
+def _coming_soon_page(title: str) -> QWidget:
+    """A page for a part of EFAS that is not built yet: its name and "Soon\u2122"."""
+    page = QWidget()
+    column = QVBoxLayout(page)
+    column.addStretch(1)
+    heading = QLabel(title)
+    heading.setAlignment(Qt.AlignmentFlag.AlignCenter)
+    heading.setProperty("role", "title")
+    soon = QLabel("Soon\u2122")
+    soon.setAlignment(Qt.AlignmentFlag.AlignCenter)
+    soon.setStyleSheet(f"font-size: 28px; color: {THEME.text_secondary};")
+    column.addWidget(heading)
+    column.addWidget(soon)
+    column.addStretch(1)
+    page.setObjectName(f"soon_{title.lower()}")
+    return page
+
+
 class AppWindow(QMainWindow):
     """The app's root window - runs full screen (showMaximized, see __main__.py) with a Win98 menu bar at the top."""
 
@@ -399,6 +422,8 @@ class AppWindow(QMainWindow):
         self._view_stack = QStackedWidget()
         self._view_stack.addWidget(self._splitter)
         self._view_stack.addWidget(self._lighttable)
+        for key in _SOON_VIEWS:   # Slideshow, Maps and Classroom are on their way: each is a page that says so
+            self._view_stack.addWidget(_coming_soon_page(_SOON_VIEWS[key]))
         frame.layout().addWidget(self._view_stack, 1)
         self._lighttable.open_requested.connect(self.open_in_editor)
         self._lighttable.rate_requested.connect(self._on_lighttable_rate)
@@ -774,12 +799,12 @@ class AppWindow(QMainWindow):
         corner_row.setContentsMargins(0, 0, THEME.space_sm, 0)
         corner_row.setSpacing(2)
         self._view_buttons: dict[str, QPushButton] = {}
-        for key, text in (("lighttable", "Workbench"), ("editor", "Editor")):
+        for key, text in (("lighttable", "Workbench"), ("editor", "Editor"), *_SOON_VIEWS.items()):
             btn = QPushButton(text)
             btn.setCheckable(True)
             btn.setFixedHeight(22)
             btn.setStyleSheet("padding: 0px 10px;")
-            btn.setToolTip("Workbench: the whole library as a grid (W)" if key == "lighttable" else "Editor (D)")
+            btn.setToolTip({"lighttable": "Workbench: the whole library as a grid (W)", "editor": "Editor (D)"}.get(key, f"{text}: coming soon"))
             btn.clicked.connect(lambda _c=False, k=key: self.set_view(k))
             self._view_buttons[key] = btn
             corner_row.addWidget(btn)
@@ -1048,6 +1073,7 @@ class AppWindow(QMainWindow):
         self._histogram_panel.hover_cleared.connect(self._on_graph_hover_cleared)
         self._histogram_panel.range_selected.connect(self._on_range_selected)
         self._histogram_panel.range_cleared.connect(self._on_range_cleared)
+        self._histogram_panel.clip_toggled.connect(self._on_histogram_clip_toggled)
         body.addWidget(self._histogram_panel)
 
         self._graph_reading_label = QLabel("Hover the graph for a reading.")
@@ -1552,29 +1578,29 @@ class AppWindow(QMainWindow):
         return self._lighttable.handle_key(event)
 
     def set_view(self, name: str) -> None:
-        """Switch between the editor and the Lighttable."""
-        want_lighttable = name == "lighttable"
-        if want_lighttable == self.lighttable_active():
+        """Switch between the editor, the Workbench (the Lighttable) and the pages that are still to come (Slideshow, Maps, Classroom)."""
+        page = _VIEW_PAGES.get(name)
+        if page is None or page == self._view_stack.currentIndex():
             return
         c = self.controller
-        if want_lighttable:
+        if self._view_stack.currentIndex() == 0:   # leaving the editor
             self._metadata_tab.flush()
             if c.state.image_path is not None:
                 c._save_edit_state()
                 self._lighttable.thumbnail_changed(c.state.image_path)
             self._peaking_timer.stop()
-            self._view_stack.setCurrentIndex(1)
             self._filmstrip.setVisible(False)
+        self._view_stack.setCurrentIndex(page)
+        if name == "lighttable":
             self._lighttable_reload_rows()
             self.lighttable_refresh()
             self._lighttable.focus_grid()
-        else:
-            self._view_stack.setCurrentIndex(0)
+        elif name == "editor":
             self._filmstrip.setVisible(bool(self._filmstrip.paths()) and not self._panels_hidden)
             self._image_view.setFocus()
         for key, btn in self._view_buttons.items():
-            btn.setChecked((key == "lighttable") == want_lighttable)
-        self._plugin_emit("view_changed", {"view": "workbench" if want_lighttable else "editor"})
+            btn.setChecked(key == name)
+        self._plugin_emit("view_changed", {"view": "workbench" if name == "lighttable" else name})
 
     def _photo_action_for_open(self, action) -> None:
         path = self.controller.state.image_path
@@ -3546,7 +3572,13 @@ class AppWindow(QMainWindow):
         if self._dust_tool.active_tool() == "smart":
             self.controller.smart_heal_at(x, y, self._dust_tool.smart_sensitivity())
 
+    def _on_histogram_clip_toggled(self, kind: str) -> None:
+        """An arrow beside a clipped share on the histogram: mark (or stop marking) that kind of clipping on the picture."""
+        button = self._shadow_clip_btn if kind == "shadows" else self._highlight_clip_btn
+        button.setChecked(not button.isChecked())
+
     def _on_clipping_toggled(self, _checked: bool = False) -> None:
+        self._histogram_panel.set_clip_marking(self._shadow_clip_btn.isChecked(), self._highlight_clip_btn.isChecked())
         self.controller.set_clipping(self._shadow_clip_btn.isChecked(), self._highlight_clip_btn.isChecked())
 
     def _on_peaking_toggled(self, on: bool) -> None:
