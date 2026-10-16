@@ -311,6 +311,26 @@ def render_edited_thumbnail(path: str, conn, max_dim: int = 800):
     return image
 
 
+def render_slide(path: str, conn, max_dim: int, edited: bool = True):
+    """A photo for the slideshow: with its saved edits applied (or, with edited=False, as the scan is), at most max_dim on the long side, as 8-bit RGB. Unlike
+    render_edited_thumbnail it is not held to the 1600-pixel editing preview, so a slide can fill a big screen."""
+    full = load_image_rgb(path)
+    if not edited:
+        return to_uint8(make_preview_rgb(full, max_dim))
+    preview = make_preview_rgb(full)   # the picture a saved crop rectangle is measured on
+    params, flatfield = _edits_for(path, conn, to_uint8(preview))
+    scanned = full
+    full, params, flatfield = _curve_source(path, conn, full, params, flatfield)
+    if full is not scanned:
+        preview = make_preview_rgb(full)
+    small = make_preview_rgb(full, max_dim)
+    renderer = Renderer()
+    if params.ai_dust:
+        renderer.ai_prob_lookup = lambda token, inverted, mono: aidust.probability(path, full, inverted, mono)
+    image, _pre, _stats, _overlay = renderer.render(small, params, path, preview.shape[1], live=None, want_stats=False, overlay=False, flatfield=flatfield)
+    return to_uint8(image)
+
+
 def load_roll(path: str, conn) -> RollCard:
     return RollCard.from_dict(edit_store.get_folder_roll(conn, edit_store.folder_key(path)))
 

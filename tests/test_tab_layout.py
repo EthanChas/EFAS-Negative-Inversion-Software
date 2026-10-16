@@ -84,3 +84,10 @@ def test_each_tab_has_an_icon_file():
     assert set(panel_icons.BY_TAB) == {"negative", "correction", "exposure", "color", "detail", "watermark", "metadata", "plugins"}
     for key in panel_icons.BY_TAB:
         assert (panel_icons.ICON_DIR / f"{panel_icons.BY_TAB[key]}.svg").is_file(), key
+
+
+def test_every_icon_the_slideshow_and_folders_use_is_a_file():
+    from photoeditor.desktop.view import panel_icons
+
+    for key in ("previous", "play", "pause", "next", "fullscreen", "folder", "folder_open"):
+        assert (panel_icons.ICON_DIR / f"{panel_icons.OTHER[key]}.svg").is_file(), key

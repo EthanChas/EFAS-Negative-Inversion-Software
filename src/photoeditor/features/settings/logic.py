@@ -36,6 +36,13 @@ DEFAULTS: dict[str, Any] = {
     "histogram_log": False,
     "histogram_split": False,
     "hover_preview": True,
+    "slideshow_interval": 5.0,
+    "slideshow_transition": "fade",
+    "slideshow_source": "shown",
+    "slideshow_shuffle": False,
+    "slideshow_loop": True,
+    "slideshow_captions": True,
+    "slideshow_edits": True,
     "plugins_enabled": {},
     "theme": "modern",
     "theme_accent": ACCENTS[0][0],
@@ -65,6 +72,16 @@ def _clean(data: Any) -> dict[str, Any]:
     for key in ("raw_auto_bright", "raw_linear", "auto_advance", "backup_auto", "check_updates", "advanced_mode", "scan_quality", "hover_modules", "module_colours", "workbench_library", "hq_always", "collapse_on_tab_change", "film_reference_online", "crop_roll_same_size", "hover_preview", "error_marks_visible", "histogram_log", "histogram_split"):
         if isinstance(data.get(key), bool):
             out[key] = data[key]
+    for key in ("slideshow_shuffle", "slideshow_loop", "slideshow_captions", "slideshow_edits"):
+        if isinstance(data.get(key), bool):
+            out[key] = data[key]
+    seconds = data.get("slideshow_interval")
+    if isinstance(seconds, (int, float)) and not isinstance(seconds, bool):
+        out["slideshow_interval"] = float(min(max(seconds, 1.0), 120.0))
+    if data.get("slideshow_transition") in ("cut", "fade"):
+        out["slideshow_transition"] = data["slideshow_transition"]
+    if data.get("slideshow_source") in ("shown", "selected", "folder"):
+        out["slideshow_source"] = data["slideshow_source"]
     if isinstance(data.get("theme"), str) and 0 < len(data["theme"]) <= 120:
         out["theme"] = data["theme"]  # a built-in theme's id, or "user:<file>" for one the user imported (a missing one falls back to Default when applied)
     if data.get("theme_accent") in [name for name, _c in ACCENTS]:

@@ -41,6 +41,7 @@ from .local_contrast_panel import LocalContrastToolPanel
 from .color_mixer_panel import ColorMixerToolPanel
 from .color_toning_panel import ColorToningToolPanel
 from .edge_bleed_panel import EdgeBleedPanel
+from .slideshow_view import SlideshowView
 from .lab_look_panel import LabLookToolPanel
 from .print_response_panel import PrintResponseToolPanel
 from ...features.metadata.source_exif import read_exif_from_file
@@ -65,6 +66,7 @@ from ...features.export import logic as export_logic
 from ...features.proofs import logic as proof_logic
 from ...features.keybinds import logic as key_logic
 from ...features.settings import logic as app_settings
+from ...features.slideshow import logic as slideshow_logic
 from ...theme import runtime as theme_runtime
 from ...features.library.index import LibraryIndex
 from ...features.focuspeaking.logic import overlay_from_levels
@@ -275,6 +277,8 @@ class _HotkeyFilter(QObject):
             if not repeat:
                 window.set_view("lighttable" if action == "workbench" else "editor")
             return True
+        if window.view_name() not in ("editor", "lighttable"):
+            return False   # Slideshow, Maps, Classroom: the editor's keys (arrows step the roll, 0-5 rate) must not act on a photo that is not on screen
         if window.lighttable_active():
             if action == "shortcuts_help":
                 window.show_shortcuts()
@@ -323,7 +327,7 @@ class _HotkeyFilter(QObject):
 
 # the views the buttons in the menu bar's corner switch between: the page each shows in the window's stack
 _VIEW_PAGES = {"editor": 0, "lighttable": 1, "slideshow": 2, "maps": 3, "classroom": 4}
-_SOON_VIEWS = {"slideshow": "Slideshow", "maps": "Maps", "classroom": "Classroom"}
+_SOON_VIEWS = {"maps": "Maps", "classroom": "Classroom"}
 
 
 def _coming_soon_page(title: str) -> QWidget:
@@ -423,7 +427,10 @@ class AppWindow(QMainWindow):
         self._view_stack = QStackedWidget()
         self._view_stack.addWidget(self._splitter)
         self._view_stack.addWidget(self._lighttable)
-        for key in _SOON_VIEWS:   # Slideshow, Maps and Classroom are on their way: each is a page that says so
+        self._slideshow = SlideshowView(self.controller.db_path)
+        self._slideshow.set_sources({"shown": self._slideshow_shown, "selected": self._slideshow_selected, "folder": self._slideshow_folder})
+        self._view_stack.addWidget(self._slideshow)
+        for key in _SOON_VIEWS:   # Maps and Classroom are on their way: each is a page that says so
             self._view_stack.addWidget(_coming_soon_page(_SOON_VIEWS[key]))
         frame.layout().addWidget(self._view_stack, 1)
         self._lighttable.open_requested.connect(self.open_in_editor)
@@ -800,12 +807,12 @@ class AppWindow(QMainWindow):
         corner_row.setContentsMargins(0, 0, THEME.space_sm, 0)
         corner_row.setSpacing(2)
         self._view_buttons: dict[str, QPushButton] = {}
-        for key, text in (*_SOON_VIEWS.items(), ("lighttable", "Workbench"), ("editor", "Editor")):
+        for key, text in (("slideshow", "Slideshow"), *_SOON_VIEWS.items(), ("lighttable", "Workbench"), ("editor", "Editor")):
             btn = QPushButton(text)
             btn.setCheckable(True)
             btn.setFixedHeight(22)
             btn.setStyleSheet("padding: 0px 10px;")
-            btn.setToolTip({"lighttable": "Workbench: the whole library as a grid (W)", "editor": "Editor (D)"}.get(key, f"{text}: coming soon"))
+            btn.setToolTip({"lighttable": "Workbench: the whole library as a grid (W)", "editor": "Editor (D)", "slideshow": "Slideshow: play the Workbench's photos, with their edits"}.get(key, f"{text}: coming soon"))
             btn.clicked.connect(lambda _c=False, k=key: self.set_view(k))
             self._view_buttons[key] = btn
             corner_row.addWidget(btn)
@@ -1577,6 +1584,23 @@ class AppWindow(QMainWindow):
         if box.clickedButton() is open_btn:
             QDesktopServices.openUrl(QUrl.fromLocalFile(summary["path"]))
 
+    def view_name(self) -> str:
+        """Which page is up: "editor", "lighttable" (the Workbench), "slideshow", "maps" or "classroom"."""
+        index = self._view_stack.currentIndex()
+        return next((name for name, page in _VIEW_PAGES.items() if page == index), "editor")
+
+    def slideshow_active(self) -> bool:
+        return self.view_name() == "slideshow"
+
+    def _slideshow_shown(self) -> list[tuple[str, str]]:
+        return [(r["path"], slideshow_logic.caption(r["name"], r)) for r in self._lighttable.shown_rows()]
+
+    def _slideshow_selected(self) -> list[tuple[str, str]]:
+        return [(r["path"], slideshow_logic.caption(r["name"], r)) for r in self._lighttable.selected_rows()]
+
+    def _slideshow_folder(self) -> list[tuple[str, str]]:
+        return [(p, slideshow_logic.caption(p)) for p in self._filmstrip.paths()]
+
     def lighttable_active(self) -> bool:
         return self._view_stack.currentIndex() == 1
 
@@ -1589,6 +1613,8 @@ class AppWindow(QMainWindow):
         if page is None or page == self._view_stack.currentIndex():
             return
         c = self.controller
+        if self._view_stack.currentIndex() == _VIEW_PAGES["slideshow"] and name != "slideshow":
+            self._slideshow.leave()
         if self._view_stack.currentIndex() == 0:   # leaving the editor
             self._metadata_tab.flush()
             if c.state.image_path is not None:
@@ -1601,6 +1627,11 @@ class AppWindow(QMainWindow):
             self._lighttable_reload_rows()
             self.lighttable_refresh()
             self._lighttable.focus_grid()
+        elif name == "slideshow":
+            if self._lighttable.row_count() == 0:   # the Workbench has not been opened yet this session: read the library for it (and look for new photos)
+                self._lighttable_reload_rows()
+                self.lighttable_refresh()
+            self._slideshow.open_slideshow(self.controller.state.image_path)
         elif name == "editor":
             self._filmstrip.setVisible(bool(self._filmstrip.paths()) and not self._panels_hidden)
             self._image_view.setFocus()
@@ -1954,6 +1985,8 @@ class AppWindow(QMainWindow):
         )
         if added or changed or removed:
             self._lighttable_reload_rows()
+            if self.slideshow_active() and not self._slideshow.is_playing():   # the slideshow was opened before the library was read
+                self._slideshow.reload_items(self._slideshow.current_path())
 
     def _tagging_targets(self) -> list[str]:
         """The photos the Tagging panel works on: the Workbench's selection there, the open photo in the editor."""
@@ -4107,6 +4140,7 @@ class AppWindow(QMainWindow):
             self._index_worker.cancel()
             self._index_worker.wait(5000)
         self._lighttable.shutdown()
+        self._slideshow.shutdown()
         self._peaking_timer.stop()
         for worker in self._peaking_workers:
             worker.wait(5000)

@@ -25,7 +25,7 @@ BY_TITLE = {
 # the tool rail's tabs -> the icon file
 BY_TAB = {"negative": "film", "correction": "crop", "exposure": "sun", "color": "palette", "detail": "focus", "watermark": "stamp", "metadata": "id-card", "plugins": "puzzle"}
 # icons used by name elsewhere
-OTHER = {"dropper": "pipette", "folder": "folder", "folder_open": "folder-open"}
+OTHER = {"dropper": "pipette", "folder": "folder", "folder_open": "folder-open", "play": "play", "pause": "pause", "previous": "skip-back", "next": "skip-forward", "fullscreen": "maximize"}
 NAMES = frozenset(BY_TITLE.values()) | frozenset(BY_TAB.values()) | frozenset(OTHER.values())
 
 _cache: dict[tuple, QImage] = {}   # images, not pixmaps: a pixmap that outlives the application crashes Qt on some platforms when the program exits

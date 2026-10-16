@@ -68,9 +68,9 @@ _SCRIPT = textwrap.dedent(r"""
         while time.time() < end: app.processEvents(); time.sleep(0.01)
     pump(2)
 
-    # --- Slideshow, Maps and Classroom: buttons next to Workbench and Editor, each a page that says Soon
+    # --- Maps and Classroom: buttons before Workbench and Editor, each a page that says Soon (the Slideshow is a real page: tests/test_slideshow.py)
     assert list(win._view_buttons) == ["slideshow", "maps", "classroom", "lighttable", "editor"], list(win._view_buttons)
-    for key, title in (("slideshow", "Slideshow"), ("maps", "Maps"), ("classroom", "Classroom")):
+    for key, title in (("maps", "Maps"), ("classroom", "Classroom")):
         win._view_buttons[key].click(); pump(0.3)
         page = win._view_stack.currentWidget()
         texts = [l.text() for l in page.findChildren(QLabel)]

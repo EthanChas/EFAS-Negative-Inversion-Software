@@ -238,7 +238,7 @@ class RollCardTab(QWidget):
         film_row.addWidget(self._film, 1)
         isolabel = QLabel("ISO")
         film_row.addWidget(isolabel)
-        self._iso = QSpinBox(); self._iso.setRange(0, 25600); self._iso.setSpecialValueText("—"); self._iso.setFixedWidth(64)
+        self._iso = QSpinBox(); self._iso.setRange(0, 25600); self._iso.setSpecialValueText("—"); self._iso.setMinimumWidth(self._iso.sizeHint().width())   # wide enough for 25600 and the arrows
         self._iso.valueChanged.connect(self._roll_dirty)
         film_row.addWidget(self._iso)
         body.addLayout(film_row)
@@ -344,7 +344,7 @@ class RollCardTab(QWidget):
         body.addWidget(self._plens_row)
         self._pfilm_row = QWidget(); film_lay = QHBoxLayout(self._pfilm_row); film_lay.setContentsMargins(0, 0, 0, 0)
         il = QLabel("ISO"); il.setFixedWidth(_LABEL_W); film_lay.addWidget(il)
-        self._piso = QSpinBox(); self._piso.setRange(0, 25600); self._piso.setSpecialValueText("\u2014"); self._piso.setFixedWidth(64)
+        self._piso = QSpinBox(); self._piso.setRange(0, 25600); self._piso.setSpecialValueText("\u2014"); self._piso.setMinimumWidth(self._piso.sizeHint().width())
         film_lay.addWidget(self._piso); film_lay.addWidget(QLabel("Format"))
         self._pfmt = QComboBox(); self._pfmt.addItems(FORMAT_OPTIONS); self._pfmt.setItemText(0, "not set")
         film_lay.addWidget(self._pfmt, 1)

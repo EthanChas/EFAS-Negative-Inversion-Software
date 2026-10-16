@@ -924,6 +924,18 @@ class LighttableView(QWidget):
         ix = self._list.currentIndex()
         return self._model.row_dict(ix.row()) if ix.isValid() else None
 
+    def shown_rows(self) -> list[dict]:
+        """The photos the grid is showing now, in its order (its search, filters and sort applied)."""
+        return list(self._shown)
+
+    def row_count(self) -> int:
+        """How many photos the library holds (all of them, filtered or not)."""
+        return len(self._rows)
+
+    def selected_rows(self) -> list[dict]:
+        """The selected photos, in the grid's order."""
+        return sorted(self._selected_rows(), key=lambda r: self._model.index_of(r["key"]) or 0)
+
     def selected_paths(self) -> list[str]:
         rows = self._selected_rows() or ([self._current_row()] if self._current_row() else [])
         return [r["path"] for r in sorted(rows, key=lambda r: self._model.index_of(r["key"]) or 0)]
