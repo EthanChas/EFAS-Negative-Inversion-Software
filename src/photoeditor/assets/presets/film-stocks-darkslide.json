@@ -1,0 +1,941 @@
+{
+  "about": "The film profiles that ship with DarkSlide (github.com/kilianvivien/DarkSlide, MIT licence, (c) 2026 Kilian Vivien) as looks: contrast, saturation, temperature and tint carried over, its tonal character (shadow lift and highlight roll-off) as Lab Look's Fade and the Print Response Shoulder. Its exposure, colour balance, black and white points, highlight protection and colour matrices correct for DarkSlide's own inversion and are not carried over. See docs/presets.md.",
+  "presets": [
+    {
+      "name": "Film Stocks (DarkSlide)/Generic/B&W",
+      "description": "Neutral black and white inversion with restrained contrast. DarkSlide's profile for this negative film: its contrast, saturation, temperature and tint, and its tonal character as Fade and Shoulder.",
+      "look": {
+        "contrast": 0.04,
+        "saturation": -1.0,
+        "temperature": 0.0,
+        "tint": 0.0,
+        "lab_fade": -0.03,
+        "print_shoulder": 0.0
+      }
+    },
+    {
+      "name": "Film Stocks (DarkSlide)/Generic/Color",
+      "description": "Balanced color-negative starting point for most consumer scans. DarkSlide's profile for this negative film: its contrast, saturation, temperature and tint, and its tonal character as Fade and Shoulder.",
+      "look": {
+        "contrast": 0.05,
+        "saturation": 0.0,
+        "temperature": 0.0,
+        "tint": 0.0,
+        "lab_fade": 0.0,
+        "print_shoulder": 0.0
+      }
+    },
+    {
+      "name": "Film Stocks (DarkSlide)/Ilford/HP5 Plus",
+      "description": "Classic high-speed B&W profile with punchier midtones. DarkSlide's profile for this negative film: its contrast, saturation, temperature and tint, and its tonal character as Fade and Shoulder.",
+      "look": {
+        "contrast": 0.14,
+        "saturation": -1.0,
+        "temperature": 0.0,
+        "tint": 0.0,
+        "lab_fade": 0.09,
+        "print_shoulder": 0.0
+      }
+    },
+    {
+      "name": "Film Stocks (DarkSlide)/Kodak/Tri-X 400",
+      "description": "Distinctive grain and crisp contrast for documentary scans. DarkSlide's profile for this negative film: its contrast, saturation, temperature and tint, and its tonal character as Fade and Shoulder.",
+      "look": {
+        "contrast": 0.24,
+        "saturation": -1.0,
+        "temperature": 0.0,
+        "tint": 0.0,
+        "lab_fade": 0.0,
+        "print_shoulder": -0.09
+      }
+    },
+    {
+      "name": "Film Stocks (DarkSlide)/Ilford/Delta 3200",
+      "description": "Ultra high-speed B&W with dramatic contrast and punchy tones. DarkSlide's profile for this negative film: its contrast, saturation, temperature and tint, and its tonal character as Fade and Shoulder.",
+      "look": {
+        "contrast": 0.3,
+        "saturation": -1.0,
+        "temperature": 0.0,
+        "tint": 0.0,
+        "lab_fade": -0.09,
+        "print_shoulder": -0.15
+      }
+    },
+    {
+      "name": "Film Stocks (DarkSlide)/Kodak/Portra 400",
+      "description": "Warm skin tones with gentle contrast and protected highlights. DarkSlide's profile for this negative film: its contrast, saturation, temperature and tint, and its tonal character as Fade and Shoulder.",
+      "look": {
+        "contrast": 0.01,
+        "saturation": 0.08,
+        "temperature": 0.04,
+        "tint": -0.02,
+        "lab_fade": 0.3,
+        "print_shoulder": 0.12
+      }
+    },
+    {
+      "name": "Film Stocks (DarkSlide)/Kodak/Portra 160",
+      "description": "Fine-grained portrait stock with neutral, slightly cool rendering. DarkSlide's profile for this negative film: its contrast, saturation, temperature and tint, and its tonal character as Fade and Shoulder.",
+      "look": {
+        "contrast": -0.02,
+        "saturation": 0.04,
+        "temperature": 0.02,
+        "tint": -0.01,
+        "lab_fade": 0.21,
+        "print_shoulder": 0.09
+      }
+    },
+    {
+      "name": "Film Stocks (DarkSlide)/Kodak/Ektar 100",
+      "description": "Higher saturation and slightly firmer contrast for vivid negatives. DarkSlide's profile for this negative film: its contrast, saturation, temperature and tint, and its tonal character as Fade and Shoulder.",
+      "look": {
+        "contrast": 0.1,
+        "saturation": 0.3,
+        "temperature": 0.0,
+        "tint": 0.0,
+        "lab_fade": -0.06,
+        "print_shoulder": -0.12
+      }
+    },
+    {
+      "name": "Film Stocks (DarkSlide)/Kodak/Gold 200",
+      "description": "Warm, saturated consumer stock with golden highlights. DarkSlide's profile for this negative film: its contrast, saturation, temperature and tint, and its tonal character as Fade and Shoulder.",
+      "look": {
+        "contrast": 0.08,
+        "saturation": 0.25,
+        "temperature": 0.08,
+        "tint": -0.02,
+        "lab_fade": 0.09,
+        "print_shoulder": -0.06
+      }
+    },
+    {
+      "name": "Film Stocks (DarkSlide)/Fuji/Fujifilm Pro 400H",
+      "description": "Cooler palette with softer contrast and green-friendly balance. DarkSlide's profile for this negative film: its contrast, saturation, temperature and tint, and its tonal character as Fade and Shoulder.",
+      "look": {
+        "contrast": -0.04,
+        "saturation": -0.04,
+        "temperature": -0.05,
+        "tint": 0.04,
+        "lab_fade": 0.15,
+        "print_shoulder": 0.03
+      }
+    },
+    {
+      "name": "Film Stocks (DarkSlide)/Fuji/Fujifilm Superia 400",
+      "description": "Punchy colors with vibrant greens and cool-leaning palette. DarkSlide's profile for this negative film: its contrast, saturation, temperature and tint, and its tonal character as Fade and Shoulder.",
+      "look": {
+        "contrast": 0.06,
+        "saturation": 0.18,
+        "temperature": -0.03,
+        "tint": 0.03,
+        "lab_fade": 0.03,
+        "print_shoulder": -0.06
+      }
+    },
+    {
+      "name": "Film Stocks (DarkSlide)/CineStill/800T",
+      "description": "Tungsten-balanced cinema stock with cool shadows and warm highlights. DarkSlide's profile for this negative film: its contrast, saturation, temperature and tint, and its tonal character as Fade and Shoulder.",
+      "look": {
+        "contrast": 0.02,
+        "saturation": 0.12,
+        "temperature": -0.08,
+        "tint": 0.02,
+        "lab_fade": 0.21,
+        "print_shoulder": 0.06
+      }
+    },
+    {
+      "name": "Film Stocks (DarkSlide)/Kodak/UltraMax 400",
+      "description": "Saturated consumer stock with warm daylight rendering. DarkSlide's profile for this negative film: its contrast, saturation, temperature and tint, and its tonal character as Fade and Shoulder.",
+      "look": {
+        "contrast": 0.07,
+        "saturation": 0.26,
+        "temperature": 0.06,
+        "tint": -0.01,
+        "lab_fade": 0.03,
+        "print_shoulder": -0.072
+      }
+    },
+    {
+      "name": "Film Stocks (DarkSlide)/Kodak/ColorPlus 200",
+      "description": "Warm budget color negative with easy contrast. DarkSlide's profile for this negative film: its contrast, saturation, temperature and tint, and its tonal character as Fade and Shoulder.",
+      "look": {
+        "contrast": 0.06,
+        "saturation": 0.18,
+        "temperature": 0.07,
+        "tint": -0.01,
+        "lab_fade": 0.06,
+        "print_shoulder": -0.048
+      }
+    },
+    {
+      "name": "Film Stocks (DarkSlide)/Kodak/Kodacolor 100",
+      "description": "Current Kodak consumer 100-speed stock with clean detail and saturated daylight color. DarkSlide's profile for this negative film: its contrast, saturation, temperature and tint, and its tonal character as Fade and Shoulder.",
+      "look": {
+        "contrast": 0.04,
+        "saturation": 0.16,
+        "temperature": 0.04,
+        "tint": -0.01,
+        "lab_fade": 0.06,
+        "print_shoulder": -0.036
+      }
+    },
+    {
+      "name": "Film Stocks (DarkSlide)/Kodak/Kodacolor 200",
+      "description": "Accessible Kodak daylight stock with warm color, fine grain, and gentle lo-fi contrast. DarkSlide's profile for this negative film: its contrast, saturation, temperature and tint, and its tonal character as Fade and Shoulder.",
+      "look": {
+        "contrast": 0.05,
+        "saturation": 0.18,
+        "temperature": 0.06,
+        "tint": -0.01,
+        "lab_fade": 0.09,
+        "print_shoulder": -0.024
+      }
+    },
+    {
+      "name": "Film Stocks (DarkSlide)/Kodak/Gold 100",
+      "description": "Warm low-speed consumer stock with fine grain. DarkSlide's profile for this negative film: its contrast, saturation, temperature and tint, and its tonal character as Fade and Shoulder.",
+      "look": {
+        "contrast": 0.05,
+        "saturation": 0.2,
+        "temperature": 0.07,
+        "tint": -0.01,
+        "lab_fade": 0.12,
+        "print_shoulder": -0.036
+      }
+    },
+    {
+      "name": "Film Stocks (DarkSlide)/Kodak/Portra 800",
+      "description": "Fast portrait stock with soft highlights and lifted shadows. DarkSlide's profile for this negative film: its contrast, saturation, temperature and tint, and its tonal character as Fade and Shoulder.",
+      "look": {
+        "contrast": -0.01,
+        "saturation": 0.06,
+        "temperature": 0.03,
+        "tint": -0.01,
+        "lab_fade": 0.39,
+        "print_shoulder": 0.132
+      }
+    },
+    {
+      "name": "Film Stocks (DarkSlide)/Kodak/Ektacolor Pro 160",
+      "description": "Current Kodak professional 160-speed color negative with soft color and natural skin tones. DarkSlide's profile for this negative film: its contrast, saturation, temperature and tint, and its tonal character as Fade and Shoulder.",
+      "look": {
+        "contrast": -0.02,
+        "saturation": 0.03,
+        "temperature": 0.02,
+        "tint": -0.01,
+        "lab_fade": 0.24,
+        "print_shoulder": 0.108
+      }
+    },
+    {
+      "name": "Film Stocks (DarkSlide)/Kodak/Ektacolor Pro 400",
+      "description": "Current Kodak professional 400-speed color negative with broad latitude and balanced saturation. DarkSlide's profile for this negative film: its contrast, saturation, temperature and tint, and its tonal character as Fade and Shoulder.",
+      "look": {
+        "contrast": 0.0,
+        "saturation": 0.06,
+        "temperature": 0.03,
+        "tint": -0.01,
+        "lab_fade": 0.33,
+        "print_shoulder": 0.132
+      }
+    },
+    {
+      "name": "Film Stocks (DarkSlide)/Kodak/Ektacolor Pro 800",
+      "description": "Current Kodak professional 800-speed color negative for low light with smooth highlight handling. DarkSlide's profile for this negative film: its contrast, saturation, temperature and tint, and its tonal character as Fade and Shoulder.",
+      "look": {
+        "contrast": -0.01,
+        "saturation": 0.05,
+        "temperature": 0.03,
+        "tint": -0.01,
+        "lab_fade": 0.42,
+        "print_shoulder": 0.144
+      }
+    },
+    {
+      "name": "Film Stocks (DarkSlide)/Kodak/Pro Image 100",
+      "description": "Neutral warm pro stock aimed at natural skin tones. DarkSlide's profile for this negative film: its contrast, saturation, temperature and tint, and its tonal character as Fade and Shoulder.",
+      "look": {
+        "contrast": 0.0,
+        "saturation": 0.04,
+        "temperature": 0.03,
+        "tint": -0.01,
+        "lab_fade": 0.21,
+        "print_shoulder": 0.09
+      }
+    },
+    {
+      "name": "Film Stocks (DarkSlide)/Kodak/Vision3 50D",
+      "description": "Fine-grain daylight cinema stock with clean color and a generous highlight shoulder. DarkSlide's profile for this negative film: its contrast, saturation, temperature and tint, and its tonal character as Fade and Shoulder.",
+      "look": {
+        "contrast": -0.03,
+        "saturation": -0.02,
+        "temperature": 0.01,
+        "tint": -0.01,
+        "lab_fade": 0.27,
+        "print_shoulder": 0.156
+      }
+    },
+    {
+      "name": "Film Stocks (DarkSlide)/Kodak/Vision3 200T",
+      "description": "Tungsten-balanced cinema stock with smooth grain, cool shadows, and strong highlight latitude. DarkSlide's profile for this negative film: its contrast, saturation, temperature and tint, and its tonal character as Fade and Shoulder.",
+      "look": {
+        "contrast": -0.02,
+        "saturation": -0.01,
+        "temperature": -0.05,
+        "tint": 0.01,
+        "lab_fade": 0.33,
+        "print_shoulder": 0.18
+      }
+    },
+    {
+      "name": "Film Stocks (DarkSlide)/Kodak/Vision3 250D",
+      "description": "Cinema daylight stock with soft shoulder and broad exposure latitude. DarkSlide's profile for this negative film: its contrast, saturation, temperature and tint, and its tonal character as Fade and Shoulder.",
+      "look": {
+        "contrast": -0.02,
+        "saturation": -0.02,
+        "temperature": 0.02,
+        "tint": -0.01,
+        "lab_fade": 0.0,
+        "print_shoulder": 0.0
+      }
+    },
+    {
+      "name": "Film Stocks (DarkSlide)/Kodak/Vision3 500T",
+      "description": "Cinema tungsten stock with cool shadows and a very forgiving shoulder. DarkSlide's profile for this negative film: its contrast, saturation, temperature and tint, and its tonal character as Fade and Shoulder.",
+      "look": {
+        "contrast": -0.02,
+        "saturation": 0.0,
+        "temperature": -0.06,
+        "tint": 0.01,
+        "lab_fade": 0.0,
+        "print_shoulder": 0.0
+      }
+    },
+    {
+      "name": "Film Stocks (DarkSlide)/Kodak/Verita 200D",
+      "description": "Daylight cinema stock with warm skin tones, bold color, and deeper blacks. DarkSlide's profile for this negative film: its contrast, saturation, temperature and tint, and its tonal character as Fade and Shoulder.",
+      "look": {
+        "contrast": 0.05,
+        "saturation": 0.16,
+        "temperature": 0.04,
+        "tint": -0.01,
+        "lab_fade": 0.15,
+        "print_shoulder": 0.048
+      }
+    },
+    {
+      "name": "Film Stocks (DarkSlide)/Fuji/Fujifilm C200",
+      "description": "Budget Fujifilm stock with lively greens and cooler balance. DarkSlide's profile for this negative film: its contrast, saturation, temperature and tint, and its tonal character as Fade and Shoulder.",
+      "look": {
+        "contrast": 0.04,
+        "saturation": 0.12,
+        "temperature": -0.02,
+        "tint": 0.02,
+        "lab_fade": 0.15,
+        "print_shoulder": 0.03
+      }
+    },
+    {
+      "name": "Film Stocks (DarkSlide)/Fuji/Superia X-TRA 400",
+      "description": "Punchy consumer stock with vivid greens and crisp contrast. DarkSlide's profile for this negative film: its contrast, saturation, temperature and tint, and its tonal character as Fade and Shoulder.",
+      "look": {
+        "contrast": 0.07,
+        "saturation": 0.22,
+        "temperature": -0.03,
+        "tint": 0.03,
+        "lab_fade": 0.03,
+        "print_shoulder": -0.06
+      }
+    },
+    {
+      "name": "Film Stocks (DarkSlide)/Fuji/Pro 160NS",
+      "description": "Natural-skin portrait stock with soft contrast and cool neutrality. DarkSlide's profile for this negative film: its contrast, saturation, temperature and tint, and its tonal character as Fade and Shoulder.",
+      "look": {
+        "contrast": -0.03,
+        "saturation": -0.02,
+        "temperature": -0.03,
+        "tint": 0.02,
+        "lab_fade": 0.0,
+        "print_shoulder": 0.0
+      }
+    },
+    {
+      "name": "Film Stocks (DarkSlide)/CineStill/50D",
+      "description": "Daylight-balanced cinema-derived stock with clean color and restrained contrast. DarkSlide's profile for this negative film: its contrast, saturation, temperature and tint, and its tonal character as Fade and Shoulder.",
+      "look": {
+        "contrast": -0.01,
+        "saturation": 0.02,
+        "temperature": 0.01,
+        "tint": -0.01,
+        "lab_fade": 0.0,
+        "print_shoulder": 0.0
+      }
+    },
+    {
+      "name": "Film Stocks (DarkSlide)/CineStill/400D",
+      "description": "Punchier daylight cinema stock with flexible highlights. DarkSlide's profile for this negative film: its contrast, saturation, temperature and tint, and its tonal character as Fade and Shoulder.",
+      "look": {
+        "contrast": 0.01,
+        "saturation": 0.08,
+        "temperature": 0.01,
+        "tint": -0.01,
+        "lab_fade": 0.0,
+        "print_shoulder": 0.0
+      }
+    },
+    {
+      "name": "Film Stocks (DarkSlide)/CineStill/BwXX",
+      "description": "CineStill panchromatic B&W cinema stock with classic Double-X contrast and flexible speed. DarkSlide's profile for this negative film: its contrast, saturation, temperature and tint, and its tonal character as Fade and Shoulder.",
+      "look": {
+        "contrast": 0.19,
+        "saturation": -1.0,
+        "temperature": 0.0,
+        "tint": 0.0,
+        "lab_fade": 0.03,
+        "print_shoulder": -0.048
+      }
+    },
+    {
+      "name": "Film Stocks (DarkSlide)/Harman/Phoenix 200",
+      "description": "Original Harman color stock with high contrast, strong grain, and an experimental no-orange-mask response. DarkSlide's profile for this negative film: its contrast, saturation, temperature and tint, and its tonal character as Fade and Shoulder.",
+      "look": {
+        "contrast": 0.17,
+        "saturation": 0.32,
+        "temperature": 0.02,
+        "tint": 0.02,
+        "lab_fade": -0.09,
+        "print_shoulder": -0.156
+      }
+    },
+    {
+      "name": "Film Stocks (DarkSlide)/Harman/Phoenix II 200",
+      "description": "Second-generation Harman color stock with punchy contrast and improved color accuracy. DarkSlide's profile for this negative film: its contrast, saturation, temperature and tint, and its tonal character as Fade and Shoulder.",
+      "look": {
+        "contrast": 0.12,
+        "saturation": 0.24,
+        "temperature": 0.01,
+        "tint": 0.01,
+        "lab_fade": -0.06,
+        "print_shoulder": -0.108
+      }
+    },
+    {
+      "name": "Film Stocks (DarkSlide)/Harman/Red 125",
+      "description": "Redscale Phoenix-derived C-41 film with orange-red tones and dense, graphic contrast. DarkSlide's profile for this negative film: its contrast, saturation, temperature and tint, and its tonal character as Fade and Shoulder.",
+      "look": {
+        "contrast": 0.14,
+        "saturation": 0.22,
+        "temperature": 0.16,
+        "tint": 0.03,
+        "lab_fade": -0.09,
+        "print_shoulder": -0.132
+      }
+    },
+    {
+      "name": "Film Stocks (DarkSlide)/Harman/Switch Azure",
+      "description": "Experimental Harman color stock tuned for cool cyan-blue shifts and crisp contrast. DarkSlide's profile for this negative film: its contrast, saturation, temperature and tint, and its tonal character as Fade and Shoulder.",
+      "look": {
+        "contrast": 0.11,
+        "saturation": 0.18,
+        "temperature": -0.08,
+        "tint": 0.04,
+        "lab_fade": -0.03,
+        "print_shoulder": -0.096
+      }
+    },
+    {
+      "name": "Film Stocks (DarkSlide)/Lomography/CN 400",
+      "description": "Saturated, contrasty Lomography color negative with punchy reds. DarkSlide's profile for this negative film: its contrast, saturation, temperature and tint, and its tonal character as Fade and Shoulder.",
+      "look": {
+        "contrast": 0.1,
+        "saturation": 0.3,
+        "temperature": 0.04,
+        "tint": 0.01,
+        "lab_fade": -0.03,
+        "print_shoulder": -0.09
+      }
+    },
+    {
+      "name": "Film Stocks (DarkSlide)/Lomography/CN 800",
+      "description": "High-speed Lomography stock with bold contrast and strong color. DarkSlide's profile for this negative film: its contrast, saturation, temperature and tint, and its tonal character as Fade and Shoulder.",
+      "look": {
+        "contrast": 0.08,
+        "saturation": 0.28,
+        "temperature": 0.04,
+        "tint": 0.01,
+        "lab_fade": 0.0,
+        "print_shoulder": -0.06
+      }
+    },
+    {
+      "name": "Film Stocks (DarkSlide)/Lomography/LomoChrome Color '92",
+      "description": "Retro 400-speed LomoChrome stock with delicate pastels, visible grain, and vivid accents. DarkSlide's profile for this negative film: its contrast, saturation, temperature and tint, and its tonal character as Fade and Shoulder.",
+      "look": {
+        "contrast": 0.08,
+        "saturation": 0.18,
+        "temperature": -0.01,
+        "tint": 0.02,
+        "lab_fade": 0.0,
+        "print_shoulder": -0.072
+      }
+    },
+    {
+      "name": "Film Stocks (DarkSlide)/Lomography/LomoChrome Color '92 Sun-kissed",
+      "description": "Warm Color '92 variant with golden-orange tones, glowing skin, and nostalgic contrast. DarkSlide's profile for this negative film: its contrast, saturation, temperature and tint, and its tonal character as Fade and Shoulder.",
+      "look": {
+        "contrast": 0.09,
+        "saturation": 0.22,
+        "temperature": 0.08,
+        "tint": 0.01,
+        "lab_fade": 0.03,
+        "print_shoulder": -0.048
+      }
+    },
+    {
+      "name": "Film Stocks (DarkSlide)/Lomography/LomoChrome Metropolis",
+      "description": "Muted LomoChrome stock with punchy contrast, subdued color, and strong accent tones. DarkSlide's profile for this negative film: its contrast, saturation, temperature and tint, and its tonal character as Fade and Shoulder.",
+      "look": {
+        "contrast": 0.14,
+        "saturation": -0.14,
+        "temperature": -0.02,
+        "tint": 0.01,
+        "lab_fade": -0.09,
+        "print_shoulder": -0.12
+      }
+    },
+    {
+      "name": "Film Stocks (DarkSlide)/Lomography/LomoChrome Purple",
+      "description": "Color-shifting LomoChrome profile with violet foliage shifts and saturated magenta accents. DarkSlide's profile for this negative film: its contrast, saturation, temperature and tint, and its tonal character as Fade and Shoulder.",
+      "look": {
+        "contrast": 0.07,
+        "saturation": 0.16,
+        "temperature": 0.0,
+        "tint": 0.08,
+        "lab_fade": -0.03,
+        "print_shoulder": -0.084
+      }
+    },
+    {
+      "name": "Film Stocks (DarkSlide)/Lomography/LomoChrome Turquoise",
+      "description": "Color-shifting LomoChrome profile with teal skies, warm oranges, and surreal cool shadows. DarkSlide's profile for this negative film: its contrast, saturation, temperature and tint, and its tonal character as Fade and Shoulder.",
+      "look": {
+        "contrast": 0.07,
+        "saturation": 0.14,
+        "temperature": -0.06,
+        "tint": 0.03,
+        "lab_fade": -0.03,
+        "print_shoulder": -0.084
+      }
+    },
+    {
+      "name": "Film Stocks (DarkSlide)/Lomography/LomoChrome Classicolor 200",
+      "description": "Handcrafted LomoChrome color negative with true-to-life color and soft analogue warmth. DarkSlide's profile for this negative film: its contrast, saturation, temperature and tint, and its tonal character as Fade and Shoulder.",
+      "look": {
+        "contrast": 0.04,
+        "saturation": 0.12,
+        "temperature": 0.03,
+        "tint": -0.01,
+        "lab_fade": 0.06,
+        "print_shoulder": -0.03
+      }
+    },
+    {
+      "name": "Film Stocks (DarkSlide)/Lomography/Redscale XR",
+      "description": "Extended-range redscale stock with glowing reds, oranges, yellows, and occasional cool edges. DarkSlide's profile for this negative film: its contrast, saturation, temperature and tint, and its tonal character as Fade and Shoulder.",
+      "look": {
+        "contrast": 0.14,
+        "saturation": 0.24,
+        "temperature": 0.18,
+        "tint": 0.02,
+        "lab_fade": -0.09,
+        "print_shoulder": -0.12
+      }
+    },
+    {
+      "name": "Film Stocks (DarkSlide)/Fuji/Velvia 50",
+      "description": "Ultra-saturated slide profile with deep contrast and punchy color. DarkSlide's profile for this slide film (a positive: EFAS inverts negatives, so only the look applies): its contrast, saturation, temperature and tint, and its tonal character as Fade and Shoulder.",
+      "look": {
+        "contrast": 0.12,
+        "saturation": 0.45,
+        "temperature": -0.01,
+        "tint": 0.01,
+        "lab_fade": 0.0,
+        "print_shoulder": 0.0
+      }
+    },
+    {
+      "name": "Film Stocks (DarkSlide)/Fuji/Provia 100F",
+      "description": "Neutral slide profile with clean color and a restrained shoulder. DarkSlide's profile for this slide film (a positive: EFAS inverts negatives, so only the look applies): its contrast, saturation, temperature and tint, and its tonal character as Fade and Shoulder.",
+      "look": {
+        "contrast": 0.04,
+        "saturation": 0.12,
+        "temperature": 0.0,
+        "tint": 0.0,
+        "lab_fade": 0.0,
+        "print_shoulder": 0.0
+      }
+    },
+    {
+      "name": "Film Stocks (DarkSlide)/Kodak/T-Max 100",
+      "description": "Fine-grain tabular black and white with smooth tonality. DarkSlide's profile for this negative film: its contrast, saturation, temperature and tint, and its tonal character as Fade and Shoulder.",
+      "look": {
+        "contrast": 0.08,
+        "saturation": -1.0,
+        "temperature": 0.0,
+        "tint": 0.0,
+        "lab_fade": 0.03,
+        "print_shoulder": 0.03
+      }
+    },
+    {
+      "name": "Film Stocks (DarkSlide)/Kodak/T-Max 400",
+      "description": "Versatile tabular black and white with crisp mids. DarkSlide's profile for this negative film: its contrast, saturation, temperature and tint, and its tonal character as Fade and Shoulder.",
+      "look": {
+        "contrast": 0.14,
+        "saturation": -1.0,
+        "temperature": 0.0,
+        "tint": 0.0,
+        "lab_fade": 0.0,
+        "print_shoulder": -0.03
+      }
+    },
+    {
+      "name": "Film Stocks (DarkSlide)/Kodak/Ektapan 100",
+      "description": "Current Kodak tabular-grain B&W stock with very fine grain, high sharpness, and clean tonality. DarkSlide's profile for this negative film: its contrast, saturation, temperature and tint, and its tonal character as Fade and Shoulder.",
+      "look": {
+        "contrast": 0.08,
+        "saturation": -1.0,
+        "temperature": 0.0,
+        "tint": 0.0,
+        "lab_fade": 0.03,
+        "print_shoulder": 0.036
+      }
+    },
+    {
+      "name": "Film Stocks (DarkSlide)/Kodak/Ektapan 400",
+      "description": "Current Kodak 400-speed tabular B&W stock with crisp detail and restrained grain. DarkSlide's profile for this negative film: its contrast, saturation, temperature and tint, and its tonal character as Fade and Shoulder.",
+      "look": {
+        "contrast": 0.14,
+        "saturation": -1.0,
+        "temperature": 0.0,
+        "tint": 0.0,
+        "lab_fade": 0.0,
+        "print_shoulder": -0.024
+      }
+    },
+    {
+      "name": "Film Stocks (DarkSlide)/Kodak/Ektapan P3200",
+      "description": "Push-friendly high-speed Kodak B&W profile for low light with strong mids and protected highlights. DarkSlide's profile for this negative film: its contrast, saturation, temperature and tint, and its tonal character as Fade and Shoulder.",
+      "look": {
+        "contrast": 0.29,
+        "saturation": -1.0,
+        "temperature": 0.0,
+        "tint": 0.0,
+        "lab_fade": -0.09,
+        "print_shoulder": -0.15
+      }
+    },
+    {
+      "name": "Film Stocks (DarkSlide)/Ilford/FP4 Plus",
+      "description": "Classic medium-speed black and white with open shadows. DarkSlide's profile for this negative film: its contrast, saturation, temperature and tint, and its tonal character as Fade and Shoulder.",
+      "look": {
+        "contrast": 0.08,
+        "saturation": -1.0,
+        "temperature": 0.0,
+        "tint": 0.0,
+        "lab_fade": 0.06,
+        "print_shoulder": 0.012
+      }
+    },
+    {
+      "name": "Film Stocks (DarkSlide)/Ilford/Pan F Plus 50",
+      "description": "Ultra-fine grain black and white with strong crispness. DarkSlide's profile for this negative film: its contrast, saturation, temperature and tint, and its tonal character as Fade and Shoulder.",
+      "look": {
+        "contrast": 0.16,
+        "saturation": -1.0,
+        "temperature": 0.0,
+        "tint": 0.0,
+        "lab_fade": -0.03,
+        "print_shoulder": -0.072
+      }
+    },
+    {
+      "name": "Film Stocks (DarkSlide)/Kodak/Ektachrome E100",
+      "description": "Modern Kodak slide film with neutral-warm palette and tight shoulder. DarkSlide's profile for this slide film (a positive: EFAS inverts negatives, so only the look applies): its contrast, saturation, temperature and tint, and its tonal character as Fade and Shoulder.",
+      "look": {
+        "contrast": 0.06,
+        "saturation": 0.18,
+        "temperature": 0.0,
+        "tint": 0.0,
+        "lab_fade": 0.0,
+        "print_shoulder": 0.0
+      }
+    },
+    {
+      "name": "Film Stocks (DarkSlide)/Kodak/Double-X 5222",
+      "description": "Classic cinema B&W stock with bold contrast and gritty texture. DarkSlide's profile for this negative film: its contrast, saturation, temperature and tint, and its tonal character as Fade and Shoulder.",
+      "look": {
+        "contrast": 0.2,
+        "saturation": -1.0,
+        "temperature": 0.0,
+        "tint": 0.0,
+        "lab_fade": 0.03,
+        "print_shoulder": -0.06
+      }
+    },
+    {
+      "name": "Film Stocks (DarkSlide)/Kodak/Plus-X 125",
+      "description": "Medium-speed classic B&W with smooth tonality and open shadows. DarkSlide's profile for this negative film: its contrast, saturation, temperature and tint, and its tonal character as Fade and Shoulder.",
+      "look": {
+        "contrast": 0.1,
+        "saturation": -1.0,
+        "temperature": 0.0,
+        "tint": 0.0,
+        "lab_fade": 0.03,
+        "print_shoulder": 0.0
+      }
+    },
+    {
+      "name": "Film Stocks (DarkSlide)/Fuji/Fujifilm 200",
+      "description": "Current-production Fuji consumer stock with lively greens and cool balance. DarkSlide's profile for this negative film: its contrast, saturation, temperature and tint, and its tonal character as Fade and Shoulder.",
+      "look": {
+        "contrast": 0.03,
+        "saturation": 0.1,
+        "temperature": -0.02,
+        "tint": 0.02,
+        "lab_fade": 0.09,
+        "print_shoulder": 0.0
+      }
+    },
+    {
+      "name": "Film Stocks (DarkSlide)/Fuji/Fujifilm 400",
+      "description": "Current Fuji 400-speed consumer color film with natural saturation and broad latitude. DarkSlide's profile for this negative film: its contrast, saturation, temperature and tint, and its tonal character as Fade and Shoulder.",
+      "look": {
+        "contrast": 0.04,
+        "saturation": 0.14,
+        "temperature": -0.01,
+        "tint": 0.01,
+        "lab_fade": 0.12,
+        "print_shoulder": 0.012
+      }
+    },
+    {
+      "name": "Film Stocks (DarkSlide)/Fuji/Astia 100F",
+      "description": "Neutral portrait slide with soft contrast and faithful skin tones. DarkSlide's profile for this slide film (a positive: EFAS inverts negatives, so only the look applies): its contrast, saturation, temperature and tint, and its tonal character as Fade and Shoulder.",
+      "look": {
+        "contrast": 0.02,
+        "saturation": 0.06,
+        "temperature": 0.0,
+        "tint": 0.0,
+        "lab_fade": 0.0,
+        "print_shoulder": 0.0
+      }
+    },
+    {
+      "name": "Film Stocks (DarkSlide)/Fuji/Fujifilm Neopan Acros 100 II",
+      "description": "Ultra-fine-grain orthopanchromatic B&W with smooth gradation and crisp detail. DarkSlide's profile for this negative film: its contrast, saturation, temperature and tint, and its tonal character as Fade and Shoulder.",
+      "look": {
+        "contrast": 0.08,
+        "saturation": -1.0,
+        "temperature": 0.0,
+        "tint": 0.0,
+        "lab_fade": 0.0,
+        "print_shoulder": 0.048
+      }
+    },
+    {
+      "name": "Film Stocks (DarkSlide)/Ilford/XP2 Super",
+      "description": "C-41 process B&W with smooth grain and wide exposure latitude. DarkSlide's profile for this negative film: its contrast, saturation, temperature and tint, and its tonal character as Fade and Shoulder.",
+      "look": {
+        "contrast": 0.06,
+        "saturation": -1.0,
+        "temperature": 0.0,
+        "tint": 0.0,
+        "lab_fade": 0.15,
+        "print_shoulder": 0.06
+      }
+    },
+    {
+      "name": "Film Stocks (DarkSlide)/Ilford/Delta 100",
+      "description": "Fine-grain modern B&W with clean tonality and subtle contrast. DarkSlide's profile for this negative film: its contrast, saturation, temperature and tint, and its tonal character as Fade and Shoulder.",
+      "look": {
+        "contrast": 0.1,
+        "saturation": -1.0,
+        "temperature": 0.0,
+        "tint": 0.0,
+        "lab_fade": 0.0,
+        "print_shoulder": -0.012
+      }
+    },
+    {
+      "name": "Film Stocks (DarkSlide)/Ilford/Delta 400",
+      "description": "Mid-speed tabular B&W with crisp mids and controlled grain. DarkSlide's profile for this negative film: its contrast, saturation, temperature and tint, and its tonal character as Fade and Shoulder.",
+      "look": {
+        "contrast": 0.16,
+        "saturation": -1.0,
+        "temperature": 0.0,
+        "tint": 0.0,
+        "lab_fade": -0.03,
+        "print_shoulder": -0.06
+      }
+    },
+    {
+      "name": "Film Stocks (DarkSlide)/Ilford/SFX 200",
+      "description": "Extended-red sensitivity B&W with deep blacks and dramatic contrast. DarkSlide's profile for this negative film: its contrast, saturation, temperature and tint, and its tonal character as Fade and Shoulder.",
+      "look": {
+        "contrast": 0.18,
+        "saturation": -1.0,
+        "temperature": 0.0,
+        "tint": 0.0,
+        "lab_fade": -0.06,
+        "print_shoulder": -0.09
+      }
+    },
+    {
+      "name": "Film Stocks (DarkSlide)/Ilford/Ortho Plus",
+      "description": "Fine-grain orthochromatic B&W with darker reds, crisp landscapes, and strong edge contrast. DarkSlide's profile for this negative film: its contrast, saturation, temperature and tint, and its tonal character as Fade and Shoulder.",
+      "look": {
+        "contrast": 0.17,
+        "saturation": -1.0,
+        "temperature": 0.0,
+        "tint": 0.0,
+        "lab_fade": -0.06,
+        "print_shoulder": -0.084
+      }
+    },
+    {
+      "name": "Film Stocks (DarkSlide)/Kentmere/Pan 100",
+      "description": "Accessible fine-grain B&W with clean detail, forgiving latitude, and balanced contrast. DarkSlide's profile for this negative film: its contrast, saturation, temperature and tint, and its tonal character as Fade and Shoulder.",
+      "look": {
+        "contrast": 0.11,
+        "saturation": -1.0,
+        "temperature": 0.0,
+        "tint": 0.0,
+        "lab_fade": 0.03,
+        "print_shoulder": -0.024
+      }
+    },
+    {
+      "name": "Film Stocks (DarkSlide)/Kentmere/Pan 200",
+      "description": "Accessible mid-speed B&W with forgiving latitude, textured grain, and lively contrast. DarkSlide's profile for this negative film: its contrast, saturation, temperature and tint, and its tonal character as Fade and Shoulder.",
+      "look": {
+        "contrast": 0.13,
+        "saturation": -1.0,
+        "temperature": 0.0,
+        "tint": 0.0,
+        "lab_fade": 0.03,
+        "print_shoulder": -0.036
+      }
+    },
+    {
+      "name": "Film Stocks (DarkSlide)/Kentmere/Pan 400",
+      "description": "Flexible high-speed B&W with broad tonal range and beginner-friendly latitude. DarkSlide's profile for this negative film: its contrast, saturation, temperature and tint, and its tonal character as Fade and Shoulder.",
+      "look": {
+        "contrast": 0.12,
+        "saturation": -1.0,
+        "temperature": 0.0,
+        "tint": 0.0,
+        "lab_fade": 0.09,
+        "print_shoulder": 0.0
+      }
+    },
+    {
+      "name": "Film Stocks (DarkSlide)/Lomography/Potsdam Kino 100",
+      "description": "Cinematic 100-speed B&W with firm contrast, fine texture, and dramatic greyscale separation. DarkSlide's profile for this negative film: its contrast, saturation, temperature and tint, and its tonal character as Fade and Shoulder.",
+      "look": {
+        "contrast": 0.15,
+        "saturation": -1.0,
+        "temperature": 0.0,
+        "tint": 0.0,
+        "lab_fade": 0.0,
+        "print_shoulder": -0.048
+      }
+    },
+    {
+      "name": "Film Stocks (DarkSlide)/Lomography/Berlin Kino 400",
+      "description": "Cinematic 400-speed B&W with rich mids, visible grain, and moody contrast. DarkSlide's profile for this negative film: its contrast, saturation, temperature and tint, and its tonal character as Fade and Shoulder.",
+      "look": {
+        "contrast": 0.18,
+        "saturation": -1.0,
+        "temperature": 0.0,
+        "tint": 0.0,
+        "lab_fade": 0.06,
+        "print_shoulder": -0.036
+      }
+    },
+    {
+      "name": "Film Stocks (DarkSlide)/Foma/Fomapan 100",
+      "description": "Czech budget B&W with classic grain and honest tonality. DarkSlide's profile for this negative film: its contrast, saturation, temperature and tint, and its tonal character as Fade and Shoulder.",
+      "look": {
+        "contrast": 0.12,
+        "saturation": -1.0,
+        "temperature": 0.0,
+        "tint": 0.0,
+        "lab_fade": 0.03,
+        "print_shoulder": -0.03
+      }
+    },
+    {
+      "name": "Film Stocks (DarkSlide)/Foma/Fomapan 200",
+      "description": "Unique mid-speed B&W with open shadows and moderate grain. DarkSlide's profile for this negative film: its contrast, saturation, temperature and tint, and its tonal character as Fade and Shoulder.",
+      "look": {
+        "contrast": 0.1,
+        "saturation": -1.0,
+        "temperature": 0.0,
+        "tint": 0.0,
+        "lab_fade": 0.06,
+        "print_shoulder": -0.012
+      }
+    },
+    {
+      "name": "Film Stocks (DarkSlide)/Foma/Fomapan 400",
+      "description": "High-speed budget B&W with visible grain and punchy midtones. DarkSlide's profile for this negative film: its contrast, saturation, temperature and tint, and its tonal character as Fade and Shoulder.",
+      "look": {
+        "contrast": 0.12,
+        "saturation": -1.0,
+        "temperature": 0.0,
+        "tint": 0.0,
+        "lab_fade": 0.09,
+        "print_shoulder": 0.0
+      }
+    },
+    {
+      "name": "Film Stocks (DarkSlide)/Rollei/RPX 25",
+      "description": "Ultra-fine grain B&W with exceptional detail and smooth tones. DarkSlide's profile for this negative film: its contrast, saturation, temperature and tint, and its tonal character as Fade and Shoulder.",
+      "look": {
+        "contrast": 0.14,
+        "saturation": -1.0,
+        "temperature": 0.0,
+        "tint": 0.0,
+        "lab_fade": -0.03,
+        "print_shoulder": -0.06
+      }
+    },
+    {
+      "name": "Film Stocks (DarkSlide)/Rollei/RPX 100",
+      "description": "Fine-grain B&W with balanced contrast and clean shadows. DarkSlide's profile for this negative film: its contrast, saturation, temperature and tint, and its tonal character as Fade and Shoulder.",
+      "look": {
+        "contrast": 0.12,
+        "saturation": -1.0,
+        "temperature": 0.0,
+        "tint": 0.0,
+        "lab_fade": 0.0,
+        "print_shoulder": -0.036
+      }
+    },
+    {
+      "name": "Film Stocks (DarkSlide)/Rollei/RPX 400",
+      "description": "Versatile high-speed B&W with pronounced grain and firm contrast. DarkSlide's profile for this negative film: its contrast, saturation, temperature and tint, and its tonal character as Fade and Shoulder.",
+      "look": {
+        "contrast": 0.14,
+        "saturation": -1.0,
+        "temperature": 0.0,
+        "tint": 0.0,
+        "lab_fade": 0.06,
+        "print_shoulder": -0.012
+      }
+    }
+  ]
+}

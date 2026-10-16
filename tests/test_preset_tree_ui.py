@@ -79,9 +79,14 @@ _SCRIPT = textwrap.dedent(r'''
     assert panel._save_btn.isVisibleTo(panel) and not panel._copy_btn.isVisibleTo(panel)
     panel._builtin_btn.click(); pump(0.1)
     assert panel.showing_builtin() and not panel._mine_btn.isChecked()
-    assert shape() == ["Film Stocks", "  Cinestill", "    Cinestill", "  Fuji", "    Superia", "  Kodak", "    Gold", "    Portra", "    Portra Airy",
+    whole = shape()
+    assert "Film Stocks (DarkSlide)" in whole and len(whole) > 100, "DarkSlide's film stocks are a folder of their own"
+    start = whole.index("Film Stocks (DarkSlide)")
+    stop = next((i for i in range(start + 1, len(whole)) if not whole[i].startswith(" ")), len(whole))
+    assert [x for x in whole[start + 1:stop] if not x.startswith("    ")][:3] == ["  CineStill", "  Foma", "  Fuji"], whole[start:start + 6]
+    assert whole[:start] + whole[stop:] == ["Film Stocks", "  Cinestill", "    Cinestill", "  Fuji", "    Superia", "  Kodak", "    Gold", "    Portra", "    Portra Airy",
                        "Scanners (DarkSlide)", "  Frontier Classic", "  Frontier Modern", "  Noritsu", "  Neutral", "  Agfa d-Lab",
-                       "Scanners (EFAS Original)", "  Frontier 100", "  Crystal 100", "  Pakon (Clean and Rich)", "  Noritsu (Green Shadows)"], shape()
+                       "Scanners (EFAS Original)", "  Frontier 100", "  Crystal 100", "  Pakon (Clean and Rich)", "  Noritsu (Green Shadows)"], whole
     assert not panel._save_btn.isVisibleTo(panel) and not panel._delete_btn.isVisibleTo(panel) and panel._copy_btn.isVisibleTo(panel), "built-ins are read-only"
 
     # select a built-in: its description shows; applying it sets the slider values as one undoable step
@@ -170,3 +175,16 @@ def test_the_darkslide_scanner_styles_are_built_in_as_curves():
     assert classic["tone_curve_points"][0] == [0, 10] and classic["tone_curve_blue"][-1] == [255, 244] and classic["saturation"] == 0.10 and classic["temperature"] == 0.08
     assert builtin.get("Scanners (DarkSlide)/Neutral")["tone_curve_points"] == [[0, 0], [255, 255]]
     assert builtin.get("Scanners (DarkSlide)/Noritsu")["tone_curve_red"] == [[0, 0], [255, 255]], "a style without a channel curve leaves it straight"
+
+
+def test_the_darkslide_film_stocks_are_built_in_looks_with_the_conversion_written_down():
+    from photoeditor.features.lookpresets import lookconvert
+
+    names = [n for n in builtin.names() if n.startswith("Film Stocks (DarkSlide)/")]
+    assert len(names) == 78 and "Film Stocks (DarkSlide)/Kodak/Portra 400" in names and "Film Stocks (DarkSlide)/Lomography/LomoChrome Color '92" in names
+    portra = lookconvert.convert_darkslide_film({"type": "color", "settings": {"contrast": 11, "saturation": 108, "temperature": 4, "tint": -2, "redBalance": 1.14},
+                                                 "tonal": {"shadowLift": 0.15, "highlightRolloff": 0.7}})
+    assert portra == {"contrast": 0.01, "saturation": 0.08, "temperature": 0.04, "tint": -0.02, "lab_fade": 0.3, "print_shoulder": 0.12}, portra
+    assert builtin.get("Film Stocks (DarkSlide)/Kodak/Portra 400") == portra, "the preset is that conversion of the profile"
+    assert lookconvert.convert_darkslide_film({"type": "bw", "settings": {}})["saturation"] == -1.0, "a black-and-white stock has no colour"
+    assert lookconvert.convert_darkslide_film({"type": "color", "settings": {}}) == {"contrast": 0.0, "saturation": 0.0, "temperature": 0.0, "tint": 0.0, "lab_fade": 0.0, "print_shoulder": 0.0}

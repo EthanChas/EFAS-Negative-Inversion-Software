@@ -34,6 +34,19 @@ The five lab styles that ship with [DarkSlide](https://github.com/kilianvivien/D
 
 DarkSlide's own "tonal character" overrides (shadow lift, highlight roll-off, midtone anchor) belong to its pipeline and are not carried over: the curves already hold the lifted blacks and the soft shoulder. The folder is named for where the styles come from; **Scanners (EFAS Original)** below holds EFAS's own looks, made with the Lab Look module.
 
+## The Film Stocks (DarkSlide) built-in presets
+
+DarkSlide's 78 film profiles (the same MIT-licensed source as above), in folders by maker: CineStill, Foma, Fuji, Generic, Harman, Ilford, Kentmere, Kodak, Lomography and Rollei. Slide films (Velvia, Provia, Ektachrome, Astia, and the like) are included, but EFAS inverts negatives, so for those only the look applies.
+
+The conversion (`convert_darkslide_film` in `features/lookpresets/lookconvert.py`, tested; `tools/build_darkslide_presets.py` rebuilds the file from DarkSlide's `constants.ts`):
+
+1. Contrast: (DarkSlide's Contrast - 10) / 100. Ten is its default.
+2. Saturation: (Saturation - 100) / 100. A black-and-white stock is fully desaturated (-1).
+3. Temperature and Tint: each divided by 100.
+4. The stock's tonal character: its shadow lift above 0.05 (its Generic Color) times 3 is Lab Look's **Fade**, and its highlight roll-off above 0.5 times 0.6 is the Print Response **Shoulder**. Kodak Portra 400, with a lift of 0.15 and a roll-off of 0.70, gets a Fade of +0.30 and a Shoulder of +0.12; Kodak Ektar 100 (0.03, 0.30) gets a Fade of -0.06 and a Shoulder of -0.12.
+
+Left out: Exposure, the red / green / blue balance, the black and white points, highlight protection, the colour matrices and the mask tuning. In DarkSlide those correct for its own inversion (the film base, the clip levels of its pipeline), so carrying them over would only shift EFAS's own conversion. The sizes are approximations, as with the other built-in sets.
+
 ## The Scanners (EFAS Original) built-in presets
 
 | Preset | What it does |

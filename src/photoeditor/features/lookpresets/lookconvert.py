@@ -50,3 +50,35 @@ def convert(settings: dict[str, Any]) -> dict[str, float]:
     if red:
         look["invert_r"] = red
     return {key: (round(value + 0.0, 4) if isinstance(value, float) else value) for key, value in look.items()}
+
+
+# ---- DarkSlide's film profiles (github.com/kilianvivien/DarkSlide, MIT) -> an EFAS look
+DS_CONTRAST_NEUTRAL = 10.0      # DarkSlide's default Contrast; the look is the difference from it, on its -100..100 scale
+DS_SATURATION_NEUTRAL = 100.0   # its Saturation is a percentage of the colour the picture has
+DS_TONE_PER = 100.0
+DS_SHADOW_LIFT_NEUTRAL = 0.05   # the tonal character of its Generic Color profile: no fade, no change to the shoulder
+DS_FADE_PER = 3.0               # Fade per unit of shadow lift above neutral: a shadow lift of 0.15 (Portra 400) is a Fade of 0.30
+DS_ROLLOFF_NEUTRAL = 0.50
+DS_SHOULDER_PER = 0.6           # a highlight roll-off of 0.70 (Portra 400) is a Shoulder of +0.12; 0.30 (Ektar) is -0.12
+
+
+def convert_darkslide_film(profile: dict[str, Any]) -> dict[str, float]:
+    """The EFAS look for one of DarkSlide's film profiles ({"type": "color" | "bw", "settings": {...}, "tonal": {...} | None}).
+
+    Carried over: Contrast, Saturation (a black-and-white stock is fully desaturated), Temperature and Tint, and the stock's tonal character - the shadow lift as Lab Look's Fade and
+    the highlight roll-off as the Print Response Shoulder. Left out: Exposure, the red / green / blue balance, black and white points and highlight protection, which in DarkSlide
+    correct for its own inversion (the film base and the clip levels of its pipeline) and would only shift EFAS's own conversion; and the colour matrix and mask tuning. Every key is
+    always present, so applying a profile replaces the last one."""
+    settings = profile.get("settings") or {}
+    tonal = profile.get("tonal") or {}
+    num = lambda key, default: float(settings.get(key, default))
+    saturation = -1.0 if profile.get("type") == "bw" else (num("saturation", DS_SATURATION_NEUTRAL) - DS_SATURATION_NEUTRAL) / DS_SATURATION_NEUTRAL
+    look = {
+        "contrast": (num("contrast", DS_CONTRAST_NEUTRAL) - DS_CONTRAST_NEUTRAL) / DS_TONE_PER,
+        "saturation": saturation,
+        "temperature": num("temperature", 0.0) / DS_TONE_PER,
+        "tint": num("tint", 0.0) / DS_TONE_PER,
+        "lab_fade": (float(tonal.get("shadowLift", DS_SHADOW_LIFT_NEUTRAL)) - DS_SHADOW_LIFT_NEUTRAL) * DS_FADE_PER,
+        "print_shoulder": (float(tonal.get("highlightRolloff", DS_ROLLOFF_NEUTRAL)) - DS_ROLLOFF_NEUTRAL) * DS_SHOULDER_PER,
+    }
+    return {key: round(value + 0.0, 4) for key, value in look.items()}
