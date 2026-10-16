@@ -66,28 +66,35 @@ _SCRIPT = textwrap.dedent(r"""
     f3 = arrive(lambda: frame(os.path.join(day, "f3.png"), 13))
     assert lt._finish_btn.isVisible() and lt._finish_btn.text() == "Finish Session (3)", lt._finish_btn.text()
     assert win._finish_live_action.isEnabled()
+    assert not hasattr(lt, "_retake_btn"), "Retake is not in the right-hand panel"
 
     # the button is only there while the person is in the hotstack folder: not with a photo from another folder selected, not browsing another folder in the Library list
     elsewhere = os.path.join(other, "elsewhere.png")
     lt.select_path(elsewhere); pump(0.2)
     assert not lt._finish_btn.isVisible() and not win._finish_live_action.isEnabled(), "a photo outside the hotstack is selected"
+    assert not lt._hot_btn.isVisible() and not win._retake_action.isVisible(), "the flame button and Retake are only there inside the hotstack"
+    assert "Retake This Photo" not in [a.text() for a in lt.build_context_menu().actions()], "not in the photo's right-click menu either"
+    assert "Retake elsewhere.png" not in [a.text() for a in win._filmstrip.build_context_menu(elsewhere).actions()]
     tree = lt.library_panel._tree
     tree.add_root(shoot); tree.add_root(other)
     def click(folder):
         item = next(tree.topLevelItem(i) for i in range(tree.topLevelItemCount()) if tree.topLevelItem(i).data(0, 256) == folder)
         tree.setCurrentItem(item); item.setSelected(True); tree._on_clicked(item, 0); pump(0.2)
     click(other)
-    assert not lt._finish_btn.isVisible(), "browsing another folder"
+    assert not lt._finish_btn.isVisible() and not lt._hot_btn.isVisible(), "browsing another folder"
     click(shoot)
     assert lt._finish_btn.isVisible() and lt.library_panel.selected_folder() == shoot, "browsing the hotstack folder"
+    assert lt._hot_btn.isVisible() and lt._retake_action.text() == "Retake This Photo"
     lt._clear_library_selection(); lt.select_path(f3); pump(0.2)
     assert lt._finish_btn.isVisible(), "a photo of the hotstack is selected"
     win.open_in_editor(f3)
     assert until(lambda: norm(win.controller.state.image_path or "") == norm(f3))
     assert win._finish_live_action.isEnabled(), "in the editor with a hotstack photo open"
+    assert win._retake_action.isVisible() and f"Retake {os.path.basename(f3)}" in [a.text() for a in win._filmstrip.build_context_menu(f3).actions()]
     win.open_in_editor(elsewhere)
     assert until(lambda: norm(win.controller.state.image_path or "") == norm(elsewhere))
     assert not win._finish_live_action.isEnabled(), "in the editor with another photo open"
+    assert not win._retake_action.isVisible(), "no Retake in the File menu for a photo outside the hotstack"
     win.set_view("lighttable"); pump(0.3); lt.select_path(f3); pump(0.2)
     assert lt._finish_btn.isVisible()
     assert [norm(p) for p in S.load()["live_session"]] == [norm(f1), norm(f2), norm(f3)], "kept across restarts"
@@ -100,14 +107,15 @@ _SCRIPT = textwrap.dedent(r"""
     with open(f2 + ".xmp", "w") as fh: fh.write("<sidecar/>")
     old2_size = os.path.getsize(f2)
 
-    # retake f2: select it, press Retake (the button says so), press again to cancel, press once more
+    # retake f2: select it, choose Retake in the flame button's menu (it says so), choose it again to cancel, and once more
     lt.select_path(f2); pump(0.2)
-    assert lt._retake_btn.isEnabled() and lt._retake_btn.text() == "Retake This Photo"
-    lt._retake_btn.click(); pump(0.1)
-    assert win._retake == f2 and lt._retake_btn.text() == "Cancel Retake" and win._cancel_retake_action.isEnabled()
-    lt._retake_btn.click(); pump(0.1)
-    assert win._retake is None and lt._retake_btn.text() == "Retake This Photo" and not win._cancel_retake_action.isEnabled()
-    lt._retake_btn.click(); pump(0.1)
+    assert lt._hot_btn.isVisible() and lt._retake_action.isEnabled() and lt._retake_action.text() == "Retake This Photo"
+    assert "Retake This Photo" in [a.text() for a in lt.build_context_menu().actions()], "and in the photo's right-click menu, inside the hotstack"
+    lt._retake_action.trigger(); pump(0.1)
+    assert win._retake == f2 and lt._retake_action.text() == "Cancel Retake" and win._cancel_retake_action.isEnabled() and win._cancel_retake_action.isVisible()
+    lt._retake_action.trigger(); pump(0.1)
+    assert win._retake is None and lt._retake_action.text() == "Retake This Photo" and not win._cancel_retake_action.isEnabled() and not win._cancel_retake_action.isVisible()
+    lt._retake_action.trigger(); pump(0.1)
     assert win._retake == f2
     new2 = arrive(lambda: frame(os.path.join(day, "4N0A_retake.png"), 22, (80, 120, 3)))
     pump(0.5)

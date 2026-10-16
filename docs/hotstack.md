@@ -20,7 +20,7 @@ A photo shows about two seconds after its file is complete (a large RAW file tha
 
 - It is read into the library, so it has its place in the Workbench with its camera, lens, ISO and so on.
 - In the Workbench it is **selected and scrolled into view**, so its details are on the right at once. If the Workbench's search or filters are hiding it, the status line says so.
-- **Show Each New Photo in the Editor** (in the menu of the flame button in the Workbench's top bar, on by default) opens it in the editor too, so you see it large with the negative converted: check focus, exposure and the edges before you shoot the next frame. Turn it off to stay in the Workbench and only have the new photo selected. The editor's filmstrip lists the new frame as it arrives.
+- **Show Each New Photo in the Editor** (in the menu of the flame button in the Workbench's top bar, which shows while you are in a hotstack folder; on by default) opens it in the editor too, so you see it large with the negative converted: check focus, exposure and the edges before you shoot the next frame. Turn it off to stay in the Workbench and only have the new photo selected. The editor's filmstrip lists the new frame as it arrives.
 
 Photos that were already in the folder when it was marked (or when the editor was opened) are not "new": they are read into the Workbench and left alone.
 
@@ -28,7 +28,7 @@ Photos that were already in the folder when it was marked (or when the editor wa
 
 If a frame came out wrong, shoot it again and let the new photo take its place:
 
-1. Select the photo in the Workbench and press **Retake This Photo** (or right-click it and choose Retake, or File > Retake Open Photo, or right-click its tile in the editor's filmstrip). The status line says the retake is armed. Press the button again (it now says **Cancel Retake**) or choose File > Cancel Retake to change your mind. A retake needs a hotstack folder to catch the new photo.
+1. Select the photo in the Workbench, open the **flame button's menu** in the top bar and choose **Retake This Photo** (or right-click the photo and choose Retake, or File > Retake Open Photo, or right-click its tile in the editor's filmstrip). The status line says the retake is armed. Choose it again (the entry now says **Cancel Retake**) or choose File > Cancel Retake to change your mind. Retake is only offered for a photo in a hotstack folder, which also catches the new photo; the flame button itself shows only while you are in one.
 2. Shoot the frame again. The next photo to arrive **takes the old photo's name and place**: if the old one was `4N0A7869.CR2` in the day's folder, the retake is now `4N0A7869.CR2` there, in the same spot in the roll.
 3. The old photo is **set aside, not deleted**: it goes into a `Retakes` folder beside where it was, with its sidecars, and is taken off the Workbench (bring it back from **Removed Photos**). Its edits, rating, flag and tags stay with it. A second retake of the same name goes in next to the first as `_1`.
 

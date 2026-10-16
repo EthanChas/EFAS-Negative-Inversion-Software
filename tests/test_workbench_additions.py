@@ -68,14 +68,14 @@ _SCRIPT = textwrap.dedent(r"""
         while time.time() < end: app.processEvents(); time.sleep(0.01)
     pump(2)
 
-    # --- Maps and Classroom: buttons before Workbench and Editor, each a page that says Soon (the Slideshow is a real page: tests/test_slideshow.py)
+    # --- Maps and Classroom: buttons before Workbench and Editor. Maps is a page that says Soon; the Classroom is a real page (the Slideshow and the Classroom have their own tests)
     assert list(win._view_buttons) == ["slideshow", "maps", "classroom", "lighttable", "editor"], list(win._view_buttons)
-    for key, title in (("maps", "Maps"), ("classroom", "Classroom")):
-        win._view_buttons[key].click(); pump(0.3)
-        page = win._view_stack.currentWidget()
-        texts = [l.text() for l in page.findChildren(QLabel)]
-        assert texts == [title, "Soon\u2122"], texts
-        assert win._view_buttons[key].isChecked() and not win._view_buttons["editor"].isChecked() and not win.lighttable_active()
+    win._view_buttons["maps"].click(); pump(0.3)
+    texts = [l.text() for l in win._view_stack.currentWidget().findChildren(QLabel)]
+    assert texts == ["Maps", "Soon™"], texts
+    assert win._view_buttons["maps"].isChecked() and not win._view_buttons["editor"].isChecked() and not win.lighttable_active()
+    win._view_buttons["classroom"].click(); pump(0.3)
+    assert win._view_stack.currentWidget() is win._classroom and win._view_buttons["classroom"].isChecked() and not win._view_buttons["maps"].isChecked() and not win.lighttable_active()
     win.set_view("lighttable"); pump(0.6)
     assert win.lighttable_active() and win._view_buttons["lighttable"].isChecked() and not win._view_buttons["classroom"].isChecked()
     win.set_view("editor"); pump(0.3)

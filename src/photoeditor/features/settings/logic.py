@@ -51,6 +51,7 @@ DEFAULTS: dict[str, Any] = {
     "ffmpeg_path": "",
     "hotstack_folders": [],
     "gpu_enabled": True,
+    "classroom_last": "",
     "gpu_limit": 100,
     "live_open_editor": True,
     "live_session": [],
@@ -88,6 +89,8 @@ def _clean(data: Any) -> dict[str, Any]:
     for key in ("slideshow_shuffle", "slideshow_loop", "slideshow_captions", "slideshow_edits", "slideshow_progress", "live_open_editor", "gpu_enabled"):
         if isinstance(data.get(key), bool):
             out[key] = data[key]
+    if isinstance(data.get("classroom_last"), str):   # the Classroom lesson that was open
+        out["classroom_last"] = data["classroom_last"].strip()[:80]
     limit = data.get("gpu_limit")   # the share of the graphics card's time (per cent) the picture work may take
     if isinstance(limit, int) and not isinstance(limit, bool):
         out["gpu_limit"] = max(10, min(100, limit))

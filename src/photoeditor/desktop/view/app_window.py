@@ -7,7 +7,7 @@ import weakref
 
 import numpy as np
 from PyQt6 import sip
-from PyQt6.QtCore import QEvent, QObject, QSize, Qt, QTimer, QUrl, pyqtSignal
+from PyQt6.QtCore import QEvent, QObject, QPoint, QSize, Qt, QTimer, QUrl, pyqtSignal
 from PyQt6.QtGui import QAction, QCursor, QDesktopServices, QIcon, QKeySequence
 from PyQt6.QtWidgets import (
     QCheckBox, QTabWidget,
@@ -44,6 +44,7 @@ from .color_toning_panel import ColorToningToolPanel
 from .edge_bleed_panel import EdgeBleedPanel
 from .edge_color_panel import EdgeColorPanel
 from .module_search import ModuleSearch
+from .classroom_view import ClassroomView
 from .slideshow_view import SlideshowView
 from .lab_look_panel import LabLookToolPanel
 from .print_response_panel import PrintResponseToolPanel
@@ -60,7 +61,7 @@ from .versions_panel import VersionsPanel
 from .quick_tag_dialog import QuickTagDialog
 from .tagging_panel import TaggingPanel
 from .tags_panel import TagsPanel
-from .shortcuts_dialog import ShortcutsDialog
+from .shortcuts_dialog import ShortcutsDialog, build_sections
 from ..contactsheet_worker import ContactSheetWorker
 from ..peaking_worker import PeakingWorker
 from ..library_worker import LibraryIndexWorker
@@ -336,7 +337,7 @@ class _HotkeyFilter(QObject):
 
 # the views the buttons in the menu bar's corner switch between: the page each shows in the window's stack
 _VIEW_PAGES = {"editor": 0, "lighttable": 1, "slideshow": 2, "maps": 3, "classroom": 4}
-_SOON_VIEWS = {"maps": "Maps", "classroom": "Classroom"}
+_SOON_VIEWS = {"maps": "Maps"}
 
 
 def _coming_soon_page(title: str) -> QWidget:
@@ -444,8 +445,12 @@ class AppWindow(QMainWindow):
         self._slideshow = SlideshowView(self.controller.db_path)
         self._slideshow.set_sources({"shown": self._slideshow_shown, "selected": self._slideshow_selected, "folder": self._slideshow_folder})
         self._view_stack.addWidget(self._slideshow)
-        for key in _SOON_VIEWS:   # Maps and Classroom are on their way: each is a page that says so
+        for key in _SOON_VIEWS:   # Maps is on its way: a page that says so
             self._view_stack.addWidget(_coming_soon_page(_SOON_VIEWS[key]))
+        self._classroom = ClassroomView()   # the built-in guide: lessons from the basics of photography to every tool
+        self._classroom.set_shortcuts_provider(lambda: build_sections(self._keys.all()))
+        self._classroom.module_requested.connect(self.show_module)
+        self._view_stack.addWidget(self._classroom)
         frame.layout().addWidget(self._view_stack, 1)
         self._lighttable.open_requested.connect(self.open_in_editor)
         self._lighttable.rate_requested.connect(self._on_lighttable_rate)
@@ -476,8 +481,8 @@ class AppWindow(QMainWindow):
         self._lighttable.duplicates_requested.connect(self.find_duplicates)
         self._live.arrived.connect(self._on_live_arrived)
         self._lighttable.library_panel.hotstack_requested.connect(self._on_hotstack_requested)
-        self._lighttable.selection_changed.connect(self._refresh_finish_button)
-        self.controller.file_changed.connect(self._refresh_finish_button)
+        self._lighttable.selection_changed.connect(self._refresh_hotstack_ui)
+        self.controller.file_changed.connect(self._refresh_hotstack_ui)
         self._lighttable.live_editor_toggled.connect(lambda on: app_settings.save({"live_open_editor": on}))
         self._lighttable.set_live_editor(app_settings.get("live_open_editor"))
         self._lighttable.finish_requested.connect(self.finish_live_session)
@@ -504,6 +509,7 @@ class AppWindow(QMainWindow):
         self._filmstrip.image_selected.connect(self.controller.open_file)
         self._filmstrip.remove_requested.connect(self.remove_photos)
         self._filmstrip.retake_requested.connect(self.arm_retake)
+        self._filmstrip.set_retake_filter(self._path_in_hotstack)
         self._filmstrip.crop_roll_requested.connect(lambda: self.bulk_crop("auto"))
         self._filmstrip.reset_crops_requested.connect(lambda: self.bulk_crop("reset"))
         self._filmstrip.undo_roll_requested.connect(self.undo_roll_action)
@@ -664,9 +670,11 @@ class AppWindow(QMainWindow):
         self._retake_action = QAction("Retake Open Photo", self)
         self._retake_action.setToolTip("Shoot the open photo again: the next photo that arrives in a hotstack folder takes its place, and this one is set aside in a Retakes folder")
         self._retake_action.triggered.connect(lambda: self._photo_action_for_open(lambda paths: self.arm_retake(paths[0])))
+        self._retake_action.setVisible(False)   # shown while the person is in a hotstack folder (_refresh_hotstack_ui)
         file_menu.addAction(self._retake_action)
         self._cancel_retake_action = QAction("Cancel Retake", self)
         self._cancel_retake_action.setEnabled(False)
+        self._cancel_retake_action.setVisible(False)
         self._cancel_retake_action.triggered.connect(self.cancel_retake)
         file_menu.addAction(self._cancel_retake_action)
         file_menu.addSeparator()
@@ -849,12 +857,13 @@ class AppWindow(QMainWindow):
         corner_row.setContentsMargins(0, 0, THEME.space_sm, 0)
         corner_row.setSpacing(2)
         self._view_buttons: dict[str, QPushButton] = {}
-        for key, text in (("slideshow", "Slideshow"), *_SOON_VIEWS.items(), ("lighttable", "Workbench"), ("editor", "Editor")):
+        for key, text in (("slideshow", "Slideshow"), ("maps", "Maps"), ("classroom", "Classroom"), ("lighttable", "Workbench"), ("editor", "Editor")):
             btn = QPushButton(text)
             btn.setCheckable(True)
             btn.setFixedHeight(22)
             btn.setStyleSheet("padding: 0px 10px;")
-            btn.setToolTip({"lighttable": "Workbench: the whole library as a grid (W)", "editor": "Editor (D)", "slideshow": "Slideshow: play the Workbench's photos, with their edits"}.get(key, f"{text}: coming soon"))
+            btn.setToolTip({"lighttable": "Workbench: the whole library as a grid (W)", "editor": "Editor (D)", "slideshow": "Slideshow: play the Workbench's photos, with their edits",
+                                   "classroom": "Classroom: lessons on photography, film and every tool, with a search box"}.get(key, f"{text}: coming soon"))
             btn.clicked.connect(lambda _c=False, k=key: self.set_view(k))
             self._view_buttons[key] = btn
             corner_row.addWidget(btn)
@@ -1698,13 +1707,15 @@ class AppWindow(QMainWindow):
                 self._lighttable_reload_rows()
                 self.lighttable_refresh()
             self._slideshow.open_slideshow(self.controller.state.image_path)
+        elif name == "classroom":
+            self._classroom.open_classroom()
         elif name == "editor":
             self._filmstrip.setVisible(bool(self._filmstrip.paths()) and not self._panels_hidden)
             self._image_view.setFocus()
         for key, btn in self._view_buttons.items():
             btn.setChecked(key == name)
         self._plugin_emit("view_changed", {"view": "workbench" if name == "lighttable" else name})
-        self._refresh_finish_button()
+        self._refresh_hotstack_ui()
 
     def _photo_action_for_open(self, action) -> None:
         path = self.controller.state.image_path
@@ -2077,29 +2088,37 @@ class AppWindow(QMainWindow):
         self._lighttable.set_hotstack_info(self._live.folders())
         self._lighttable.set_retake(self._retake)
         self._cancel_retake_action.setEnabled(self._retake is not None)
-        self._refresh_finish_button()
+        self._refresh_hotstack_ui()
+
+    def _path_in_hotstack(self, path: str) -> bool:
+        """Whether a photo or folder is a hotstack folder or inside one."""
+        norm = library_query.norm
+        return any(live_filing.is_under(path, f) or norm(path) == norm(f) for f in self._live.folders())
 
     def _in_hotstack(self) -> bool:
         """Whether the person is in a hotstack folder: browsing it in the Workbench's Library list, or with a photo of it selected there, or - in the editor - with one of its photos open."""
-        folders = self._live.folders()
-        if not folders:
+        if not self._live.folders():
             return False
-        def inside(path: str) -> bool:
-            return any(live_filing.is_under(path, f) or library_query.norm(path) == library_query.norm(f) for f in folders)
-
         if self.lighttable_active():
             chosen = self._lighttable.library_panel.selected_folder()
-            return bool(chosen and inside(chosen)) or any(inside(p) for p in self._lighttable.selected_paths())
+            return bool(chosen and self._path_in_hotstack(chosen)) or any(self._path_in_hotstack(p) for p in self._lighttable.selected_paths())
         path = self.controller.state.image_path
-        return bool(path) and inside(path)
+        return bool(path) and self._path_in_hotstack(path)
 
-    def _refresh_finish_button(self, *_args) -> None:
-        """Finish Session shows only while the person is in a hotstack folder and there are photos to file (the File menu item follows the same rule)."""
-        show = bool(self._live_session) and self._in_hotstack()
+    def _refresh_hotstack_ui(self, *_args) -> None:
+        """What belongs to a hotstack shows only while the person is in a hotstack folder: the flame button (with Retake in its menu), Retake in the File menu, and - when there are photos to
+        file - Finish Session. Cancel Retake stays available for as long as a retake is waiting."""
+        inside = self._in_hotstack()
+        show = bool(self._live_session) and inside
+        self._lighttable.set_in_hotstack(inside)
         self._lighttable.set_session(len(self._live_session), show)
-        action = getattr(self, "_finish_live_action", None)   # (this can run while the window is still being built)
-        if action is not None:
-            action.setEnabled(show)
+        finish, retake, cancel = (getattr(self, name, None) for name in ("_finish_live_action", "_retake_action", "_cancel_retake_action"))   # (this can run while the window is still being built)
+        if finish is not None:
+            finish.setEnabled(show)
+        if retake is not None:
+            retake.setVisible(inside)
+        if cancel is not None:
+            cancel.setVisible(self._retake is not None)
 
     def _on_live_arrived(self, paths: list[str]) -> None:
         """Photos landed in a hotstack folder: they are read into the library, shown in the Workbench (the newest one selected) and, if asked, opened in the editor. When a retake is
@@ -2150,7 +2169,7 @@ class AppWindow(QMainWindow):
                 self._live_session.append(path)
                 have.add(norm(path))
         app_settings.save({"live_session": self._live_session, "live_aside": self._live_aside})
-        self._refresh_finish_button()
+        self._refresh_hotstack_ui()
 
     # ------------------------------------------------------------ retakes
     def arm_retake(self, path: str) -> None:
@@ -2218,7 +2237,7 @@ class AppWindow(QMainWindow):
         if not plan:
             self._live_session, self._live_aside = [], []
             app_settings.save({"live_session": [], "live_aside": []})
-            self._refresh_finish_button()
+            self._refresh_hotstack_ui()
             self._coord_label.setText("Nothing to file: the photos of this session are already in their dated folders, or are gone.")
             return
         kept = [(src, dst) for src, dst in plan if os.path.basename(os.path.dirname(dst)) != live_filing.RETAKES]
@@ -2504,6 +2523,17 @@ class AppWindow(QMainWindow):
         dialog.move(geometry.center().x() - 230, geometry.top() + 90)
         dialog.exec()
 
+    def show_module(self, title: str) -> None:
+        """The Classroom's Show me: take the person to the module called `title` - the editor (or the Workbench, for the modules that live there), its tab, the module open and in view, flashed."""
+        panels = [p for p in self.findChildren(CollapsiblePanel) if p._title == title]
+        if not panels:
+            self._coord_label.setText(f"Could not find the {title} module.")
+            return
+        panel = sorted(panels, key=lambda p: self._lighttable.isAncestorOf(p))[0]   # the editor's, when there is one in both
+        in_workbench = self._lighttable.isAncestorOf(panel)
+        self.set_view("lighttable" if in_workbench else "editor")
+        self.go_to_entry(find_logic.Entry("module", title, "Workbench" if in_workbench else "Editor", "", panel))
+
     def go_to_entry(self, entry) -> None:
         """Take the person to what Find chose: switch to the Workbench or the editor, show the panels and tabs it is in, scroll to it and flash it."""
         if entry.kind == "action":
@@ -2518,6 +2548,8 @@ class AppWindow(QMainWindow):
             self.set_view("lighttable" if in_workbench else "editor")
         if self._panels_hidden and not in_workbench:
             self.toggle_panels()
+        if not in_workbench:
+            self._open_tab_holding(widget)
         chain = []
         w = widget
         while w is not None:
@@ -2547,11 +2579,26 @@ class AppWindow(QMainWindow):
         def arrive() -> None:
             for ancestor in chain:
                 if isinstance(ancestor, QScrollArea):
-                    ancestor.ensureWidgetVisible(widget, 20, 60)
+                    self._scroll_into_view(ancestor, widget, entry.kind == "module")
             target.setFocus()
             self._flash(widget)
 
         QTimer.singleShot(260, arrive)
+
+    @staticmethod
+    def _scroll_into_view(area: QScrollArea, widget, whole_module: bool) -> None:
+        """Bring `widget` into view in a scroll area. A module that is open is taller than the view, so what is wanted is its top, and only when that is not showing already (scrolling to its
+        bottom, as ensureWidgetVisible does, takes the tabs and the rest of the list out of view). The lists have no sideways scroll bar, so nothing moves sideways."""
+        sideways = area.horizontalScrollBar().value()
+        if whole_module and area.widget() is not None:
+            bar = area.verticalScrollBar()
+            top = widget.mapTo(area.widget(), QPoint(0, 0)).y()
+            if top < bar.value() or top > bar.value() + area.viewport().height() - 60:
+                bar.setValue(max(0, top - 12))
+        else:
+            area.ensureWidgetVisible(widget, 20, 60)
+        if area.horizontalScrollBarPolicy() == Qt.ScrollBarPolicy.ScrollBarAlwaysOff:
+            area.horizontalScrollBar().setValue(sideways)
 
     def _flash(self, widget) -> None:
         old = widget.styleSheet()
@@ -4098,8 +4145,9 @@ class AppWindow(QMainWindow):
             self._highlight_clip_btn.setChecked(False)
         self._on_graph_hover_cleared()
 
-    def _on_tool_tab_toggled(self, tab_id: str, checked: bool) -> None:
-        panels = {
+    def _tool_tab_panels(self) -> dict:
+        """The tool tabs' slide-out panels by the id the rail knows them by."""
+        return {
             "exposure": self._wb_tools_panel,
             "negative": self._negative_panel,
             "correction": self._correction_panel,
@@ -4109,6 +4157,20 @@ class AppWindow(QMainWindow):
             "metadata": self._metadata_panel,
             "plugins": self._plugins_panel,
         }
+
+    def _open_tab_holding(self, widget) -> None:
+        """Open the tool tab that has `widget` in it, if it is closed, so the person can see it. (Find and the Classroom's Show me go to modules in tabs that are not open; without this they
+        would scroll the sidebar to a panel with no width, and the rail and modules would be out of view.)"""
+        self._sidebar_scroll.verticalScrollBar().setValue(0)
+        for tab_id, panel in self._tool_tab_panels().items():
+            if panel.isAncestorOf(widget):
+                if not panel._is_open:
+                    self._tool_rail.set_tab_checked(tab_id, True)
+                    self._on_tool_tab_toggled(tab_id, True)
+                return
+
+    def _on_tool_tab_toggled(self, tab_id: str, checked: bool) -> None:
+        panels = self._tool_tab_panels()
         if tab_id not in panels:
             return
         if self._module_search.active() or self._search_panel._is_open or self._module_search_edit.text():
@@ -4128,8 +4190,7 @@ class AppWindow(QMainWindow):
 
     def _show_search_results(self, on: bool, reopen: bool = True) -> None:
         """Open (or close) the list of modules the search box found. Opening it closes the tab that was showing (remembered); closing it brings that tab back when `reopen`."""
-        panels = {"exposure": self._wb_tools_panel, "negative": self._negative_panel, "correction": self._correction_panel, "color": self._color_panel, "detail": self._detail_panel,
-                  "watermark": self._watermark_panel, "metadata": self._metadata_panel, "plugins": self._plugins_panel}
+        panels = self._tool_tab_panels()
         if on:
             if not self._search_panel._is_open:
                 self._tab_before_search = self._open_tab

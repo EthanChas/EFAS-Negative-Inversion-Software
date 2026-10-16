@@ -112,6 +112,7 @@ class Filmstrip(QWidget):
         self._list.itemClicked.connect(self._on_item_clicked)
         self._list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self._list.customContextMenuRequested.connect(self._on_context_menu)
+        self._can_retake = lambda _path: False
         layout.addWidget(self._list)
 
         self._loader: ThumbnailLoader | None = None
@@ -336,12 +337,17 @@ class Filmstrip(QWidget):
         self._update_count()
         self.setVisible(bool(self._paths) and not self._panels_hidden)
 
+    def set_retake_filter(self, can_retake) -> None:
+        """`can_retake(path)` says whether a photo may be retaken: only the ones in a hotstack folder get the Retake entry."""
+        self._can_retake = can_retake
+
     def build_context_menu(self, path: str) -> QMenu:
         menu = QMenu(self)
         name = os.path.basename(path)
         menu.addAction("Open", lambda: self.image_selected.emit(path))
         menu.addSeparator()
-        menu.addAction(f"Retake {name}", lambda: self.retake_requested.emit(path))
+        if self._can_retake(path):
+            menu.addAction(f"Retake {name}", lambda: self.retake_requested.emit(path))
         menu.addAction(f"Remove {name} from Workbench", lambda: self.remove_requested.emit([path]))
         menu.addAction(f"Delete {name} from Disk...", lambda: self.delete_requested.emit([path]))
         return menu

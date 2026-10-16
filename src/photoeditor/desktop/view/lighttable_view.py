@@ -298,6 +298,7 @@ class LighttableView(QWidget):
         self._resolve_key = lambda _event: None
         self._known_tags: list[str] | None = None
         self._retake_path: str | None = None   # the photo waiting to be replaced by the next one that arrives
+        self._in_hotstack = False              # the person is in a hotstack folder: the flame button and the Retake entries show
         self._rows: list[dict] = []
         self._shown: list[dict] = []
         self._loading = False
@@ -562,8 +563,13 @@ class LighttableView(QWidget):
         self._hot_btn.setFixedWidth(56)
         self._hot_btn.setToolTip(_HOT_TIP)
         hot_menu = QMenu(self._hot_btn)
+        hot_menu.setToolTipsVisible(True)
         self._hot_info = hot_menu.addAction("")
         self._hot_info.setEnabled(False)
+        hot_menu.addSeparator()
+        self._retake_action = hot_menu.addAction("Retake This Photo")
+        self._retake_action.setToolTip("Shoot the selected photo again: the next photo that arrives in a hotstack folder takes its name and place, and this one is set aside in a Retakes folder (not deleted). Choose it again to cancel.")
+        self._retake_action.triggered.connect(self._emit_retake)
         hot_menu.addSeparator()
         self._live_editor_action = hot_menu.addAction("Show Each New Photo in the Editor")
         self._live_editor_action.setCheckable(True)
@@ -571,6 +577,7 @@ class LighttableView(QWidget):
         self._live_editor_action.toggled.connect(self.live_editor_toggled)
         self._hot_btn.setMenu(hot_menu)
         self.set_hotstack_info([])
+        self._hot_btn.hide()   # it shows while the person is in a hotstack folder (set_in_hotstack)
         bar.addWidget(self._hot_btn)
         self._finish_btn = QPushButton("Finish Session")
         self._finish_btn.setToolTip("You are done with the photos that arrived in the hotstack folder: put them into a dated folder (DD-MM-YYYY) inside it. Their edits, ratings, flags and tags go with them.")
@@ -650,10 +657,6 @@ class LighttableView(QWidget):
         self._open_btn = QPushButton("Open in Editor")
         self._open_btn.clicked.connect(self._emit_open)
         body.addWidget(self._open_btn)
-        self._retake_btn = QPushButton("Retake This Photo")
-        self._retake_btn.setToolTip("Shoot this photo again: the next photo that arrives in a hotstack folder takes its name and place, and this one is set aside in a Retakes folder (not deleted). Press again to cancel.")
-        self._retake_btn.clicked.connect(self._emit_retake)
-        body.addWidget(self._retake_btn)
         self._export_btn = QPushButton("Export Selected...")
         self._export_btn.setToolTip("Export the selected photos with the presets ticked in the Export panel")
         self._export_btn.clicked.connect(lambda: self.export_requested.emit(self.selected_paths()))
@@ -816,17 +819,23 @@ class LighttableView(QWidget):
         self._finish_btn.setVisible(count > 0 and show)
         self._finish_btn.setText(f"Finish Session ({count})")
 
-    def set_retake(self, path: str | None) -> None:
-        """The photo that is waiting to be replaced (or None): its Retake button then says Cancel Retake."""
-        self._retake_path = path
-        self._refresh_retake_button()
+    def set_in_hotstack(self, inside: bool) -> None:
+        """Whether the person is in a hotstack folder. The flame button, with the Retake entry in its menu, shows only then (and so does Retake in the photo's right-click menu); with no
+        hotstack folder marked there is nothing to show, and one is made by right-clicking a folder in the Library list."""
+        self._in_hotstack = inside
+        self._hot_btn.setVisible(inside)
 
-    def _refresh_retake_button(self) -> None:
+    def set_retake(self, path: str | None) -> None:
+        """The photo that is waiting to be replaced (or None): its Retake entry then says Cancel Retake."""
+        self._retake_path = path
+        self._refresh_retake_action()
+
+    def _refresh_retake_action(self) -> None:
         paths = self.selected_paths()
         one = paths[0] if len(paths) == 1 else None
-        self._retake_btn.setEnabled(one is not None)
+        self._retake_action.setEnabled(one is not None)
         armed = one is not None and self._retake_path is not None and Q.norm(one) == Q.norm(self._retake_path)
-        self._retake_btn.setText("Cancel Retake" if armed else "Retake This Photo")
+        self._retake_action.setText("Cancel Retake" if armed else "Retake This Photo")
 
     def _emit_retake(self) -> None:
         paths = self.selected_paths()
@@ -1038,7 +1047,7 @@ class LighttableView(QWidget):
         self._delete_btn.setEnabled(n >= 1)
         self._refresh_tag_editor(rows)
         self._copy_btn.setEnabled(n == 1)
-        self._refresh_retake_button()
+        self._refresh_retake_action()
         self._paste_btn.setEnabled(n >= 1)
         row = self._current_row() if n <= 1 else None
         if n > 1:
@@ -1153,8 +1162,8 @@ class LighttableView(QWidget):
         menu.addAction("Open in Editor", self._emit_open)
         menu.addAction("Show in Folder", self._emit_reveal)
         menu.addAction("Make Virtual Copy", self._emit_copy_version)
-        if n == 1:
-            menu.addAction("Retake This Photo", self._emit_retake)
+        if n == 1 and self._in_hotstack:
+            menu.addAction(self._retake_action.text(), self._emit_retake)
         menu.addSeparator()
         menu.addAction(f"Remove {what} from Workbench", self._emit_remove)
         delete = menu.addAction(f"Delete {what} from Disk...", self._emit_delete)
