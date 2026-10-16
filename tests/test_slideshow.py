@@ -94,6 +94,8 @@ _SCRIPT = textwrap.dedent(r"""
     view = win._slideshow
     assert list(win._view_buttons) == ["slideshow", "maps", "classroom", "lighttable", "editor"]
 
+    assert view._restart_btn.text() == "Start over", "the restart button says what it does"
+
     # every transport button has its icon (a file from assets/icon), and the play button swaps between play and pause
     for button in (view._previous_btn, view._play_btn, view._next_btn, view._full_btn):
         assert not button.icon().isNull() and not button.icon().pixmap(16, 16).isNull(), button.toolTip()
@@ -126,7 +128,7 @@ _SCRIPT = textwrap.dedent(r"""
     assert view.is_playing() and wait_for(lambda: view.position() >= 1, 20), view.position()
     assert view._play_btn.icon().pixmap(16, 16).toImage() != play_icon, "it shows pause while playing"
     assert wait_for(lambda: view.position() == 3 and not view.is_playing(), 30), (view.position(), view.is_playing())
-    assert view._stage._message == "End of the slideshow"
+    assert view._stage._message.startswith("End of the slideshow")
     # play again from the end starts at the top; pause keeps the place
     key(view._stage, Qt.Key.Key_Space)
     assert wait_for(lambda: view.is_playing() and view.position() == 0)

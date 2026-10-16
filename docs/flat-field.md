@@ -24,6 +24,14 @@ A flat field made **before the methods existed** (EFAS's original, with no refer
 
 NegPy's method is included so that EFAS can reproduce a NegPy result and so the two can be compared; the Improved method is the one to use.
 
+## What to shoot as the reference
+
+A scan of the **bare light** (no film in the holder) captures the lens's and the light panel's falloff, and nothing else. For a colour negative that is not always enough: with the **film in the holder** two more things appear that a bare-light shot cannot hold: the film base's **own colour changing toward the edges** (probably because the orange mask absorbs blue strongly, so light that crosses it at a slant, as it does toward the edges of a macro lens's field, loses more blue than red; this is a likely cause, not something measured here), and **reflections** off the holder, a glossy black mask especially, onto the film. Together they read as a blue (or, after inversion, a green or yellow) vignette that a lens profile does not touch (a lens profile only knows the lens, at one focus distance) and a bare-light flat field leaves behind.
+
+So for colour negatives, shoot the reference through a **clear, unexposed piece of developed film base** (a frame cut from the leader, or an unexposed frame) in the **same holder**, with the same camera, lens, aperture, distance and light, and pick that as the reference. Flat Field does not care what the reference is: it divides out whatever is smooth in it.
+
+An example of the difference, from a roll scanned with a 100mm macro lens in a negative carrier: a bare-light reference was colour-neutral to within 1% over its whole frame (blue against red within +-1.5% at every edge and corner), so it corrected brightness and left colour alone; yet along the clear film border of the frames themselves, blue against red was 2-7% lower at the ends of the strip than in its middle, and applying the bare-light flat field changed that by nothing. That colour change is only in shots with film in the holder, so only a reference with film base in the holder can hold it.
+
 ## What Flat Field cannot do
 
 It corrects the *scanner's* light. A colour or brightness difference that is in the picture itself (a flash that lit only the middle of the frame, the film's own border) is not in the reference, so Flat Field leaves it: for that see [Edge Color](edge-color.md) and [Edge Bleed](edge-bleed.md).

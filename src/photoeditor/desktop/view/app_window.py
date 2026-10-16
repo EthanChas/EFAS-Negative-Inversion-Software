@@ -7,7 +7,7 @@ import weakref
 import numpy as np
 from PyQt6 import sip
 from PyQt6.QtCore import QEvent, QObject, QSize, Qt, QTimer, QUrl, pyqtSignal
-from PyQt6.QtGui import QAction, QCursor, QDesktopServices, QKeySequence
+from PyQt6.QtGui import QAction, QCursor, QDesktopServices, QIcon, QKeySequence
 from PyQt6.QtWidgets import (
     QCheckBox, QTabWidget,
     QStackedWidget, QAbstractItemView, QAbstractSlider, QAbstractSpinBox, QApplication, QButtonGroup, QComboBox, QDialog, QFileDialog, QHBoxLayout, QLabel, QMainWindow,
@@ -42,6 +42,7 @@ from .color_mixer_panel import ColorMixerToolPanel
 from .color_toning_panel import ColorToningToolPanel
 from .edge_bleed_panel import EdgeBleedPanel
 from .edge_color_panel import EdgeColorPanel
+from .module_search import ModuleSearch
 from .slideshow_view import SlideshowView
 from .lab_look_panel import LabLookToolPanel
 from .print_response_panel import PrintResponseToolPanel
@@ -62,6 +63,7 @@ from .shortcuts_dialog import ShortcutsDialog
 from ..contactsheet_worker import ContactSheetWorker
 from ..peaking_worker import PeakingWorker
 from ..library_worker import LibraryIndexWorker
+from ..live_folder import LiveFolder
 from ...features.library import query as library_query
 from ...features.export import logic as export_logic
 from ...features.proofs import logic as proof_logic
@@ -69,7 +71,8 @@ from ...features.keybinds import logic as key_logic
 from ...features.settings import logic as app_settings
 from ...features.slideshow import logic as slideshow_logic
 from ...theme import runtime as theme_runtime
-from ...features.library.index import LibraryIndex
+from ...features.library.index import LibraryIndex, read_record
+from ...features.livefolder import logic as live_logic
 from ...features.focuspeaking.logic import overlay_from_levels
 from ...features.whitebalance.logic import range_overlay, range_share
 from ...features.contactsheet.logic import SheetOptions
@@ -370,6 +373,7 @@ class AppWindow(QMainWindow):
         self._sheet_worker = None
         self._quick_export = False
         self._index_worker = None
+        self._live = LiveFolder(self)
         self._update_worker = None
         self._export_paths_override: list[str] = []
         self._peaking_request = 0
@@ -461,6 +465,11 @@ class AppWindow(QMainWindow):
         self._lighttable.delete_requested.connect(self.delete_photos)
         self._lighttable.removed_list_requested.connect(self.show_removed_photos)
         self._lighttable.duplicates_requested.connect(self.find_duplicates)
+        self._live.arrived.connect(self._on_live_arrived)
+        self._lighttable.live_toggled.connect(self.set_live_folder)
+        self._lighttable.live_folder_requested.connect(self.choose_live_folder)
+        self._lighttable.live_editor_toggled.connect(lambda on: app_settings.save({"live_open_editor": on}))
+        self._lighttable.set_live_editor(app_settings.get("live_open_editor"))
         self.controller.rating_changed.connect(lambda path, stars: self._lighttable.update_item(library_query.norm(path), rating=stars))
         self.controller.flag_changed.connect(lambda path, flag: self._lighttable.update_item(library_query.norm(path), flag=flag))
         self.controller.history_changed.connect(self._mark_lighttable_edited)
@@ -632,6 +641,11 @@ class AppWindow(QMainWindow):
         self._removed_action.setToolTip("Photos taken off the Workbench (still on disk); bring them back")
         self._removed_action.triggered.connect(self.show_removed_photos)
         file_menu.addAction(self._removed_action)
+        self._live_action = QAction("Live Folder", self)
+        self._live_action.setCheckable(True)
+        self._live_action.setToolTip("Watch the folder your camera software saves into: each photo that lands in it is shown as it arrives (the same switch as the Workbench's Live Folder button)")
+        self._live_action.toggled.connect(self.set_live_folder)
+        file_menu.addAction(self._live_action)
         file_menu.addSeparator()
 
         self._merge_action = QAction("Merge Scans...", self)
@@ -667,6 +681,10 @@ class AppWindow(QMainWindow):
         file_menu.addAction(exit_action)
 
         edit_menu = menubar.addMenu("Edit")
+        self._search_modules_action = QAction("Search Modules", self)
+        self._search_modules_action.setToolTip("Put the cursor in the module search box above the modules: type to gather the modules that match, from every tab")
+        self._search_modules_action.triggered.connect(self.focus_module_search)
+        edit_menu.addAction(self._search_modules_action)
         self._find_action = QAction("Find a Control or Action...", self)
         self._find_action.setToolTip("Type a name (or what it does) and jump to the module, slider or menu action")
         self._find_action.triggered.connect(self.show_find)
@@ -1459,8 +1477,25 @@ class AppWindow(QMainWindow):
         self._tab_columns = {"plugins": plugins_col, "exposure": tools_col, "correction": correction_col, "negative": negative_tools_col,
                              "watermark": watermark_col, "metadata": metadata_col, "color": color_col, "detail": detail_col}
 
+        # Search: the box above the modules. Type, and the modules that match - from every tab - are gathered in a list of their own, in place of the tab that was showing; clear
+        # it and each goes back to its tab (see module_search.py). The list is a tab panel with no button on the rail.
+        self._module_search_edit = QLineEdit()
+        self._module_search_edit.setPlaceholderText("Search modules: tint, sharpen, dust, crop...")
+        self._module_search_edit.setClearButtonEnabled(True)
+        self._module_search_edit.setToolTip("Find modules by name, by what they do, or by a control inside them. Esc clears it and puts every module back")
+        self._module_search_edit.addAction(QIcon(panel_icons.pixmap("search", 16, THEME.text_secondary)), QLineEdit.ActionPosition.LeadingPosition)
+        self._module_search_status = QLabel("")
+        self._module_search_status.setProperty("role", "hint")
+        self._module_search_status.setWordWrap(True)
+        self._search_panel, search_col = new_tab([])
+        tool_row.addWidget(self._search_panel, 0)
+        self._tab_before_search = ""
+        self._module_search = ModuleSearch(self._tab_columns, search_col, 0, self._module_search_edit, self._module_search_status, self._show_search_results, self)
+
         tool_row.addStretch(1)
 
+        sidebar.addWidget(self._module_search_edit)
+        sidebar.addWidget(self._module_search_status)
         sidebar.addWidget(tool_row_host, 1)
 
         sidebar_content.adjustSize()
@@ -1947,7 +1982,7 @@ class AppWindow(QMainWindow):
     def lighttable_roots(self) -> list[str]:
         """The folders the Lighttable covers: the Library panel's roots, and the folders opened recently or now (outside them)."""
         roots = [r for r in self._library_panel._tree.roots() if r]
-        extra = [f for f in (*self._session.get("recent_folders", []), self._filmstrip_folder) if f and os.path.isdir(f)]
+        extra = [f for f in (*self._session.get("recent_folders", []), self._filmstrip_folder, self._live.folder()) if f and os.path.isdir(f)]
         chosen: list[str] = []
         for r in sorted(roots + extra, key=lambda p: len(library_query.norm(p))):
             n = library_query.norm(r).rstrip("\\/") + os.sep
@@ -1984,6 +2019,69 @@ class AppWindow(QMainWindow):
         self._index_worker = worker
         self._lighttable.set_index_status("Looking for photos...")
         worker.start()
+
+    # ------------------------------------------------------------ the live folder
+    def set_live_folder(self, on: bool) -> bool:
+        """Turn the live folder on or off (the Workbench's Live Folder button, File > Live Folder). On, it watches the folder chosen before, or asks for one. True when it is on."""
+        if on and not self._live.running():
+            folder = app_settings.get("live_folder")
+            if not (folder and os.path.isdir(folder)):
+                folder = self._ask_live_folder()
+            if folder and self._live.start(folder):
+                self.lighttable_refresh()   # what is in the folder already is read into the Workbench
+                self._coord_label.setText(f"Live folder on: watching {folder}. Photos that land in it are shown as they arrive.")
+        elif not on and self._live.running():
+            self._live.stop()
+            self._coord_label.setText("Live folder off.")
+        self._sync_live_ui()
+        return self._live.running()
+
+    def choose_live_folder(self) -> None:
+        """The Workbench's Live Folder > Choose Folder...: pick the folder to watch, and watch it."""
+        if self._ask_live_folder():
+            self._live.stop()
+            self.set_live_folder(True)
+
+    def _ask_live_folder(self) -> str:
+        start = app_settings.get("live_folder") or self._filmstrip_folder or ""
+        folder = QFileDialog.getExistingDirectory(self, "Live Folder: the folder your camera software saves its photos into", start)
+        if folder:
+            app_settings.save({"live_folder": folder})
+        return folder
+
+    def _sync_live_ui(self) -> None:
+        on = self._live.running()
+        self._lighttable.set_live(on, self._live.folder())
+        self._live_action.blockSignals(True)
+        self._live_action.setChecked(on)
+        self._live_action.blockSignals(False)
+
+    def _on_live_arrived(self, paths: list[str]) -> None:
+        """Photos landed in the live folder: they are read into the library, shown in the Workbench (the newest one selected) and, if asked, opened in the editor."""
+        last = paths[-1]
+        records = []
+        for path in paths:
+            try:
+                records.append(read_record(path))
+            except OSError:
+                continue
+        if records:
+            index = LibraryIndex()
+            try:
+                index.upsert(records)
+            finally:
+                index.close()
+        message = live_logic.describe(paths)
+        if self.lighttable_active():
+            self._lighttable_reload_rows()
+            if not self._lighttable.select_path(last):
+                message += " (the Workbench's search or filters are hiding it)"
+            self._lighttable.set_index_status(message)
+        self._coord_label.setText(message)
+        if self._lighttable.live_editor():
+            if library_query.norm(last) not in {library_query.norm(p) for p in self._filmstrip.paths()}:
+                self._on_library_folder_selected(os.path.dirname(last))   # the filmstrip lists the folder again, with the new frame in it
+            self.open_in_editor(last)
 
     def _on_index_finished(self, added: int, changed: int, removed: int) -> None:
         self._index_worker = None
@@ -3820,6 +3918,8 @@ class AppWindow(QMainWindow):
         }
         if tab_id not in panels:
             return
+        if self._module_search.active() or self._search_panel._is_open or self._module_search_edit.text():
+            self._module_search.dismiss()   # a tab was chosen: the modules the search gathered go back to their own tabs before anything else moves
         was_open = [other for other, p in panels.items() if p._is_open and (other != tab_id or not checked)]
         panels[tab_id].set_open(checked)
         self._open_tab = tab_id if checked else (self._open_tab if self._open_tab != tab_id else "")
@@ -3832,6 +3932,31 @@ class AppWindow(QMainWindow):
                 if other_id != tab_id:
                     other_panel.set_open(False)
                     self._tool_rail.set_tab_checked(other_id, False)
+
+    def _show_search_results(self, on: bool, reopen: bool = True) -> None:
+        """Open (or close) the list of modules the search box found. Opening it closes the tab that was showing (remembered); closing it brings that tab back when `reopen`."""
+        panels = {"exposure": self._wb_tools_panel, "negative": self._negative_panel, "correction": self._correction_panel, "color": self._color_panel, "detail": self._detail_panel,
+                  "watermark": self._watermark_panel, "metadata": self._metadata_panel, "plugins": self._plugins_panel}
+        if on:
+            if not self._search_panel._is_open:
+                self._tab_before_search = self._open_tab
+                for tab_id, panel in panels.items():
+                    panel.set_open(False)
+                    self._tool_rail.set_tab_checked(tab_id, False)
+                self._open_tab = ""
+                self._search_panel.set_open(True)
+                QTimer.singleShot(260, lambda: self._fit_sidebar_to_tab(self._search_panel))
+            return
+        if self._search_panel._is_open:
+            self._search_panel.set_open(False)
+            back, self._tab_before_search = self._tab_before_search, ""
+            if reopen and back in self._tool_rail._buttons:
+                self._tool_rail._buttons[back].click()
+
+    def focus_module_search(self) -> None:
+        """Edit > Search Modules: the cursor goes to the search box above the modules."""
+        self._module_search_edit.setFocus()
+        self._module_search_edit.selectAll()
 
     def _close_modules_when_hidden(self, tab_panel) -> None:
         """Settings > General "Close a tab's modules when I switch tabs": once the tab has slid shut, every module in it is folded up, so it is closed
@@ -4147,6 +4272,7 @@ class AppWindow(QMainWindow):
             self._coord_label.setText("Quick export: " + (f"saved {os.path.basename(done[0])}" if done else ". ".join(parts)))
 
     def closeEvent(self, event) -> None:
+        self._live.stop()
         self._shutdown_plugins()
         self._measure_timer.stop()
         self.controller.wait_linear_workers()

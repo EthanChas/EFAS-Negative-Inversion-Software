@@ -291,6 +291,7 @@ class SlideshowView(QWidget):
         row = QHBoxLayout()
         row.setSpacing(THEME.space_sm)
         self._restart_btn = self._icon_button("restart", "Back to the beginning: the first photo, and the music from its start (Home)", self.restart)
+        self._restart_btn.setText("Start over")   # a word beside the icon, so it is not missed
         self._previous_btn = self._icon_button("previous", "Previous photo (Left)", lambda: self.step(-1))
         self._play_btn = self._icon_button("play", "Play (Space)", self.toggle_play)
         self._next_btn = self._icon_button("next", "Next photo (Right)", lambda: self.step(1))
@@ -684,7 +685,7 @@ class SlideshowView(QWidget):
         if target is None:
             if direction > 0 and self._items:
                 self.pause()
-                self._stage.set_message("End of the slideshow")
+                self._stage.set_message("End of the slideshow: Start over, or press Space")
             return False
         self._pos = target
         self._show_current()

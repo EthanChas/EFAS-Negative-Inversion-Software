@@ -102,8 +102,8 @@ class Filmstrip(QWidget):
         self._list.setFlow(QListView.Flow.LeftToRight)
         self._list.setWrapping(False)
         self._list.setIconSize(QSize(_THUMB_SIZE, _THUMB_SIZE))
-        self._list.setFixedHeight(_STRIP_HEIGHT)
         self._list.setSpacing(THEME.space_sm)
+        self._list.setFixedHeight(self._strip_height())
         self._list.setResizeMode(QListWidget.ResizeMode.Adjust)
         self._list.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         self._list.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
@@ -144,6 +144,13 @@ class Filmstrip(QWidget):
         self._bulk_progress.setValue(min(done, max(1, total)))
         self._bulk_progress.setFormat(f"{done} of {total}")
         self._bulk_progress.setToolTip(text)
+
+    def _strip_height(self) -> int:
+        """Tall enough for the tallest tile - a portrait photo's, whose thumbnail fills the icon's height and whose file name sits under it - with the scroll bar and the gaps round it,
+        so a portrait tile's name is not cut off at the bottom."""
+        lst = self._list
+        tile = _THUMB_SIZE + lst.fontMetrics().height() + 4   # the picture, and the name under it
+        return max(_STRIP_HEIGHT, tile + 2 * THEME.space_sm + lst.horizontalScrollBar().sizeHint().height() + 2 * lst.frameWidth())
 
     def reload_tiles(self, paths: list[str]) -> None:
         """Read these photos' thumbnails from the cache again (their crop changed behind the editor's back). Nothing is decoded here: a photo with no cached thumbnail keeps its tile."""

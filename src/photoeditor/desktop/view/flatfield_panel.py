@@ -32,7 +32,9 @@ class FlatFieldPanel(CollapsiblePanel):
             "Flat Field",
             help_text=(
                 "Corrects uneven lighting (vignetting, hot spots) across the scan. Select Reference: pick a "
-                "scan of the bare light source for this folder. Auto (Roll): build it from every frame in "
+                "scan of the bare light source for this folder - or, for colour negatives, better still a scan of a clear, unexposed piece of developed film in the same holder "
+                "(its base is orange), shot with the same camera, lens, aperture and light: the film's own colour at the edges and the holder's reflections are in that and "
+                "not in a bare-light shot. Auto (Roll): build it from every frame in "
                 "the folder instead - needs at least 5 frames, and works because the light's falloff is the "
                 "same in every frame while picture content isn't. Either way it's saved for the whole "
                 "folder and applied to every photo in it, now and later, and to exports. Permanent (all photos) "
@@ -72,7 +74,7 @@ class FlatFieldPanel(CollapsiblePanel):
         body.addWidget(self._enable)
 
         self._reference_btn = QPushButton("Select Reference for This Folder...")
-        self._reference_btn.setToolTip("Pick a scan of the bare light source (a frame with no film in the holder).")
+        self._reference_btn.setToolTip("Pick a scan of the bare light source (a frame with no film in the holder) - or, for colour negatives, of a clear piece of developed film base in the holder, which also holds the film's colour falloff.")
         self._reference_btn.clicked.connect(self._on_pick)
         body.addWidget(self._reference_btn)
 

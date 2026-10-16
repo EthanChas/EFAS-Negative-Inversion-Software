@@ -36,6 +36,8 @@ _LABEL_H = 16
 _PANEL_W = 270
 _RIGHT_W = 250
 _STAR_R = 4.5
+_LIVE_TIP = ("Watch the folder your camera software saves into (Canon's EOS Utility, for one): each photo that lands in it is read in and shown as it arrives. "
+             "It starts off each time the editor opens.")
 _GOLD = QColor(THEME.status_warning)
 _FLAG_COLORS = {"keeper": QColor(76, 175, 80), "rejected": QColor(224, 96, 92)}
 
@@ -285,6 +287,9 @@ class LighttableView(QWidget):
     collection_delete_requested = pyqtSignal(str)
     removed_list_requested = pyqtSignal()
     duplicates_requested = pyqtSignal()
+    live_toggled = pyqtSignal(bool)
+    live_folder_requested = pyqtSignal()
+    live_editor_toggled = pyqtSignal(bool)
     selection_changed = pyqtSignal()
 
     def __init__(self, cache_dir: str | None, parent: QWidget | None = None):
@@ -547,6 +552,22 @@ class LighttableView(QWidget):
         refresh.setToolTip("Look for new, changed and removed photos in the library folders")
         refresh.clicked.connect(self.refresh_requested)
         bar.addWidget(refresh)
+        self._live_btn = QPushButton("Live Folder")
+        self._live_btn.setCheckable(True)
+        self._live_btn.setToolTip(_LIVE_TIP)
+        self._live_btn.toggled.connect(self.live_toggled)
+        bar.addWidget(self._live_btn)
+        self._live_options = QPushButton()   # just the menu arrow: the bar is crowded
+        self._live_options.setFixedWidth(38)
+        self._live_options.setToolTip("Live Folder options: which folder to watch, and whether each new photo opens in the editor")
+        live_menu = QMenu(self._live_options)
+        live_menu.addAction("Choose Folder...").triggered.connect(self.live_folder_requested)
+        self._live_editor_action = live_menu.addAction("Show Each New Photo in the Editor")
+        self._live_editor_action.setCheckable(True)
+        self._live_editor_action.setToolTip("Open every photo that arrives in the editor, so you see it large as it lands. Off: it is only selected here in the Workbench.")
+        self._live_editor_action.toggled.connect(self.live_editor_toggled)
+        self._live_options.setMenu(live_menu)
+        bar.addWidget(self._live_options)
         self._removed_btn = QPushButton("Removed Photos...")
         self._removed_btn.setToolTip("Photos you took off the Workbench (they are still on disk). Bring them back from here.")
         self._removed_btn.clicked.connect(self.removed_list_requested)
@@ -774,6 +795,37 @@ class LighttableView(QWidget):
         if busy:
             self._index_progress.setRange(0, total)
             self._index_progress.setValue(done)
+
+    def set_live(self, on: bool, folder: str = "") -> None:
+        """Show the Live Folder button as on or off, with the folder it watches in its tip (without announcing it)."""
+        self._live_btn.blockSignals(True)
+        self._live_btn.setChecked(on)
+        self._live_btn.blockSignals(False)
+        self._live_btn.setToolTip(_LIVE_TIP + (f"\nWatching: {folder}" if on and folder else ""))
+
+    def live_checked(self) -> bool:
+        return self._live_btn.isChecked()
+
+    def set_live_editor(self, on: bool) -> None:
+        self._live_editor_action.blockSignals(True)
+        self._live_editor_action.setChecked(on)
+        self._live_editor_action.blockSignals(False)
+
+    def live_editor(self) -> bool:
+        """Whether each photo that arrives opens in the editor."""
+        return self._live_editor_action.isChecked()
+
+    def select_path(self, path: str) -> bool:
+        """Select this photo alone and scroll it into view. False when the grid is not showing it (the search or a filter hides it)."""
+        i = self._model.index_of(Q.norm(path))
+        if i is None:
+            return False
+        ix = self._model.index(i)
+        sel = self._list.selectionModel()
+        sel.select(ix, sel.SelectionFlag.ClearAndSelect)
+        sel.setCurrentIndex(ix, sel.SelectionFlag.NoUpdate)
+        self._list.scrollTo(ix)
+        return True
 
     def update_item(self, key: str, **changes) -> None:
         """A photo's rating, flag or edited state changed elsewhere: update it in place."""

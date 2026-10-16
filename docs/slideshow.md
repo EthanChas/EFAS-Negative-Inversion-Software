@@ -17,7 +17,7 @@ The **Slideshow** button (before Workbench and Editor) plays your photos with th
 | Space | play / pause |
 | Right, Down, Page Down, N | next |
 | Left, Up, Page Up, P | previous |
-| Home, or the restart button | back to the beginning: the first photo of the show and the start of the music (playing or paused stays as it was) |
+| Home, or the **Start over** button | back to the beginning: the first photo of the show and the start of the music (playing or paused stays as it was) |
 | End | the last photo |
 | X | leave this photo out |
 | F, F11, double-click | full screen (the stage moves into a black window; Esc leaves; the cursor hides after two seconds) |
