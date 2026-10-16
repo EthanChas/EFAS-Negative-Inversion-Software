@@ -21,7 +21,9 @@
         "lab_by_mids": 0.0,
         "lab_gm_mids": 0.0,
         "lab_by_highs": 0.0,
-        "lab_gm_highs": 0.0
+        "lab_gm_highs": 0.0,
+        "lab_response": "none",
+        "lab_response_amount": 1.0
       }
     },
     {
@@ -45,6 +47,8 @@
         "lab_gm_mids": -0.02,
         "lab_by_highs": 0.0,
         "lab_gm_highs": 0.0,
+        "lab_response": "none",
+        "lab_response_amount": 1.0,
         "invert_r": 0.002
       }
     },
@@ -68,7 +72,9 @@
         "lab_by_mids": 0.1,
         "lab_gm_mids": 0.0,
         "lab_by_highs": 0.0,
-        "lab_gm_highs": 0.0
+        "lab_gm_highs": 0.0,
+        "lab_response": "frontier",
+        "lab_response_amount": 1.0
       }
     },
     {
@@ -92,6 +98,8 @@
         "lab_gm_mids": 0.0,
         "lab_by_highs": 0.08,
         "lab_gm_highs": 0.0,
+        "lab_response": "none",
+        "lab_response_amount": 1.0,
         "invert_r": -0.002
       }
     },
@@ -116,6 +124,8 @@
         "lab_gm_mids": 0.0,
         "lab_by_highs": 0.08,
         "lab_gm_highs": 0.0,
+        "lab_response": "none",
+        "lab_response_amount": 1.0,
         "invert_r": -0.002
       }
     }

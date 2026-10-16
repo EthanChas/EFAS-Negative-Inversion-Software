@@ -50,6 +50,7 @@ from ..features.negative.logic import FILM_TYPE_LABELS, ProcessMode, detect_proc
 from ..features.negative.metering import Metering
 from ..features.watermark import layout as wm_layout
 from ..features.errormarks import logic as error_marks_logic
+from ..features.colormix import logic as color_mix_logic
 from ..features.lablook import logic as lab_look_logic
 from ..features.printresponse import logic as print_response_logic
 from ..features.geometry import corners as corners_logic
@@ -103,7 +104,7 @@ BW_SATURATION = -1.0
 
 LOOK_FIELDS = (
     "exposure_ev", "tone_curve_points", "negative_inverted", "saturation", "temperature", "tint", "shadows", "highlights",
-    "contrast", "local_contrast", "print_snap", "print_toe", "print_toe_width", "print_shoulder", "print_shoulder_width", "lab_fade", "lab_glow", "lab_by_shadows", "lab_by_mids", "lab_by_highs", "lab_gm_shadows", "lab_gm_mids", "lab_gm_highs", "vignette", "vignette_size", "border", "border_color", "sharpen_amount", "sharpen_radius", "sharpen_masking", "sharpen_method", "film_type", "invert_r", "invert_g",
+    "contrast", "local_contrast", "print_snap", "print_toe", "print_toe_width", "print_shoulder", "print_shoulder_width", "lab_fade", "lab_glow", "lab_by_shadows", "lab_by_mids", "lab_by_highs", "lab_gm_shadows", "lab_gm_mids", "lab_gm_highs", "lab_response", "lab_response_amount", "vibrance", "mix_hue_red", "mix_sat_red", "mix_lum_red", "mix_hue_orange", "mix_sat_orange", "mix_lum_orange", "mix_hue_yellow", "mix_sat_yellow", "mix_lum_yellow", "mix_hue_green", "mix_sat_green", "mix_lum_green", "mix_hue_aqua", "mix_sat_aqua", "mix_lum_aqua", "mix_hue_blue", "mix_sat_blue", "mix_lum_blue", "mix_hue_purple", "mix_sat_purple", "mix_lum_purple", "mix_hue_magenta", "mix_sat_magenta", "mix_lum_magenta", "vignette", "vignette_size", "border", "border_color", "sharpen_amount", "sharpen_radius", "sharpen_masking", "sharpen_method", "film_type", "invert_r", "invert_g",
     "invert_b", "chroma_denoise", "wm_film", "wm_texture", "wm_size", "wm_position", "wm_info", "wm_camera", "wm_lens",
 )
 
@@ -321,6 +322,10 @@ class AppController(QObject):
         for key, default in print_response_logic.DEFAULTS.items():
             setattr(self.state, key, float(saved.get(key, default)))
         for key, default in lab_look_logic.DEFAULTS.items():
+            setattr(self.state, key, float(saved.get(key, default)))
+        self.state.lab_response = saved.get("lab_response") if saved.get("lab_response") in color_mix_logic.RESPONSES else "none"
+        self.state.lab_response_amount = float(saved.get("lab_response_amount", 1.0))
+        for key, default in color_mix_logic.DEFAULTS.items():
             setattr(self.state, key, float(saved.get(key, default)))
         self.state.vignette = float(saved.get("vignette", 0.0))
         self.state.vignette_size = float(saved.get("vignette_size", 0.5))
@@ -546,6 +551,7 @@ class AppController(QObject):
         self._last_logged_local = self.state.local_contrast
         self._last_logged_print = self._print_values()
         self._last_logged_lab = self._lab_values()
+        self._last_logged_color = self._color_values()
         self._last_logged_finish = self._finishing_values()
         self._clone_source_raw = self._clone_source_display = self._clone_offset_raw = None
         self._last_logged_ai = (self.state.ai_dust, round(self.state.ai_threshold, 4), self.state.ai_grow)
@@ -1108,28 +1114,61 @@ class AppController(QObject):
         s = self.state
         return (s.print_snap, s.print_toe, s.print_toe_width, s.print_shoulder, s.print_shoulder_width)
 
-    def _lab_values(self) -> tuple[float, ...]:
-        return tuple(getattr(self.state, k) for k in lab_look_logic.KEYS)
+    def _lab_values(self) -> dict:
+        """The Lab Look module's values (the numbers, the scanner response and its amount) as the panel takes them."""
+        return {k: getattr(self.state, k) for k in lab_look_logic.ALL_KEYS}
 
-    def preview_lab_look(self, values) -> None:
+    def _set_lab_values(self, values: dict) -> None:
+        for key in lab_look_logic.ALL_KEYS:
+            if key in values:
+                value = values[key]
+                if key == "lab_response":
+                    value = value if value in color_mix_logic.RESPONSES else "none"
+                else:
+                    value = float(value)
+                setattr(self.state, key, value)
+
+    def preview_lab_look(self, values: dict) -> None:
         if self.state.preview_rgb is None:
             return
-        for key, value in zip(lab_look_logic.KEYS, values):
-            setattr(self.state, key, float(value))
+        self._set_lab_values(values)
         self._preview(LIVE_OTHER_METHODS)
 
-    def set_lab_look(self, values) -> None:
-        """Lab Look: Fade, Glow and the warm or cool balance of the shadows, midtones and highlights."""
+    def set_lab_look(self, values: dict) -> None:
+        """Lab Look: Fade, Glow, the warm or cool balance of the shadows, midtones and highlights, and the scanner colour response."""
         if self.state.preview_rgb is None:
             return
-        for key, value in zip(lab_look_logic.KEYS, values):
-            setattr(self.state, key, float(value))
+        self._set_lab_values(values)
         self._settle()
         now = self._lab_values()
         if now != self._last_logged_lab:
             self._last_logged_lab = now
             s = self.state
-            self._log(f"Lab look: fade {s.lab_fade:.2f}, glow {s.lab_glow:.2f}, warmth {s.lab_by_shadows:+.2f} / {s.lab_by_mids:+.2f} / {s.lab_by_highs:+.2f} (shadows / mids / highlights)")
+            self._log(f"Lab look: fade {s.lab_fade:+.2f}, glow {s.lab_glow:+.2f}, warmth {s.lab_by_shadows:+.2f} / {s.lab_by_mids:+.2f} / {s.lab_by_highs:+.2f} "
+                      f"(shadows / mids / highlights), scanner colour {color_mix_logic.RESPONSE_LABELS[s.lab_response]} {s.lab_response_amount:.2f}")
+
+    def _color_values(self) -> dict:
+        return {k: getattr(self.state, k) for k in color_mix_logic.KEYS}
+
+    def preview_color_mixer(self, values: dict) -> None:
+        if self.state.preview_rgb is None:
+            return
+        for key in color_mix_logic.KEYS:
+            setattr(self.state, key, float(values.get(key, 0.0)))
+        self._preview(LIVE_OTHER_METHODS)
+
+    def set_color_mixer(self, values: dict) -> None:
+        """Color Mixer: Vibrance, and Hue, Saturation and Lightness for each of the eight colour ranges."""
+        if self.state.preview_rgb is None:
+            return
+        for key in color_mix_logic.KEYS:
+            setattr(self.state, key, float(values.get(key, 0.0)))
+        self._settle()
+        now = self._color_values()
+        if now != self._last_logged_color:
+            self._last_logged_color = now
+            changed = [k for k, v in now.items() if abs(v) > 1e-9]
+            self._log("Color mixer: " + (", ".join(f"{k.replace('mix_', '').replace('_', ' ')} {now[k]:+.2f}" for k in changed[:6]) + (" ..." if len(changed) > 6 else "") if changed else "reset"))
 
     def preview_print_response(self, snap: float, toe: float, toe_width: float, shoulder: float, shoulder_width: float) -> None:
         if self.state.preview_rgb is None:
@@ -2230,7 +2269,8 @@ class AppController(QObject):
             local_contrast=s.local_contrast,
             print_snap=s.print_snap, print_toe=s.print_toe, print_toe_width=s.print_toe_width, print_shoulder=s.print_shoulder,
             print_shoulder_width=s.print_shoulder_width,
-            **{k: getattr(s, k) for k in lab_look_logic.KEYS},
+            **{k: getattr(s, k) for k in lab_look_logic.ALL_KEYS},
+            **{k: getattr(s, k) for k in color_mix_logic.KEYS},
             metering=s.metering,
             vignette=s.vignette,
             vignette_size=s.vignette_size,
@@ -2347,7 +2387,8 @@ class AppController(QObject):
             "chroma_denoise": s.chroma_denoise,
             "local_contrast": s.local_contrast,
             **dict(zip(print_response_logic.DEFAULTS, self._print_values())),
-            **dict(zip(lab_look_logic.KEYS, self._lab_values())),
+            **self._lab_values(),
+            **self._color_values(),
             "vignette": s.vignette,
             "vignette_size": s.vignette_size,
             "border": s.border,
@@ -2405,7 +2446,9 @@ class AppController(QObject):
         self.state.local_contrast = 0.0
         for key, default in print_response_logic.DEFAULTS.items():
             setattr(self.state, key, default)
-        for key, default in lab_look_logic.DEFAULTS.items():
+        for key, default in lab_look_logic.ALL_DEFAULTS.items():
+            setattr(self.state, key, default)
+        for key, default in color_mix_logic.DEFAULTS.items():
             setattr(self.state, key, default)
         self.state.vignette, self.state.vignette_size, self.state.border, self.state.border_color = 0.0, 0.5, 0.0, "white"
         self.state.metering = Metering()
@@ -2597,7 +2640,7 @@ class AppController(QObject):
         self._last_logged_local = entry.local_contrast
         s.print_snap, s.print_toe, s.print_toe_width, s.print_shoulder, s.print_shoulder_width = (
             entry.print_snap, entry.print_toe, entry.print_toe_width, entry.print_shoulder, entry.print_shoulder_width)
-        for key in lab_look_logic.KEYS:
+        for key in (*lab_look_logic.ALL_KEYS, *color_mix_logic.KEYS):
             setattr(s, key, getattr(entry, key))
         self._last_logged_print = self._print_values()
         s.vignette, s.vignette_size, s.border, s.border_color = entry.vignette, entry.vignette_size, entry.border, entry.border_color
@@ -3509,7 +3552,7 @@ class AppController(QObject):
             EditParams.from_state(s),
             exposure_ev=0.0, tone_curve_points=tuple(tuple(p) for p in DEFAULT_POINTS), saturation=0.0, temperature=0.0, tint=0.0, shadows=0.0,
             highlights=0.0, sharpen_amount=0.0, dust_auto=False, scratch_lines=(), heal_strokes=(), clone_strokes=(), ai_dust=False, contrast=0.0,
-            chroma_denoise=0.0, local_contrast=0.0, print_snap=0.0, print_toe=0.0, print_shoulder=0.0, **lab_look_logic.DEFAULTS, vignette=0.0, border=0.0, wm_film="off", wm_info=False, crop_rect=None,
+            chroma_denoise=0.0, local_contrast=0.0, print_snap=0.0, print_toe=0.0, print_shoulder=0.0, **lab_look_logic.ALL_DEFAULTS, **color_mix_logic.DEFAULTS, vignette=0.0, border=0.0, wm_film="off", wm_info=False, crop_rect=None,
             rotation_quarter_turns=0, flip_h=False, flip_v=False, fine_rotation=0.0, distortion=0.0, keystone_v=0.0, keystone_h=0.0,
         )
         scanned = self._negative_base()
@@ -3660,7 +3703,7 @@ class AppController(QObject):
             exposure_ev=0.0, tone_curve_points=tuple(tuple(p) for p in DEFAULT_POINTS),
             saturation=0.0, temperature=0.0, tint=0.0, shadows=0.0, highlights=0.0, sharpen_amount=0.0,
             dust_auto=False, scratch_lines=(), heal_strokes=(), clone_strokes=(), ai_dust=False, contrast=0.0, chroma_denoise=0.0, local_contrast=0.0,
-            print_snap=0.0, print_toe=0.0, print_shoulder=0.0, **lab_look_logic.DEFAULTS,
+            print_snap=0.0, print_toe=0.0, print_shoulder=0.0, **lab_look_logic.ALL_DEFAULTS, **color_mix_logic.DEFAULTS,
             vignette=0.0, border=0.0 if not keep_frame else EditParams.from_state(self.state).border,
             wm_film="off", wm_info=False,
         )

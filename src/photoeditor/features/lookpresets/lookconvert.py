@@ -13,6 +13,7 @@ BALANCE_PER = 50.0
 RED_PER = 100.0
 RANGE_WEIGHTS = (("Shadows", 0.5), ("Mids", 0.3), ("Highs", 0.2))  # how much each tonal range counts in the one overall colour balance
 DEFAULT_WIDTH = 2.5
+RESPONSE_OF_TABLE = {"frontier": "frontier", "crystal": "crystal", "pakon": "pakon", "noritsu": "noritsu"}   # the original's colour tables EFAS has a stand-in for; "Natural" is none
 
 
 def _setting(settings: dict[str, Any], key: str) -> float:
@@ -42,7 +43,10 @@ def convert(settings: dict[str, Any]) -> dict[str, float]:
     for part, name in (("Shadows", "shadows"), ("Mids", "mids"), ("Highs", "highs")):
         look[f"lab_by_{name}"] = _setting(settings, f"BlueYellow{part}") / BALANCE_PER
         look[f"lab_gm_{name}"] = _setting(settings, f"GreenMagenta{part}") / BALANCE_PER
+    table = settings.get("LUT")
+    look["lab_response"] = RESPONSE_OF_TABLE.get(table.strip().lower(), "none") if isinstance(table, str) else "none"
+    look["lab_response_amount"] = 1.0
     red = _balance(settings, "RedCyan") / RED_PER
     if red:
         look["invert_r"] = red
-    return {key: round(value + 0.0, 4) for key, value in look.items()}
+    return {key: (round(value + 0.0, 4) if isinstance(value, float) else value) for key, value in look.items()}

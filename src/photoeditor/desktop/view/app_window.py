@@ -38,6 +38,7 @@ from .collapsible_panel import CollapsiblePanel
 from .contrast_panel import ContrastToolPanel
 from .denoise_panel import ChromaDenoiseToolPanel
 from .local_contrast_panel import LocalContrastToolPanel
+from .color_mixer_panel import ColorMixerToolPanel
 from .lab_look_panel import LabLookToolPanel
 from .print_response_panel import PrintResponseToolPanel
 from ...features.metadata.source_exif import read_exif_from_file
@@ -431,7 +432,7 @@ class AppWindow(QMainWindow):
 
         self._module_menus = ModuleMenus(self.controller, self)
         for key, panel in (
-            ("exposure", self._exposure_tool), ("contrast", self._contrast_tool), ("printresponse", self._print_response_tool), ("lablook", self._lab_look_tool), ("tonecurve", self._curve_tool),
+            ("exposure", self._exposure_tool), ("contrast", self._contrast_tool), ("printresponse", self._print_response_tool), ("lablook", self._lab_look_tool), ("colormixer", self._color_mixer_tool), ("tonecurve", self._curve_tool),
             ("shadows_highlights", self._shadows_highlights_tool), ("color", self._color_tool), ("sharpening", self._sharpening_tool),
             ("localcontrast", self._local_contrast_tool), ("denoise", self._denoise_tool), ("negative", self._negative_tool),
             ("watermark", self._watermark_tool), ("finishing", self._finishing_tool),
@@ -1094,6 +1095,11 @@ class AppWindow(QMainWindow):
         self._lab_look_tool.changed.connect(self.controller.set_lab_look)
         self._lab_look_tool.preview_requested.connect(self.controller.preview_lab_look)
         tools_col.addWidget(self._lab_look_tool)
+
+        self._color_mixer_tool = ColorMixerToolPanel()
+        self._color_mixer_tool.changed.connect(self.controller.set_color_mixer)
+        self._color_mixer_tool.preview_requested.connect(self.controller.preview_color_mixer)
+        tools_col.addWidget(self._color_mixer_tool)
 
         self._curve_tool = ToneCurveToolPanel()
         self._curve_tool.curve_changed.connect(self.controller.set_tone_curve)
@@ -2518,6 +2524,8 @@ class AppWindow(QMainWindow):
         self._print_response_tool.set_values(*self.controller._print_values())
         self._lab_look_tool.reset()
         self._lab_look_tool.set_values(self.controller._lab_values())
+        self._color_mixer_tool.reset()
+        self._color_mixer_tool.set_values(self.controller._color_values())
         self._watermark_tool.set_values(
             state.wm_film, state.wm_texture, state.wm_size, state.wm_position, state.wm_info, state.wm_camera, state.wm_lens
         )
@@ -3066,6 +3074,7 @@ class AppWindow(QMainWindow):
         self._local_contrast_tool.set_value(state.local_contrast)
         self._print_response_tool.set_values(*self.controller._print_values())
         self._lab_look_tool.set_values(self.controller._lab_values())
+        self._color_mixer_tool.set_values(self.controller._color_values())
         self._watermark_tool.set_values(
             state.wm_film, state.wm_texture, state.wm_size, state.wm_position, state.wm_info, state.wm_camera, state.wm_lens
         )

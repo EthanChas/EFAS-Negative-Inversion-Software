@@ -20,7 +20,11 @@ def test_each_rule_on_its_own():
 
 def test_what_cannot_be_carried_over_is_left_out_and_a_blank_preset_is_neutral():
     out = lookconvert.convert({"LUT": "Frontier", "ToneProfile": "linear", "ToningMethod": "vintageToning", "ColorMethod": "shadowWeighted"})
-    assert out == lookconvert.convert({}) and "invert_r" not in out
+    blank = lookconvert.convert({})
+    assert {k: v for k, v in out.items() if k != "lab_response"} == {k: v for k, v in blank.items() if k != "lab_response"} and "invert_r" not in out
+    assert out["lab_response"] == "frontier" and blank["lab_response"] == "none", "a named colour table becomes the matching scanner colour response; Natural or none is none"
+    assert lookconvert.convert({"LUT": "Natural"})["lab_response"] == "none" and lookconvert.convert({"LUT": "Crystal"})["lab_response"] == "crystal"
+    assert lookconvert.convert({"LUT": 5})["lab_response"] == "none"
     assert out["saturation"] == out["shadows"] == out["highlights"] == out["print_toe"] == out["print_shoulder"] == 0 and out["print_toe_width"] == 2.5
     assert lookconvert.convert({"Saturation": "lots", "Darks": None, "Lights": True})["saturation"] == 0, "damaged values count as zero"
 

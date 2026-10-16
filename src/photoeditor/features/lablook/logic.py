@@ -12,6 +12,9 @@ from ..color.logic import _TEMP_TINT_STRENGTH
 
 KEYS = ("lab_fade", "lab_glow", "lab_by_shadows", "lab_by_mids", "lab_by_highs", "lab_gm_shadows", "lab_gm_mids", "lab_gm_highs")
 DEFAULTS = {key: 0.0 for key in KEYS}
+RESPONSE_KEYS = ("lab_response", "lab_response_amount")   # the scanner colour response (features/colormix/logic.py) and how much of it
+ALL_KEYS = KEYS + RESPONSE_KEYS
+ALL_DEFAULTS = {**DEFAULTS, "lab_response": "none", "lab_response_amount": 1.0}
 FADE_RANGE = (-1.0, 1.0)   # + compresses the shadows (a lifted, matte black), - expands them (a deeper black, more shadow contrast)
 GLOW_RANGE = (-1.0, 1.0)   # + compresses the highlights (the midtones rise to make room), - expands them (a starker look); the black and the top stay
 BALANCE_RANGE = (-1.0, 1.0)

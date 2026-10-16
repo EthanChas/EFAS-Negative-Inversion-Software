@@ -20,7 +20,7 @@ BY_TITLE = {
     "Export": "download", "Exposure": "sun", "White Balance": "thermometer-sun", "Negative": "film", "Crop & Rotate": "crop", "Color": "palette",
     "Contrast": "contrast", "Dust & Scratches": "eraser", "AI Dust Detection": "bot", "Flat Field": "layout-grid", "Error marking": "triangle-alert",
     "Print Response": "chart-spline", "Shadows & Highlights": "sun-moon", "Sharpening": "focus", "Tone Curve": "spline", "Watermark": "stamp",
-    "Local Contrast": "scan-line", "Masking": "venetian-mask", "Chroma Denoise": "audio-waveform", "Finishing": "frame",
+    "Local Contrast": "scan-line", "Lab Look": "printer", "Color Mixer": "swatch-book", "Masking": "venetian-mask", "Chroma Denoise": "audio-waveform", "Finishing": "frame",
 }
 # the tool rail's tabs -> the icon file
 BY_TAB = {"exposure": "thermometer-sun", "correction": "crop", "negative": "film", "watermark": "stamp", "metadata": "id-card", "plugins": "puzzle"}

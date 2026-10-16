@@ -23,6 +23,9 @@ from ..features.contrast.logic import apply_contrast
 from ..features.denoise.logic import apply_chroma_denoise
 from ..features.localcontrast.logic import apply_local_contrast
 from ..features.printresponse.logic import apply_print_response
+from ..features.colormix.logic import KEYS as COLOR_KEYS
+from ..features.colormix.logic import apply_color
+from ..features.colormix.logic import is_neutral as color_is_neutral
 from ..features.lablook.logic import apply_lab_tone
 from ..features.negative import printengine
 from ..features.negative.metering import Metering
@@ -132,6 +135,33 @@ class EditParams:
     lab_gm_shadows: float = 0.0
     lab_gm_mids: float = 0.0
     lab_gm_highs: float = 0.0
+    lab_response: str = "none"
+    lab_response_amount: float = 1.0
+    vibrance: float = 0.0
+    mix_hue_red: float = 0.0
+    mix_sat_red: float = 0.0
+    mix_lum_red: float = 0.0
+    mix_hue_orange: float = 0.0
+    mix_sat_orange: float = 0.0
+    mix_lum_orange: float = 0.0
+    mix_hue_yellow: float = 0.0
+    mix_sat_yellow: float = 0.0
+    mix_lum_yellow: float = 0.0
+    mix_hue_green: float = 0.0
+    mix_sat_green: float = 0.0
+    mix_lum_green: float = 0.0
+    mix_hue_aqua: float = 0.0
+    mix_sat_aqua: float = 0.0
+    mix_lum_aqua: float = 0.0
+    mix_hue_blue: float = 0.0
+    mix_sat_blue: float = 0.0
+    mix_lum_blue: float = 0.0
+    mix_hue_purple: float = 0.0
+    mix_sat_purple: float = 0.0
+    mix_lum_purple: float = 0.0
+    mix_hue_magenta: float = 0.0
+    mix_sat_magenta: float = 0.0
+    mix_lum_magenta: float = 0.0
     vignette: float = 0.0
     vignette_size: float = 0.5
     border: float = 0.0
@@ -215,6 +245,33 @@ class EditParams:
             lab_gm_shadows=float(getattr(s, "lab_gm_shadows", 0.0)),
             lab_gm_mids=float(getattr(s, "lab_gm_mids", 0.0)),
             lab_gm_highs=float(getattr(s, "lab_gm_highs", 0.0)),
+            lab_response=str(getattr(s, "lab_response", "none")),
+            lab_response_amount=float(getattr(s, "lab_response_amount", 1.0)),
+            vibrance=float(getattr(s, "vibrance", 0.0)),
+            mix_hue_red=float(getattr(s, "mix_hue_red", 0.0)),
+            mix_sat_red=float(getattr(s, "mix_sat_red", 0.0)),
+            mix_lum_red=float(getattr(s, "mix_lum_red", 0.0)),
+            mix_hue_orange=float(getattr(s, "mix_hue_orange", 0.0)),
+            mix_sat_orange=float(getattr(s, "mix_sat_orange", 0.0)),
+            mix_lum_orange=float(getattr(s, "mix_lum_orange", 0.0)),
+            mix_hue_yellow=float(getattr(s, "mix_hue_yellow", 0.0)),
+            mix_sat_yellow=float(getattr(s, "mix_sat_yellow", 0.0)),
+            mix_lum_yellow=float(getattr(s, "mix_lum_yellow", 0.0)),
+            mix_hue_green=float(getattr(s, "mix_hue_green", 0.0)),
+            mix_sat_green=float(getattr(s, "mix_sat_green", 0.0)),
+            mix_lum_green=float(getattr(s, "mix_lum_green", 0.0)),
+            mix_hue_aqua=float(getattr(s, "mix_hue_aqua", 0.0)),
+            mix_sat_aqua=float(getattr(s, "mix_sat_aqua", 0.0)),
+            mix_lum_aqua=float(getattr(s, "mix_lum_aqua", 0.0)),
+            mix_hue_blue=float(getattr(s, "mix_hue_blue", 0.0)),
+            mix_sat_blue=float(getattr(s, "mix_sat_blue", 0.0)),
+            mix_lum_blue=float(getattr(s, "mix_lum_blue", 0.0)),
+            mix_hue_purple=float(getattr(s, "mix_hue_purple", 0.0)),
+            mix_sat_purple=float(getattr(s, "mix_sat_purple", 0.0)),
+            mix_lum_purple=float(getattr(s, "mix_lum_purple", 0.0)),
+            mix_hue_magenta=float(getattr(s, "mix_hue_magenta", 0.0)),
+            mix_sat_magenta=float(getattr(s, "mix_sat_magenta", 0.0)),
+            mix_lum_magenta=float(getattr(s, "mix_lum_magenta", 0.0)),
             vignette=float(getattr(s, "vignette", 0.0)),
             vignette_size=float(getattr(s, "vignette_size", 0.5)),
             border=float(getattr(s, "border", 0.0)),
@@ -544,7 +601,10 @@ class Renderer:
 
             denoise = params.chroma_denoise > 0 and (live is None or "denoise" in live)
             local = params.local_contrast > 0
-            mixing = bool(params.shadows or params.highlights or params.saturation or denoise or local or camera_matrix)
+            color_values = {k: getattr(params, k) for k in COLOR_KEYS}
+            color_response = params.lab_response if params.lab_response_amount > 0 else "none"
+            color_active = not color_is_neutral(color_values, color_response)
+            mixing = bool(params.shadows or params.highlights or params.saturation or denoise or local or camera_matrix or color_active)
             wide = pixels16 is not None
             ramp = wide_ramp() if wide else identity_ramp()
             if params.negative_inverted:
@@ -580,6 +640,8 @@ class Renderer:
                 post = ramp_to_lut(lab(apply_tone_curve(identity_ramp(), curve)))
                 if not is_identity(post):
                     pixels = apply_channel_lut(pixels, post)
+                if color_active:   # vibrance, the colour mixer and the scanner colour response: in OKLCH, on the finished tones
+                    pixels = apply_color(pixels, color_values, color_response, params.lab_response_amount)
             elif wide:
                 final = lab(apply_tone_curve(ramp, curve))
                 if deep and not (params.sharpen_amount or params.vignette or watermark_active(params.wm_film) or params.marks.wanted(params.wm_info, params.wm_camera, params.wm_lens, watermark_active(params.wm_film)) or params.border > 0):

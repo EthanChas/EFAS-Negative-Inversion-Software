@@ -21,7 +21,9 @@
         "lab_by_mids": 0.0,
         "lab_gm_mids": 0.0,
         "lab_by_highs": 0.06,
-        "lab_gm_highs": 0.0
+        "lab_gm_highs": 0.0,
+        "lab_response": "frontier",
+        "lab_response_amount": 1.0
       }
     },
     {
@@ -44,7 +46,9 @@
         "lab_by_mids": 0.08,
         "lab_gm_mids": -0.02,
         "lab_by_highs": 0.0,
-        "lab_gm_highs": 0.0
+        "lab_gm_highs": 0.0,
+        "lab_response": "crystal",
+        "lab_response_amount": 1.0
       }
     },
     {
@@ -67,7 +71,9 @@
         "lab_by_mids": 0.0,
         "lab_gm_mids": 0.0,
         "lab_by_highs": 0.0,
-        "lab_gm_highs": 0.0
+        "lab_gm_highs": 0.0,
+        "lab_response": "pakon",
+        "lab_response_amount": 1.0
       }
     },
     {
@@ -90,7 +96,9 @@
         "lab_by_mids": 0.0,
         "lab_gm_mids": 0.0,
         "lab_by_highs": 0.0,
-        "lab_gm_highs": 0.0
+        "lab_gm_highs": 0.0,
+        "lab_response": "frontier",
+        "lab_response_amount": 1.0
       }
     }
   ]

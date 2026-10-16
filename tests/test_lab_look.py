@@ -92,8 +92,8 @@ def test_the_module_is_in_the_presets_and_can_be_switched_off():
 
     assert "lablook" in M.PANEL_MODULES and "lablook" in M.SWITCHABLE
     keys = {f.key for f in M.panel_fields("lablook")}
-    assert keys == set(ll.KEYS) and set(M.panel_defaults("lablook")) == set(ll.KEYS)
-    assert M.off_overrides(["lablook"]) == {k: 0.0 for k in ll.KEYS}
+    assert keys == set(ll.ALL_KEYS) and set(M.panel_defaults("lablook")) == set(ll.ALL_KEYS)
+    assert M.off_overrides(["lablook"]) == ll.ALL_DEFAULTS, "switched off, the scanner colour is none and its amount is back at full for the next time"
 
 
 def test_the_renderer_applies_it_in_every_path_and_keeps_the_16_bit_chain():

@@ -9,6 +9,7 @@ from ..denoise.logic import CHROMA_DENOISE_MAX
 from ..exposure.logic import EV_RANGE
 from ..finishing.logic import BORDER_COLORS, BORDER_MAX, DEFAULT_BORDER_COLOR, DEFAULT_VIGNETTE_SIZE
 from ..negative.logic import FILM_TYPE_LABELS, FILM_TYPES
+from ..colormix import logic as color_mix
 from ..lablook import logic as lab_look
 from ..printresponse import logic as print_response
 from ..sharpening.logic import DEFAULT_METHOD, METHOD_LABELS, SharpenMethod
@@ -59,6 +60,12 @@ MODULES: tuple[ModuleSpec, ...] = (
         FieldSpec("lab_glow", "Glow", "float", 0.0, *lab_look.GLOW_RANGE),
         _trim("lab_by_shadows", "Warmth in shadows"), _trim("lab_by_mids", "Warmth in midtones"), _trim("lab_by_highs", "Warmth in highlights"),
         _trim("lab_gm_shadows", "Magenta in shadows"), _trim("lab_gm_mids", "Magenta in midtones"), _trim("lab_gm_highs", "Magenta in highlights"),
+        FieldSpec("lab_response", "Scanner colour", "choice", "none", choices=tuple((k, color_mix.RESPONSE_LABELS[k]) for k in color_mix.RESPONSES)),
+        FieldSpec("lab_response_amount", "Scanner colour amount", "float", 1.0, 0.0, 1.0),
+    )),
+    ModuleSpec("colormixer", "Color mixer", (
+        _trim("vibrance", "Vibrance"),
+        *(_trim(f"mix_{kind}_{band}", f"{band.capitalize()} {label}") for band in color_mix.BANDS for kind, label in (("hue", "hue"), ("sat", "saturation"), ("lum", "lightness"))),
     )),
     ModuleSpec("tonecurve", "Tone curve", (FieldSpec("tone_curve_points", "Curve", "curve", DEFAULT_POINTS),)),
     ModuleSpec("contrast", "Contrast", (_trim("contrast", "Contrast"),)),
@@ -96,6 +103,7 @@ PANEL_MODULES: dict[str, tuple[str, tuple[str, ...]]] = {
     "contrast": ("Contrast", ("contrast",)),
     "printresponse": ("Print Response", ("printresponse",)),
     "lablook": ("Lab Look", ("lablook",)),
+    "colormixer": ("Color Mixer", ("colormixer",)),
     "tonecurve": ("Tone Curve", ("tonecurve",)),
     "shadows_highlights": ("Shadows & Highlights", ("shadows_highlights",)),
     "color": ("Color", ("whitebalance", "color")),
