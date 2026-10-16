@@ -62,6 +62,14 @@ class HistoryEntry:
     print_toe_width: float = 2.5
     print_shoulder: float = 0.0
     print_shoulder_width: float = 2.5
+    lab_fade: float = 0.0
+    lab_glow: float = 0.0
+    lab_by_shadows: float = 0.0
+    lab_by_mids: float = 0.0
+    lab_by_highs: float = 0.0
+    lab_gm_shadows: float = 0.0
+    lab_gm_mids: float = 0.0
+    lab_gm_highs: float = 0.0
     keystone_v: float = 0.0
     keystone_h: float = 0.0
     metering: Metering = field(default_factory=Metering)
@@ -161,6 +169,14 @@ class AppState:
     print_toe_width: float = 2.5
     print_shoulder: float = 0.0
     print_shoulder_width: float = 2.5
+    lab_fade: float = 0.0
+    lab_glow: float = 0.0
+    lab_by_shadows: float = 0.0
+    lab_by_mids: float = 0.0
+    lab_by_highs: float = 0.0
+    lab_gm_shadows: float = 0.0
+    lab_gm_mids: float = 0.0
+    lab_gm_highs: float = 0.0
     vignette: float = 0.0
     vignette_size: float = 0.5
     border: float = 0.0

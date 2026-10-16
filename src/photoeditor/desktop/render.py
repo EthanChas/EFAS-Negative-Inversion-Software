@@ -23,6 +23,7 @@ from ..features.contrast.logic import apply_contrast
 from ..features.denoise.logic import apply_chroma_denoise
 from ..features.localcontrast.logic import apply_local_contrast
 from ..features.printresponse.logic import apply_print_response
+from ..features.lablook.logic import apply_lab_tone
 from ..features.negative import printengine
 from ..features.negative.metering import Metering
 from ..features.lookpresets.modules import off_overrides
@@ -123,6 +124,14 @@ class EditParams:
     print_toe_width: float = 2.5
     print_shoulder: float = 0.0
     print_shoulder_width: float = 2.5
+    lab_fade: float = 0.0
+    lab_glow: float = 0.0
+    lab_by_shadows: float = 0.0
+    lab_by_mids: float = 0.0
+    lab_by_highs: float = 0.0
+    lab_gm_shadows: float = 0.0
+    lab_gm_mids: float = 0.0
+    lab_gm_highs: float = 0.0
     vignette: float = 0.0
     vignette_size: float = 0.5
     border: float = 0.0
@@ -198,6 +207,14 @@ class EditParams:
             print_toe_width=float(getattr(s, "print_toe_width", 2.5)),
             print_shoulder=float(getattr(s, "print_shoulder", 0.0)),
             print_shoulder_width=float(getattr(s, "print_shoulder_width", 2.5)),
+            lab_fade=float(getattr(s, "lab_fade", 0.0)),
+            lab_glow=float(getattr(s, "lab_glow", 0.0)),
+            lab_by_shadows=float(getattr(s, "lab_by_shadows", 0.0)),
+            lab_by_mids=float(getattr(s, "lab_by_mids", 0.0)),
+            lab_by_highs=float(getattr(s, "lab_by_highs", 0.0)),
+            lab_gm_shadows=float(getattr(s, "lab_gm_shadows", 0.0)),
+            lab_gm_mids=float(getattr(s, "lab_gm_mids", 0.0)),
+            lab_gm_highs=float(getattr(s, "lab_gm_highs", 0.0)),
             vignette=float(getattr(s, "vignette", 0.0)),
             vignette_size=float(getattr(s, "vignette_size", 0.5)),
             border=float(getattr(s, "border", 0.0)),
@@ -542,6 +559,9 @@ class Renderer:
             ramp = apply_contrast(ramp, params.contrast)
             ramp = apply_print_response(ramp, params.print_snap, params.print_toe, params.print_toe_width, params.print_shoulder, params.print_shoulder_width)
             curve = list(params.tone_curve_points)
+            lab_by = (params.lab_by_shadows, params.lab_by_mids, params.lab_by_highs)
+            lab_gm = (params.lab_gm_shadows, params.lab_gm_mids, params.lab_gm_highs)
+            lab = lambda r: apply_lab_tone(r, params.lab_fade, lab_by, lab_gm, params.lab_glow)   # the lab look comes last, after the tone curve
             if mixing:
                 if wide:
                     pixels = apply_wide_lut(pixels16, wide_ramp_to_lut(ramp))
@@ -557,11 +577,11 @@ class Renderer:
                     pixels = apply_local_contrast(pixels, params.local_contrast)
                 pixels = adjust_shadows_highlights(pixels, params.shadows, params.highlights)
                 pixels = adjust_saturation(pixels, params.saturation)
-                post = ramp_to_lut(apply_tone_curve(identity_ramp(), curve))
+                post = ramp_to_lut(lab(apply_tone_curve(identity_ramp(), curve)))
                 if not is_identity(post):
                     pixels = apply_channel_lut(pixels, post)
             elif wide:
-                final = apply_tone_curve(ramp, curve)
+                final = lab(apply_tone_curve(ramp, curve))
                 if deep and not (params.sharpen_amount or params.vignette or watermark_active(params.wm_film) or params.marks.wanted(params.wm_info, params.wm_camera, params.wm_lens, watermark_active(params.wm_film)) or params.border > 0):
                     table = np.clip(np.rint(final[0].T * np.float32(65535.0 / 255.0)), 0, 65535).astype(np.uint16)
                     pixels = np.empty(pixels16.shape, dtype=np.uint16)
@@ -570,7 +590,7 @@ class Renderer:
                 else:
                     pixels = apply_wide_lut(pixels16, wide_ramp_to_lut(final))
             else:
-                lut = ramp_to_lut(apply_tone_curve(ramp, curve))
+                lut = ramp_to_lut(lab(apply_tone_curve(ramp, curve)))
                 if not is_identity(lut):
                     pixels = apply_channel_lut(pixels, lut)
 

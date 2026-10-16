@@ -13,7 +13,15 @@
         "print_toe": -0.05,
         "print_toe_width": 2.5,
         "print_shoulder": 0.0,
-        "print_shoulder_width": 2.5
+        "print_shoulder_width": 2.5,
+        "lab_fade": 0.0,
+        "lab_glow": 0.0,
+        "lab_by_shadows": 0.0,
+        "lab_gm_shadows": 0.0,
+        "lab_by_mids": 0.0,
+        "lab_gm_mids": 0.0,
+        "lab_by_highs": 0.0,
+        "lab_gm_highs": 0.0
       }
     },
     {
@@ -21,30 +29,46 @@
       "description": "A Fuji Superia-style look: deeper shadows, a little extra saturation and a faint green-yellow balance.",
       "look": {
         "saturation": 0.1,
-        "temperature": 0.026,
-        "tint": -0.026,
-        "shadows": -0.13,
-        "highlights": -0.03,
-        "print_toe": 0.0,
-        "print_toe_width": 2.5,
-        "print_shoulder": 0.0,
-        "print_shoulder_width": 2.5,
-        "invert_r": 0.002
-      }
-    },
-    {
-      "name": "Film Stocks/Kodak/Gold",
-      "description": "A Kodak Gold-style look: a warm, yellow balance with deeper shadows and a little extra saturation.",
-      "look": {
-        "saturation": 0.1,
-        "temperature": 0.07,
+        "temperature": 0.0,
         "tint": 0.0,
         "shadows": -0.13,
         "highlights": -0.03,
         "print_toe": 0.0,
         "print_toe_width": 2.5,
         "print_shoulder": 0.0,
-        "print_shoulder_width": 2.5
+        "print_shoulder_width": 2.5,
+        "lab_fade": 0.0,
+        "lab_glow": 0.0,
+        "lab_by_shadows": 0.04,
+        "lab_gm_shadows": -0.04,
+        "lab_by_mids": 0.02,
+        "lab_gm_mids": -0.02,
+        "lab_by_highs": 0.0,
+        "lab_gm_highs": 0.0,
+        "invert_r": 0.002
+      }
+    },
+    {
+      "name": "Film Stocks/Kodak/Gold",
+      "description": "A Kodak Gold-style look: warm, yellow shadows and midtones with clean highlights, deeper shadows and a little extra saturation. Uses the Lab Look module for the warmth by tone.",
+      "look": {
+        "saturation": 0.1,
+        "temperature": 0.0,
+        "tint": 0.0,
+        "shadows": -0.13,
+        "highlights": -0.03,
+        "print_toe": 0.0,
+        "print_toe_width": 2.5,
+        "print_shoulder": 0.0,
+        "print_shoulder_width": 2.5,
+        "lab_fade": 0.0,
+        "lab_glow": 0.0,
+        "lab_by_shadows": 0.08,
+        "lab_gm_shadows": 0.0,
+        "lab_by_mids": 0.1,
+        "lab_gm_mids": 0.0,
+        "lab_by_highs": 0.0,
+        "lab_gm_highs": 0.0
       }
     },
     {
@@ -52,7 +76,7 @@
       "description": "A Kodak Portra-style look: soft, protected highlights, deeper shadows and a hint of warmth.",
       "look": {
         "saturation": 0.1,
-        "temperature": 0.028,
+        "temperature": 0.0,
         "tint": 0.0,
         "shadows": -0.16,
         "highlights": -0.11,
@@ -60,6 +84,14 @@
         "print_toe_width": 2.5,
         "print_shoulder": 0.05,
         "print_shoulder_width": 2.5,
+        "lab_fade": 0.0,
+        "lab_glow": 0.0,
+        "lab_by_shadows": 0.0,
+        "lab_gm_shadows": 0.0,
+        "lab_by_mids": 0.04,
+        "lab_gm_mids": 0.0,
+        "lab_by_highs": 0.08,
+        "lab_gm_highs": 0.0,
         "invert_r": -0.002
       }
     },
@@ -68,14 +100,22 @@
       "description": "A lighter, airier Portra: lifted shadows and highlights with a warm balance and firmer blacks.",
       "look": {
         "saturation": 0.1,
-        "temperature": 0.028,
+        "temperature": 0.0,
         "tint": 0.0,
         "shadows": 0.13,
         "highlights": 0.1,
-        "print_toe": -0.2,
+        "print_toe": -0.06,
         "print_toe_width": 2.5,
         "print_shoulder": 0.01,
         "print_shoulder_width": 2.5,
+        "lab_fade": -0.28,
+        "lab_glow": 0.0,
+        "lab_by_shadows": 0.0,
+        "lab_gm_shadows": 0.0,
+        "lab_by_mids": 0.04,
+        "lab_gm_mids": 0.0,
+        "lab_by_highs": 0.08,
+        "lab_gm_highs": 0.0,
         "invert_r": -0.002
       }
     }

@@ -9,6 +9,7 @@ from ..denoise.logic import CHROMA_DENOISE_MAX
 from ..exposure.logic import EV_RANGE
 from ..finishing.logic import BORDER_COLORS, BORDER_MAX, DEFAULT_BORDER_COLOR, DEFAULT_VIGNETTE_SIZE
 from ..negative.logic import FILM_TYPE_LABELS, FILM_TYPES
+from ..lablook import logic as lab_look
 from ..printresponse import logic as print_response
 from ..sharpening.logic import DEFAULT_METHOD, METHOD_LABELS, SharpenMethod
 from ..tonecurve.logic import DEFAULT_POINTS
@@ -53,6 +54,12 @@ MODULES: tuple[ModuleSpec, ...] = (
         FieldSpec("print_shoulder", "Shoulder", "float", 0.0, -print_response.SHOULDER_RANGE, print_response.SHOULDER_RANGE),
         FieldSpec("print_shoulder_width", "Shoulder width", "float", print_response.WIDTH_DEFAULT, print_response.WIDTH_MIN, print_response.WIDTH_MAX, 0.1),
     )),
+    ModuleSpec("lablook", "Lab look", (
+        FieldSpec("lab_fade", "Fade", "float", 0.0, *lab_look.FADE_RANGE),
+        FieldSpec("lab_glow", "Glow", "float", 0.0, *lab_look.GLOW_RANGE),
+        _trim("lab_by_shadows", "Warmth in shadows"), _trim("lab_by_mids", "Warmth in midtones"), _trim("lab_by_highs", "Warmth in highlights"),
+        _trim("lab_gm_shadows", "Magenta in shadows"), _trim("lab_gm_mids", "Magenta in midtones"), _trim("lab_gm_highs", "Magenta in highlights"),
+    )),
     ModuleSpec("tonecurve", "Tone curve", (FieldSpec("tone_curve_points", "Curve", "curve", DEFAULT_POINTS),)),
     ModuleSpec("contrast", "Contrast", (_trim("contrast", "Contrast"),)),
     ModuleSpec("localcontrast", "Local contrast", (FieldSpec("local_contrast", "Amount", "float", 0.0, 0.0, 1.0),)),
@@ -88,6 +95,7 @@ PANEL_MODULES: dict[str, tuple[str, tuple[str, ...]]] = {
     "exposure": ("Exposure", ("exposure",)),
     "contrast": ("Contrast", ("contrast",)),
     "printresponse": ("Print Response", ("printresponse",)),
+    "lablook": ("Lab Look", ("lablook",)),
     "tonecurve": ("Tone Curve", ("tonecurve",)),
     "shadows_highlights": ("Shadows & Highlights", ("shadows_highlights",)),
     "color": ("Color", ("whitebalance", "color")),

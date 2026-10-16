@@ -16,9 +16,9 @@ def test_the_builtin_presets_include_the_lab_scanner_looks():
     names = builtin.names()
     assert {"Lab Scanners/Frontier 100", "Lab Scanners/Crystal 100", "Lab Scanners/Noritsu (Green Shadows)"} <= set(names)
     frontier = builtin.get("lab scanners / FRONTIER 100")
-    assert frontier is not None and frontier["saturation"] > 0 and frontier["print_toe"] > 0, "found without regard to case or spacing"
+    assert frontier is not None and frontier["saturation"] > 0 and frontier["lab_fade"] > 0, "found without regard to case or spacing"
     assert builtin.get("Lab Scanners/Crystal 100")["print_toe"] < 0, "Crystal has the deeper blacks"
-    assert builtin.get("Lab Scanners/Noritsu (Green Shadows)")["tint"] < 0, "a faint green in the shadows"
+    assert builtin.get("Lab Scanners/Noritsu (Green Shadows)")["lab_gm_shadows"] < 0, "a faint green in the shadows"
     assert "Frontier" in builtin.description("Lab Scanners/Frontier 100") and builtin.get("nope") is None and builtin.description("nope") == ""
 
 
@@ -94,10 +94,10 @@ _SCRIPT = textwrap.dedent(r'''
     steps = len(c.state.history)
     panel._apply_btn.click(); pump(0.9)
     s = c.state
-    assert abs(s.saturation - 0.10) < 1e-6 and abs(s.shadows + 0.24) < 1e-6 and abs(s.print_toe - 0.11) < 1e-6 and abs(s.temperature - 0.072) < 1e-6
+    assert abs(s.saturation - 0.10) < 1e-6 and abs(s.shadows + 0.24) < 1e-6 and abs(s.lab_fade - 0.22) < 1e-6 and abs(s.lab_glow - 0.24) < 1e-6 and abs(s.lab_by_shadows - 0.12) < 1e-6
     assert len(s.history) == steps + 1 and "built-in preset 'Lab Scanners/Frontier 100'" in s.history[-1].description
     c.undo(); pump(0.5)
-    assert c.state.saturation == 0.0 and c.state.print_toe == 0.0
+    assert c.state.saturation == 0.0 and c.state.print_toe == 0.0 and c.state.lab_fade == 0.0 and c.state.lab_by_shadows == 0.0
     # double-click applies too, and hovering a built-in previews it without applying
     shown = []
     real = win._image_view.update_pixels
@@ -107,7 +107,7 @@ _SCRIPT = textwrap.dedent(r'''
     panel._tree.hover_left.emit(); pump(0.2)
     assert not win._preset_previewing
     panel._tree.activated_name.emit("Lab Scanners/Noritsu (Green Shadows)"); pump(0.9)
-    assert abs(c.state.tint + 0.05) < 1e-6
+    assert abs(c.state.lab_gm_shadows + 0.1) < 1e-6 and abs(c.state.lab_by_shadows - 0.06) < 1e-6
     c.undo(); pump(0.5)
 
     # copy a built-in to My Presets: it lands in the same folder, and the list switches to it

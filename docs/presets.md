@@ -24,12 +24,12 @@ The same goes for **Film Profiles** (Advanced mode): put slashes in a profile's 
 
 | Preset | What it does |
 |---|---|
-| Lab Scanners/Frontier 100 | A Fuji Frontier-style look at full strength: deeper shadows, a soft fade in the blacks, a gentle highlight roll-off, a little more saturation, a warm and slightly green balance |
+| Lab Scanners/Frontier 100 | A Fuji Frontier-style look at full strength: deeper shadows, a soft fade in the blacks, a gentle lift of the midtones, a gentle highlight roll-off, a little more saturation, warmth that is stronger in the shadows than the highlights and a faint green in the shadows |
 | Lab Scanners/Crystal 100 | A Fuji Crystal Archive paper-style look at full strength: richer, deeper blacks, a little less shadow detail, more saturation, a touch of warmth in the midtones |
 | Lab Scanners/Pakon (Clean and Rich) | A Pakon-style look: clean, bright highlights with a firm white, a slight saturation lift, otherwise neutral. Subtle: most of a Pakon scan's look is its colour response, which EFAS cannot copy |
 | Lab Scanners/Noritsu (Green Shadows) | A Noritsu-style look: lifted shadows, bright clean highlights with more separation, a faint green in the shadows, a modest saturation lift |
 
-**What these are, and are not.** They are EFAS's own approximations, made by converting the tone, saturation and colour-balance settings of the matching scanner-look presets in another program's published list into EFAS's sliders. They are not measurements of the machines, not a copy of that program's presets, and not its colour lookup tables or camera profiles (those are not included). The 100 in *Frontier 100* and *Crystal 100* means full strength. Treat them as starting points and adjust by eye.
+**What these are, and are not.** They are EFAS's own approximations, made by converting the tone, saturation, fade, glow and colour-balance settings of the matching scanner-look presets in another program's published list into EFAS's sliders. They are not measurements of the machines, not a copy of that program's presets, and not its colour lookup tables or camera profiles (those are not included). The 100 in *Frontier 100* and *Crystal 100* means full strength. Treat them as starting points and adjust by eye.
 
 The conversion, from the other program's values (their scale is about 100 per unit). It is written as code in `features/lookpresets/lookconvert.py` and tested:
 
@@ -38,19 +38,37 @@ The conversion, from the other program's values (their scale is about 100 per un
 | Saturation | Saturation | value / 50 |
 | Darks | Shadows | value / 100 |
 | Lights | Highlights | value / 100 |
-| Blacks, Fade | Print Response > Toe | (Blacks + Fade) / 100 |
-| Whites | Print Response > Shoulder | minus Whites / 100 |
-| Blue/Yellow in shadows, mids, highlights | Temperature | weighted 0.5, 0.3, 0.2, then / 50 |
-| Green/Magenta in shadows, mids, highlights | Tint | weighted 0.5, 0.3, 0.2, then / 50 |
+| Blacks | Print Response > Toe | value / 100 |
+| Whites | Print Response > Shoulder | minus value / 100 |
+| Fade | Lab Look > Fade | value / 50 (a negative value is kept) |
+| Glow | Lab Look > Glow | value / 50 (a negative value is kept) |
+| Blue/Yellow in shadows, mids, highlights | Lab Look > Warmth: Shadows, Midtones, Highlights | each value / 50, kept apart |
+| Green/Magenta in shadows, mids, highlights | Lab Look > Magenta: Shadows, Midtones, Highlights | each value / 50, kept apart |
 | Red/Cyan in shadows, mids, highlights | Color trim > Red | weighted 0.5, 0.3, 0.2, then / 100 (only when it is not zero) |
-| Glow, tone profile, the colour lookup table | not used | EFAS has no equivalent |
+| The colour lookup table, tone profile, toning method | not used | EFAS has no equivalent |
 
-EFAS has no separate colour balance for shadows and highlights, so the three tonal ranges are folded into one overall balance.
+The three tonal ranges of the colour balance are kept apart, not folded into one overall cast: a preset that is warm in the shadows and clean in the highlights comes out that way. The global Temperature and Tint of a converted look are left at zero, so the White Balance module stays yours.
+
+## The Lab Look module
+
+**Lab Look** (left column, under Print Response) holds what a lab's scanner adds to a print:
+
+- **Fade** works on the shadows and runs from minus to plus. Plus compresses their tonality: smoother shadows with less detail and no pure black (at +1 the black rises by about a fifth of the display range, and the lift dies away quickly with brightness, so the midtones and the top stay put). Minus expands it: a deeper, cleaner black and more shadow contrast (the lower midtones rise by about an eighth of the range at -1).
+- **Glow** works on the highlights and runs from minus to plus. Plus compresses their tonality: smoother, softer highlights with less visible detail, with the black and the top held, so the midtones rise a little to make room (up to about a tenth of the display range). Minus expands it: a starker look with more highlight detail and darker midtones. It is a tone curve, not a blur: it softens nothing and costs nothing per picture.
+- **Warmth** and **Magenta** for the **shadows, midtones and highlights**, six sliders: warmer (+) or cooler (-), and toward magenta (+) or green (-), each only in its own tonal range (smooth, overlapping ranges, so there is no visible edge).
+
+Both Fade and Glow run from -1 to +1 here, which is -50 to +50 on the program the built-in presets were converted from.
+
+**How Fade and Glow were worked out.** The program's own description (Fade compresses the tonality of the shadows, Glow that of the highlights) and a measurement of its output agree; see also [what a lab look is](lab-look-research.md). Their shapes were measured, not guessed: the same photograph was converted in that program with its Glow at -50 and +50, and its Fade at -50 and +50, and the pictures were compared by brightness percentiles. Glow +50 against -50 moved the median from 98 to 149 (of 255) with the darkest tones unchanged and the brightest about the same, and it did not reduce fine detail, so it is a tone curve and not a bloom, and the top of the range bunched together (95th to 99th percentile 29 levels apart at -50, 6 apart at +50), which is the highlight compression the program describes. Fade +50 lifted the black frame around the picture from 1 to 50, tapering to nothing by the lower midtones; Fade -50 left it at pure black and raised everything from the lower midtones up by about 30 levels. The curves in `features/lablook/logic.py` are fitted to those numbers, so they are close, not exact: one photograph and two ends of each slider cannot pin down the whole curve.
+
+It has an on/off light, a reset button and module presets like the other modules. All of it is curves of the tone ramp, applied after the tone curve and in the 16-bit chain.
 
 ## The Film Stocks built-in presets
 
-Under **Film Stocks**, sorted by brand: **Cinestill/Cinestill**, **Fuji/Superia**, **Kodak/Gold**, **Kodak/Portra** and **Kodak/Portra Airy**. They are made the same way as the Lab Scanners presets (the same conversion, from the film-look presets in the same published list), so everything said above applies: approximations of the stock's character in tone, saturation and warmth, not a model of the film's colour. Kodak Gold is the warm one (a yellow balance), Portra keeps its highlights soft and protected, Portra Airy lifts shadows and highlights. A film preset changes the picture the same way whatever film is in the scanner: use it as a starting point, not as proof of what the film looked like.
+Under **Film Stocks**, sorted by brand: **Cinestill/Cinestill**, **Fuji/Superia**, **Kodak/Gold**, **Kodak/Portra** and **Kodak/Portra Airy**. They are made the same way as the Lab Scanners presets (the same conversion, from the film-look presets in the same published list), so everything said above applies: approximations of the stock's character in tone, saturation and warmth by tone, not a model of the film's colour. Kodak Gold is the warm one (warm, yellow shadows and midtones with clean highlights), Portra keeps its highlights soft and protected, Portra Airy lifts shadows and highlights. A film preset changes the picture the same way whatever film is in the scanner: use it as a starting point, not as proof of what the film looked like.
 
 ## Adding built-in presets
 
 Built-in presets are JSON files in `src/photoeditor/assets/presets/`. Each file holds `{"presets": [{"name": "Folder/Name", "description": "...", "look": {...}}]}`, where `look` uses the slider keys of the Presets and Print Response modules (see `features/lookpresets/modules.py`). A new file in that folder appears in the Built-in Presets list the next time EFAS starts.
+
+`tools/build_presets.py <folder>` rewrites the slider values of the built-in Lab Scanners and Film Stocks presets from a folder of source files, using the conversion above.

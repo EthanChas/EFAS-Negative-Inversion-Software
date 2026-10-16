@@ -3,34 +3,94 @@
   "presets": [
     {
       "name": "Lab Scanners/Frontier 100",
-      "description": "A Fuji Frontier-style look at full strength: deeper shadows, a soft film-like fade in the blacks, a gentle highlight roll-off, a little extra saturation and a warm, slightly green balance.",
+      "description": "A Fuji Frontier-style look at full strength: deeper shadows, a soft film-like fade in the blacks, a gentle lift of the midtones, a gentle highlight roll-off, a little extra saturation, and warmth that is stronger in the shadows than the highlights, with a faint green in the shadows. Uses the Lab Look module.",
       "look": {
-        "saturation": 0.10, "temperature": 0.072, "tint": -0.01, "shadows": -0.24, "highlights": -0.06,
-        "print_toe": 0.11, "print_toe_width": 2.5, "print_shoulder": -0.02, "print_shoulder_width": 2.5
+        "saturation": 0.1,
+        "temperature": 0.0,
+        "tint": 0.0,
+        "shadows": -0.24,
+        "highlights": -0.06,
+        "print_toe": 0.0,
+        "print_toe_width": 2.5,
+        "print_shoulder": -0.02,
+        "print_shoulder_width": 2.5,
+        "lab_fade": 0.22,
+        "lab_glow": 0.24,
+        "lab_by_shadows": 0.12,
+        "lab_gm_shadows": -0.02,
+        "lab_by_mids": 0.0,
+        "lab_gm_mids": 0.0,
+        "lab_by_highs": 0.06,
+        "lab_gm_highs": 0.0
       }
     },
     {
       "name": "Lab Scanners/Crystal 100",
       "description": "A Fuji Crystal Archive paper-style look at full strength: richer, deeper blacks, a little less shadow detail, more saturation and a touch of warmth in the midtones.",
       "look": {
-        "saturation": 0.12, "temperature": 0.024, "tint": -0.006, "shadows": -0.13, "highlights": 0.0,
-        "print_toe": -0.19, "print_toe_width": 2.5, "print_shoulder": 0.0, "print_shoulder_width": 2.5
+        "saturation": 0.12,
+        "temperature": 0.0,
+        "tint": 0.0,
+        "shadows": -0.13,
+        "highlights": 0.0,
+        "print_toe": -0.22,
+        "print_toe_width": 2.5,
+        "print_shoulder": 0.0,
+        "print_shoulder_width": 2.5,
+        "lab_fade": 0.06,
+        "lab_glow": 0.06,
+        "lab_by_shadows": 0.0,
+        "lab_gm_shadows": 0.0,
+        "lab_by_mids": 0.08,
+        "lab_gm_mids": -0.02,
+        "lab_by_highs": 0.0,
+        "lab_gm_highs": 0.0
       }
     },
     {
       "name": "Lab Scanners/Pakon (Clean and Rich)",
       "description": "A Pakon-style look: clean, bright highlights with a firm white, a slight saturation lift and otherwise neutral tone and colour. Most of what makes a Pakon scan look like one is its colour response, which EFAS cannot copy, so this one is subtle.",
       "look": {
-        "saturation": 0.10, "temperature": 0.0, "tint": 0.0, "shadows": 0.0, "highlights": 0.12,
-        "print_toe": 0.0, "print_toe_width": 2.5, "print_shoulder": -0.15, "print_shoulder_width": 2.5
+        "saturation": 0.1,
+        "temperature": 0.0,
+        "tint": 0.0,
+        "shadows": 0.0,
+        "highlights": 0.12,
+        "print_toe": 0.0,
+        "print_toe_width": 2.5,
+        "print_shoulder": -0.15,
+        "print_shoulder_width": 2.5,
+        "lab_fade": 0.0,
+        "lab_glow": 0.0,
+        "lab_by_shadows": 0.0,
+        "lab_gm_shadows": 0.0,
+        "lab_by_mids": 0.0,
+        "lab_gm_mids": 0.0,
+        "lab_by_highs": 0.0,
+        "lab_gm_highs": 0.0
       }
     },
     {
       "name": "Lab Scanners/Noritsu (Green Shadows)",
       "description": "A Noritsu-style look: lifted shadows and bright, clean highlights with more separation in the highlights, a faint green in the shadows and a modest saturation lift.",
       "look": {
-        "saturation": 0.08, "temperature": 0.03, "tint": -0.05, "shadows": 0.06, "highlights": 0.16,
-        "print_toe": 0.05, "print_toe_width": 2.5, "print_shoulder": -0.15, "print_shoulder_width": 2.5
+        "saturation": 0.08,
+        "temperature": 0.0,
+        "tint": 0.0,
+        "shadows": 0.06,
+        "highlights": 0.16,
+        "print_toe": -0.02,
+        "print_toe_width": 2.5,
+        "print_shoulder": -0.15,
+        "print_shoulder_width": 2.5,
+        "lab_fade": 0.14,
+        "lab_glow": 0.1,
+        "lab_by_shadows": 0.06,
+        "lab_gm_shadows": -0.1,
+        "lab_by_mids": 0.0,
+        "lab_gm_mids": 0.0,
+        "lab_by_highs": 0.0,
+        "lab_gm_highs": 0.0
       }
     }
   ]

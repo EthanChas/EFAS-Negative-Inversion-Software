@@ -83,10 +83,10 @@ _WINDOW = textwrap.dedent(r'''
     c.apply_builtin_preset("Lab Scanners/Frontier 100"); pump(0.8)
     c.set_exposure_ev(0.4); c.set_sharpen(0.5, 1.0, 0.0, c.state.sharpen_method); pump(0.8)
     s = c.state
-    assert s.saturation > 0 and s.print_toe > 0 and s.exposure_ev == 0.4
+    assert s.saturation > 0 and s.lab_fade > 0 and s.lab_glow > 0 and s.exposure_ev == 0.4
     steps = len(s.history)
     panel._clear_btn.click(); pump(0.9)
-    assert (s.saturation, s.temperature, s.tint, s.shadows, s.highlights, s.print_toe, s.print_shoulder, s.exposure_ev, s.sharpen_amount) == (0.0,) * 9
+    assert (s.saturation, s.temperature, s.tint, s.shadows, s.highlights, s.print_toe, s.print_shoulder, s.exposure_ev, s.sharpen_amount, s.lab_fade, s.lab_glow, s.lab_by_shadows) == (0.0,) * 12
     assert s.negative_inverted == inverted and s.film_type == "auto", "the Negative module (the inversion) is not part of a look"
     assert len(s.history) == steps + 1 and "Cleared" in s.history[-1].description
     c.undo(); pump(0.6)

@@ -1,13 +1,14 @@
-"""Turning a scanner-look or film-look preset from another program's published list of presets (JSON files of tone, saturation and colour-balance settings) into an
-EFAS look - the conversion that made the built-in Lab Scanners and Film Stocks presets, kept as code so the rule is written down and testable. No Qt imports.
+"""Turning a scanner-look or film-look preset from another program's published list of presets (JSON files of tone, saturation, fade, glow and colour-balance settings) into
+an EFAS look - the conversion that made the built-in Lab Scanners and Film Stocks presets, kept as code so the rule is written down and testable. No Qt imports.
 
-Only the tone, saturation and colour-balance settings can be carried over; the colour lookup table a preset names and its glow setting have no equivalent in EFAS and are
-left out (docs/presets.md). EFAS has no separate colour balance for shadows and highlights, so the three tonal ranges are folded into one overall balance. The values are
+Tone, saturation, fade, glow and the colour balance of the shadows, midtones and highlights carry over (the last three into the Lab Look module, which keeps the three tonal
+ranges apart as the originals do). The colour lookup table a preset names, its tone profile and its toning method have no equivalent in EFAS and are left out. The values are
 approximations, not measurements of any machine or film."""
 from typing import Any
 
 SATURATION_PER = 50.0
 TONE_PER = 100.0
+LAB_PER = 50.0   # Fade and Glow run -50 to +50 in the original, which is -1 to +1 here
 BALANCE_PER = 50.0
 RED_PER = 100.0
 RANGE_WEIGHTS = (("Shadows", 0.5), ("Mids", 0.3), ("Highs", 0.2))  # how much each tonal range counts in the one overall colour balance
@@ -27,15 +28,20 @@ def convert(settings: dict[str, Any]) -> dict[str, float]:
     """The EFAS look for a preset's `settings` dict. Every key is always present, so applying it sets every one of these sliders."""
     look = {
         "saturation": _setting(settings, "Saturation") / SATURATION_PER,
-        "temperature": _balance(settings, "BlueYellow") / BALANCE_PER,
-        "tint": _balance(settings, "GreenMagenta") / BALANCE_PER,
+        "temperature": 0.0,
+        "tint": 0.0,
         "shadows": _setting(settings, "Darks") / TONE_PER,
         "highlights": _setting(settings, "Lights") / TONE_PER,
-        "print_toe": (_setting(settings, "Blacks") + _setting(settings, "LabFade")) / TONE_PER,
+        "print_toe": _setting(settings, "Blacks") / TONE_PER,
         "print_toe_width": DEFAULT_WIDTH,
         "print_shoulder": -_setting(settings, "Whites") / TONE_PER,
         "print_shoulder_width": DEFAULT_WIDTH,
+        "lab_fade": _setting(settings, "LabFade") / LAB_PER,
+        "lab_glow": _setting(settings, "LabGlow") / LAB_PER,
     }
+    for part, name in (("Shadows", "shadows"), ("Mids", "mids"), ("Highs", "highs")):
+        look[f"lab_by_{name}"] = _setting(settings, f"BlueYellow{part}") / BALANCE_PER
+        look[f"lab_gm_{name}"] = _setting(settings, f"GreenMagenta{part}") / BALANCE_PER
     red = _balance(settings, "RedCyan") / RED_PER
     if red:
         look["invert_r"] = red
