@@ -89,5 +89,5 @@ def test_each_tab_has_an_icon_file():
 def test_every_icon_the_slideshow_and_folders_use_is_a_file():
     from photoeditor.desktop.view import panel_icons
 
-    for key in ("previous", "play", "pause", "next", "fullscreen", "folder", "folder_open"):
+    for key in ("previous", "play", "pause", "next", "fullscreen", "restart", "folder", "folder_open"):
         assert (panel_icons.ICON_DIR / f"{panel_icons.OTHER[key]}.svg").is_file(), key
