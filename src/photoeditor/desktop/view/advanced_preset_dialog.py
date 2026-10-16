@@ -86,7 +86,7 @@ class _ModuleBox(QFrame):
         out = {}
         for key, getter in self._getters.items():
             value = getter()
-            out[key] = [list(p) for p in value] if key == "tone_curve_points" else value
+            out[key] = [list(p) for p in value] if key.startswith("tone_curve") else value
         return out
 
 

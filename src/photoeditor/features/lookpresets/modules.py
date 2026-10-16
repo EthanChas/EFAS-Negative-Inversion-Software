@@ -67,7 +67,15 @@ MODULES: tuple[ModuleSpec, ...] = (
         _trim("vibrance", "Vibrance"),
         *(_trim(f"mix_{kind}_{band}", f"{band.capitalize()} {label}") for band in color_mix.BANDS for kind, label in (("hue", "hue"), ("sat", "saturation"), ("lum", "lightness"))),
     )),
-    ModuleSpec("tonecurve", "Tone curve", (FieldSpec("tone_curve_points", "Curve", "curve", DEFAULT_POINTS),)),
+    ModuleSpec("colortoning", "Color toning", tuple(
+        field for r, label in (("shadows", "shadows"), ("mids", "midtones"), ("highs", "highlights"))
+        for field in (FieldSpec(f"tone_hue_{r}", f"Tint hue in {label}", "float", 0.0, 0.0, 360.0), FieldSpec(f"tone_amt_{r}", f"Tint strength in {label}", "float", 0.0, 0.0, 1.0))
+    )),
+    ModuleSpec("tonecurve", "Tone curve", (
+        FieldSpec("tone_curve_points", "Curve", "curve", DEFAULT_POINTS),
+        FieldSpec("tone_curve_red", "Red curve", "curve", DEFAULT_POINTS), FieldSpec("tone_curve_green", "Green curve", "curve", DEFAULT_POINTS),
+        FieldSpec("tone_curve_blue", "Blue curve", "curve", DEFAULT_POINTS),
+    )),
     ModuleSpec("contrast", "Contrast", (_trim("contrast", "Contrast"),)),
     ModuleSpec("localcontrast", "Local contrast", (FieldSpec("local_contrast", "Amount", "float", 0.0, 0.0, 1.0),)),
     ModuleSpec("shadows_highlights", "Shadows & highlights", (_trim("shadows", "Shadows"), _trim("highlights", "Highlights"))),
@@ -104,6 +112,7 @@ PANEL_MODULES: dict[str, tuple[str, tuple[str, ...]]] = {
     "printresponse": ("Print Response", ("printresponse",)),
     "lablook": ("Lab Look", ("lablook",)),
     "colormixer": ("Color Mixer", ("colormixer",)),
+    "colortoning": ("Color Toning", ("colortoning",)),
     "tonecurve": ("Tone Curve", ("tonecurve",)),
     "shadows_highlights": ("Shadows & Highlights", ("shadows_highlights",)),
     "color": ("Color", ("whitebalance", "color")),
@@ -128,7 +137,7 @@ def off_overrides(keys) -> dict[str, Any]:
         if key not in SWITCHABLE:
             continue
         for name, value in panel_defaults(key).items():
-            out[name] = tuple(tuple(p) for p in value) if name == "tone_curve_points" else value
+            out[name] = tuple(tuple(p) for p in value) if name.startswith("tone_curve_") or name == "tone_curve_points" else value
     return out
 
 

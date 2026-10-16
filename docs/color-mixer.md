@@ -41,7 +41,13 @@ The ranges are smooth windows on the hue wheel (a raised cosine, 60 degrees eith
 
 **These are estimates.** The directions follow how labs, photographers and the scanners' makers describe each machine (docs/lab-look-research.md): the Frontier cooler and more saturated with golden skin, the Noritsu softer with a tendency toward green in the shadows. Nothing published gives the sizes, so they are kept small (a cast of 0.01 in OKLab is a gentle tint) and open to change as better measurements come in; the Amount slider lets you take as much or as little as you like. They are not a copy of any scanner's or program's colour tables.
 
-The Lab Scanners and Film Stocks presets set the scanner colour from the colour table named in the preset they were converted from (Frontier, Crystal and Pakon have stand-ins; Natural is none), so, for example, Kodak Gold and the Frontier look come with the Frontier response.
+The Scanners (EFAS Original) and Film Stocks presets set the scanner colour from the colour table named in the preset they were converted from (Frontier, Crystal and Pakon have stand-ins; Natural is none), so, for example, Kodak Gold and the Frontier look come with the Frontier response.
+
+## Color Toning
+
+A tint for the **shadows**, the **midtones** and the **highlights**, each with a **Hue** (degrees round the OKLab colour wheel: 0 is a red-magenta, 90 a yellow, 180 a cyan-green, 270 a blue; the swatch beside the region's name shows it) and a **Strength** (0 to 1; a region with no strength is left alone, whatever its hue). The tint is added to OKLab a and b, scaled by a smooth weight for each tonal range (the same weights the scanner response uses, which add up to one), so the lightness is kept and a mid-grey is tinted by the midtone setting alone. At full strength a region moves toward a chroma of 0.08.
+
+It follows the idea of NegPy's split toning (a hue and a strength for shadows and for highlights, added in Lab) with a midtone region and in OKLab. It is applied last, after the Mixer and the scanner response, so it sits on top of them. Lab Look's warm / magenta balance by tone is the lab's colour timing; Color Toning is the creative tint. Use either.
 
 ## Where it sits in the picture's chain
 

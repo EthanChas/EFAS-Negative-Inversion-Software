@@ -53,7 +53,7 @@ class _ResponsePlot(QWidget):
 
 
 class PrintResponseToolPanel(CollapsiblePanel):
-    """Print Response, under WB Correction: Snap, Toe and Shoulder - the shape of a print's characteristic curve (features/printresponse/logic.py), drawn as a
+    """Print Response, under Tone: Snap, Toe and Shoulder - the shape of a print's characteristic curve (features/printresponse/logic.py), drawn as a
     small graph. Same two-tier preview / full-recompute split as the other tone modules, carrying all five values in one signal pair."""
 
     changed = pyqtSignal(float, float, float, float, float)

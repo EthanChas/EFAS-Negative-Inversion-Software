@@ -301,7 +301,7 @@ class RollCardTab(QWidget):
 
     def _build_export(self) -> CollapsiblePanel:
         panel, body = self._panel(
-            "Export",
+            "Roll Card Export",
             "What goes into your exported files. Write roll card puts the roll's details and this frame's into the EXIF and XMP of "
             "each file; Keep original EXIF leaves the scan's own EXIF untouched and writes nothing of the card.",
         )
@@ -325,7 +325,7 @@ class RollCardTab(QWidget):
 
     def _build_presets(self) -> CollapsiblePanel:
         panel, body = self._panel(
-            "Presets",
+            "Roll Card Presets",
             "Your own cameras, lenses and films - the names the fields above suggest and fill in while you type. A camera preset can remember "
             "its usual lens (picking the camera fills the lens in, if the lens is empty); a film preset remembers its ISO and format. "
             "Pick one in the list to edit it, Save to add or update, Remove to delete.",

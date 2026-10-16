@@ -1,4 +1,4 @@
-"""Rebuild the built-in Lab Scanners and Film Stocks presets from a folder of scanner-look and film-look preset files: python tools/build_presets.py path/to/folder
+"""Rebuild the built-in Scanners (EFAS Original) and Film Stocks presets from a folder of scanner-look and film-look preset files: python tools/build_presets.py path/to/folder
 
 Each source file is converted by src/photoeditor/features/lookpresets/lookconvert.py (the rule is in docs/presets.md); the names and descriptions stay as they are in the two JSON
 files in src/photoeditor/assets/presets/, so only the slider values are rewritten."""
@@ -8,10 +8,10 @@ import sys
 
 # preset name in EFAS -> the source file (without .json) in the folder
 SOURCES = {
-    "Lab Scanners/Frontier 100": "Frontier",
-    "Lab Scanners/Crystal 100": "Fuji - Crystal Archive Paper",
-    "Lab Scanners/Pakon (Clean and Rich)": "Pakon---Clean---Rich",
-    "Lab Scanners/Noritsu (Green Shadows)": "Noritsu",
+    "Scanners (EFAS Original)/Frontier 100": "Frontier",
+    "Scanners (EFAS Original)/Crystal 100": "Fuji - Crystal Archive Paper",
+    "Scanners (EFAS Original)/Pakon (Clean and Rich)": "Pakon---Clean---Rich",
+    "Scanners (EFAS Original)/Noritsu (Green Shadows)": "Noritsu",
     "Film Stocks/Cinestill/Cinestill": "Cinestill",
     "Film Stocks/Fuji/Superia": "Fuji-Superia",
     "Film Stocks/Kodak/Gold": "Kodak-Gold",

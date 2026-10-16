@@ -15,7 +15,7 @@ from .logbook import LEVELS
 
 API_VERSION = 1
 EVENTS = ("app_started", "app_closing", "photo_opened", "edit_changed", "theme_changed", "view_changed")
-TABS = ("plugins", "exposure", "correction", "negative", "watermark", "metadata")
+TABS = ("plugins", "exposure", "correction", "negative", "watermark", "metadata", "color", "detail")
 EDIT_KEYS = (
     "exposure_ev", "contrast", "saturation", "temperature", "tint", "shadows", "highlights", "local_contrast", "chroma_denoise", "fine_rotation",
     "inverted", "film_type", "flip_h", "flip_v",
@@ -352,8 +352,8 @@ class PluginCore:
         return MenuItem(handle)
 
     def add_module(self, title: str, tab: str = "plugins", expanded: bool = False) -> ModuleHandle:
-        """Add a module (a collapsible section) to a tool tab: "plugins" (the tab for plugins, the default), or one of "exposure" (WB Correction), "correction",
-        "negative", "watermark", "metadata" (Roll Card). Fill it with add_label, add_button, add_slider and so on."""
+        """Add a module (a collapsible section) to a tool tab: "plugins" (the tab for plugins, the default), or one of "negative" (Convert), "correction" (Frame & Clean),
+        "exposure" (Tone), "color" (Color), "detail" (Detail), "watermark" (Finish), "metadata" (Roll Card). Fill it with add_label, add_button, add_slider and so on."""
         title = _text(title, "The title", 120, False)
         _need(tab in TABS, f"There is no tab '{tab}'. The tabs are: {', '.join(TABS)}.")
         module = ModuleHandle(self, self._host.add_module(self._manifest.id, self._manifest.name, title, tab, bool(expanded)), title)

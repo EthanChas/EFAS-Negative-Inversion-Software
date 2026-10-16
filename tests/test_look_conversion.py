@@ -35,11 +35,11 @@ def test_every_converted_key_is_a_slider_a_look_can_hold():
 
 def test_the_lab_scanner_presets_are_here():
     names = builtin.names()
-    assert {"Lab Scanners/Frontier 100", "Lab Scanners/Crystal 100", "Lab Scanners/Noritsu (Green Shadows)", "Lab Scanners/Pakon (Clean and Rich)"} <= set(names)
-    frontier = builtin.get("Lab Scanners/Frontier 100")
+    assert {"Scanners (EFAS Original)/Frontier 100", "Scanners (EFAS Original)/Crystal 100", "Scanners (EFAS Original)/Noritsu (Green Shadows)", "Scanners (EFAS Original)/Pakon (Clean and Rich)"} <= set(names)
+    frontier = builtin.get("Scanners (EFAS Original)/Frontier 100")
     assert frontier["lab_fade"] == pytest.approx(11 / 50) and frontier["lab_glow"] == pytest.approx(12 / 50) and frontier["lab_by_shadows"] > frontier["lab_by_highs"] > 0, "Frontier fades, glows, and is warmer in its shadows"
-    pakon = builtin.get("Lab Scanners/Pakon (Clean and Rich)")
-    assert pakon["highlights"] > 0 and pakon["print_shoulder"] < 0 and "subtle" in builtin.description("Lab Scanners/Pakon (Clean and Rich)")
+    pakon = builtin.get("Scanners (EFAS Original)/Pakon (Clean and Rich)")
+    assert pakon["highlights"] > 0 and pakon["print_shoulder"] < 0 and "subtle" in builtin.description("Scanners (EFAS Original)/Pakon (Clean and Rich)")
 
 
 def test_the_film_stock_presets_are_here_in_brand_folders():

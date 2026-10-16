@@ -2,7 +2,7 @@
   "about": "Looks inspired by the colour character of minilab scanners. Each is EFAS's own approximation: the settings were worked out by converting the tone, saturation and colour-balance settings of a scanner-look preset from another program's published list into EFAS's sliders (see docs/presets.md); they are not a measurement of the machines and not a copy of anyone's profile. They are starting points: adjust by eye.",
   "presets": [
     {
-      "name": "Lab Scanners/Frontier 100",
+      "name": "Scanners (EFAS Original)/Frontier 100",
       "description": "A Fuji Frontier-style look at full strength: deeper shadows, a soft film-like fade in the blacks, a gentle lift of the midtones, a gentle highlight roll-off, a little extra saturation, and warmth that is stronger in the shadows than the highlights, with a faint green in the shadows. Uses the Lab Look module.",
       "look": {
         "saturation": 0.1,
@@ -27,7 +27,7 @@
       }
     },
     {
-      "name": "Lab Scanners/Crystal 100",
+      "name": "Scanners (EFAS Original)/Crystal 100",
       "description": "A Fuji Crystal Archive paper-style look at full strength: richer, deeper blacks, a little less shadow detail, more saturation and a touch of warmth in the midtones.",
       "look": {
         "saturation": 0.12,
@@ -52,7 +52,7 @@
       }
     },
     {
-      "name": "Lab Scanners/Pakon (Clean and Rich)",
+      "name": "Scanners (EFAS Original)/Pakon (Clean and Rich)",
       "description": "A Pakon-style look: clean, bright highlights with a firm white, a slight saturation lift and otherwise neutral tone and colour. Most of what makes a Pakon scan look like one is its colour response, which EFAS cannot copy, so this one is subtle.",
       "look": {
         "saturation": 0.1,
@@ -77,7 +77,7 @@
       }
     },
     {
-      "name": "Lab Scanners/Noritsu (Green Shadows)",
+      "name": "Scanners (EFAS Original)/Noritsu (Green Shadows)",
       "description": "A Noritsu-style look: lifted shadows and bright, clean highlights with more separation in the highlights, a faint green in the shadows and a modest saturation lift.",
       "look": {
         "saturation": 0.08,

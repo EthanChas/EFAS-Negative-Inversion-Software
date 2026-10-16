@@ -4,9 +4,9 @@
 
 These tools help you get a clean scan of a negative and take the result into other software. All of them are optional. Nothing here changes how an existing photo is converted unless you choose it.
 
-## Scan quality (Negative tab)
+## Scan quality (Convert tab)
 
-When you open a RAW scan, the Negative tab shows a one-line verdict under SCAN QUALITY: good, clipped, underexposed or limited by the density of the film. It comes from the same measurements as Advanced mode (the film base, the headroom before the sensor clips, and the noise in the densest areas), explained in plain words with the number of stops involved.
+When you open a RAW scan, the Convert tab shows a one-line verdict under SCAN QUALITY: good, clipped, underexposed or limited by the density of the film. It comes from the same measurements as Advanced mode (the film base, the headroom before the sensor clips, and the noise in the densest areas), explained in plain words with the number of stops involved.
 
 - **Clipped**: part of the film base or the lightest areas reached the sensor's limit. Use a shorter exposure.
 - **Underexposed**: the film base sits far below the sensor's limit, so shadows carry more noise than they need to. Use a longer exposure, or merge a bracket (below).
@@ -16,11 +16,11 @@ The verdict needs a RAW file (or a scan merged here). It can be switched off in 
 
 ## Finding the film base automatically
 
-Negative tab > **Find Film Base Automatically** looks for the clear border of the film in the open scan. It shows the area it found, marked on the scan, with how confident it is and why. **Nothing changes until you press Use This Film Base.** A border beside bare backlight is told apart from the backlight itself; a border with no backlight next to it is offered with lower confidence. If no border is found you are told, and you can still sample one yourself.
+Convert tab > **Find Film Base Automatically** looks for the clear border of the film in the open scan. It shows the area it found, marked on the scan, with how confident it is and why. **Nothing changes until you press Use This Film Base.** A border beside bare backlight is told apart from the backlight itself; a border with no backlight next to it is offered with lower confidence. If no border is found you are told, and you can still sample one yourself.
 
 ## One film base for the whole roll
 
-Negative tab > **Find Film Base for the Whole Roll** reads the clear border of up to 12 frames spread along the open photo's folder and combines them into one film base. The border around a frame is the same film on every frame, so reading several of them steadies the colour from frame to frame, and what is in any single picture (a snow scene, a sunset) cannot pull the reading. Frames without a clear, even border are left out, and a roll is only offered a base when at least two frames have one and most of them agree. You are shown the colour and how many frames it came from; **nothing changes until you confirm**, and Clear goes back to estimating each photo on its own.
+Convert tab > **Find Film Base for the Whole Roll** reads the clear border of up to 12 frames spread along the open photo's folder and combines them into one film base. The border around a frame is the same film on every frame, so reading several of them steadies the colour from frame to frame, and what is in any single picture (a snow scene, a sunset) cannot pull the reading. Frames without a clear, even border are left out, and a roll is only offered a base when at least two frames have one and most of them agree. You are shown the colour and how many frames it came from; **nothing changes until you confirm**, and Clear goes back to estimating each photo on its own.
 
 ## Inverting before the camera's colour matrix (Settings > RAW decoding)
 

@@ -205,9 +205,9 @@ Scanning set-up factors that move the results: backlight spectrum (CRI, narrow-b
 
 Progressive disclosure, one engine.
 
-**Simple Mode (default)**: the Negative tab shows film type, **Sample Film Base** with a plain-language hint, and the existing Auto controls. No density terminology. A "Show details" link opens Advanced Mode. Hint text: *"Film Base: tell EFAS which part of the scan contains unexposed film. EFAS uses this to understand the colour of your film base and improve the inversion."* After sampling, a one-line status: "Film base measured".
+**Simple Mode (default)**: the Convert tab shows film type, **Sample Film Base** with a plain-language hint, and the existing Auto controls. No density terminology. A "Show details" link opens Advanced Mode. Hint text: *"Film Base: tell EFAS which part of the scan contains unexposed film. EFAS uses this to understand the colour of your film base and improve the inversion."* After sampling, a one-line status: "Film base measured".
 
-**Advanced Mode** (a checkbox in the Negative tab, remembered): reveals expandable panels, each collapsed until opened:
+**Advanced Mode** (a checkbox in the Convert tab, remembered): reveals expandable panels, each collapsed until opened:
 
 1. **Density**: table: Dmin R/G/B, Dmax R/G/B, density range, transmission range, value under the cursor, and for each value whether it is measured, estimated or limited by the scan, with units and tooltips.
 2. **Density histogram**: per-channel density histogram with Dmin/Dmax markers; a switch between camera-relative density and density above film base.

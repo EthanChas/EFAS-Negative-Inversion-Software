@@ -80,7 +80,7 @@ _WINDOW = textwrap.dedent(r'''
     assert panel._clear_btn.text() == "Clear" and not panel._clear_btn.isEnabled() or True
     c.set_negative_inverted(False); pump(0.5)
     inverted = c.state.negative_inverted
-    c.apply_builtin_preset("Lab Scanners/Frontier 100"); pump(0.8)
+    c.apply_builtin_preset("Scanners (EFAS Original)/Frontier 100"); pump(0.8)
     c.set_exposure_ev(0.4); c.set_sharpen(0.5, 1.0, 0.0, c.state.sharpen_method); pump(0.8)
     s = c.state
     assert s.saturation > 0 and s.lab_fade > 0 and s.lab_glow > 0 and s.exposure_ev == 0.4

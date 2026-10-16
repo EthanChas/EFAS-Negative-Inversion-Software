@@ -93,7 +93,7 @@ _SCRIPT = textwrap.dedent(r"""
     assert abs(c.state.lab_response_amount - 0.4) < 1e-6
     lab._response.setCurrentIndex(lab._response.findData("none")); pump(1.0)
     assert not lab._rows["lab_response_amount"].isEnabled(), "no scanner, no amount"
-    c.apply_builtin_preset("Lab Scanners/Frontier 100"); pump(1.0)
+    c.apply_builtin_preset("Scanners (EFAS Original)/Frontier 100"); pump(1.0)
     assert c.state.lab_response == "frontier" and lab._response.currentData() == "frontier", "the Frontier preset brings the Frontier colour response"
     assert abs(c.state.lab_fade - 0.22) < 1e-6, "and its fade"
     c.apply_look({"vibrance": 0.3, "mix_lum_orange": 0.2}, "a look"); pump(0.8)
@@ -117,9 +117,9 @@ def test_the_new_modules_are_presets_modules_with_icons_and_switch_off_cleanly()
 
     assert "colormixer" in M.PANEL_MODULES and "colormixer" in M.SWITCHABLE and "lablook" in M.SWITCHABLE
     fields = {f.key for f in M.panel_fields("colormixer")}
-    assert fields == set(cm.KEYS) and len(fields) == 25
+    assert fields == set(cm.MIXER_PANEL_KEYS) and len(fields) == 25
     off = M.off_overrides(["colormixer"])
-    assert off == {k: 0.0 for k in cm.KEYS}
+    assert off == {k: 0.0 for k in cm.MIXER_PANEL_KEYS}
     assert panel_icons.BY_TITLE["Color Mixer"] == "swatch-book" and panel_icons.BY_TITLE["Lab Look"] == "printer"
     for name in ("swatch-book", "printer"):
         assert (panel_icons.ICON_DIR / f"{name}.svg").is_file(), name

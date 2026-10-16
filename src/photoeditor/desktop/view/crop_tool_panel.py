@@ -37,7 +37,7 @@ class CropToolPanel(CollapsiblePanel):
     grouped separately from detection/inversion since they're an
     independent concern (straightening and framing a scan vs. correcting
     its color), the same way Exposure and Tone Curve are two separate
-    panels under WB Correction rather than one."""
+    panels under Frame & Clean rather than one."""
 
     rotate_left_requested = pyqtSignal()
     rotate_right_requested = pyqtSignal()

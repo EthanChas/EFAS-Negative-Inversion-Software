@@ -32,7 +32,7 @@ class ExposureToolPanel(CollapsiblePanel):
     """The Exposure tab's dropdown content - the same raised-bevel, titled
     panel chrome the White Balance section has (a gray header bar with a
     collapse arrow and a "?" help button). This is a second, independent
-    animation from the tool rail's own slide: the rail's "WB Correction"
+    animation from the tool rail's own slide: the rail's "Tone"
     tab slides this whole panel in/out horizontally (SlideOutPanel, see
     tool_rail.py), while this panel's own arrow slides its body (the
     slider/spinbox) open/closed vertically within itself - the two never

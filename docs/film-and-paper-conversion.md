@@ -1,6 +1,6 @@
 # Modern conversion (film & paper)
 
-Negative tab > Conversion > **Method**. Two choices: **Modern (film & paper)**, the default, and **Original (stretch)**, the conversion EFAS used before. Photos that were edited before Modern existed keep Original; photos that were only opened, never edited, and new photos get Modern. The choice is saved per photo and goes into presets with the rest of the metering. This page says what Modern does, why, and how far to trust it.
+Convert tab > Conversion > **Method**. Two choices: **Modern (film & paper)**, the default, and **Original (stretch)**, the conversion EFAS used before. Photos that were edited before Modern existed keep Original; photos that were only opened, never edited, and new photos get Modern. The choice is saved per photo and goes into presets with the rest of the metering. This page says what Modern does, why, and how far to trust it.
 
 ## Why a second conversion
 

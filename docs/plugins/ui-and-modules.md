@@ -9,10 +9,12 @@ A plugin shows itself in two ways: **menu items** in the Plugins menu, and **mod
 | `tab` | Where |
 |---|---|
 | `"plugins"` | The **Plugins** tab. It has its own button in the tool strip, which only shows while at least one plugin has a module in it. This is the default. |
-| `"exposure"` | The WB Correction tab |
-| `"correction"` | The Correction tab |
-| `"negative"` | The Negative tab |
-| `"watermark"` | The Watermark tab |
+| `"negative"` | The Convert tab |
+| `"correction"` | The Frame & Clean tab |
+| `"exposure"` | The Tone tab |
+| `"color"` | The Color tab |
+| `"detail"` | The Detail tab |
+| `"watermark"` | The Finish tab |
 | `"metadata"` | The Roll Card tab |
 
 A module goes at the bottom of its tab, after EFAS's own modules. When the setting **Close a tab's modules when I switch to another tab** is on (Settings > General), a plugin's modules fold up with the rest.

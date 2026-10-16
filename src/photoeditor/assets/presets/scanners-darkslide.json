@@ -1,0 +1,333 @@
+{
+  "about": "The lab styles that ship with DarkSlide (github.com/kilianvivien/DarkSlide, MIT licence, (c) 2026 Kilian Vivien), carried over as tone curves (master, red, green, blue) plus a saturation and a temperature nudge: its saturationBias and temperatureBias divided by 100. DarkSlide's own tonal-character overrides are not carried over, as the curves already hold the lifted blacks and the soft shoulder. See docs/presets.md.",
+  "presets": [
+    {
+      "name": "Scanners (DarkSlide)/Frontier Classic",
+      "description": "Warm, saturated colour with lifted blacks and a gentle shoulder. The tone curves and the saturation and temperature nudge of DarkSlide's lab style of the same name.",
+      "look": {
+        "tone_curve_points": [
+          [
+            0,
+            10
+          ],
+          [
+            24,
+            28
+          ],
+          [
+            72,
+            84
+          ],
+          [
+            132,
+            150
+          ],
+          [
+            196,
+            214
+          ],
+          [
+            255,
+            246
+          ]
+        ],
+        "tone_curve_red": [
+          [
+            0,
+            4
+          ],
+          [
+            128,
+            132
+          ],
+          [
+            255,
+            255
+          ]
+        ],
+        "tone_curve_green": [
+          [
+            0,
+            0
+          ],
+          [
+            120,
+            118
+          ],
+          [
+            255,
+            248
+          ]
+        ],
+        "tone_curve_blue": [
+          [
+            0,
+            0
+          ],
+          [
+            128,
+            122
+          ],
+          [
+            255,
+            244
+          ]
+        ],
+        "saturation": 0.1,
+        "temperature": 0.08
+      }
+    },
+    {
+      "name": "Scanners (DarkSlide)/Frontier Modern",
+      "description": "Cleaner highlights with a lighter Frontier-style colour signature. The tone curves and the saturation and temperature nudge of DarkSlide's lab style of the same name.",
+      "look": {
+        "tone_curve_points": [
+          [
+            0,
+            6
+          ],
+          [
+            36,
+            38
+          ],
+          [
+            96,
+            104
+          ],
+          [
+            160,
+            170
+          ],
+          [
+            220,
+            228
+          ],
+          [
+            255,
+            250
+          ]
+        ],
+        "tone_curve_red": [
+          [
+            0,
+            2
+          ],
+          [
+            128,
+            130
+          ],
+          [
+            255,
+            253
+          ]
+        ],
+        "tone_curve_green": [
+          [
+            0,
+            0
+          ],
+          [
+            128,
+            126
+          ],
+          [
+            255,
+            250
+          ]
+        ],
+        "tone_curve_blue": [
+          [
+            0,
+            0
+          ],
+          [
+            255,
+            255
+          ]
+        ],
+        "saturation": 0.03,
+        "temperature": 0.03
+      }
+    },
+    {
+      "name": "Scanners (DarkSlide)/Noritsu",
+      "description": "Cooler, straighter midtones with slightly firmer contrast. The tone curves and the saturation and temperature nudge of DarkSlide's lab style of the same name.",
+      "look": {
+        "tone_curve_points": [
+          [
+            0,
+            2
+          ],
+          [
+            48,
+            44
+          ],
+          [
+            116,
+            114
+          ],
+          [
+            184,
+            188
+          ],
+          [
+            255,
+            252
+          ]
+        ],
+        "tone_curve_red": [
+          [
+            0,
+            0
+          ],
+          [
+            255,
+            255
+          ]
+        ],
+        "tone_curve_green": [
+          [
+            0,
+            0
+          ],
+          [
+            255,
+            255
+          ]
+        ],
+        "tone_curve_blue": [
+          [
+            0,
+            0
+          ],
+          [
+            255,
+            255
+          ]
+        ],
+        "saturation": -0.02,
+        "temperature": -0.05
+      }
+    },
+    {
+      "name": "Scanners (DarkSlide)/Neutral",
+      "description": "A minimal transfer curve and colour bias, for grading by hand. The tone curves and the saturation and temperature nudge of DarkSlide's lab style of the same name.",
+      "look": {
+        "tone_curve_points": [
+          [
+            0,
+            0
+          ],
+          [
+            255,
+            255
+          ]
+        ],
+        "tone_curve_red": [
+          [
+            0,
+            0
+          ],
+          [
+            255,
+            255
+          ]
+        ],
+        "tone_curve_green": [
+          [
+            0,
+            0
+          ],
+          [
+            255,
+            255
+          ]
+        ],
+        "tone_curve_blue": [
+          [
+            0,
+            0
+          ],
+          [
+            255,
+            255
+          ]
+        ],
+        "saturation": 0.0,
+        "temperature": 0.0
+      }
+    },
+    {
+      "name": "Scanners (DarkSlide)/Agfa d-Lab",
+      "description": "Cooler midtones with muted saturation and a slight green bias. The tone curves and the saturation and temperature nudge of DarkSlide's lab style of the same name.",
+      "look": {
+        "tone_curve_points": [
+          [
+            0,
+            4
+          ],
+          [
+            40,
+            38
+          ],
+          [
+            100,
+            100
+          ],
+          [
+            170,
+            176
+          ],
+          [
+            230,
+            234
+          ],
+          [
+            255,
+            250
+          ]
+        ],
+        "tone_curve_red": [
+          [
+            0,
+            0
+          ],
+          [
+            255,
+            255
+          ]
+        ],
+        "tone_curve_green": [
+          [
+            0,
+            2
+          ],
+          [
+            128,
+            132
+          ],
+          [
+            255,
+            252
+          ]
+        ],
+        "tone_curve_blue": [
+          [
+            0,
+            2
+          ],
+          [
+            128,
+            130
+          ],
+          [
+            255,
+            250
+          ]
+        ],
+        "saturation": -0.04,
+        "temperature": -0.03
+      }
+    }
+  ]
+}

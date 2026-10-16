@@ -3,7 +3,7 @@
   "name": "Exposure Steps (Lua)",
   "version": "1.0",
   "author": "EFAS",
-  "description": "Adds a module to the WB Correction tab with buttons that nudge the exposure by a third of a stop. Shows how a plugin changes the photo's edit.",
+  "description": "Adds a module to the Tone tab with buttons that nudge the exposure by a third of a stop. Shows how a plugin changes the photo's edit.",
   "entry": "main.lua",
   "api": 1
 }

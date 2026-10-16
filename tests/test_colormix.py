@@ -75,7 +75,7 @@ def test_a_mixer_band_moves_only_its_own_colours():
     l1, _c, _h = lab_of(lum)
     assert at(l1, names, "yellow") > at(l0, names, "yellow") + 0.05 and at(l1, names, "red") < at(l0, names, "red") - 0.05
     assert abs(at(l1, names, "blue") - at(l0, names, "blue")) < 0.01
-    assert set(cm.MIXER_KEYS) == {f"mix_{k}_{b}" for b in cm.BANDS for k in ("hue", "sat", "lum")} and len(cm.KEYS) == 25
+    assert set(cm.MIXER_KEYS) == {f"mix_{k}_{b}" for b in cm.BANDS for k in ("hue", "sat", "lum")} and len(cm.MIXER_PANEL_KEYS) == 25
 
 
 def test_bands_blend_into_their_neighbours_with_no_gaps():

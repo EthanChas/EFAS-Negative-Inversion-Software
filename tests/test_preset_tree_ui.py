@@ -1,4 +1,4 @@
-"""Presets as a tree (folders by slashes) with My Presets and Built-in Presets buttons, and the built-in Lab Scanners presets."""
+"""Presets as a tree (folders by slashes) with My Presets and Built-in Presets buttons, and the built-in Scanners (EFAS Original) presets."""
 import os
 import subprocess
 import sys
@@ -14,12 +14,12 @@ SRC = str(Path(__file__).resolve().parents[1] / "src")
 
 def test_the_builtin_presets_include_the_lab_scanner_looks():
     names = builtin.names()
-    assert {"Lab Scanners/Frontier 100", "Lab Scanners/Crystal 100", "Lab Scanners/Noritsu (Green Shadows)"} <= set(names)
-    frontier = builtin.get("lab scanners / FRONTIER 100")
+    assert {"Scanners (EFAS Original)/Frontier 100", "Scanners (EFAS Original)/Crystal 100", "Scanners (EFAS Original)/Noritsu (Green Shadows)"} <= set(names)
+    frontier = builtin.get("scanners (efas original) / FRONTIER 100")
     assert frontier is not None and frontier["saturation"] > 0 and frontier["lab_fade"] > 0, "found without regard to case or spacing"
-    assert builtin.get("Lab Scanners/Crystal 100")["print_toe"] < 0, "Crystal has the deeper blacks"
-    assert builtin.get("Lab Scanners/Noritsu (Green Shadows)")["lab_gm_shadows"] < 0, "a faint green in the shadows"
-    assert "Frontier" in builtin.description("Lab Scanners/Frontier 100") and builtin.get("nope") is None and builtin.description("nope") == ""
+    assert builtin.get("Scanners (EFAS Original)/Crystal 100")["print_toe"] < 0, "Crystal has the deeper blacks"
+    assert builtin.get("Scanners (EFAS Original)/Noritsu (Green Shadows)")["lab_gm_shadows"] < 0, "a faint green in the shadows"
+    assert "Frontier" in builtin.description("Scanners (EFAS Original)/Frontier 100") and builtin.get("nope") is None and builtin.description("nope") == ""
 
 
 def test_every_builtin_look_uses_only_fields_a_look_can_hold():
@@ -80,51 +80,52 @@ _SCRIPT = textwrap.dedent(r'''
     panel._builtin_btn.click(); pump(0.1)
     assert panel.showing_builtin() and not panel._mine_btn.isChecked()
     assert shape() == ["Film Stocks", "  Cinestill", "    Cinestill", "  Fuji", "    Superia", "  Kodak", "    Gold", "    Portra", "    Portra Airy",
-                       "Lab Scanners", "  Frontier 100", "  Crystal 100", "  Pakon (Clean and Rich)", "  Noritsu (Green Shadows)"], shape()
+                       "Scanners (DarkSlide)", "  Frontier Classic", "  Frontier Modern", "  Noritsu", "  Neutral", "  Agfa d-Lab",
+                       "Scanners (EFAS Original)", "  Frontier 100", "  Crystal 100", "  Pakon (Clean and Rich)", "  Noritsu (Green Shadows)"], shape()
     assert not panel._save_btn.isVisibleTo(panel) and not panel._delete_btn.isVisibleTo(panel) and panel._copy_btn.isVisibleTo(panel), "built-ins are read-only"
 
     # select a built-in: its description shows; applying it sets the slider values as one undoable step
-    folder = next(tree.topLevelItem(i) for i in range(tree.topLevelItemCount()) if tree.topLevelItem(i).text(0) == "Lab Scanners")
+    folder = next(tree.topLevelItem(i) for i in range(tree.topLevelItemCount()) if tree.topLevelItem(i).text(0) == "Scanners (EFAS Original)")
     assert not any(tree.topLevelItem(i).isExpanded() for i in range(tree.topLevelItemCount())), "the folders start closed"
     folder.setExpanded(True); pump(0.05)
     assert folder.isExpanded() and not tree.topLevelItem(0).isExpanded(), "opening one leaves the others closed"
     item = folder.child(0)
     tree.setCurrentItem(item); pump(0.1)
-    assert panel.selected() == "Lab Scanners/Frontier 100" and "Frontier" in panel._note.text() and not panel._note.isHidden()
+    assert panel.selected() == "Scanners (EFAS Original)/Frontier 100" and "Frontier" in panel._note.text() and not panel._note.isHidden()
     steps = len(c.state.history)
     panel._apply_btn.click(); pump(0.9)
     s = c.state
     assert abs(s.saturation - 0.10) < 1e-6 and abs(s.shadows + 0.24) < 1e-6 and abs(s.lab_fade - 0.22) < 1e-6 and abs(s.lab_glow - 0.24) < 1e-6 and abs(s.lab_by_shadows - 0.12) < 1e-6
-    assert len(s.history) == steps + 1 and "built-in preset 'Lab Scanners/Frontier 100'" in s.history[-1].description
+    assert len(s.history) == steps + 1 and "built-in preset 'Scanners (EFAS Original)/Frontier 100'" in s.history[-1].description
     c.undo(); pump(0.5)
     assert c.state.saturation == 0.0 and c.state.print_toe == 0.0 and c.state.lab_fade == 0.0 and c.state.lab_by_shadows == 0.0
     # double-click applies too, and hovering a built-in previews it without applying
     shown = []
     real = win._image_view.update_pixels
     win._image_view.update_pixels = lambda px: (shown.append(px.copy()), real(px))[1]
-    panel._tree.hovered.emit("Lab Scanners/Crystal 100"); pump(0.6)
+    panel._tree.hovered.emit("Scanners (EFAS Original)/Crystal 100"); pump(0.6)
     assert shown and win._preset_previewing and c.state.print_toe == 0.0, "previewed, not applied"
     panel._tree.hover_left.emit(); pump(0.2)
     assert not win._preset_previewing
-    panel._tree.activated_name.emit("Lab Scanners/Noritsu (Green Shadows)"); pump(0.9)
+    panel._tree.activated_name.emit("Scanners (EFAS Original)/Noritsu (Green Shadows)"); pump(0.9)
     assert abs(c.state.lab_gm_shadows + 0.1) < 1e-6 and abs(c.state.lab_by_shadows - 0.06) < 1e-6
     c.undo(); pump(0.5)
 
     # copy a built-in to My Presets: it lands in the same folder, and the list switches to it
     tree.setCurrentItem(folder.child(1)); pump(0.1)
     panel._copy_btn.click(); pump(0.3)
-    assert not panel.showing_builtin() and store.names() == ["Lab Scanners/Crystal 100"] and panel.selected() == "Lab Scanners/Crystal 100"
-    assert shape() == ["Lab Scanners", "  Crystal 100"]
+    assert not panel.showing_builtin() and store.names() == ["Scanners (EFAS Original)/Crystal 100"] and panel.selected() == "Scanners (EFAS Original)/Crystal 100"
+    assert shape() == ["Scanners (EFAS Original)", "  Crystal 100"]
     # copying again never replaces what is there
-    c.copy_builtin_preset("Lab Scanners/Crystal 100"); c.copy_builtin_preset("Lab Scanners/Crystal 100"); pump(0.2)
-    assert store.names() == ["Lab Scanners/Crystal 100", "Lab Scanners/Crystal 100 copy", "Lab Scanners/Crystal 100 copy 2"], store.names()
+    c.copy_builtin_preset("Scanners (EFAS Original)/Crystal 100"); c.copy_builtin_preset("Scanners (EFAS Original)/Crystal 100"); pump(0.2)
+    assert store.names() == ["Scanners (EFAS Original)/Crystal 100", "Scanners (EFAS Original)/Crystal 100 copy", "Scanners (EFAS Original)/Crystal 100 copy 2"], store.names()
 
     # saving with a slash makes a folder; a folder you were in is offered as the start of the name
     asked = []
     QInputDialog.getText = staticmethod(lambda parent, title, prompt, **kw: (asked.append(kw.get("text", "")), (answers.pop(0), True))[1])
     answers = ["B&W/Number 1"]
     panel._save(); pump(0.3)
-    assert asked == ["Lab Scanners/"], "the folder of the selected preset starts the name"
+    assert asked == ["Scanners (EFAS Original)/"], "the folder of the selected preset starts the name"
     assert "B&W/Number 1" in store.names() and panel.selected() == "B&W/Number 1"
     assert shape()[0] == "B&W" and shape()[1] == "  Number 1", shape()
     answers = ["B&W/Number 2"]; asked.clear()
@@ -145,11 +146,11 @@ _SCRIPT = textwrap.dedent(r'''
     answers = ["Mono"]
     panel._rename_folder("B&W"); pump(0.2)
     assert "Mono/Number 2" in store.names() and "B&W/Number 2" not in store.names()
-    assert c.rename_look_folder("Mono", "Lab Scanners") == 1 and "Lab Scanners/Number 2" in store.names(), "a folder can be moved into another"
+    assert c.rename_look_folder("Mono", "Scanners (EFAS Original)") == 1 and "Scanners (EFAS Original)/Number 2" in store.names(), "a folder can be moved into another"
     store.save_preset("Z/x", {"contrast": 0.1}); store.save_preset("Y/x", {"contrast": 0.2})
     assert c.rename_look_folder("Z", "Y") == 0 and "Z/x" in store.names() and "Y/x" in store.names(), "a name that is taken stops the rename"
-    n = c.delete_look_folder("Lab Scanners")
-    assert n == 4 and not any(x.startswith("Lab Scanners/") for x in store.names()) and "Y/x" in store.names()
+    n = c.delete_look_folder("Scanners (EFAS Original)")
+    assert n == 4 and not any(x.startswith("Scanners (EFAS Original)/") for x in store.names()) and "Y/x" in store.names()
     pump(0.2)
     assert shape()[0] == "Film" and "Y" in shape() and "Z" in shape()
     print("ok")
@@ -160,3 +161,12 @@ def test_preset_tree_and_built_in_presets_in_the_window():
     env = dict(os.environ, PYTHONPATH=SRC + os.pathsep + os.environ.get("PYTHONPATH", ""))
     r = subprocess.run([sys.executable, "-X", "faulthandler", "-c", _SCRIPT], env=env, capture_output=True, text=True, timeout=300)
     assert r.returncode == 0, r.stdout[-2500:] + r.stderr[-3500:]
+
+
+def test_the_darkslide_scanner_styles_are_built_in_as_curves():
+    names = [n for n in builtin.names() if n.startswith("Scanners (DarkSlide)/")]
+    assert names == [f"Scanners (DarkSlide)/{x}" for x in ("Frontier Classic", "Frontier Modern", "Noritsu", "Neutral", "Agfa d-Lab")]
+    classic = builtin.get("Scanners (DarkSlide)/Frontier Classic")
+    assert classic["tone_curve_points"][0] == [0, 10] and classic["tone_curve_blue"][-1] == [255, 244] and classic["saturation"] == 0.10 and classic["temperature"] == 0.08
+    assert builtin.get("Scanners (DarkSlide)/Neutral")["tone_curve_points"] == [[0, 0], [255, 255]]
+    assert builtin.get("Scanners (DarkSlide)/Noritsu")["tone_curve_red"] == [[0, 0], [255, 255]], "a style without a channel curve leaves it straight"

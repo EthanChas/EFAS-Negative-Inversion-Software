@@ -1,5 +1,5 @@
 """The presets that come with EFAS: read-only, kept as JSON files in assets/presets, each {"presets": [{"name": "Folder/Name", "description": str, "look": {...}}]}.
-Names are paths (see features/presettree): "Lab Scanners/Frontier 100" is Frontier 100 in the folder Lab Scanners. No Qt imports."""
+Names are paths (see features/presettree): "Scanners (EFAS Original)/Frontier 100" is Frontier 100 in the folder Scanners (EFAS Original). No Qt imports."""
 import json
 from pathlib import Path
 from typing import Any

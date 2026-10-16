@@ -39,6 +39,7 @@ from .contrast_panel import ContrastToolPanel
 from .denoise_panel import ChromaDenoiseToolPanel
 from .local_contrast_panel import LocalContrastToolPanel
 from .color_mixer_panel import ColorMixerToolPanel
+from .color_toning_panel import ColorToningToolPanel
 from .lab_look_panel import LabLookToolPanel
 from .print_response_panel import PrintResponseToolPanel
 from ...features.metadata.source_exif import read_exif_from_file
@@ -161,7 +162,7 @@ def _destroy_live_windows() -> None:
 class _ToolListScroll(QScrollArea):
     """A QScrollArea that sizes itself to its content's natural height, up
     to its own maximumHeight, instead of QAbstractScrollArea's tiny built-in
-    default sizeHint (~64px) - without this override the WB Correction
+    default sizeHint (~64px) - without this override the Tone
     dropdown squashed down to a sliver and started scrolling immediately
     even with both tools expanded and plenty of room to just show them.
 
@@ -432,7 +433,7 @@ class AppWindow(QMainWindow):
 
         self._module_menus = ModuleMenus(self.controller, self)
         for key, panel in (
-            ("exposure", self._exposure_tool), ("contrast", self._contrast_tool), ("printresponse", self._print_response_tool), ("lablook", self._lab_look_tool), ("colormixer", self._color_mixer_tool), ("tonecurve", self._curve_tool),
+            ("exposure", self._exposure_tool), ("contrast", self._contrast_tool), ("printresponse", self._print_response_tool), ("lablook", self._lab_look_tool), ("colormixer", self._color_mixer_tool), ("colortoning", self._color_toning_tool), ("tonecurve", self._curve_tool),
             ("shadows_highlights", self._shadows_highlights_tool), ("color", self._color_tool), ("sharpening", self._sharpening_tool),
             ("localcontrast", self._local_contrast_tool), ("denoise", self._denoise_tool), ("negative", self._negative_tool),
             ("watermark", self._watermark_tool), ("finishing", self._finishing_tool),
@@ -823,7 +824,6 @@ class AppWindow(QMainWindow):
         self._wire_tagging(self._tagging_panel)
 
         self._masking_tool = MaskingToolPanel()
-        left_tools_col.addWidget(self._masking_tool)
 
         self._history_panel = HistoryPanel()
         self._history_panel.revert_requested.connect(self.controller.revert_to)
@@ -854,7 +854,9 @@ class AppWindow(QMainWindow):
         self._preset_hover_timer.setInterval(140)
         self._preset_hover_timer.timeout.connect(self._show_preset_preview)
         self.controller.look_presets_changed.connect(lambda select: self._presets_panel.set_presets(self.controller.look_presets(), select or None))
-        left_tools_col.addWidget(self._presets_panel)
+        for signal in (self.controller.look_preset_changed, self.controller.history_changed, self.controller.image_adjusted, self.controller.reverted, self.controller.file_changed,
+                       self.controller.look_presets_changed):
+            signal.connect(lambda *_a: self._refresh_look_preset_label())
         self._snapshots_panel = SnapshotsPanel()
         self._snapshots_panel.take_requested.connect(self.controller.take_snapshot)
         self._snapshots_panel.apply_requested.connect(self.controller.apply_snapshot)
@@ -871,6 +873,7 @@ class AppWindow(QMainWindow):
         self._versions_panel.delete_requested.connect(self.controller.delete_version)
         self.controller.versions_changed.connect(self._on_versions_changed)
         left_tools_col.addWidget(self._versions_panel)
+        left_tools_col.addWidget(self._presets_panel)
 
         self._export_panel = ExportPanel()
         self._export_panel.export_requested.connect(self._on_export_requested)
@@ -1061,10 +1064,13 @@ class AppWindow(QMainWindow):
         tool_row.setSpacing(THEME.space_sm)
 
         self._tool_rail = ToolRail()
-        self._tool_rail.add_tab("exposure", panel_icons.for_tab("exposure", 18, THEME.text_primary), "WB Correction")
-        self._tool_rail.add_tab("correction", panel_icons.for_tab("correction", 18, THEME.text_primary), "Correction")
-        self._tool_rail.add_tab("negative", panel_icons.for_tab("negative", 18, THEME.text_primary), "Negative")
-        self._tool_rail.add_tab("watermark", panel_icons.for_tab("watermark", 18, THEME.text_primary), "Watermark")
+        # in the order a picture is worked on: convert the negative, frame and clean it, tone it, colour it, bring out detail, finish it
+        self._tool_rail.add_tab("negative", panel_icons.for_tab("negative", 18, THEME.text_primary), "Convert")
+        self._tool_rail.add_tab("correction", panel_icons.for_tab("correction", 18, THEME.text_primary), "Frame & Clean")
+        self._tool_rail.add_tab("exposure", panel_icons.for_tab("exposure", 18, THEME.text_primary), "Tone")
+        self._tool_rail.add_tab("color", panel_icons.for_tab("color", 18, THEME.text_primary), "Color")
+        self._tool_rail.add_tab("detail", panel_icons.for_tab("detail", 18, THEME.text_primary), "Detail")
+        self._tool_rail.add_tab("watermark", panel_icons.for_tab("watermark", 18, THEME.text_primary), "Finish")
         self._tool_rail.add_tab("metadata", panel_icons.for_tab("metadata", 18, THEME.text_primary), "Roll Card")
         self._tool_rail.add_tab("plugins", panel_icons.for_tab("plugins", 18, THEME.text_primary), "Plugins")
         self._tool_rail.set_tab_visible("plugins", False)
@@ -1079,40 +1085,37 @@ class AppWindow(QMainWindow):
         self._exposure_tool = ExposureToolPanel()
         self._exposure_tool.exposure_changed.connect(self.controller.set_exposure_ev)
         self._exposure_tool.preview_requested.connect(self.controller.preview_exposure_ev)
-        tools_col.addWidget(self._exposure_tool)
 
         self._contrast_tool = ContrastToolPanel()
         self._contrast_tool.changed.connect(self.controller.set_contrast)
         self._contrast_tool.preview_requested.connect(self.controller.preview_contrast)
-        tools_col.addWidget(self._contrast_tool)
 
         self._print_response_tool = PrintResponseToolPanel()
         self._print_response_tool.changed.connect(self.controller.set_print_response)
         self._print_response_tool.preview_requested.connect(self.controller.preview_print_response)
-        tools_col.addWidget(self._print_response_tool)
 
         self._lab_look_tool = LabLookToolPanel()
         self._lab_look_tool.changed.connect(self.controller.set_lab_look)
         self._lab_look_tool.preview_requested.connect(self.controller.preview_lab_look)
-        tools_col.addWidget(self._lab_look_tool)
 
         self._color_mixer_tool = ColorMixerToolPanel()
         self._color_mixer_tool.changed.connect(self.controller.set_color_mixer)
         self._color_mixer_tool.preview_requested.connect(self.controller.preview_color_mixer)
-        tools_col.addWidget(self._color_mixer_tool)
+
+        self._color_toning_tool = ColorToningToolPanel()
+        self._color_toning_tool.changed.connect(self.controller.set_color_toning)
+        self._color_toning_tool.preview_requested.connect(self.controller.preview_color_toning)
 
         self._curve_tool = ToneCurveToolPanel()
         self._curve_tool.curve_changed.connect(self.controller.set_tone_curve)
         self._curve_tool.preview_requested.connect(self.controller.preview_tone_curve)
         self._curve_tool.eyedropper_toggled.connect(self._on_eyedropper_toggled)
-        tools_col.addWidget(self._curve_tool)
+        self._curve_tool.picker_toggled.connect(self._on_curve_picker_toggled)
+        self._curve_tool.auto_requested.connect(lambda: self._curve_tool.apply_auto(self.controller.state.image_rgb))
 
         self._shadows_highlights_tool = ShadowsHighlightsToolPanel()
         self._shadows_highlights_tool.changed.connect(self.controller.set_shadows_highlights)
         self._shadows_highlights_tool.preview_requested.connect(self.controller.preview_shadows_highlights)
-        tools_col.addWidget(self._shadows_highlights_tool)
-
-        tools_col.addStretch(1)
 
         tools_scroll = _ToolListScroll()
         tools_scroll.setWidgetResizable(True)
@@ -1170,7 +1173,6 @@ class AppWindow(QMainWindow):
         self._negative_tool.set_advanced(app_settings.get("advanced_mode"))
         self._advanced.setVisible(app_settings.get("advanced_mode"))
         self.controller.measurement_changed.connect(self._on_measurement_changed)
-        negative_tools_col.addWidget(self._advanced)
         self._sync_inversion()
 
         self._flatfield_tool = FlatFieldPanel()
@@ -1189,6 +1191,7 @@ class AppWindow(QMainWindow):
         self.controller.flatfield_busy_changed.connect(lambda _busy: self._refresh_flatfield_panel())
         self.controller.flatfield_progress.connect(self._flatfield_tool.set_progress)
         negative_tools_col.addWidget(self._flatfield_tool)
+        negative_tools_col.addWidget(self._advanced)
 
         self._crop_tool = CropToolPanel()
         self._crop_tool.rotate_left_requested.connect(lambda: self.rotate_proof(1) if self.proof_active() else self.controller.rotate(-1))
@@ -1219,22 +1222,19 @@ class AppWindow(QMainWindow):
         self._color_tool = ColorToolPanel()
         self._color_tool.color_changed.connect(self.controller.set_color)
         self._color_tool.preview_requested.connect(self.controller.preview_color)
-        correction_widgets = [self._crop_tool, self._color_tool]
+        correction_widgets = [self._crop_tool]
 
         self._sharpening_tool = SharpeningToolPanel()
         self._sharpening_tool.changed.connect(self.controller.set_sharpen)
         self._sharpening_tool.preview_requested.connect(self.controller.preview_sharpen)
-        correction_widgets.append(self._sharpening_tool)
 
         self._local_contrast_tool = LocalContrastToolPanel()
         self._local_contrast_tool.changed.connect(self.controller.set_local_contrast)
         self._local_contrast_tool.preview_requested.connect(self.controller.preview_local_contrast)
-        correction_widgets.append(self._local_contrast_tool)
 
         self._denoise_tool = ChromaDenoiseToolPanel()
         self._denoise_tool.changed.connect(self.controller.set_chroma_denoise)
         self._denoise_tool.preview_requested.connect(self.controller.preview_chroma_denoise)
-        correction_widgets.append(self._denoise_tool)
 
         self._dust_tool = DustToolPanel()
         self._dust_tool.changed.connect(
@@ -1254,13 +1254,11 @@ class AppWindow(QMainWindow):
         self.controller.image_adjusted.connect(self._refresh_clone_marker)
         self._dust_tool.clone_tool_shown.connect(lambda _on: self._refresh_clone_marker())
         self.controller.notice.connect(self._coord_label.setText)
-        negative_tools_col.addWidget(self._dust_tool)
 
         self._ai_dust_tool = AiDustPanel()
         self._ai_dust_tool.changed.connect(self.controller.set_ai_dust)
         self._ai_dust_tool.cancel_requested.connect(self.controller.cancel_ai_dust)
         self.controller.ai_dust_status.connect(self._refresh_ai_dust_panel)
-        negative_tools_col.addWidget(self._ai_dust_tool)
 
         self._error_marks_panel = ErrorMarksPanel()
         self._error_marks_panel.set_marks_visible(app_settings.get("error_marks_visible"))
@@ -1278,7 +1276,6 @@ class AppWindow(QMainWindow):
         self.controller.image_adjusted.connect(self._refresh_error_marks)
         self.controller.reverted.connect(self._refresh_error_marks)
         self.controller.file_changed.connect(self._refresh_error_marks)
-        negative_tools_col.addWidget(self._error_marks_panel)
 
         negative_tools_col.addStretch(1)
 
@@ -1297,6 +1294,7 @@ class AppWindow(QMainWindow):
         correction_col = QVBoxLayout(correction_content)
         correction_col.setContentsMargins(0, 0, 0, 0)
         correction_col.setSpacing(THEME.space_sm)
+        correction_widgets += [self._dust_tool, self._ai_dust_tool, self._error_marks_panel]
         for panel in correction_widgets:
             correction_col.addWidget(panel)
         correction_col.addStretch(1)
@@ -1312,6 +1310,35 @@ class AppWindow(QMainWindow):
         self._correction_panel = SlideOutPanel(correction_scroll)
         tool_row.addWidget(self._correction_panel, 0)
 
+        # the Tone tab is filled in the order the picture is made: exposure, contrast, shadows and highlights, the curve, the print's response, then the local masks
+        for panel in (self._exposure_tool, self._contrast_tool, self._shadows_highlights_tool, self._curve_tool, self._print_response_tool, self._masking_tool):
+            tools_col.addWidget(panel)
+        tools_col.addStretch(1)
+
+        def new_tab(widgets):
+            content = QWidget()
+            col = QVBoxLayout(content)
+            col.setContentsMargins(0, 0, 0, 0)
+            col.setSpacing(THEME.space_sm)
+            for widget in widgets:
+                col.addWidget(widget)
+            col.addStretch(1)
+            scroll = _ToolListScroll()
+            scroll.setWidgetResizable(True)
+            scroll.setFrameShape(QScrollArea.Shape.NoFrame)
+            scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+            scroll.setMinimumHeight(_TOOL_LIST_MIN_HEIGHT)
+            scroll.setMinimumWidth(_TOOL_LIST_MIN_WIDTH)
+            scroll.setWidget(content)
+            return SlideOutPanel(scroll), col
+
+        # Color: white balance and saturation, the colour mixer, then the lab's look (the last word on colour)
+        self._color_panel, color_col = new_tab([self._color_tool, self._color_mixer_tool, self._color_toning_tool, self._lab_look_tool])
+        tool_row.addWidget(self._color_panel, 0)
+        # Detail, in the order the picture is made: chroma noise, local contrast, sharpening last
+        self._detail_panel, detail_col = new_tab([self._denoise_tool, self._local_contrast_tool, self._sharpening_tool])
+        tool_row.addWidget(self._detail_panel, 0)
+
         self._finishing_tool = FinishingPanel()
         self._finishing_tool.changed.connect(self.controller.set_finishing)
         self._finishing_tool.preview_requested.connect(self.controller.preview_finishing)
@@ -1325,8 +1352,8 @@ class AppWindow(QMainWindow):
         watermark_col = QVBoxLayout(watermark_content)
         watermark_col.setContentsMargins(0, 0, 0, 0)
         watermark_col.setSpacing(THEME.space_sm)
-        watermark_col.addWidget(self._watermark_tool)
         watermark_col.addWidget(self._finishing_tool)
+        watermark_col.addWidget(self._watermark_tool)
         watermark_col.addStretch(1)
 
         watermark_scroll = _ToolListScroll()
@@ -1384,7 +1411,7 @@ class AppWindow(QMainWindow):
         self._plugins_panel = SlideOutPanel(plugins_scroll)
         tool_row.addWidget(self._plugins_panel, 0)
         self._tab_columns = {"plugins": plugins_col, "exposure": tools_col, "correction": correction_col, "negative": negative_tools_col,
-                             "watermark": watermark_col, "metadata": metadata_col}
+                             "watermark": watermark_col, "metadata": metadata_col, "color": color_col, "detail": detail_col}
 
         tool_row.addStretch(1)
 
@@ -2511,7 +2538,7 @@ class AppWindow(QMainWindow):
         self._contrast_tool.reset()
         self._contrast_tool.set_value(state.contrast)
         self._curve_tool.reset()
-        self._curve_tool.set_curve(state.tone_curve_points)
+        self._curve_tool.set_curve(self.controller._curve_values())
         self._color_tool.reset()
         self._color_tool.set_values(state.saturation, state.temperature, state.tint)
         self._shadows_highlights_tool.reset()
@@ -2526,6 +2553,8 @@ class AppWindow(QMainWindow):
         self._lab_look_tool.set_values(self.controller._lab_values())
         self._color_mixer_tool.reset()
         self._color_mixer_tool.set_values(self.controller._color_values())
+        self._color_toning_tool.reset()
+        self._color_toning_tool.set_values(self.controller._toning_values())
         self._watermark_tool.set_values(
             state.wm_film, state.wm_texture, state.wm_size, state.wm_position, state.wm_info, state.wm_camera, state.wm_lens
         )
@@ -2974,7 +3003,7 @@ class AppWindow(QMainWindow):
         return self._proof_kind is not None
 
     def toggle_proof(self, kind: str) -> None:
-        """Test Strip / Ring-Around (the buttons under WB Correction > Exposure, the Edit menu, Shift+T / Shift+F): the same kind again closes it."""
+        """Test Strip / Ring-Around (the buttons under Tone > Exposure, the Edit menu, Shift+T / Shift+F): the same kind again closes it."""
         if self._proof_kind == kind:
             self.close_proof()
         else:
@@ -3062,7 +3091,7 @@ class AppWindow(QMainWindow):
         state = self.controller.state
         self._exposure_tool.set_value(state.exposure_ev)
         self._contrast_tool.set_value(state.contrast)
-        self._curve_tool.set_curve(state.tone_curve_points)
+        self._curve_tool.set_curve(self.controller._curve_values())
         self._sync_negative_panel()
         self._crop_tool.set_flips(state.flip_h, state.flip_v)
         self._crop_tool.set_fine_rotation(state.fine_rotation)
@@ -3075,6 +3104,7 @@ class AppWindow(QMainWindow):
         self._print_response_tool.set_values(*self.controller._print_values())
         self._lab_look_tool.set_values(self.controller._lab_values())
         self._color_mixer_tool.set_values(self.controller._color_values())
+        self._color_toning_tool.set_values(self.controller._toning_values())
         self._watermark_tool.set_values(
             state.wm_film, state.wm_texture, state.wm_size, state.wm_position, state.wm_info, state.wm_camera, state.wm_lens
         )
@@ -3228,6 +3258,15 @@ class AppWindow(QMainWindow):
             "Use it for every photo in this folder? Clear in the Film Base section goes back to estimating each photo on its own.")
         if ask == QMessageBox.StandardButton.Yes:
             self.controller.set_film_base(found["rgb"])
+
+    def _refresh_look_preset_label(self) -> None:
+        """The small grey "PRESET: name" beside the Presets panel's title: the look preset applied to the open photo, and "(edited)" once its settings have been changed."""
+        status = self.controller.look_preset_status()
+        if status is None:
+            self._presets_panel.set_preset_status(None, False)
+        else:
+            leaf, full, modified = status
+            self._presets_panel.set_preset_status(leaf, modified, full_name=full, scope="photo", show_edited=True)
 
     def _on_advanced_toggled(self, on: bool) -> None:
         app_settings.save({"advanced_mode": bool(on)})
@@ -3409,7 +3448,21 @@ class AppWindow(QMainWindow):
         if tool == "delete":
             self.controller.delete_manual_repair_at(x, y)
             return
+        picker = self._curve_tool.armed_picker()
+        if picker is not None:
+            self._image_view.set_pick_mode(False)
+            self._curve_tool.apply_pick(picker, rgb)   # one click, then the picker puts itself away
+            return
         self._curve_tool.set_marker(luminance_of(rgb))
+
+    def _on_curve_picker_toggled(self, kind: str, active: bool) -> None:
+        """The tone curve's Black / Grey / White picker: armed, the next click on the picture sets the colour channels' curves from that spot."""
+        if active:
+            self._end_point_dropper()
+            self._end_base_pick()
+            self._dust_tool.deactivate_tools()
+            self._image_view.set_tool(None)
+        self._image_view.set_pick_mode(active, eyedropper_cursor() if active else None)
 
     def _on_eyedropper_toggled(self, active: bool) -> None:
         if active:
@@ -3661,6 +3714,8 @@ class AppWindow(QMainWindow):
             "exposure": self._wb_tools_panel,
             "negative": self._negative_panel,
             "correction": self._correction_panel,
+            "color": self._color_panel,
+            "detail": self._detail_panel,
             "watermark": self._watermark_panel,
             "metadata": self._metadata_panel,
             "plugins": self._plugins_panel,

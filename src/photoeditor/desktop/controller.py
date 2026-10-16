@@ -83,6 +83,7 @@ from ..features.sharpening.logic import (
     LIVE_OTHER_METHODS,
     LIVE_OWN_METHODS,
 )
+from ..features.tonecurve import logic as tonecurve_logic
 from ..features.tonecurve.logic import DEFAULT_POINTS
 from ..features.watermark import logic as wm
 from ..features.xmp import logic as xmp
@@ -103,10 +104,13 @@ from . import curve_engine
 BW_SATURATION = -1.0
 
 LOOK_FIELDS = (
-    "exposure_ev", "tone_curve_points", "negative_inverted", "saturation", "temperature", "tint", "shadows", "highlights",
-    "contrast", "local_contrast", "print_snap", "print_toe", "print_toe_width", "print_shoulder", "print_shoulder_width", "lab_fade", "lab_glow", "lab_by_shadows", "lab_by_mids", "lab_by_highs", "lab_gm_shadows", "lab_gm_mids", "lab_gm_highs", "lab_response", "lab_response_amount", "vibrance", "mix_hue_red", "mix_sat_red", "mix_lum_red", "mix_hue_orange", "mix_sat_orange", "mix_lum_orange", "mix_hue_yellow", "mix_sat_yellow", "mix_lum_yellow", "mix_hue_green", "mix_sat_green", "mix_lum_green", "mix_hue_aqua", "mix_sat_aqua", "mix_lum_aqua", "mix_hue_blue", "mix_sat_blue", "mix_lum_blue", "mix_hue_purple", "mix_sat_purple", "mix_lum_purple", "mix_hue_magenta", "mix_sat_magenta", "mix_lum_magenta", "vignette", "vignette_size", "border", "border_color", "sharpen_amount", "sharpen_radius", "sharpen_masking", "sharpen_method", "film_type", "invert_r", "invert_g",
+    "exposure_ev", "tone_curve_points", "tone_curve_red", "tone_curve_green", "tone_curve_blue", "negative_inverted", "saturation", "temperature", "tint", "shadows", "highlights",
+    "contrast", "local_contrast", "print_snap", "print_toe", "print_toe_width", "print_shoulder", "print_shoulder_width", "lab_fade", "lab_glow", "lab_by_shadows", "lab_by_mids", "lab_by_highs", "lab_gm_shadows", "lab_gm_mids", "lab_gm_highs", "lab_response", "lab_response_amount", "vibrance", "mix_hue_red", "mix_sat_red", "mix_lum_red", "mix_hue_orange", "mix_sat_orange", "mix_lum_orange", "mix_hue_yellow", "mix_sat_yellow", "mix_lum_yellow", "mix_hue_green", "mix_sat_green", "mix_lum_green", "mix_hue_aqua", "mix_sat_aqua", "mix_lum_aqua", "mix_hue_blue", "mix_sat_blue", "mix_lum_blue", "mix_hue_purple", "mix_sat_purple", "mix_lum_purple", "mix_hue_magenta", "mix_sat_magenta", "mix_lum_magenta", "tone_hue_shadows", "tone_amt_shadows", "tone_hue_mids", "tone_amt_mids", "tone_hue_highs", "tone_amt_highs", "vignette", "vignette_size", "border", "border_color", "sharpen_amount", "sharpen_radius", "sharpen_masking", "sharpen_method", "film_type", "invert_r", "invert_g",
     "invert_b", "chroma_denoise", "wm_film", "wm_texture", "wm_size", "wm_position", "wm_info", "wm_camera", "wm_lens",
 )
+
+
+LOOK_KEY = "__look__"   # where the look preset applied to a photo is kept among its module presets (a built-in one is "builtin:" and its name)
 
 
 def _same_value(a, b) -> bool:
@@ -151,6 +155,7 @@ class AppController(QObject):
     hq_busy_changed = pyqtSignal(bool)
     flag_changed = pyqtSignal(str, object)
     module_presets_changed = pyqtSignal(str)
+    look_preset_changed = pyqtSignal()   # the whole-look preset applied to the open photo changed (applied, cleared)
     look_presets_changed = pyqtSignal(str)
     error_marks_changed = pyqtSignal()
     modules_enabled_changed = pyqtSignal()
@@ -168,6 +173,7 @@ class AppController(QObject):
         self._last_logged_inverted = False
         self._last_logged_crop = None
         self._last_logged_color = (0.0, 0.0, 0.0)
+        self._last_logged_toning: dict = {}
         self._last_logged_shadows_highlights = (0.0, 0.0)
         self._last_logged_sharpen = (0.0, 1.0, 0.0, DEFAULT_METHOD)
         self._last_logged_dust = (False, DEFAULT_THRESHOLD, DEFAULT_SIZE, DEFAULT_SCRATCH_SENSITIVITY)
@@ -277,6 +283,8 @@ class AppController(QObject):
         """Put a saved edit state (the database row, a sidecar, a snapshot) into the editor's state."""
         self.state.exposure_ev = saved["exposure_ev"]
         self.state.tone_curve_points = saved["tone_curve_points"]
+        for key in tonecurve_logic.CHANNEL_KEYS:
+            setattr(self.state, key, [tuple(p) for p in saved.get(key, DEFAULT_POINTS)])
         self.state.negative_inverted = saved["negative_inverted"]
         self.state.rotation_quarter_turns = saved["rotation_quarter_turns"]
         self.state.flip_h = saved["flip_h"]
@@ -530,7 +538,7 @@ class AppController(QObject):
             self._apply_detected_defaults()
 
         self._last_logged_ev = self.state.exposure_ev
-        self._last_logged_curve = list(self.state.tone_curve_points)
+        self._last_logged_curve = self._curve_values()
         self._last_logged_inverted = self.state.negative_inverted
         self._last_logged_crop = self.state.crop_rect
         self._last_logged_color = (self.state.saturation, self.state.temperature, self.state.tint)
@@ -552,6 +560,7 @@ class AppController(QObject):
         self._last_logged_print = self._print_values()
         self._last_logged_lab = self._lab_values()
         self._last_logged_color = self._color_values()
+        self._last_logged_toning = self._toning_values()
         self._last_logged_finish = self._finishing_values()
         self._clone_source_raw = self._clone_source_display = self._clone_offset_raw = None
         self._last_logged_ai = (self.state.ai_dust, round(self.state.ai_threshold, 4), self.state.ai_grow)
@@ -1153,7 +1162,7 @@ class AppController(QObject):
     def preview_color_mixer(self, values: dict) -> None:
         if self.state.preview_rgb is None:
             return
-        for key in color_mix_logic.KEYS:
+        for key in color_mix_logic.MIXER_PANEL_KEYS:
             setattr(self.state, key, float(values.get(key, 0.0)))
         self._preview(LIVE_OTHER_METHODS)
 
@@ -1161,14 +1170,38 @@ class AppController(QObject):
         """Color Mixer: Vibrance, and Hue, Saturation and Lightness for each of the eight colour ranges."""
         if self.state.preview_rgb is None:
             return
-        for key in color_mix_logic.KEYS:
+        for key in color_mix_logic.MIXER_PANEL_KEYS:
             setattr(self.state, key, float(values.get(key, 0.0)))
         self._settle()
         now = self._color_values()
         if now != self._last_logged_color:
             self._last_logged_color = now
-            changed = [k for k, v in now.items() if abs(v) > 1e-9]
+            changed = [k for k in color_mix_logic.MIXER_PANEL_KEYS if abs(now[k]) > 1e-9]
             self._log("Color mixer: " + (", ".join(f"{k.replace('mix_', '').replace('_', ' ')} {now[k]:+.2f}" for k in changed[:6]) + (" ..." if len(changed) > 6 else "") if changed else "reset"))
+
+    def _toning_values(self) -> dict:
+        return {k: getattr(self.state, k) for k in color_mix_logic.TONING_KEYS}
+
+    def preview_color_toning(self, values: dict) -> None:
+        if self.state.preview_rgb is None:
+            return
+        for key in color_mix_logic.TONING_KEYS:
+            setattr(self.state, key, float(values.get(key, 0.0)))
+        self._preview(LIVE_OTHER_METHODS)
+
+    def set_color_toning(self, values: dict) -> None:
+        """Color Toning: a hue and a strength for the shadows, the midtones and the highlights."""
+        if self.state.preview_rgb is None:
+            return
+        for key in color_mix_logic.TONING_KEYS:
+            setattr(self.state, key, float(values.get(key, 0.0)))
+        self._settle()
+        now = self._toning_values()
+        if now != self._last_logged_toning:
+            self._last_logged_toning = now
+            names = {"shadows": "shadows", "mids": "midtones", "highs": "highlights"}
+            tinted = [f"{names[r]} {now[f'tone_hue_{r}']:.0f}\u00b0 at {now[f'tone_amt_{r}']:.2f}" for r in color_mix_logic.REGIONS if now[f"tone_amt_{r}"] > 1e-9]
+            self._log("Color toning: " + (", ".join(tinted) if tinted else "reset"))
 
     def preview_print_response(self, snap: float, toe: float, toe_width: float, shoulder: float, shoulder_width: float) -> None:
         if self.state.preview_rgb is None:
@@ -1204,20 +1237,34 @@ class AppController(QObject):
             self._last_logged_contrast = amount
             self._log(f"Contrast set to {amount:+.2f}")
 
-    def preview_tone_curve(self, points: list[tuple[int, int]]) -> None:
+    def _curve_values(self) -> dict:
+        """The four tone curves (the master and one for each colour channel) as the panel takes them."""
+        return {key: list(getattr(self.state, key)) for key in tonecurve_logic.CURVE_KEYS}
+
+    def _set_curves(self, curves) -> None:
+        """A dict of curves by key, or (for the master curve alone) a list of points."""
+        if not isinstance(curves, dict):
+            curves = {"tone_curve_points": curves}
+        for key in tonecurve_logic.CURVE_KEYS:
+            if key in curves:
+                setattr(self.state, key, [tuple(p) for p in curves[key]])
+
+    def preview_tone_curve(self, curves) -> None:
         if self.state.preview_rgb is None:
             return
-        self.state.tone_curve_points = points
+        self._set_curves(curves)
         self._preview(LIVE_OTHER_METHODS)
 
-    def set_tone_curve(self, points: list[tuple[int, int]]) -> None:
+    def set_tone_curve(self, curves) -> None:
         if self.state.preview_rgb is None:
             return
-        self.state.tone_curve_points = points
+        self._set_curves(curves)
         self._settle()
-        if points != self._last_logged_curve:
-            self._last_logged_curve = list(points)
-            self._log(f"Tone curve adjusted ({len(points)} points)")
+        now = self._curve_values()
+        if now != self._last_logged_curve:
+            self._last_logged_curve = now
+            changed = [name for key, name in zip(tonecurve_logic.CURVE_KEYS, ("RGB", "red", "green", "blue")) if not tonecurve_logic.is_identity(now[key])]
+            self._log("Tone curve adjusted (" + (", ".join(changed) if changed else "back to a straight line") + ")")
 
     def detect_negative_mode(self):
         """A plain read - classifies the current preview, no state change."""
@@ -2115,8 +2162,8 @@ class AppController(QObject):
             parts.append(f"exposure {self.state.exposure_ev:+.2f} EV")
         if self.state.contrast:
             parts.append(f"contrast {self.state.contrast:+.2f}")
-        if self.state.tone_curve_points != list(DEFAULT_POINTS):
-            parts.append(f"tone curve ({len(self.state.tone_curve_points)} points)")
+        if not tonecurve_logic.curves_are_identity(self.state.tone_curve_points, [self.state.tone_curve_red, self.state.tone_curve_green, self.state.tone_curve_blue]):
+            parts.append("tone curve")
         if self.state.negative_inverted:
             parts.append("inverted")
         if self.state.rotation_quarter_turns:
@@ -2223,6 +2270,7 @@ class AppController(QObject):
             description=description,
             exposure_ev=s.exposure_ev,
             tone_curve_points=list(s.tone_curve_points),
+            **{k: list(getattr(s, k)) for k in tonecurve_logic.CHANNEL_KEYS},
             negative_inverted=s.negative_inverted,
             rotation_quarter_turns=s.rotation_quarter_turns,
             flip_h=s.flip_h,
@@ -2346,6 +2394,7 @@ class AppController(QObject):
         return {
             "exposure_ev": s.exposure_ev,
             "tone_curve_points": s.tone_curve_points,
+            **{k: getattr(s, k) for k in tonecurve_logic.CHANNEL_KEYS},
             "negative_inverted": s.negative_inverted,
             "rotation_quarter_turns": s.rotation_quarter_turns,
             "flip_h": s.flip_h,
@@ -2409,6 +2458,8 @@ class AppController(QObject):
         whether the negative is inverted, which depends on what the scan turned out to be)."""
         self.state.exposure_ev = 0.0
         self.state.tone_curve_points = list(DEFAULT_POINTS)
+        for key in tonecurve_logic.CHANNEL_KEYS:
+            setattr(self.state, key, list(DEFAULT_POINTS))
         self.state.rotation_quarter_turns = 0
         self.state.flip_h = False
         self.state.flip_v = False
@@ -2598,6 +2649,8 @@ class AppController(QObject):
         self._drop_auto_run()
         s.exposure_ev = entry.exposure_ev
         s.tone_curve_points = list(entry.tone_curve_points)
+        for key in tonecurve_logic.CHANNEL_KEYS:
+            setattr(s, key, list(getattr(entry, key)))
         s.negative_inverted = entry.negative_inverted
         s.rotation_quarter_turns = entry.rotation_quarter_turns
         s.flip_h = entry.flip_h
@@ -2650,7 +2703,7 @@ class AppController(QObject):
         s.wm_film, s.wm_texture, s.wm_size, s.wm_position = entry.wm_film, entry.wm_texture, entry.wm_size, entry.wm_position
         s.wm_info, s.wm_camera, s.wm_lens = entry.wm_info, entry.wm_camera, entry.wm_lens
         self._last_logged_ev = entry.exposure_ev
-        self._last_logged_curve = list(entry.tone_curve_points)
+        self._last_logged_curve = self._curve_values()
         self._last_logged_inverted = entry.negative_inverted
         self._last_logged_crop = entry.crop_rect
         self._last_logged_color = (entry.saturation, entry.temperature, entry.tint)
@@ -2778,7 +2831,7 @@ class AppController(QObject):
                 continue
             value, current = look[key], getattr(self.state, key, None)
             try:
-                if key == "tone_curve_points":
+                if key in tonecurve_logic.CURVE_KEYS:
                     value = [(p[0], p[1]) for p in value]
                     if len(value) < 2:
                         continue
@@ -2806,8 +2859,9 @@ class AppController(QObject):
             return None
         state = self._edit_state_dict()
         out = {f.key: copy.deepcopy(state[f.key]) for f in panel_fields(key)}
-        if "tone_curve_points" in out:
-            out["tone_curve_points"] = [list(p) for p in out["tone_curve_points"]]
+        for curve_key in tonecurve_logic.CURVE_KEYS:
+            if curve_key in out:
+                out[curve_key] = [list(p) for p in out[curve_key]]
         if key == "negative":
             out["metering"] = dataclasses.replace(self.state.metering, rect=None).to_dict()
         if key == "watermark":
@@ -2933,12 +2987,40 @@ class AppController(QObject):
         self.notice.emit(f"Deleted preset '{name}'")
         return True
 
+    def _set_look_preset(self, name: str | None, builtin: bool = False) -> None:
+        """Remember (or forget) the whole-look preset on the open photo, so the Presets panel can name it."""
+        path = self.state.image_path
+        if path is None:
+            return
+        if name is None:
+            self._module_preset_in_use.pop((path, LOOK_KEY), None)
+        else:
+            self._module_preset_in_use[(path, LOOK_KEY)] = ("builtin:" if builtin else "") + name
+        self._save_edit_state()
+        self.look_preset_changed.emit()
+
+    def look_preset_status(self) -> tuple[str, str, bool] | None:
+        """(the preset's own name without its folders, its full name, whether its values have been changed since) for the look preset applied to the open photo - None when
+        there is none, or it has been deleted since."""
+        path = self.state.image_path
+        raw = self._module_preset_in_use.get((path, LOOK_KEY)) if path is not None else None
+        if not raw:
+            return None
+        builtin = raw.startswith("builtin:")
+        name = raw[len("builtin:"):] if builtin else raw
+        look = builtin_presets.get(name) if builtin else look_store.get(name)
+        if look is None:
+            return None
+        modified = any(not _same_value(getattr(self.state, key), value) for key, value in look.items() if key not in ("metering", "marks") and hasattr(self.state, key))
+        return name.split("/")[-1], name, modified
+
     def apply_look_preset(self, name: str) -> bool:
         look = look_store.get(name)
         if look is None:
             self.notice.emit(f"Preset '{name}' was not found")
             return False
         if self.apply_look(look, f"Applied preset '{name}'"):
+            self._set_look_preset(name)
             self.notice.emit(f"Applied preset '{name}'")
             return True
         return False
@@ -2953,11 +3035,12 @@ class AppController(QObject):
             values.update(panel_defaults(key))
         if not self.apply_look(values, "Cleared the look"):
             return False
-        for key in SWITCHABLE:
+        for key in (*SWITCHABLE, LOOK_KEY):
             self._module_preset_in_use.pop((self.state.image_path, key), None)
         self._save_edit_state()
         for key in SWITCHABLE:
             self.module_presets_changed.emit(key)
+        self.look_preset_changed.emit()
         self.notice.emit("Look cleared: every module except Negative is back to its defaults")
         return True
 
@@ -2973,13 +3056,14 @@ class AppController(QObject):
             self.notice.emit(f"Built-in preset '{name}' was not found")
             return False
         if self.apply_look(copy.deepcopy(look), f"Applied built-in preset '{name}'"):
+            self._set_look_preset(name, builtin=True)
             self.notice.emit(f"Applied built-in preset '{name}'")
             return True
         return False
 
     def apply_builtin_preset_to_folder(self, name: str) -> int:
         look = builtin_presets.get(name)
-        return self.paste_settings_to_folder(copy.deepcopy(look), f"Applied built-in preset '{name}'") if look is not None else 0
+        return self.paste_settings_to_folder(copy.deepcopy(look), f"Applied built-in preset '{name}'", preset_tag="builtin:" + name) if look is not None else 0
 
     def copy_builtin_preset(self, name: str) -> str | None:
         """Make an editable copy of a built-in preset among My Presets (under the same name, or the name with ' copy' if that is taken). Returns the name."""
@@ -3023,7 +3107,7 @@ class AppController(QObject):
 
     def apply_look_preset_to_folder(self, name: str) -> int:
         look = look_store.get(name)
-        return self.paste_settings_to_folder(look, f"Applied preset '{name}'") if look is not None else 0
+        return self.paste_settings_to_folder(look, f"Applied preset '{name}'", preset_tag=name) if look is not None else 0
 
     def copy_settings_from_path(self, path: str) -> bool:
         """Copy the look saved for any photo (the Lighttable's selected one) - the open photo's live look when it is that one."""
@@ -3071,7 +3155,7 @@ class AppController(QObject):
             self.roll_undo_changed.emit()
         return done
 
-    def paste_settings_to_folder(self, look: dict | None = None, label: str = "Pasted settings") -> int:
+    def paste_settings_to_folder(self, look: dict | None = None, label: str = "Pasted settings", preset_tag: str | None = None) -> int:
         """Apply a look (the copied one unless given) to every photo in the open photo's folder: the open one live, the others straight
         into their saved edits (their crops, rotation and retouching are kept). Returns how many photos changed."""
         look = self._copied_look if look is None else look
@@ -3084,6 +3168,8 @@ class AppController(QObject):
             return 0
         current = self.state.image_path
         done = 1 if self.apply_look(look, label) else 0
+        if done and preset_tag is not None:
+            self._set_look_preset(preset_tag[len("builtin:"):] if preset_tag.startswith("builtin:") else preset_tag, builtin=preset_tag.startswith("builtin:"))
         ops: list = []
         for path in list_images_in_folder(os.path.dirname(current)):
             if os.path.normcase(path) == os.path.normcase(current):
@@ -3093,7 +3179,10 @@ class AppController(QObject):
                 saved = default_edit_state(look.get("negative_inverted", True))
                 saved["metadata"] = {}
             state = {**saved, **copy.deepcopy(look)}
-            ops.append(roll_undo.fields_op(path, {k: saved.get(k) for k in look}, {k: state.get(k) for k in look}))
+            if preset_tag is not None:
+                state["module_presets"] = {**(saved.get("module_presets") or {}), LOOK_KEY: preset_tag}
+            fields = [*look, "module_presets"] if preset_tag is not None else list(look)
+            ops.append(roll_undo.fields_op(path, {k: saved.get(k) for k in fields}, {k: state.get(k) for k in fields}))
             edit_store.save_edit_state(self._db, path, state)
             if state["crop_rect"] is None:
                 xmp.write_sidecar(path, state, (1, 1))
@@ -3550,7 +3639,7 @@ class AppController(QObject):
             return {"error": str(exc)}
         neutral = dataclasses.replace(
             EditParams.from_state(s),
-            exposure_ev=0.0, tone_curve_points=tuple(tuple(p) for p in DEFAULT_POINTS), saturation=0.0, temperature=0.0, tint=0.0, shadows=0.0,
+            exposure_ev=0.0, tone_curve_points=tuple(tuple(p) for p in DEFAULT_POINTS), tone_curve_red=tuple(DEFAULT_POINTS), tone_curve_green=tuple(DEFAULT_POINTS), tone_curve_blue=tuple(DEFAULT_POINTS), saturation=0.0, temperature=0.0, tint=0.0, shadows=0.0,
             highlights=0.0, sharpen_amount=0.0, dust_auto=False, scratch_lines=(), heal_strokes=(), clone_strokes=(), ai_dust=False, contrast=0.0,
             chroma_denoise=0.0, local_contrast=0.0, print_snap=0.0, print_toe=0.0, print_shoulder=0.0, **lab_look_logic.ALL_DEFAULTS, **color_mix_logic.DEFAULTS, vignette=0.0, border=0.0, wm_film="off", wm_info=False, crop_rect=None,
             rotation_quarter_turns=0, flip_h=False, flip_v=False, fine_rotation=0.0, distortion=0.0, keystone_v=0.0, keystone_h=0.0,
@@ -3700,7 +3789,7 @@ class AppController(QObject):
             return None
         params = dataclasses.replace(
             EditParams.from_state(self.state),
-            exposure_ev=0.0, tone_curve_points=tuple(tuple(p) for p in DEFAULT_POINTS),
+            exposure_ev=0.0, tone_curve_points=tuple(tuple(p) for p in DEFAULT_POINTS), tone_curve_red=tuple(DEFAULT_POINTS), tone_curve_green=tuple(DEFAULT_POINTS), tone_curve_blue=tuple(DEFAULT_POINTS),
             saturation=0.0, temperature=0.0, tint=0.0, shadows=0.0, highlights=0.0, sharpen_amount=0.0,
             dust_auto=False, scratch_lines=(), heal_strokes=(), clone_strokes=(), ai_dust=False, contrast=0.0, chroma_denoise=0.0, local_contrast=0.0,
             print_snap=0.0, print_toe=0.0, print_shoulder=0.0, **lab_look_logic.ALL_DEFAULTS, **color_mix_logic.DEFAULTS,

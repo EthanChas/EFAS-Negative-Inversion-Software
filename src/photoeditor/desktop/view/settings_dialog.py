@@ -367,7 +367,7 @@ class SettingsDialog(QDialog):
                             "computer without a fast graphics chip), so it is off by default. You can still switch HQ off for a photo with the HQ button."))
         self._collapse_on_tab_change = QCheckBox("Close a tab's modules when I switch to another tab")
         self._collapse_on_tab_change.setChecked(self._initial["collapse_on_tab_change"])
-        self._collapse_on_tab_change.setToolTip("When you leave one of the tool tabs (WB Correction, Correction, Negative, Watermark, Roll Card), its modules fold shut")
+        self._collapse_on_tab_change.setToolTip("When you leave one of the tool tabs (Convert, Frame & Clean, Tone, Color, Detail, Finish, Roll Card), its modules fold shut")
         col.addWidget(self._collapse_on_tab_change)
         col.addWidget(_hint("On: whichever modules you opened in a tab are closed again when you move to another tab, so each tab is tidy when you return. Off: every module "
                             "stays as you left it, open or closed, even after you switch tabs."))

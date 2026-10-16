@@ -153,7 +153,7 @@ _SCRIPT = textwrap.dedent(r'''
     pp = win._presets_panel
     assert not win.lighttable_active() and pp._expanded and not pp.showing_builtin() and pp.selected() == "B&W/Number 1" and len(c.state.history) == steps
     win.go_to_entry(hit("crystal", "preset")[0]); pump(0.8)
-    assert pp.showing_builtin() and pp.selected() == "Lab Scanners/Crystal 100" and len(c.state.history) == steps
+    assert pp.showing_builtin() and pp.selected() == "Scanners (EFAS Original)/Crystal 100" and len(c.state.history) == steps
     win.go_to_entry(hit("my roll", "collection")[0]); pump(0.8)
     assert win.lighttable_active() and win._lighttable._collection_box.currentData() == "My Roll"
     print("ok")

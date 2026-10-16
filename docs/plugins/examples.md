@@ -6,7 +6,7 @@
 |---|---|---|
 | Hello (Lua) | Lua | A menu item, a module with a button, saved settings, `print` |
 | Hello (Python) | Python | `register(api)`, a menu item with a shortcut, a slider and a check box |
-| Exposure Steps (Lua) | Lua | A module in the WB Correction tab, `set_edit`, events |
+| Exposure Steps (Lua) | Lua | A module in the Tone tab, `set_edit`, events |
 | Photo Report (Python) | Python | `photo()`, `statistics()`, a submenu, a Save dialog and `write_text` |
 | Tag by Exposure (Lua) | Lua | `statistics()` and `add_tags()` |
 
@@ -57,7 +57,7 @@ module:add_button{
 
 ## Exposure Steps (Lua)
 
-A module in the **WB Correction** tab with three buttons. It reads the photo's exposure and sets it with `set_edit`, then keeps its reading right by listening for events.
+A module in the **Tone** tab with three buttons. It reads the photo's exposure and sets it with `set_edit`, then keeps its reading right by listening for events.
 
 ```lua
 local STEP = 1 / 3

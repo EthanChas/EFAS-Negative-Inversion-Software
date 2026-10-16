@@ -84,7 +84,7 @@ Returns an object with `remove()` in Python. (In Lua the item is removed when th
 Adds a module (a collapsible panel like EFAS's own) to a tool tab and returns it.
 
 - `title`: the module's heading.
-- `tab` (optional): where it goes. `"plugins"` (the default, a tab of its own that appears while some plugin has a module in it), `"exposure"` (WB Correction), `"correction"`, `"negative"`, `"watermark"` or `"metadata"` (Roll Card).
+- `tab` (optional): where it goes. `"plugins"` (the default, a tab of its own that appears while some plugin has a module in it), `"negative"` (Convert), `"correction"` (Frame & Clean), `"exposure"` (Tone), `"color"` (Color), `"detail"` (Detail), `"watermark"` (Finish) or `"metadata"` (Roll Card).
 - `expanded` (optional): open at first. The default is closed, like EFAS's own modules, so a tab is tidy when it opens.
 
 The module's methods, its controls and what they return are in [UI and modules](ui-and-modules.md). All of a plugin's modules are removed when it is switched off.

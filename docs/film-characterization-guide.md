@@ -2,7 +2,7 @@
 
 This guide is for the optional, advanced part of EFAS that measures how your film and your camera behave. You do **not** need any of it to convert a negative. Everyday conversion (open, sample the film base, invert, adjust, export) works without it and is unchanged.
 
-Open it with **Advanced mode** (Negative tab), then **Sensitometry (H&D) > Film Characterization...**. Everything runs on your computer; nothing is sent anywhere.
+Open it with **Advanced mode** (Convert tab), then **Sensitometry (H&D) > Film Characterization...**. Everything runs on your computer; nothing is sent anywhere.
 
 ## What it can and cannot do
 
@@ -28,7 +28,7 @@ Needs a calibrated transmission step tablet (for example a 21-step tablet with 0
 4. Choose whether the first patch is the clearest or the densest step. Press **Pick Patches on the Scan** and click the centre of the first patch, then the last. EFAS lays out the rest evenly.
 5. Press **Sample Patches**. Orange boxes are patches EFAS will not use (clipped, below the noise floor, uneven, or off the picture); the table says why. Untick any you want to leave out.
 6. Press **Calibrate the Camera**. For each colour EFAS fits `v = k x 10^-D + f`. `f` is the offset from flare and black-level error and `f/k` is the **flare fraction**. You also get the density the camera can reliably measure and whether flare or noise sets that limit.
-7. **Save as a Camera Set-up.** Set-ups appear under Camera Set-ups and can be chosen in the Negative tab to remove the flare fraction before the curve-informed inversion.
+7. **Save as a Camera Set-up.** Set-ups appear under Camera Set-ups and can be chosen in the Convert tab to remove the flare fraction before the curve-informed inversion.
 
 If the result says the offset is negative or the points do not follow the model, suspect the backlight (uneven, flickering) or stray light before suspecting the camera.
 
@@ -59,7 +59,7 @@ EFAS fits three representations (an interpolated curve, a toe/straight-line/shou
 
 - **Gradient** is density per unit of log exposure: the film's contrast. It rises through the toe, levels at **gamma** in the straight-line portion, and falls through the shoulder. EFAS always states the exposure interval behind a figure.
 - **Average gradient** here is the slope of the chord over a stated interval. The ISO 6 speed-criterion geometry (0.10 above base, then 1.30 log exposure further, a density rise of 0.80) is shown for black-and-white negatives only, as the *curve's geometry*, not as a speed.
-- **Shadow separation, midtone contrast, highlight compression** (also shown in the Negative tab once a profile is applied) describe the film's response over the measured exposures. They are not a reconstruction of your scene.
+- **Shadow separation, midtone contrast, highlight compression** (also shown in the Convert tab once a profile is applied) describe the film's response over the measured exposures. They are not a reconstruction of your scene.
 - **Where the measurement can be trusted** (Calibration and Diagnostics): the share of the picture that is clipped in the camera, below the noise floor, noise-limited or usable, with whether each is measured, inferred or unknown. If the densest areas are below the noise floor, EFAS tells you how many stops more light would extend the range, and never blames the film unless the signal there is strong and the histogram piles up.
 
 ## Film profiles
@@ -70,7 +70,7 @@ Profiles are plain JSON files in the `film_profiles` folder of your data folder 
 
 ## The curve-informed inversion (optional)
 
-In the Negative tab, **Inversion method** can be switched from *Standard* to *Curve-informed (experimental)* once a profile and a sampled film base exist.
+In the Convert tab, **Inversion method** can be switched from *Standard* to *Curve-informed (experimental)* once a profile and a sampled film base exist.
 
 It works in four labelled steps: measured density above the film base; estimated exposure through the profile's curve; a reconstructed positive using a white reference; then display encoding. Densities outside the profile's measured range are held at its ends and counted (never extrapolated). The white reference is an assumption about your scene's lighting and sets the colour balance. It does **not** recover film-layer spectral sensitivities, dye behaviour, processing differences or the scene's light.
 

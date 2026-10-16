@@ -10,10 +10,10 @@ _SETTLE_DEBOUNCE_MS = 200
 
 
 class ContrastToolPanel(CollapsiblePanel):
-    """Contrast under WB Correction, between Exposure and Tone Curve - a
+    """Contrast under Tone, between Exposure and Tone Curve - a
     smooth S-curve (features/contrast/logic.py): positive deepens darks and
     brightens lights around an unmoved midpoint, negative flattens. Same
-    two-tier preview/full-recompute split as the other WB Correction tools."""
+    two-tier preview/full-recompute split as the other Tone tools."""
 
     changed = pyqtSignal(float)
     preview_requested = pyqtSignal(float)

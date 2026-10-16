@@ -10,7 +10,7 @@ _SETTLE_DEBOUNCE_MS = 200
 
 
 class ShadowsHighlightsToolPanel(CollapsiblePanel):
-    """A third sibling under WB Correction, below Tone Curve - lifts or
+    """A third sibling under Tone, below Tone Curve - lifts or
     darkens shadows and highlights independently of the rest of the tonal
     range (features/shadows_highlights/logic.py). Same two-tier preview/
     full-recompute split as Exposure/Tone Curve/Color, carrying both

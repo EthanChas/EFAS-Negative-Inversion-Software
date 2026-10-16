@@ -34,7 +34,7 @@ class ColorMixerToolPanel(CollapsiblePanel):
         )
         body = self.body()
         body.setSpacing(THEME.space_sm)
-        self._values = dict(cm.DEFAULTS)
+        self._values = {k: 0.0 for k in cm.MIXER_PANEL_KEYS}
         self._vibrance = SliderRow("Vibrance", min_value=-1.0, max_value=1.0, reset_value=0.0, decimals=2, step=0.01, label_width=_LABEL_WIDTH)
         self._vibrance.setToolTip("Raises (+) or lowers (-) the colour of the muted parts more than the vivid ones; skin tones and greys are spared")
         self._vibrance.value_changed.connect(self._on_vibrance)
@@ -106,13 +106,13 @@ class ColorMixerToolPanel(CollapsiblePanel):
         """Back to neutral without emitting anything - used when a new file is opened, since the controller has already reset its own state."""
         self._settle_timer.stop()
         self._pending_preview = None
-        self.set_values(cm.DEFAULTS)
+        self.set_values({})
 
     def set_values(self, values) -> None:
         """Sync the sliders without emitting anything - used by reset() and after a history revert. `values` is a dict of the keys, or a sequence in KEYS order."""
         if not isinstance(values, dict):
-            values = dict(zip(cm.KEYS, values))
-        self._values = {k: float(values.get(k, 0.0)) for k in cm.KEYS}
+            values = dict(zip(cm.MIXER_PANEL_KEYS, values))
+        self._values = {k: float(values.get(k, 0.0)) for k in cm.MIXER_PANEL_KEYS}
         self._vibrance.blockSignals(True)
         self._vibrance.set_value(self._values["vibrance"])
         self._vibrance.blockSignals(False)

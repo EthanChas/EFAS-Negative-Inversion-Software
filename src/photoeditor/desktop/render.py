@@ -60,7 +60,7 @@ from ..features.retouch.logic import DustStatsCache, RetouchResult, detect_dust_
 from ..features.shadows_highlights.logic import adjust_shadows_highlights
 from ..features.whitebalance.readout import tonal_readout
 from ..features.sharpening.logic import apply_sharpening
-from ..features.tonecurve.logic import apply_tone_curve
+from ..features.tonecurve.logic import DEFAULT_POINTS, apply_curves
 from ..features.whitebalance.logic import (
     channel_stats,
     clipping_overlay,
@@ -137,6 +137,9 @@ class EditParams:
     lab_gm_highs: float = 0.0
     lab_response: str = "none"
     lab_response_amount: float = 1.0
+    tone_curve_red: tuple = ((0, 0), (255, 255))
+    tone_curve_green: tuple = ((0, 0), (255, 255))
+    tone_curve_blue: tuple = ((0, 0), (255, 255))
     vibrance: float = 0.0
     mix_hue_red: float = 0.0
     mix_sat_red: float = 0.0
@@ -162,6 +165,12 @@ class EditParams:
     mix_hue_magenta: float = 0.0
     mix_sat_magenta: float = 0.0
     mix_lum_magenta: float = 0.0
+    tone_hue_shadows: float = 0.0
+    tone_amt_shadows: float = 0.0
+    tone_hue_mids: float = 0.0
+    tone_amt_mids: float = 0.0
+    tone_hue_highs: float = 0.0
+    tone_amt_highs: float = 0.0
     vignette: float = 0.0
     vignette_size: float = 0.5
     border: float = 0.0
@@ -247,6 +256,9 @@ class EditParams:
             lab_gm_highs=float(getattr(s, "lab_gm_highs", 0.0)),
             lab_response=str(getattr(s, "lab_response", "none")),
             lab_response_amount=float(getattr(s, "lab_response_amount", 1.0)),
+            tone_curve_red=tuple(tuple(p) for p in getattr(s, "tone_curve_red", DEFAULT_POINTS)),
+            tone_curve_green=tuple(tuple(p) for p in getattr(s, "tone_curve_green", DEFAULT_POINTS)),
+            tone_curve_blue=tuple(tuple(p) for p in getattr(s, "tone_curve_blue", DEFAULT_POINTS)),
             vibrance=float(getattr(s, "vibrance", 0.0)),
             mix_hue_red=float(getattr(s, "mix_hue_red", 0.0)),
             mix_sat_red=float(getattr(s, "mix_sat_red", 0.0)),
@@ -272,6 +284,12 @@ class EditParams:
             mix_hue_magenta=float(getattr(s, "mix_hue_magenta", 0.0)),
             mix_sat_magenta=float(getattr(s, "mix_sat_magenta", 0.0)),
             mix_lum_magenta=float(getattr(s, "mix_lum_magenta", 0.0)),
+            tone_hue_shadows=float(getattr(s, "tone_hue_shadows", 0.0)),
+            tone_amt_shadows=float(getattr(s, "tone_amt_shadows", 0.0)),
+            tone_hue_mids=float(getattr(s, "tone_hue_mids", 0.0)),
+            tone_amt_mids=float(getattr(s, "tone_amt_mids", 0.0)),
+            tone_hue_highs=float(getattr(s, "tone_hue_highs", 0.0)),
+            tone_amt_highs=float(getattr(s, "tone_amt_highs", 0.0)),
             vignette=float(getattr(s, "vignette", 0.0)),
             vignette_size=float(getattr(s, "vignette_size", 0.5)),
             border=float(getattr(s, "border", 0.0)),
@@ -619,6 +637,8 @@ class Renderer:
             ramp = apply_contrast(ramp, params.contrast)
             ramp = apply_print_response(ramp, params.print_snap, params.print_toe, params.print_toe_width, params.print_shoulder, params.print_shoulder_width)
             curve = list(params.tone_curve_points)
+            channel_curves = (list(params.tone_curve_red), list(params.tone_curve_green), list(params.tone_curve_blue))
+            tone = lambda r: apply_curves(r, curve, channel_curves)   # the master curve, then a curve of each colour channel's own
             lab_by = (params.lab_by_shadows, params.lab_by_mids, params.lab_by_highs)
             lab_gm = (params.lab_gm_shadows, params.lab_gm_mids, params.lab_gm_highs)
             lab = lambda r: apply_lab_tone(r, params.lab_fade, lab_by, lab_gm, params.lab_glow)   # the lab look comes last, after the tone curve
@@ -637,13 +657,13 @@ class Renderer:
                     pixels = apply_local_contrast(pixels, params.local_contrast)
                 pixels = adjust_shadows_highlights(pixels, params.shadows, params.highlights)
                 pixels = adjust_saturation(pixels, params.saturation)
-                post = ramp_to_lut(lab(apply_tone_curve(identity_ramp(), curve)))
+                post = ramp_to_lut(lab(tone(identity_ramp())))
                 if not is_identity(post):
                     pixels = apply_channel_lut(pixels, post)
                 if color_active:   # vibrance, the colour mixer and the scanner colour response: in OKLCH, on the finished tones
                     pixels = apply_color(pixels, color_values, color_response, params.lab_response_amount)
             elif wide:
-                final = lab(apply_tone_curve(ramp, curve))
+                final = lab(tone(ramp))
                 if deep and not (params.sharpen_amount or params.vignette or watermark_active(params.wm_film) or params.marks.wanted(params.wm_info, params.wm_camera, params.wm_lens, watermark_active(params.wm_film)) or params.border > 0):
                     table = np.clip(np.rint(final[0].T * np.float32(65535.0 / 255.0)), 0, 65535).astype(np.uint16)
                     pixels = np.empty(pixels16.shape, dtype=np.uint16)
@@ -652,7 +672,7 @@ class Renderer:
                 else:
                     pixels = apply_wide_lut(pixels16, wide_ramp_to_lut(final))
             else:
-                lut = ramp_to_lut(lab(apply_tone_curve(ramp, curve)))
+                lut = ramp_to_lut(lab(tone(ramp)))
                 if not is_identity(lut):
                     pixels = apply_channel_lut(pixels, lut)
 

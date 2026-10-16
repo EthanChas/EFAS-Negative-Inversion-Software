@@ -72,6 +72,9 @@ class HistoryEntry:
     lab_gm_highs: float = 0.0
     lab_response: str = "none"
     lab_response_amount: float = 1.0
+    tone_curve_red: list[tuple[int, int]] = field(default_factory=lambda: list(DEFAULT_POINTS))
+    tone_curve_green: list[tuple[int, int]] = field(default_factory=lambda: list(DEFAULT_POINTS))
+    tone_curve_blue: list[tuple[int, int]] = field(default_factory=lambda: list(DEFAULT_POINTS))
     vibrance: float = 0.0
     mix_hue_red: float = 0.0
     mix_sat_red: float = 0.0
@@ -97,6 +100,12 @@ class HistoryEntry:
     mix_hue_magenta: float = 0.0
     mix_sat_magenta: float = 0.0
     mix_lum_magenta: float = 0.0
+    tone_hue_shadows: float = 0.0
+    tone_amt_shadows: float = 0.0
+    tone_hue_mids: float = 0.0
+    tone_amt_mids: float = 0.0
+    tone_hue_highs: float = 0.0
+    tone_amt_highs: float = 0.0
     keystone_v: float = 0.0
     keystone_h: float = 0.0
     metering: Metering = field(default_factory=Metering)
@@ -133,6 +142,9 @@ def entry_from_json(description: str, text: str) -> HistoryEntry | None:
         kwargs["marks"] = Marks.from_dict(kwargs.get("marks"))
         kwargs["metering"] = Metering.from_dict(kwargs.get("metering"))
         kwargs["tone_curve_points"] = [tuple(p) for p in kwargs["tone_curve_points"]]
+        for key in ("tone_curve_red", "tone_curve_green", "tone_curve_blue"):
+            if key in kwargs:
+                kwargs[key] = [tuple(p) for p in kwargs[key]]
         if kwargs.get("crop_rect") is not None:
             kwargs["crop_rect"] = tuple(kwargs["crop_rect"])
         return HistoryEntry(description=str(description), **kwargs)
@@ -206,6 +218,9 @@ class AppState:
     lab_gm_highs: float = 0.0
     lab_response: str = "none"
     lab_response_amount: float = 1.0
+    tone_curve_red: list[tuple[int, int]] = field(default_factory=lambda: list(DEFAULT_POINTS))
+    tone_curve_green: list[tuple[int, int]] = field(default_factory=lambda: list(DEFAULT_POINTS))
+    tone_curve_blue: list[tuple[int, int]] = field(default_factory=lambda: list(DEFAULT_POINTS))
     vibrance: float = 0.0
     mix_hue_red: float = 0.0
     mix_sat_red: float = 0.0
@@ -231,6 +246,12 @@ class AppState:
     mix_hue_magenta: float = 0.0
     mix_sat_magenta: float = 0.0
     mix_lum_magenta: float = 0.0
+    tone_hue_shadows: float = 0.0
+    tone_amt_shadows: float = 0.0
+    tone_hue_mids: float = 0.0
+    tone_amt_mids: float = 0.0
+    tone_hue_highs: float = 0.0
+    tone_amt_highs: float = 0.0
     vignette: float = 0.0
     vignette_size: float = 0.5
     border: float = 0.0

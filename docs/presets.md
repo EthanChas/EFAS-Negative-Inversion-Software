@@ -20,14 +20,28 @@ A name with slashes is a path: **B&W/Number 1** is the preset *Number 1* inside 
 
 The same goes for **Film Profiles** (Advanced mode): put slashes in a profile's name under **Edit Details...** (`Kodak/Portra 400/Roll 3`) and the profile list becomes a tree. In the drop-downs that choose a profile for an inversion the folders read `Kodak › Portra 400 › Roll 3`.
 
-## The Lab Scanners built-in presets
+## The Scanners (DarkSlide) built-in presets
+
+The five lab styles that ship with [DarkSlide](https://github.com/kilianvivien/DarkSlide) (MIT licence, (c) 2026 Kilian Vivien), carried over as they are defined there: a master tone curve, optional red / green / blue curves, and a saturation and a temperature nudge (DarkSlide's `saturationBias` and `temperatureBias` divided by 100). They use the Tone Curve module (all four curves) and the Color module's Saturation and Temperature, so they show up as curves on the graph and can be edited from there.
 
 | Preset | What it does |
 |---|---|
-| Lab Scanners/Frontier 100 | A Fuji Frontier-style look at full strength: deeper shadows, a soft fade in the blacks, a gentle lift of the midtones, a gentle highlight roll-off, a little more saturation, warmth that is stronger in the shadows than the highlights and a faint green in the shadows |
-| Lab Scanners/Crystal 100 | A Fuji Crystal Archive paper-style look at full strength: richer, deeper blacks, a little less shadow detail, more saturation, a touch of warmth in the midtones |
-| Lab Scanners/Pakon (Clean and Rich) | A Pakon-style look: clean, bright highlights with a firm white, a slight saturation lift, otherwise neutral. Subtle: most of a Pakon scan's look is its colour response, which EFAS cannot copy |
-| Lab Scanners/Noritsu (Green Shadows) | A Noritsu-style look: lifted shadows, bright clean highlights with more separation, a faint green in the shadows, a modest saturation lift |
+| Scanners (DarkSlide)/Frontier Classic | Warm, saturated colour with lifted blacks and a gentle shoulder (saturation +0.10, temperature +0.08) |
+| Scanners (DarkSlide)/Frontier Modern | Cleaner highlights with a lighter Frontier-style colour signature (+0.03, +0.03) |
+| Scanners (DarkSlide)/Noritsu | Cooler, straighter midtones with slightly firmer contrast (-0.02, -0.05) |
+| Scanners (DarkSlide)/Neutral | A straight line and no bias, for grading by hand |
+| Scanners (DarkSlide)/Agfa d-Lab | Cooler midtones with muted saturation and a slight green bias (-0.04, -0.03) |
+
+DarkSlide's own "tonal character" overrides (shadow lift, highlight roll-off, midtone anchor) belong to its pipeline and are not carried over: the curves already hold the lifted blacks and the soft shoulder. The folder is named for where the styles come from; **Scanners (EFAS Original)** below holds EFAS's own looks, made with the Lab Look module.
+
+## The Scanners (EFAS Original) built-in presets
+
+| Preset | What it does |
+|---|---|
+| Scanners (EFAS Original)/Frontier 100 | A Fuji Frontier-style look at full strength: deeper shadows, a soft fade in the blacks, a gentle lift of the midtones, a gentle highlight roll-off, a little more saturation, warmth that is stronger in the shadows than the highlights and a faint green in the shadows |
+| Scanners (EFAS Original)/Crystal 100 | A Fuji Crystal Archive paper-style look at full strength: richer, deeper blacks, a little less shadow detail, more saturation, a touch of warmth in the midtones |
+| Scanners (EFAS Original)/Pakon (Clean and Rich) | A Pakon-style look: clean, bright highlights with a firm white, a slight saturation lift, otherwise neutral. Subtle: most of a Pakon scan's look is its colour response, which EFAS cannot copy |
+| Scanners (EFAS Original)/Noritsu (Green Shadows) | A Noritsu-style look: lifted shadows, bright clean highlights with more separation, a faint green in the shadows, a modest saturation lift |
 
 **What these are, and are not.** They are EFAS's own approximations, made by converting the tone, saturation, fade, glow and colour-balance settings of the matching scanner-look presets in another program's published list into EFAS's sliders. They are not measurements of the machines, not a copy of that program's presets, and not its colour lookup tables or camera profiles (those are not included). The 100 in *Frontier 100* and *Crystal 100* means full strength. Treat them as starting points and adjust by eye.
 
@@ -65,10 +79,10 @@ It has an on/off light, a reset button and module presets like the other modules
 
 ## The Film Stocks built-in presets
 
-Under **Film Stocks**, sorted by brand: **Cinestill/Cinestill**, **Fuji/Superia**, **Kodak/Gold**, **Kodak/Portra** and **Kodak/Portra Airy**. They are made the same way as the Lab Scanners presets (the same conversion, from the film-look presets in the same published list), so everything said above applies: approximations of the stock's character in tone, saturation and warmth by tone, not a model of the film's colour. Kodak Gold is the warm one (warm, yellow shadows and midtones with clean highlights), Portra keeps its highlights soft and protected, Portra Airy lifts shadows and highlights. A film preset changes the picture the same way whatever film is in the scanner: use it as a starting point, not as proof of what the film looked like.
+Under **Film Stocks**, sorted by brand: **Cinestill/Cinestill**, **Fuji/Superia**, **Kodak/Gold**, **Kodak/Portra** and **Kodak/Portra Airy**. They are made the same way as the Scanners (EFAS Original) presets (the same conversion, from the film-look presets in the same published list), so everything said above applies: approximations of the stock's character in tone, saturation and warmth by tone, not a model of the film's colour. Kodak Gold is the warm one (warm, yellow shadows and midtones with clean highlights), Portra keeps its highlights soft and protected, Portra Airy lifts shadows and highlights. A film preset changes the picture the same way whatever film is in the scanner: use it as a starting point, not as proof of what the film looked like.
 
 ## Adding built-in presets
 
 Built-in presets are JSON files in `src/photoeditor/assets/presets/`. Each file holds `{"presets": [{"name": "Folder/Name", "description": "...", "look": {...}}]}`, where `look` uses the slider keys of the Presets and Print Response modules (see `features/lookpresets/modules.py`). A new file in that folder appears in the Built-in Presets list the next time EFAS starts.
 
-`tools/build_presets.py <folder>` rewrites the slider values of the built-in Lab Scanners and Film Stocks presets from a folder of source files, using the conversion above.
+`tools/build_presets.py <folder>` rewrites the slider values of the built-in Scanners (EFAS Original) and Film Stocks presets from a folder of source files, using the conversion above.

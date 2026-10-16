@@ -8,6 +8,8 @@ clipping channels (which shifts hue).
 * Vibrance raises the chroma of the muted colours more than the vivid ones, and leaves skin hues and greys alone.
 * The Color Mixer has eight colour ranges (red, orange, yellow, green, aqua, blue, purple, magenta), each with Hue, Saturation and Lightness. A range has a smooth window on the hue
   wheel and fades out for near-greys, so neighbours blend and a grey never picks up a colour.
+* Color Toning tints the shadows, midtones and highlights each toward a hue of your choice (Hue in degrees round the OKLab wheel, Strength 0-1), the way NegPy's split toning does
+  but with a third region and in OKLab; it is added to a and b, so the lightness stays where it was. It is applied last, after the mixer and the scanner response.
 * The scanner colour response is a small, documented stand-in for what a lab scanner's colour table does: a cast in the shadows, midtones and highlights (in OKLab a, b) and a
   chroma change, scaled by an amount. The directions follow how labs describe each machine (docs/lab-look-research.md); the sizes are estimates."""
 
@@ -23,8 +25,12 @@ VIBRANCE_FLOOR = (0.004, 0.025)  # the same for vibrance, which is meant for the
 SKIN = (30.0, 75.0)         # hues vibrance protects, degrees
 VIBRANCE_REACH = 0.22       # chroma above which a colour is "already vivid" for vibrance
 
+REGIONS = ("shadows", "mids", "highs")
+TONING_CHROMA = 0.08        # OKLab chroma a region's tint reaches at full strength
+TONING_KEYS = tuple(f"tone_{kind}_{region}" for region in REGIONS for kind in ("hue", "amt"))   # tone_hue_* in degrees (0-360), tone_amt_* 0-1
 MIXER_KEYS = tuple(f"mix_{kind}_{band}" for band in BANDS for kind in ("hue", "sat", "lum"))
-KEYS = ("vibrance",) + MIXER_KEYS
+MIXER_PANEL_KEYS = ("vibrance",) + MIXER_KEYS   # what the Color Mixer module holds; Color Toning holds TONING_KEYS
+KEYS = MIXER_PANEL_KEYS + TONING_KEYS
 DEFAULTS = {key: 0.0 for key in KEYS}
 RANGE = (-1.0, 1.0)
 
@@ -47,8 +53,21 @@ _M2_INV = np.linalg.inv(_M2).astype(np.float32)
 _SRGB_TO_LINEAR = np.where((np.arange(256) / 255.0) <= 0.04045, (np.arange(256) / 255.0) / 12.92, (((np.arange(256) / 255.0) + 0.055) / 1.055) ** 2.4).astype(np.float32)
 
 
+def toning_active(values: dict | None) -> bool:
+    """Any region has a strength (a hue alone changes nothing)."""
+    return any(abs(float((values or {}).get(f"tone_amt_{r}", 0.0))) > 1e-9 for r in REGIONS)
+
+
 def is_neutral(values: dict | None = None, response: str = "none") -> bool:
-    return response in ("none", "", None) and all(abs(float((values or {}).get(k, 0.0))) < 1e-9 for k in KEYS)
+    return response in ("none", "", None) and not toning_active(values) and all(abs(float((values or {}).get(k, 0.0))) < 1e-9 for k in MIXER_PANEL_KEYS)
+
+
+def tint_swatch(hue: float) -> tuple[int, int, int]:
+    """The display colour of a toning hue (degrees): a mid-light, fairly colourful OKLab colour at that angle."""
+    rad = np.radians(float(hue))
+    lab = np.array([[[0.72, 0.11 * np.cos(rad), 0.11 * np.sin(rad)]]], dtype=np.float32)
+    r, g, b = oklab_to_srgb8(lab)[0, 0]
+    return int(r), int(g), int(b)
 
 
 def srgb8_to_oklab(pixels: np.ndarray) -> np.ndarray:
@@ -110,7 +129,9 @@ def apply_color(pixels: np.ndarray, values: dict | None = None, response: str = 
     use_response = response in RESPONSE and amount > 0.0
     vibrance = float(values.get("vibrance", 0.0))
     mix = {k: float(values.get(k, 0.0)) for k in MIXER_KEYS if abs(float(values.get(k, 0.0))) > 1e-9}
-    if not use_response and vibrance == 0.0 and not mix:
+    toning = [(r, float(values.get(f"tone_hue_{r}", 0.0)), float(min(max(values.get(f"tone_amt_{r}", 0.0), 0.0), 1.0))) for r in REGIONS]
+    toning = [t for t in toning if t[2] > 1e-9]
+    if not use_response and vibrance == 0.0 and not mix and not toning:
         return pixels
     h, w = pixels.shape[:2]
     out = np.empty(pixels.shape, dtype=np.uint8)
@@ -146,5 +167,11 @@ def apply_color(pixels: np.ndarray, values: dict | None = None, response: str = 
                 b = b + amount * spec[key][1] * weight
             scale = 1.0 + amount * (spec["chroma"] - 1.0)
             a, b = a * scale, b * scale
+        if toning:   # last: a tint of each tonal region, added in OKLab a / b so lightness is kept
+            weights = dict(zip(REGIONS, tone_weights(light)))
+            for region, degrees, strength in toning:
+                rad = np.radians(degrees)
+                a = a + np.cos(rad) * TONING_CHROMA * strength * weights[region]
+                b = b + np.sin(rad) * TONING_CHROMA * strength * weights[region]
         out[y:y + step] = oklab_to_srgb8(np.stack([light, a, b], axis=-1).astype(np.float32))
     return out

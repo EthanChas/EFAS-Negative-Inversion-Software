@@ -3,7 +3,7 @@
 
 local STEP = 1 / 3
 
-local module = efas.add_module{ title = "Exposure steps", tab = "exposure" }   -- in the WB Correction tab
+local module = efas.add_module{ title = "Exposure steps", tab = "exposure" }   -- in the Tone tab
 local reading = module:add_label{ text = "Open a photo." }
 
 local function show()

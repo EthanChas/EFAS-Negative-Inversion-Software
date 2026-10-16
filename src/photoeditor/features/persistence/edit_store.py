@@ -255,6 +255,9 @@ _MIGRATIONS = (
     ("lab_gm_mids", "REAL", "0.0"),
     ("lab_gm_highs", "REAL", "0.0"),
     ("lab_response", "TEXT", "'none'"),
+    ("tone_curve_red", "TEXT", "'[[0, 0], [255, 255]]'"),
+    ("tone_curve_green", "TEXT", "'[[0, 0], [255, 255]]'"),
+    ("tone_curve_blue", "TEXT", "'[[0, 0], [255, 255]]'"),
     ("lab_response_amount", "REAL", "1.0"),
     ("vibrance", "REAL", "0.0"),
     ("mix_hue_red", "REAL", "0.0"),
@@ -281,6 +284,12 @@ _MIGRATIONS = (
     ("mix_hue_magenta", "REAL", "0.0"),
     ("mix_sat_magenta", "REAL", "0.0"),
     ("mix_lum_magenta", "REAL", "0.0"),
+    ("tone_hue_shadows", "REAL", "0.0"),
+    ("tone_amt_shadows", "REAL", "0.0"),
+    ("tone_hue_mids", "REAL", "0.0"),
+    ("tone_amt_mids", "REAL", "0.0"),
+    ("tone_hue_highs", "REAL", "0.0"),
+    ("tone_amt_highs", "REAL", "0.0"),
     ("vignette", "REAL", "0.0"),
     ("vignette_size", "REAL", "0.5"),
     ("border", "REAL", "0.0"),
@@ -354,6 +363,9 @@ _FIELDS = (
     ("lab_gm_mids", "plain"),
     ("lab_gm_highs", "plain"),
     ("lab_response", "plain"),
+    ("tone_curve_red", "json"),
+    ("tone_curve_green", "json"),
+    ("tone_curve_blue", "json"),
     ("lab_response_amount", "plain"),
     ("vibrance", "plain"),
     ("mix_hue_red", "plain"),
@@ -380,6 +392,12 @@ _FIELDS = (
     ("mix_hue_magenta", "plain"),
     ("mix_sat_magenta", "plain"),
     ("mix_lum_magenta", "plain"),
+    ("tone_hue_shadows", "plain"),
+    ("tone_amt_shadows", "plain"),
+    ("tone_hue_mids", "plain"),
+    ("tone_amt_mids", "plain"),
+    ("tone_hue_highs", "plain"),
+    ("tone_amt_highs", "plain"),
     ("vignette", "plain"),
     ("vignette_size", "plain"),
     ("border", "plain"),
@@ -450,7 +468,7 @@ def _decode(value, kind: str, field: str):
         return tuple(json.loads(value)) if value else None
     if kind == "json":
         data = json.loads(value)
-        if field == "tone_curve_points":
+        if field == "tone_curve_points" or field in ("tone_curve_red", "tone_curve_green", "tone_curve_blue"):
             return [tuple(p) for p in data]
         if field == "scratch_lines":
             return [tuple(line) for line in data]
@@ -980,7 +998,7 @@ _UNTOUCHED = {
     "exposure_ev": 0.0, "rotation_quarter_turns": 0, "flip_h": False, "flip_v": False, "crop_rect": None, "saturation": 0.0,
     "temperature": 0.0, "tint": 0.0, "shadows": 0.0, "highlights": 0.0, "sharpen_amount": 0.0, "dust_auto": False,
     "scratch_lines": [], "heal_strokes": [], "clone_strokes": [], "dust_excluded": [], "error_marks": [], "modules_off": [], "ai_dust": False, "marks": {}, "film_type": "auto", "invert_r": 0.0, "invert_g": 0.0, "invert_b": 0.0, "contrast": 0.0,
-    "fine_rotation": 0.0, "distortion": 0.0, "keystone_v": 0.0, "keystone_h": 0.0, "chroma_denoise": 0.0, "local_contrast": 0.0, "print_snap": 0.0, "print_toe": 0.0, "print_toe_width": 2.5, "print_shoulder": 0.0, "print_shoulder_width": 2.5, "lab_fade": 0.0, "lab_glow": 0.0, "lab_by_shadows": 0.0, "lab_by_mids": 0.0, "lab_by_highs": 0.0, "lab_gm_shadows": 0.0, "lab_gm_mids": 0.0, "lab_gm_highs": 0.0, "lab_response": "none", "lab_response_amount": 1.0, "vibrance": 0.0, "mix_hue_red": 0.0, "mix_sat_red": 0.0, "mix_lum_red": 0.0, "mix_hue_orange": 0.0, "mix_sat_orange": 0.0, "mix_lum_orange": 0.0, "mix_hue_yellow": 0.0, "mix_sat_yellow": 0.0, "mix_lum_yellow": 0.0, "mix_hue_green": 0.0, "mix_sat_green": 0.0, "mix_lum_green": 0.0, "mix_hue_aqua": 0.0, "mix_sat_aqua": 0.0, "mix_lum_aqua": 0.0, "mix_hue_blue": 0.0, "mix_sat_blue": 0.0, "mix_lum_blue": 0.0, "mix_hue_purple": 0.0, "mix_sat_purple": 0.0, "mix_lum_purple": 0.0, "mix_hue_magenta": 0.0, "mix_sat_magenta": 0.0, "mix_lum_magenta": 0.0, "wm_film": "off",
+    "fine_rotation": 0.0, "distortion": 0.0, "keystone_v": 0.0, "keystone_h": 0.0, "chroma_denoise": 0.0, "local_contrast": 0.0, "print_snap": 0.0, "print_toe": 0.0, "print_toe_width": 2.5, "print_shoulder": 0.0, "print_shoulder_width": 2.5, "lab_fade": 0.0, "lab_glow": 0.0, "lab_by_shadows": 0.0, "lab_by_mids": 0.0, "lab_by_highs": 0.0, "lab_gm_shadows": 0.0, "lab_gm_mids": 0.0, "lab_gm_highs": 0.0, "lab_response": "none", "lab_response_amount": 1.0, "tone_curve_red": [(0, 0), (255, 255)], "tone_curve_green": [(0, 0), (255, 255)], "tone_curve_blue": [(0, 0), (255, 255)], "vibrance": 0.0, "mix_hue_red": 0.0, "mix_sat_red": 0.0, "mix_lum_red": 0.0, "mix_hue_orange": 0.0, "mix_sat_orange": 0.0, "mix_lum_orange": 0.0, "mix_hue_yellow": 0.0, "mix_sat_yellow": 0.0, "mix_lum_yellow": 0.0, "mix_hue_green": 0.0, "mix_sat_green": 0.0, "mix_lum_green": 0.0, "mix_hue_aqua": 0.0, "mix_sat_aqua": 0.0, "mix_lum_aqua": 0.0, "mix_hue_blue": 0.0, "mix_sat_blue": 0.0, "mix_lum_blue": 0.0, "mix_hue_purple": 0.0, "mix_sat_purple": 0.0, "mix_lum_purple": 0.0, "mix_hue_magenta": 0.0, "mix_sat_magenta": 0.0, "mix_lum_magenta": 0.0, "tone_hue_shadows": 0.0, "tone_amt_shadows": 0.0, "tone_hue_mids": 0.0, "tone_amt_mids": 0.0, "tone_hue_highs": 0.0, "tone_amt_highs": 0.0, "wm_film": "off",
     "vignette": 0.0, "border": 0.0,
 }
 

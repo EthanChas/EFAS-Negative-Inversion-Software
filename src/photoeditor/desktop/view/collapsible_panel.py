@@ -149,14 +149,17 @@ class _CollapsibleHeader(QWidget):
         self.update()
         super().leaveEvent(event)
 
-    def set_preset_name(self, name: str | None) -> None:
+    def set_preset_name(self, name: str | None, modified: bool = False, full_name: str | None = None, scope: str = "module") -> None:
+        """The small grey "PRESET: name" beside the title. `full_name` is what the tip names when the label shows a shortened one (a folder path); `modified` adds
+        "(edited)" for a look whose values have been changed since it was applied; `scope` is what the preset was applied to ("module" or "photo")."""
         if not name:
             self.preset_label.hide()
             self.preset_label.setToolTip("")
             return
         shown = name if len(name) <= 16 else name[:15] + "..."
-        self.preset_label.setText(f"PRESET: {shown}")
-        self.preset_label.setToolTip(f"The preset '{name}' is applied to this module")
+        self.preset_label.setText(f"PRESET: {shown}" + (" (edited)" if modified else ""))
+        tip = f"The preset '{full_name or name}' is applied to this {scope}"
+        self.preset_label.setToolTip(tip + (", and its settings have been changed since" if modified else ""))
         self.preset_label.show()
 
     def paintEvent(self, event: QPaintEvent) -> None:
@@ -306,9 +309,10 @@ class CollapsiblePanel(BevelPanel):
     def update_preset_button(self) -> QPushButton | None:
         return self._module_update_button
 
-    def set_preset_status(self, name: str | None, modified: bool) -> None:
-        """name is the preset loaded on this module (or None); the Update Preset button shows only while its values have been changed."""
-        self._header.set_preset_name(name)
+    def set_preset_status(self, name: str | None, modified: bool, full_name: str | None = None, scope: str = "module", show_edited: bool = False) -> None:
+        """name is the preset loaded on this module (or None); the Update Preset button shows only while its values have been changed. A panel that is not a module
+        (the Presets panel, for a whole look) passes its own `scope` and `show_edited` to have "(edited)" in its label instead of a button."""
+        self._header.set_preset_name(name, modified and show_edited, full_name, scope)
         button = self._module_update_button
         if button is None:
             return
