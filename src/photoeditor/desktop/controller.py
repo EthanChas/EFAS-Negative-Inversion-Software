@@ -34,8 +34,9 @@ from ..features.geometry.logic import (
     transform_rect_rotate_right,
 )
 from ..features.flatfield import check as flat_check
-from ..features.flatfield.logic import apply_flatfield, gain_token
-from ..features.flatfield.processor import gain_from_reference
+from ..features.flatfield.logic import METHODS as FLATFIELD_METHODS
+from ..features.flatfield.logic import apply_flatfield, gain_from_map, gain_token
+from ..features.flatfield.processor import reference_from_file
 from ..features.lookpresets import module_store
 from ..features.lookpresets import builtin as builtin_presets
 from ..features.lookpresets import store as look_store
@@ -52,6 +53,7 @@ from ..features.watermark import layout as wm_layout
 from ..features.errormarks import logic as error_marks_logic
 from ..features.colormix import logic as color_mix_logic
 from ..features.edgebleed import logic as edge_logic
+from ..features.edgecolor import logic as ec_logic
 from ..features.lablook import logic as lab_look_logic
 from ..features.printresponse import logic as print_response_logic
 from ..features.geometry import corners as corners_logic
@@ -106,7 +108,7 @@ BW_SATURATION = -1.0
 
 LOOK_FIELDS = (
     "exposure_ev", "tone_curve_points", "tone_curve_red", "tone_curve_green", "tone_curve_blue", "negative_inverted", "saturation", "temperature", "tint", "shadows", "highlights",
-    "contrast", "local_contrast", "print_snap", "print_toe", "print_toe_width", "print_shoulder", "print_shoulder_width", "lab_fade", "lab_glow", "lab_by_shadows", "lab_by_mids", "lab_by_highs", "lab_gm_shadows", "lab_gm_mids", "lab_gm_highs", "lab_response", "lab_response_amount", "vibrance", "mix_hue_red", "mix_sat_red", "mix_lum_red", "mix_hue_orange", "mix_sat_orange", "mix_lum_orange", "mix_hue_yellow", "mix_sat_yellow", "mix_lum_yellow", "mix_hue_green", "mix_sat_green", "mix_lum_green", "mix_hue_aqua", "mix_sat_aqua", "mix_lum_aqua", "mix_hue_blue", "mix_sat_blue", "mix_lum_blue", "mix_hue_purple", "mix_sat_purple", "mix_lum_purple", "mix_hue_magenta", "mix_sat_magenta", "mix_lum_magenta", "tone_hue_shadows", "tone_amt_shadows", "tone_hue_mids", "tone_amt_mids", "tone_hue_highs", "tone_amt_highs", "edge_holder", "edge_bleed", "edge_dodge", "edge_reach", "edge_mask", "edge_feather", "edge_mask_color", "edge_mask_meter", "vignette", "vignette_size", "border", "border_color", "sharpen_amount", "sharpen_radius", "sharpen_masking", "sharpen_method", "film_type", "invert_r", "invert_g",
+    "contrast", "local_contrast", "print_snap", "print_toe", "print_toe_width", "print_shoulder", "print_shoulder_width", "lab_fade", "lab_glow", "lab_by_shadows", "lab_by_mids", "lab_by_highs", "lab_gm_shadows", "lab_gm_mids", "lab_gm_highs", "lab_response", "lab_response_amount", "vibrance", "mix_hue_red", "mix_sat_red", "mix_lum_red", "mix_hue_orange", "mix_sat_orange", "mix_lum_orange", "mix_hue_yellow", "mix_sat_yellow", "mix_lum_yellow", "mix_hue_green", "mix_sat_green", "mix_lum_green", "mix_hue_aqua", "mix_sat_aqua", "mix_lum_aqua", "mix_hue_blue", "mix_sat_blue", "mix_lum_blue", "mix_hue_purple", "mix_sat_purple", "mix_lum_purple", "mix_hue_magenta", "mix_sat_magenta", "mix_lum_magenta", "tone_hue_shadows", "tone_amt_shadows", "tone_hue_mids", "tone_amt_mids", "tone_hue_highs", "tone_amt_highs", "edge_holder", "edge_bleed", "edge_dodge", "edge_reach", "edge_mask", "edge_feather", "edge_mask_color", "edge_mask_meter", "ec_tint", "ec_warmth", "ec_light", "ec_size", "ec_shape", "vignette", "vignette_size", "border", "border_color", "sharpen_amount", "sharpen_radius", "sharpen_masking", "sharpen_method", "film_type", "invert_r", "invert_g",
     "invert_b", "chroma_denoise", "wm_film", "wm_texture", "wm_size", "wm_position", "wm_info", "wm_camera", "wm_lens",
 )
 
@@ -176,6 +178,7 @@ class AppController(QObject):
         self._last_logged_color = (0.0, 0.0, 0.0)
         self._last_logged_toning: dict = {}
         self._last_logged_edge: dict = {}
+        self._last_logged_ec: dict = {}
         self._last_logged_shadows_highlights = (0.0, 0.0)
         self._last_logged_sharpen = (0.0, 1.0, 0.0, DEFAULT_METHOD)
         self._last_logged_dust = (False, DEFAULT_THRESHOLD, DEFAULT_SIZE, DEFAULT_SCRATCH_SENSITIVITY)
@@ -339,6 +342,8 @@ class AppController(QObject):
             setattr(self.state, key, float(saved.get(key, default)))
         for key, default in edge_logic.DEFAULTS.items():
             setattr(self.state, key, self._edge_value(key, saved.get(key, default)))
+        for key, default in ec_logic.DEFAULTS.items():
+            setattr(self.state, key, float(saved.get(key, default)))
         self.state.vignette = float(saved.get("vignette", 0.0))
         self.state.vignette_size = float(saved.get("vignette_size", 0.5))
         self.state.border = float(saved.get("border", 0.0))
@@ -566,6 +571,7 @@ class AppController(QObject):
         self._last_logged_color = self._color_values()
         self._last_logged_toning = self._toning_values()
         self._last_logged_edge = self._edge_values()
+        self._last_logged_ec = self._ec_values()
         self._last_logged_finish = self._finishing_values()
         self._clone_source_raw = self._clone_source_display = self._clone_offset_raw = None
         self._last_logged_ai = (self.state.ai_dust, round(self.state.ai_threshold, 4), self.state.ai_grow)
@@ -1225,6 +1231,38 @@ class AppController(QObject):
                 parts.append(f"{s.edge_mask_color} mask {s.edge_mask * 100:.1f}%")
             self._log("Edge bleed: " + (", ".join(parts) if parts else "reset"))
 
+    # ------------------------------------------------------------ Edge Color
+    def _ec_values(self) -> dict:
+        return {k: getattr(self.state, k) for k in ec_logic.KEYS}
+
+    def preview_edge_color(self, values: dict) -> None:
+        if self.state.preview_rgb is None:
+            return
+        for key in ec_logic.KEYS:
+            if key in values:
+                setattr(self.state, key, float(values[key]))
+        self._preview(LIVE_OTHER_METHODS)
+
+    def set_edge_color(self, values: dict) -> None:
+        """Edge Color: a tint, warmth and brightness correction that grows toward the picture's edges."""
+        if self.state.preview_rgb is None:
+            return
+        for key in ec_logic.KEYS:
+            if key in values:
+                setattr(self.state, key, float(values[key]))
+        self._settle()
+        now = self._ec_values()
+        if now != self._last_logged_ec:
+            self._last_logged_ec = now
+            self._log(f"Edge color: tint {now['ec_tint']:+.2f}, warmth {now['ec_warmth']:+.2f}, light {now['ec_light']:+.2f} (size {now['ec_size']:.2f}, shape {now['ec_shape']:.2f})")
+
+    def suggest_edge_color(self) -> dict | None:
+        """Tint and Warmth that bring the colour of the outer band of the picture on screen to that of its middle (added to the current ones; Light is left alone), or None with no picture."""
+        image = self.state.image_rgb
+        if image is None or image.dtype != np.uint8 or image.ndim != 3:
+            return None
+        return ec_logic.suggest(image, self._ec_values())
+
     def _edge_probe(self):
         """(the picture after its geometry, the crop rectangle in it or None) as the edge tools see it - without their own changes - or None when no photo is open."""
         base = self._render_base()
@@ -1381,12 +1419,13 @@ class AppController(QObject):
     def _load_flatfield(self, path: str | None = None) -> None:
         path = path if path is not None else self.state.image_path
         glob = edit_store.get_global_flatfield(self._db)
-        self._ff_global_info = {"has": glob is not None, "enabled": bool(glob and glob["enabled"]), "source": glob["source"] if glob else ""}
+        self._ff_global_info = {"has": glob is not None, "enabled": bool(glob and glob["enabled"]), "source": glob["source"] if glob else "",
+                                "method": glob["method"] if glob else "", "rebuildable": bool(glob and glob["reference"] is not None)}
         row = edit_store.get_folder_flatfield(self._db, edit_store.folder_key(path)) if path else None
         if row is None:
-            self._ff_info = {"has": False, "enabled": False, "source": ""}
+            self._ff_info = {"has": False, "enabled": False, "source": "", "method": "", "rebuildable": False}
         else:
-            self._ff_info = {"has": True, "enabled": row["enabled"], "source": row["source"]}
+            self._ff_info = {"has": True, "enabled": row["enabled"], "source": row["source"], "method": row["method"], "rebuildable": row["reference"] is not None}
         use = edit_store.effective_flatfield(self._db, path) if path else None
         self._ff = (gain_token(use["gain"]), use["gain"]) if use is not None else None
         self._ff_scope = use["scope"] if use is not None else ""
@@ -1398,7 +1437,7 @@ class AppController(QObject):
         path = self.state.image_path
         folder = os.path.basename(os.path.dirname(path)) if path else ""
         return {
-            **self._ff_info, "folder": folder, "folder_path": os.path.dirname(path) if path else "",
+            **self._ff_info, "method_choice": self.flatfield_method(), "folder": folder, "folder_path": os.path.dirname(path) if path else "",
             "open": path is not None, "busy": self._ff_worker is not None,
             "permanent": dict(self._ff_global_info), "scope": self._ff_scope,
         }
@@ -1408,15 +1447,42 @@ class AppController(QObject):
         if self.state.image_path is not None:
             self._settle()
 
+    def flatfield_method(self) -> str:
+        """The method new flat fields are made with (and the one the panel offers to switch the saved ones to): efas, negpy or improved."""
+        method = app_settings.get("flatfield_method")
+        return method if method in FLATFIELD_METHODS else "efas"
+
+    def set_flatfield_method(self, method: str) -> None:
+        """Choose the flat-field method. It is remembered for the flat fields made from now on, and the folder's flat field and the permanent one are made again by it from the
+        reference they were built from (one built before methods existed has no reference kept, so it stays as it is until its reference is picked again)."""
+        if method not in FLATFIELD_METHODS or method == self.flatfield_method():
+            return
+        app_settings.save({"flatfield_method": method})
+        changed = []
+        path = self.state.image_path
+        if path is not None:
+            key = edit_store.folder_key(path)
+            row = edit_store.get_folder_flatfield(self._db, key)
+            if row is not None and row["reference"] is not None:
+                edit_store.update_folder_flatfield_gain(self._db, key, gain_from_map(row["reference"], method), method)
+                changed.append("this folder's")
+        glob = edit_store.get_global_flatfield(self._db)
+        if glob is not None and glob["reference"] is not None:
+            edit_store.update_global_flatfield_gain(self._db, gain_from_map(glob["reference"], method), method)
+            changed.append("the permanent")
+        self._reapply_flatfield()
+        self.notice.emit(f"Flat field method: {FLATFIELD_METHODS[method]}" + (f" (made {' and '.join(changed)} flat field again with it)" if changed else ""))
+
     def set_permanent_flatfield_from_reference(self, reference_path: str) -> None:
         """Bakes one reference shot (a scan of the bare light) into the permanent flat field: from then on it applies to every photo, in every folder, in
         every session, and to exports - except a photo whose own folder has a flat field switched on."""
+        method = self.flatfield_method()
         try:
-            gain = run_blocking(lambda: gain_from_reference(reference_path))
+            reference = run_blocking(lambda: reference_from_file(reference_path))
         except Exception as exc:
             self.notice.emit(f"Permanent flat field: couldn't read that reference image ({exc})")
             return
-        edit_store.set_global_flatfield(self._db, gain, os.path.basename(reference_path))
+        edit_store.set_global_flatfield(self._db, gain_from_map(reference, method), os.path.basename(reference_path), method=method, reference=reference)
         self._reapply_flatfield()
         self.notice.emit("Permanent flat field set - it applies to every photo")
 
@@ -1427,7 +1493,7 @@ class AppController(QObject):
         if row is None:
             self.notice.emit("This folder has no flat field to make permanent.")
             return
-        edit_store.set_global_flatfield(self._db, row["gain"], row["source"] or "a folder")
+        edit_store.set_global_flatfield(self._db, row["gain"], row["source"] or "a folder", method=row["method"], reference=row["reference"])
         self._reapply_flatfield()
         self.notice.emit("This folder's flat field is now the permanent one - it applies to every photo")
 
@@ -1441,8 +1507,8 @@ class AppController(QObject):
         edit_store.delete_global_flatfield(self._db)
         self._reapply_flatfield()
 
-    def _store_folder_flatfield(self, folder_path: str, gain, source: str) -> None:
-        edit_store.set_folder_flatfield(self._db, edit_store.folder_key(folder_path, is_file=False), gain, source)
+    def _store_folder_flatfield(self, folder_path: str, gain, source: str, method: str = "efas", reference=None) -> None:
+        edit_store.set_folder_flatfield(self._db, edit_store.folder_key(folder_path, is_file=False), gain, source, method=method, reference=reference)
         path = self.state.image_path
         if path is not None and edit_store.folder_key(path) == edit_store.folder_key(folder_path, is_file=False):
             self._load_flatfield(path)
@@ -1472,12 +1538,13 @@ class AppController(QObject):
         if path is None:
             self.notice.emit("Open a photo from the folder first.")
             return
+        method = self.flatfield_method()
         try:
-            gain = run_blocking(lambda: gain_from_reference(reference_path))
+            reference = run_blocking(lambda: reference_from_file(reference_path))
         except Exception as exc:
             self.notice.emit(f"Flat field: couldn't read that reference image ({exc})")
             return
-        self._store_folder_flatfield(os.path.dirname(path), gain, os.path.basename(reference_path))
+        self._store_folder_flatfield(os.path.dirname(path), gain_from_map(reference, method), os.path.basename(reference_path), method, reference)
         self.notice.emit(f"Flat field set for {os.path.basename(os.path.dirname(path))}")
 
     def start_roll_flatfield(self) -> None:
@@ -1509,12 +1576,14 @@ class AppController(QObject):
             worker.wait(5000)
         self.flatfield_busy_changed.emit(False)
 
-    def _on_roll_flatfield_done(self, folder: str, gain) -> None:
+    def _on_roll_flatfield_done(self, folder: str, reference) -> None:
         self._finish_roll_worker()
-        if gain is None:
+        if reference is None:
             self.notice.emit("Flat field: cancelled")
             return
-        self._store_folder_flatfield(folder, gain, "Auto (Roll)")
+        method = self.flatfield_method()
+        gain = gain_from_map(reference, method)
+        self._store_folder_flatfield(folder, gain, "Auto (Roll)", method, reference)
         self.notice.emit(f"Flat field built from the roll in {os.path.basename(folder)}")
         self.flatfield_checked.emit(flat_check.check_gain(gain))
 
@@ -2394,6 +2463,7 @@ class AppController(QObject):
             **{k: getattr(s, k) for k in lab_look_logic.ALL_KEYS},
             **{k: getattr(s, k) for k in color_mix_logic.KEYS},
             **{k: getattr(s, k) for k in edge_logic.KEYS},
+            **{k: getattr(s, k) for k in ec_logic.KEYS},
             metering=s.metering,
             vignette=s.vignette,
             vignette_size=s.vignette_size,
@@ -2514,6 +2584,7 @@ class AppController(QObject):
             **self._lab_values(),
             **self._color_values(),
             **self._edge_values(),
+            **self._ec_values(),
             "vignette": s.vignette,
             "vignette_size": s.vignette_size,
             "border": s.border,
@@ -2578,6 +2649,8 @@ class AppController(QObject):
         for key, default in color_mix_logic.DEFAULTS.items():
             setattr(self.state, key, default)
         for key, default in edge_logic.DEFAULTS.items():
+            setattr(self.state, key, default)
+        for key, default in ec_logic.DEFAULTS.items():
             setattr(self.state, key, default)
         self.state.vignette, self.state.vignette_size, self.state.border, self.state.border_color = 0.0, 0.5, 0.0, "white"
         self.state.metering = Metering()
@@ -2771,7 +2844,7 @@ class AppController(QObject):
         self._last_logged_local = entry.local_contrast
         s.print_snap, s.print_toe, s.print_toe_width, s.print_shoulder, s.print_shoulder_width = (
             entry.print_snap, entry.print_toe, entry.print_toe_width, entry.print_shoulder, entry.print_shoulder_width)
-        for key in (*lab_look_logic.ALL_KEYS, *color_mix_logic.KEYS, *edge_logic.KEYS):
+        for key in (*lab_look_logic.ALL_KEYS, *color_mix_logic.KEYS, *edge_logic.KEYS, *ec_logic.KEYS):
             setattr(s, key, getattr(entry, key))
         self._last_logged_print = self._print_values()
         s.vignette, s.vignette_size, s.border, s.border_color = entry.vignette, entry.vignette_size, entry.border, entry.border_color
@@ -3719,7 +3792,7 @@ class AppController(QObject):
             EditParams.from_state(s),
             exposure_ev=0.0, tone_curve_points=tuple(tuple(p) for p in DEFAULT_POINTS), tone_curve_red=tuple(DEFAULT_POINTS), tone_curve_green=tuple(DEFAULT_POINTS), tone_curve_blue=tuple(DEFAULT_POINTS), saturation=0.0, temperature=0.0, tint=0.0, shadows=0.0,
             highlights=0.0, sharpen_amount=0.0, dust_auto=False, scratch_lines=(), heal_strokes=(), clone_strokes=(), ai_dust=False, contrast=0.0,
-            chroma_denoise=0.0, local_contrast=0.0, print_snap=0.0, print_toe=0.0, print_shoulder=0.0, **lab_look_logic.ALL_DEFAULTS, **color_mix_logic.DEFAULTS, **edge_logic.DEFAULTS, vignette=0.0, border=0.0, wm_film="off", wm_info=False, crop_rect=None,
+            chroma_denoise=0.0, local_contrast=0.0, print_snap=0.0, print_toe=0.0, print_shoulder=0.0, **lab_look_logic.ALL_DEFAULTS, **color_mix_logic.DEFAULTS, **edge_logic.DEFAULTS, **ec_logic.DEFAULTS, vignette=0.0, border=0.0, wm_film="off", wm_info=False, crop_rect=None,
             rotation_quarter_turns=0, flip_h=False, flip_v=False, fine_rotation=0.0, distortion=0.0, keystone_v=0.0, keystone_h=0.0,
         )
         scanned = self._negative_base()
@@ -3870,7 +3943,7 @@ class AppController(QObject):
             exposure_ev=0.0, tone_curve_points=tuple(tuple(p) for p in DEFAULT_POINTS), tone_curve_red=tuple(DEFAULT_POINTS), tone_curve_green=tuple(DEFAULT_POINTS), tone_curve_blue=tuple(DEFAULT_POINTS),
             saturation=0.0, temperature=0.0, tint=0.0, shadows=0.0, highlights=0.0, sharpen_amount=0.0,
             dust_auto=False, scratch_lines=(), heal_strokes=(), clone_strokes=(), ai_dust=False, contrast=0.0, chroma_denoise=0.0, local_contrast=0.0,
-            print_snap=0.0, print_toe=0.0, print_shoulder=0.0, **lab_look_logic.ALL_DEFAULTS, **color_mix_logic.DEFAULTS, **edge_logic.DEFAULTS,
+            print_snap=0.0, print_toe=0.0, print_shoulder=0.0, **lab_look_logic.ALL_DEFAULTS, **color_mix_logic.DEFAULTS, **edge_logic.DEFAULTS, **ec_logic.DEFAULTS,
             vignette=0.0, border=0.0 if not keep_frame else EditParams.from_state(self.state).border,
             wm_film="off", wm_info=False,
         )

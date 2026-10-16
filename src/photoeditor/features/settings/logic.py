@@ -49,6 +49,7 @@ DEFAULTS: dict[str, Any] = {
     "slideshow_video_size": "1920x1080",
     "slideshow_video_fps": 30,
     "ffmpeg_path": "",
+    "flatfield_method": "improved",
     "plugins_enabled": {},
     "theme": "modern",
     "theme_accent": ACCENTS[0][0],
@@ -91,6 +92,8 @@ def _clean(data: Any) -> dict[str, Any]:
     volume = data.get("slideshow_volume")
     if isinstance(volume, int) and not isinstance(volume, bool):
         out["slideshow_volume"] = max(0, min(100, volume))
+    if data.get("flatfield_method") in ("efas", "negpy", "improved"):
+        out["flatfield_method"] = data["flatfield_method"]
     if data.get("slideshow_video_size") in ("1280x720", "1920x1080", "2560x1440", "3840x2160"):
         out["slideshow_video_size"] = data["slideshow_video_size"]
     if data.get("slideshow_video_fps") in (24, 25, 30):

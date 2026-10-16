@@ -1,6 +1,7 @@
 from PyQt6.QtCore import pyqtSignal
-from PyQt6.QtWidgets import QCheckBox, QFileDialog, QHBoxLayout, QLabel, QMenu, QProgressBar, QPushButton, QWidget
+from PyQt6.QtWidgets import QCheckBox, QComboBox, QFileDialog, QHBoxLayout, QLabel, QMenu, QProgressBar, QPushButton, QWidget
 
+from ...features.flatfield import logic as ff_logic
 from ...features.open_image.logic import file_dialog_filter
 from ...theme.tokens import THEME
 from .collapsible_panel import CollapsiblePanel
@@ -24,6 +25,7 @@ class FlatFieldPanel(CollapsiblePanel):
     permanent_from_folder_requested = pyqtSignal()
     permanent_remove_requested = pyqtSignal()
     permanent_enabled_toggled = pyqtSignal(bool)
+    method_changed = pyqtSignal(str)
 
     def __init__(self, parent: QWidget | None = None):
         super().__init__(
@@ -50,6 +52,20 @@ class FlatFieldPanel(CollapsiblePanel):
         self._hint.setProperty("role", "hint")
         self._hint.setWordWrap(True)
         body.addWidget(self._hint)
+
+        method_row = QHBoxLayout()
+        method_row.setSpacing(THEME.space_sm)
+        method_row.addWidget(QLabel("Method"))
+        self._method = QComboBox()
+        for key, label in ff_logic.METHODS.items():
+            self._method.addItem(label, key)
+        self._method.currentIndexChanged.connect(lambda _i: self.method_changed.emit(self._method.currentData()))
+        method_row.addWidget(self._method, 1)
+        body.addLayout(method_row)
+        self._method_note = QLabel("")
+        self._method_note.setProperty("role", "hint")
+        self._method_note.setWordWrap(True)
+        body.addWidget(self._method_note)
 
         self._enable = QCheckBox("Apply to this folder")
         self._enable.toggled.connect(self.enabled_toggled)
@@ -148,6 +164,15 @@ class FlatFieldPanel(CollapsiblePanel):
             self._hint.setText(f"Active for '{folder}' (from {info['source'] or 'a reference'}) - applies to every photo in it.")
         else:
             self._hint.setText(f"Saved for '{folder}' but switched off.")
+        choice = info.get("method_choice", ff_logic.METHOD_DEFAULT)
+        self._method.blockSignals(True)
+        self._method.setCurrentIndex(max(0, self._method.findData(choice)))
+        self._method.blockSignals(False)
+        self._method.setEnabled(not busy)
+        note = ff_logic.METHOD_NOTES.get(choice, "")
+        if has and info.get("method") and info.get("method") != choice:
+            note += f" This folder's flat field was made with {ff_logic.METHODS.get(info['method'], info['method'])}" + ("." if info.get("rebuildable") else " before the methods existed and its reference was not kept: pick the reference again to use the method above.")
+        self._method_note.setText(note)
         self._enable.blockSignals(True)
         self._enable.setChecked(bool(info["enabled"]))
         self._enable.blockSignals(False)

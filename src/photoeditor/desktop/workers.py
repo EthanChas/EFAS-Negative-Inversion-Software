@@ -53,7 +53,7 @@ def run_blocking(fn):
 
 
 class FlatFieldWorker(QThread):
-    """Builds a flat-field gain map from every frame of a folder ("Auto (Roll)")
+    """Builds the flat-field reference map from every frame of a folder ("Auto (Roll)")
     off the UI thread - decoding a roll's worth of frames takes a while."""
 
     progress = pyqtSignal(int, int, str)
@@ -69,11 +69,11 @@ class FlatFieldWorker(QThread):
         self._cancel = True
 
     def run(self) -> None:
-        from ..features.flatfield.processor import gain_from_roll
+        from ..features.flatfield.processor import reference_from_roll
 
         try:
-            gain = gain_from_roll(self._paths, self.progress.emit, lambda: self._cancel)
+            reference = reference_from_roll(self._paths, self.progress.emit, lambda: self._cancel)
         except Exception as exc:
             self.failed.emit(str(exc))
             return
-        self.done.emit(gain)
+        self.done.emit(reference)   # the pooled reference map (None if cancelled): the controller makes the gain from it by the chosen method

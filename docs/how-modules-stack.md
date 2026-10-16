@@ -14,7 +14,7 @@ Every module works on the output of the one before it, in a fixed order. Nothing
 8. **Tone Curve.** The RGB curve first, then the red, green and blue curves, each on the output of the one before.
 9. **Lab Look tone** (Fade, Glow, warm / magenta balance by tone). The tone curve and this come after steps 3 to 6 and are one lookup table.
 10. **Colour in OKLCH**: Vibrance and the Color Mixer, then the Lab Look's scanner colour response, then **Color Toning** last.
-11. **Sharpening**, then crop, **Vignette**, **Watermark**, the **Border mask** (Edge Bleed) and **Border** (Finishing).
+11. **Sharpening**, then crop, **Edge Color** (on the cropped picture), **Vignette**, **Watermark**, the **Border mask** (Edge Bleed) and **Border** (Finishing).
 
 When none of the steps in 7 is in use, steps 4 to 6, 8 and 9 are merged into one lookup table per channel; the order is the same.
 

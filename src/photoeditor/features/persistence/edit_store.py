@@ -73,7 +73,9 @@ CREATE TABLE IF NOT EXISTS folder_flatfield (
     source TEXT NOT NULL DEFAULT '',
     height INTEGER NOT NULL,
     width INTEGER NOT NULL,
-    gain BLOB NOT NULL
+    gain BLOB NOT NULL,
+    method TEXT NOT NULL DEFAULT 'efas',
+    reference BLOB
 )
 """
 
@@ -84,7 +86,9 @@ CREATE TABLE IF NOT EXISTS global_flatfield (
     source TEXT NOT NULL DEFAULT '',
     height INTEGER NOT NULL,
     width INTEGER NOT NULL,
-    gain BLOB NOT NULL
+    gain BLOB NOT NULL,
+    method TEXT NOT NULL DEFAULT 'efas',
+    reference BLOB
 )
 """
 
@@ -298,6 +302,11 @@ _MIGRATIONS = (
     ("edge_feather", "REAL", "0.5"),
     ("edge_mask_color", "TEXT", "'black'"),
     ("edge_mask_meter", "INTEGER", "1"),
+    ("ec_tint", "REAL", "0.0"),
+    ("ec_warmth", "REAL", "0.0"),
+    ("ec_light", "REAL", "0.0"),
+    ("ec_size", "REAL", "0.5"),
+    ("ec_shape", "REAL", "0.0"),
     ("vignette", "REAL", "0.0"),
     ("vignette_size", "REAL", "0.5"),
     ("border", "REAL", "0.0"),
@@ -414,6 +423,11 @@ _FIELDS = (
     ("edge_feather", "plain"),
     ("edge_mask_color", "plain"),
     ("edge_mask_meter", "bool"),
+    ("ec_tint", "plain"),
+    ("ec_warmth", "plain"),
+    ("ec_light", "plain"),
+    ("ec_size", "plain"),
+    ("ec_shape", "plain"),
     ("vignette", "plain"),
     ("vignette_size", "plain"),
     ("border", "plain"),
@@ -461,6 +475,12 @@ def connect(db_path: str) -> sqlite3.Connection:
 
 
 def _migrate(conn: sqlite3.Connection) -> None:
+    for table in ("folder_flatfield", "global_flatfield"):   # flat fields made before the methods existed keep the gain they have (built the EFAS way) and have no reference to rebuild from
+        have = {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
+        if "method" not in have:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN method TEXT NOT NULL DEFAULT 'efas'")
+        if "reference" not in have:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN reference BLOB")
     existing = {row[1] for row in conn.execute("PRAGMA table_info(edits)")}
     for column, sql_type, default in _MIGRATIONS:
         if column not in existing:
@@ -566,33 +586,52 @@ def folder_key(path_or_folder: str, is_file: bool = True) -> str:
     return os.path.normcase(os.path.abspath(folder))
 
 
-def set_folder_flatfield(conn: sqlite3.Connection, folder: str, gain: np.ndarray, source: str = "", enabled: bool = True) -> None:
+def _reference_blob(reference) -> bytes | None:
+    return None if reference is None else np.ascontiguousarray(reference, dtype=np.float32).tobytes()
+
+
+def _read_flatfield(row) -> dict | None:
+    enabled, source, h, w, blob, method, ref_blob = row
+    try:
+        gain = np.frombuffer(blob, dtype=np.float32).reshape(h, w, 3).copy()
+    except ValueError:
+        return None
+    reference = None
+    if ref_blob is not None:
+        try:
+            reference = np.frombuffer(ref_blob, dtype=np.float32).reshape(h, w, 3).copy()
+        except ValueError:
+            reference = None
+    return {"gain": gain, "enabled": bool(enabled), "source": source, "method": method or "efas", "reference": reference}
+
+
+def set_folder_flatfield(conn: sqlite3.Connection, folder: str, gain: np.ndarray, source: str = "", enabled: bool = True, method: str = "efas", reference=None) -> None:
+    """Save a folder's flat field: its gain map, the method that made it and (so the method can be changed later) the small linear reference map it was made from."""
     gain = np.ascontiguousarray(gain, dtype=np.float32)
     h, w = gain.shape[:2]
     conn.execute(
         """
-        INSERT INTO folder_flatfield (folder, enabled, source, height, width, gain) VALUES (?, ?, ?, ?, ?, ?)
+        INSERT INTO folder_flatfield (folder, enabled, source, height, width, gain, method, reference) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(folder) DO UPDATE SET enabled=excluded.enabled, source=excluded.source,
-            height=excluded.height, width=excluded.width, gain=excluded.gain
+            height=excluded.height, width=excluded.width, gain=excluded.gain, method=excluded.method, reference=excluded.reference
         """,
-        (folder, int(enabled), source, h, w, gain.tobytes()),
+        (folder, int(enabled), source, h, w, gain.tobytes(), method, _reference_blob(reference)),
     )
     conn.commit()
 
 
 def get_folder_flatfield(conn: sqlite3.Connection, folder: str) -> dict | None:
-    """{"gain": (h, w, 3) float32, "enabled": bool, "source": str} or None."""
+    """{"gain": (h, w, 3) float32, "enabled": bool, "source": str, "method": str, "reference": (h, w, 3) float32 or None} or None."""
     row = conn.execute(
-        "SELECT enabled, source, height, width, gain FROM folder_flatfield WHERE folder = ?", (folder,)
+        "SELECT enabled, source, height, width, gain, method, reference FROM folder_flatfield WHERE folder = ?", (folder,)
     ).fetchone()
-    if row is None:
-        return None
-    enabled, source, h, w, blob = row
-    try:
-        gain = np.frombuffer(blob, dtype=np.float32).reshape(h, w, 3).copy()
-    except ValueError:
-        return None
-    return {"gain": gain, "enabled": bool(enabled), "source": source}
+    return None if row is None else _read_flatfield(row)
+
+
+def update_folder_flatfield_gain(conn: sqlite3.Connection, folder: str, gain: np.ndarray, method: str) -> None:
+    """Replace a folder's gain map with one made from its stored reference by another method."""
+    conn.execute("UPDATE folder_flatfield SET gain = ?, method = ? WHERE folder = ?", (np.ascontiguousarray(gain, dtype=np.float32).tobytes(), method, folder))
+    conn.commit()
 
 
 def set_folder_flatfield_enabled(conn: sqlite3.Connection, folder: str, enabled: bool) -> None:
@@ -605,32 +644,30 @@ def delete_folder_flatfield(conn: sqlite3.Connection, folder: str) -> None:
     conn.commit()
 
 
-def set_global_flatfield(conn: sqlite3.Connection, gain: np.ndarray, source: str = "", enabled: bool = True) -> None:
+def set_global_flatfield(conn: sqlite3.Connection, gain: np.ndarray, source: str = "", enabled: bool = True, method: str = "efas", reference=None) -> None:
     """The one permanent flat field: it applies to every photo that has no flat field of its own folder's."""
     gain = np.ascontiguousarray(gain, dtype=np.float32)
     h, w = gain.shape[:2]
     conn.execute(
         """
-        INSERT INTO global_flatfield (id, enabled, source, height, width, gain) VALUES (1, ?, ?, ?, ?, ?)
+        INSERT INTO global_flatfield (id, enabled, source, height, width, gain, method, reference) VALUES (1, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET enabled=excluded.enabled, source=excluded.source,
-            height=excluded.height, width=excluded.width, gain=excluded.gain
+            height=excluded.height, width=excluded.width, gain=excluded.gain, method=excluded.method, reference=excluded.reference
         """,
-        (int(enabled), source, h, w, gain.tobytes()),
+        (int(enabled), source, h, w, gain.tobytes(), method, _reference_blob(reference)),
     )
     conn.commit()
 
 
 def get_global_flatfield(conn: sqlite3.Connection) -> dict | None:
-    """{"gain": (h, w, 3) float32, "enabled": bool, "source": str} or None."""
-    row = conn.execute("SELECT enabled, source, height, width, gain FROM global_flatfield WHERE id = 1").fetchone()
-    if row is None:
-        return None
-    enabled, source, h, w, blob = row
-    try:
-        gain = np.frombuffer(blob, dtype=np.float32).reshape(h, w, 3).copy()
-    except ValueError:
-        return None
-    return {"gain": gain, "enabled": bool(enabled), "source": source}
+    """{"gain": (h, w, 3) float32, "enabled": bool, "source": str, "method": str, "reference": (h, w, 3) float32 or None} or None."""
+    row = conn.execute("SELECT enabled, source, height, width, gain, method, reference FROM global_flatfield WHERE id = 1").fetchone()
+    return None if row is None else _read_flatfield(row)
+
+
+def update_global_flatfield_gain(conn: sqlite3.Connection, gain: np.ndarray, method: str) -> None:
+    conn.execute("UPDATE global_flatfield SET gain = ?, method = ? WHERE id = 1", (np.ascontiguousarray(gain, dtype=np.float32).tobytes(), method))
+    conn.commit()
 
 
 def set_global_flatfield_enabled(conn: sqlite3.Connection, enabled: bool) -> None:
@@ -1014,7 +1051,7 @@ _UNTOUCHED = {
     "exposure_ev": 0.0, "rotation_quarter_turns": 0, "flip_h": False, "flip_v": False, "crop_rect": None, "saturation": 0.0,
     "temperature": 0.0, "tint": 0.0, "shadows": 0.0, "highlights": 0.0, "sharpen_amount": 0.0, "dust_auto": False,
     "scratch_lines": [], "heal_strokes": [], "clone_strokes": [], "dust_excluded": [], "error_marks": [], "modules_off": [], "ai_dust": False, "marks": {}, "film_type": "auto", "invert_r": 0.0, "invert_g": 0.0, "invert_b": 0.0, "contrast": 0.0,
-    "fine_rotation": 0.0, "distortion": 0.0, "keystone_v": 0.0, "keystone_h": 0.0, "chroma_denoise": 0.0, "local_contrast": 0.0, "print_snap": 0.0, "print_toe": 0.0, "print_toe_width": 2.5, "print_shoulder": 0.0, "print_shoulder_width": 2.5, "lab_fade": 0.0, "lab_glow": 0.0, "lab_by_shadows": 0.0, "lab_by_mids": 0.0, "lab_by_highs": 0.0, "lab_gm_shadows": 0.0, "lab_gm_mids": 0.0, "lab_gm_highs": 0.0, "lab_response": "none", "lab_response_amount": 1.0, "tone_curve_red": [(0, 0), (255, 255)], "tone_curve_green": [(0, 0), (255, 255)], "tone_curve_blue": [(0, 0), (255, 255)], "vibrance": 0.0, "mix_hue_red": 0.0, "mix_sat_red": 0.0, "mix_lum_red": 0.0, "mix_hue_orange": 0.0, "mix_sat_orange": 0.0, "mix_lum_orange": 0.0, "mix_hue_yellow": 0.0, "mix_sat_yellow": 0.0, "mix_lum_yellow": 0.0, "mix_hue_green": 0.0, "mix_sat_green": 0.0, "mix_lum_green": 0.0, "mix_hue_aqua": 0.0, "mix_sat_aqua": 0.0, "mix_lum_aqua": 0.0, "mix_hue_blue": 0.0, "mix_sat_blue": 0.0, "mix_lum_blue": 0.0, "mix_hue_purple": 0.0, "mix_sat_purple": 0.0, "mix_lum_purple": 0.0, "mix_hue_magenta": 0.0, "mix_sat_magenta": 0.0, "mix_lum_magenta": 0.0, "tone_hue_shadows": 0.0, "tone_amt_shadows": 0.0, "tone_hue_mids": 0.0, "tone_amt_mids": 0.0, "tone_hue_highs": 0.0, "tone_amt_highs": 0.0, "edge_holder": 0.0, "edge_bleed": 0.0, "edge_dodge": 0.0, "edge_reach": 0.08, "edge_mask": 0.0, "edge_feather": 0.5, "edge_mask_color": "black", "edge_mask_meter": True, "wm_film": "off",
+    "fine_rotation": 0.0, "distortion": 0.0, "keystone_v": 0.0, "keystone_h": 0.0, "chroma_denoise": 0.0, "local_contrast": 0.0, "print_snap": 0.0, "print_toe": 0.0, "print_toe_width": 2.5, "print_shoulder": 0.0, "print_shoulder_width": 2.5, "lab_fade": 0.0, "lab_glow": 0.0, "lab_by_shadows": 0.0, "lab_by_mids": 0.0, "lab_by_highs": 0.0, "lab_gm_shadows": 0.0, "lab_gm_mids": 0.0, "lab_gm_highs": 0.0, "lab_response": "none", "lab_response_amount": 1.0, "tone_curve_red": [(0, 0), (255, 255)], "tone_curve_green": [(0, 0), (255, 255)], "tone_curve_blue": [(0, 0), (255, 255)], "vibrance": 0.0, "mix_hue_red": 0.0, "mix_sat_red": 0.0, "mix_lum_red": 0.0, "mix_hue_orange": 0.0, "mix_sat_orange": 0.0, "mix_lum_orange": 0.0, "mix_hue_yellow": 0.0, "mix_sat_yellow": 0.0, "mix_lum_yellow": 0.0, "mix_hue_green": 0.0, "mix_sat_green": 0.0, "mix_lum_green": 0.0, "mix_hue_aqua": 0.0, "mix_sat_aqua": 0.0, "mix_lum_aqua": 0.0, "mix_hue_blue": 0.0, "mix_sat_blue": 0.0, "mix_lum_blue": 0.0, "mix_hue_purple": 0.0, "mix_sat_purple": 0.0, "mix_lum_purple": 0.0, "mix_hue_magenta": 0.0, "mix_sat_magenta": 0.0, "mix_lum_magenta": 0.0, "tone_hue_shadows": 0.0, "tone_amt_shadows": 0.0, "tone_hue_mids": 0.0, "tone_amt_mids": 0.0, "tone_hue_highs": 0.0, "tone_amt_highs": 0.0, "edge_holder": 0.0, "edge_bleed": 0.0, "edge_dodge": 0.0, "edge_reach": 0.08, "edge_mask": 0.0, "edge_feather": 0.5, "edge_mask_color": "black", "edge_mask_meter": True, "ec_tint": 0.0, "ec_warmth": 0.0, "ec_light": 0.0, "ec_size": 0.5, "ec_shape": 0.0, "wm_film": "off",
     "vignette": 0.0, "border": 0.0,
 }
 

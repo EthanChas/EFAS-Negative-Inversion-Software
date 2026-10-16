@@ -11,6 +11,7 @@ from ..finishing.logic import BORDER_COLORS, BORDER_MAX, DEFAULT_BORDER_COLOR, D
 from ..negative.logic import FILM_TYPE_LABELS, FILM_TYPES
 from ..colormix import logic as color_mix
 from ..edgebleed import logic as edge_bleed
+from ..edgecolor import logic as edge_color
 from ..lablook import logic as lab_look
 from ..printresponse import logic as print_response
 from ..sharpening.logic import DEFAULT_METHOD, METHOD_LABELS, SharpenMethod
@@ -67,6 +68,11 @@ MODULES: tuple[ModuleSpec, ...] = (
     ModuleSpec("colormixer", "Color mixer", (
         _trim("vibrance", "Vibrance"),
         *(_trim(f"mix_{kind}_{band}", f"{band.capitalize()} {label}") for band in color_mix.BANDS for kind, label in (("hue", "hue"), ("sat", "saturation"), ("lum", "lightness"))),
+    )),
+    ModuleSpec("edgecolor", "Edge color", (
+        _trim("ec_tint", "Edge tint (green / magenta)"), _trim("ec_warmth", "Edge warmth (blue / yellow)"), _trim("ec_light", "Edge brightness"),
+        FieldSpec("ec_size", "Edge size", "float", edge_color.DEFAULTS["ec_size"], *edge_color.SIZE_RANGE),
+        FieldSpec("ec_shape", "Edge shape", "float", 0.0, 0.0, 1.0),
     )),
     ModuleSpec("edgebleed", "Edge bleed", (
         FieldSpec("edge_holder", "Fill holder and sprockets", "float", 0.0, 0.0, 1.0),
@@ -125,6 +131,7 @@ PANEL_MODULES: dict[str, tuple[str, tuple[str, ...]]] = {
     "colormixer": ("Color Mixer", ("colormixer",)),
     "colortoning": ("Color Toning", ("colortoning",)),
     "edgebleed": ("Edge Bleed", ("edgebleed",)),
+    "edgecolor": ("Edge Color", ("edgecolor",)),
     "tonecurve": ("Tone Curve", ("tonecurve",)),
     "shadows_highlights": ("Shadows & Highlights", ("shadows_highlights",)),
     "color": ("Color", ("whitebalance", "color")),

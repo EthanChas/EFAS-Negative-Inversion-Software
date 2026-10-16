@@ -48,6 +48,7 @@ from ..features.lut.logic import (
     apply_channel_lut, apply_wide_lut, identity_ramp, is_identity, ramp_to_lut, to_uint8, wide_ramp, wide_ramp_to_lut,
 )
 from ..features.edgebleed import logic as edge_logic
+from ..features.edgecolor import logic as ec_logic
 from ..features.flatfield.logic import apply_flatfield
 from ..features.negative.logic import (
     analysis_region,
@@ -180,6 +181,11 @@ class EditParams:
     edge_feather: float = 0.5
     edge_mask_color: str = "black"
     edge_mask_meter: bool = True
+    ec_tint: float = 0.0
+    ec_warmth: float = 0.0
+    ec_light: float = 0.0
+    ec_size: float = 0.5
+    ec_shape: float = 0.0
     vignette: float = 0.0
     vignette_size: float = 0.5
     border: float = 0.0
@@ -307,6 +313,11 @@ class EditParams:
             edge_feather=float(getattr(s, "edge_feather", 0.5)),
             edge_mask_color=str(getattr(s, "edge_mask_color", "black")),
             edge_mask_meter=bool(getattr(s, "edge_mask_meter", True)),
+            ec_tint=float(getattr(s, "ec_tint", 0.0)),
+            ec_warmth=float(getattr(s, "ec_warmth", 0.0)),
+            ec_light=float(getattr(s, "ec_light", 0.0)),
+            ec_size=float(getattr(s, "ec_size", 0.5)),
+            ec_shape=float(getattr(s, "ec_shape", 0.0)),
             vignette=float(getattr(s, "vignette", 0.0)),
             vignette_size=float(getattr(s, "vignette_size", 0.5)),
             border=float(getattr(s, "border", 0.0)),
@@ -631,6 +642,8 @@ class Renderer:
                 source = self._flatfielded(source, token, flatfield)
                 token = (token, flatfield[0])
             edge_values = {k: getattr(params, k) for k in edge_logic.KEYS}
+            ec_values = {k: getattr(params, k) for k in ec_logic.KEYS}
+            ec_active = not ec_logic.is_neutral(ec_values)
             if source.dtype == np.uint16:
                 source16 = source
                 source = self._as_uint8(source, token)
@@ -721,7 +734,7 @@ class Renderer:
                     pixels = apply_color(pixels, color_values, color_response, params.lab_response_amount)
             elif wide:
                 final = lab(tone(ramp))
-                if deep and not (params.sharpen_amount or params.vignette or watermark_active(params.wm_film) or params.marks.wanted(params.wm_info, params.wm_camera, params.wm_lens, watermark_active(params.wm_film)) or params.border > 0):
+                if deep and not (ec_active or params.sharpen_amount or params.vignette or watermark_active(params.wm_film) or params.marks.wanted(params.wm_info, params.wm_camera, params.wm_lens, watermark_active(params.wm_film)) or params.border > 0):
                     table = np.clip(np.rint(final[0].T * np.float32(65535.0 / 255.0)), 0, 65535).astype(np.uint16)
                     pixels = np.empty(pixels16.shape, dtype=np.uint16)
                     for c in range(3):
@@ -744,6 +757,8 @@ class Renderer:
             if overlay:
                 base_hw = (round(image.shape[0] / scale), round(image.shape[1] / scale))
                 overlay_rgba = self._build_overlay(retouched, params, base_width, base_hw)
+            if ec_active:   # the edges' colour and brightness, on the finished and cropped picture, before the vignette
+                image = ec_logic.apply_edge_color(image, ec_values)
             if params.vignette:
                 image = apply_vignette(image, params.vignette, params.vignette_size)
             if watermark_active(params.wm_film):

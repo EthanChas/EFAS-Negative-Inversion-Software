@@ -41,6 +41,7 @@ from .local_contrast_panel import LocalContrastToolPanel
 from .color_mixer_panel import ColorMixerToolPanel
 from .color_toning_panel import ColorToningToolPanel
 from .edge_bleed_panel import EdgeBleedPanel
+from .edge_color_panel import EdgeColorPanel
 from .slideshow_view import SlideshowView
 from .lab_look_panel import LabLookToolPanel
 from .print_response_panel import PrintResponseToolPanel
@@ -466,7 +467,7 @@ class AppWindow(QMainWindow):
 
         self._module_menus = ModuleMenus(self.controller, self)
         for key, panel in (
-            ("exposure", self._exposure_tool), ("contrast", self._contrast_tool), ("printresponse", self._print_response_tool), ("lablook", self._lab_look_tool), ("colormixer", self._color_mixer_tool), ("colortoning", self._color_toning_tool), ("edgebleed", self._edge_tool), ("tonecurve", self._curve_tool),
+            ("exposure", self._exposure_tool), ("contrast", self._contrast_tool), ("printresponse", self._print_response_tool), ("lablook", self._lab_look_tool), ("colormixer", self._color_mixer_tool), ("colortoning", self._color_toning_tool), ("edgebleed", self._edge_tool), ("edgecolor", self._edge_color_tool), ("tonecurve", self._curve_tool),
             ("shadows_highlights", self._shadows_highlights_tool), ("color", self._color_tool), ("sharpening", self._sharpening_tool),
             ("localcontrast", self._local_contrast_tool), ("denoise", self._denoise_tool), ("negative", self._negative_tool),
             ("watermark", self._watermark_tool), ("finishing", self._finishing_tool),
@@ -1140,6 +1141,11 @@ class AppWindow(QMainWindow):
         self._color_toning_tool.changed.connect(self.controller.set_color_toning)
         self._color_toning_tool.preview_requested.connect(self.controller.preview_color_toning)
 
+        self._edge_color_tool = EdgeColorPanel()
+        self._edge_color_tool.changed.connect(self.controller.set_edge_color)
+        self._edge_color_tool.preview_requested.connect(self.controller.preview_edge_color)
+        self._edge_color_tool.auto_requested.connect(self._on_edge_color_auto)
+
         self._curve_tool = ToneCurveToolPanel()
         self._curve_tool.curve_changed.connect(self.controller.set_tone_curve)
         self._curve_tool.preview_requested.connect(self.controller.preview_tone_curve)
@@ -1217,6 +1223,7 @@ class AppWindow(QMainWindow):
         self._flatfield_tool.cancel_requested.connect(self.controller.cancel_roll_flatfield)
         self._flatfield_tool.remove_requested.connect(self.controller.clear_folder_flatfield)
         self._flatfield_tool.enabled_toggled.connect(self.controller.set_flatfield_enabled)
+        self._flatfield_tool.method_changed.connect(self.controller.set_flatfield_method)
         self._flatfield_tool.permanent_reference_picked.connect(self._on_permanent_flatfield_picked)
         self._flatfield_tool.permanent_from_folder_requested.connect(self.controller.make_folder_flatfield_permanent)
         self._flatfield_tool.permanent_remove_requested.connect(self.controller.clear_permanent_flatfield)
@@ -1372,7 +1379,7 @@ class AppWindow(QMainWindow):
             return SlideOutPanel(scroll), col
 
         # Color: white balance and saturation, the colour mixer, then the lab's look (the last word on colour)
-        self._color_panel, color_col = new_tab([self._color_tool, self._color_mixer_tool, self._color_toning_tool, self._lab_look_tool])
+        self._color_panel, color_col = new_tab([self._color_tool, self._color_mixer_tool, self._color_toning_tool, self._lab_look_tool, self._edge_color_tool])
         tool_row.addWidget(self._color_panel, 0)
         # Detail, in the order the picture is made: chroma noise, local contrast, sharpening last
         self._detail_panel, detail_col = new_tab([self._denoise_tool, self._local_contrast_tool, self._sharpening_tool])
@@ -2623,6 +2630,8 @@ class AppWindow(QMainWindow):
         self._edge_tool.reset()
         self._edge_tool.set_values(self.controller._edge_values())
         self._edge_tool.show_status(self.controller.edge_bleed_info()["text"])
+        self._edge_color_tool.reset()
+        self._edge_color_tool.set_values(self.controller._ec_values())
         self._watermark_tool.set_values(
             state.wm_film, state.wm_texture, state.wm_size, state.wm_position, state.wm_info, state.wm_camera, state.wm_lens
         )
@@ -2797,6 +2806,12 @@ class AppWindow(QMainWindow):
         self._flatfield_tool.show_message(result.headline)
         if not result.ok:
             self._show_flat_check(result, "The flat field built from this roll")
+
+    def _on_edge_color_auto(self) -> None:
+        """Edge Color's Auto: set Tint, Warmth and Light so the picture's outer band matches its middle."""
+        values = self.controller.suggest_edge_color()
+        if values is not None:
+            self._edge_color_tool.apply_suggestion(values)
 
     def _on_edge_estimate(self) -> None:
         """Edge Bleed's Auto strength: fit the repair to how the picture's own edge brightens toward the clear border."""
@@ -3181,6 +3196,7 @@ class AppWindow(QMainWindow):
         self._color_mixer_tool.set_values(self.controller._color_values())
         self._color_toning_tool.set_values(self.controller._toning_values())
         self._edge_tool.set_values(self.controller._edge_values())
+        self._edge_color_tool.set_values(self.controller._ec_values())
         self._watermark_tool.set_values(
             state.wm_film, state.wm_texture, state.wm_size, state.wm_position, state.wm_info, state.wm_camera, state.wm_lens
         )

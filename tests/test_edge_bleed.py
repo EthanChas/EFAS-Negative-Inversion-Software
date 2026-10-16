@@ -189,7 +189,10 @@ _SCRIPT = textwrap.dedent(r"""
 
     # the sliders, the colour and the checkbox reach the state
     tool._rows["edge_mask"].set_value(0.04); tool._on_value_changed(); pump(1.0)
-    tool._colour.setCurrentIndex(tool._colour.findData("white")); tool._meter.setChecked(False); pump(1.0)
+    tool._colour.setCurrentIndex(tool._colour.findData("white")); tool._meter.setChecked(False)
+    end = time.time() + 20
+    while time.time() < end and c.state.image_rgb[0, 0].min() <= 240:   # the settle is debounced and the render takes a moment: wait for the picture, not for a fixed time
+        app.processEvents(); time.sleep(0.02)
     assert abs(c.state.edge_mask - 0.04) < 1e-6 and c.state.edge_mask_color == "white" and c.state.edge_mask_meter is False
     image = c.state.image_rgb
     assert image[0, 0].min() > 240, "the white mask is on the picture"

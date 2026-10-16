@@ -114,6 +114,11 @@ class HistoryEntry:
     edge_feather: float = 0.5
     edge_mask_color: str = "black"
     edge_mask_meter: bool = True
+    ec_tint: float = 0.0
+    ec_warmth: float = 0.0
+    ec_light: float = 0.0
+    ec_size: float = 0.5
+    ec_shape: float = 0.0
     keystone_v: float = 0.0
     keystone_h: float = 0.0
     metering: Metering = field(default_factory=Metering)
@@ -268,6 +273,11 @@ class AppState:
     edge_feather: float = 0.5
     edge_mask_color: str = "black"
     edge_mask_meter: bool = True
+    ec_tint: float = 0.0
+    ec_warmth: float = 0.0
+    ec_light: float = 0.0
+    ec_size: float = 0.5
+    ec_shape: float = 0.0
     vignette: float = 0.0
     vignette_size: float = 0.5
     border: float = 0.0

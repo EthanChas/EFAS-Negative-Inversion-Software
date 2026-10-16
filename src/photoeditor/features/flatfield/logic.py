@@ -35,34 +35,63 @@ def _shrink(frame: np.ndarray) -> np.ndarray:
     return frame
 
 
-def compute_gain(reference_rgb: np.ndarray) -> np.ndarray:
-    """Per-channel gain = mean(blur) / blur, from a uint8 reference, on a downsampled copy."""
-    return _gain_from_linear(_shrink(_to_linear(reference_rgb)))
+METHODS = {"efas": "EFAS (original)", "negpy": "NegPy", "improved": "Improved"}
+METHOD_DEFAULT = "improved"
+METHOD_NOTES = {
+    "efas": "EFAS's first method: a 5x5 median filter against dust on the light, then a blur of 1/16 of the long side. It smooths the steep falloff at the borders away, so the edges stay about 13% dark.",
+    "negpy": "NegPy's method: the same blur of 1/16 of the long side, with no dust filter. It leaves the edges as dark as EFAS's original does.",
+    "improved": "A 5x5 median filter against dust, then a blur of 1/64 of the long side with the edge pixels repeated outward rather than mirrored, so the falloff at the borders is kept. The edges come out within 1-3% of the middle.",
+}
+_SMOOTH_DIV = 16.0     # EFAS and NegPy blur with a sigma of the long side / 16
+_IMPROVED_DIV = 64.0   # Improved with the long side / 64
 
 
-def _gain_from_linear(ref: np.ndarray) -> np.ndarray:
+def reference_map(reference_rgb: np.ndarray) -> np.ndarray:
+    """The reference (a scan of the bare light) as the small linear map every method starts from. It is kept with the flat field, so the method can be changed later."""
+    return _shrink(_to_linear(reference_rgb))
+
+
+def gain_from_map(ref: np.ndarray, method: str = "efas") -> np.ndarray:
+    """The per-channel gain (mean of the blurred map / the blurred map) from a small linear reference map, by one of METHODS."""
     cv2 = _cv()
-    if min(ref.shape[:2]) >= 8:
-        ref = cv2.medianBlur(np.ascontiguousarray(ref, dtype=np.float32), 5)  # specks of dust on the light source or the lens must not become dark spots in the gain map
-    sigma = max(ref.shape[:2]) / 16.0
-    blur = np.clip(cv2.GaussianBlur(ref, (0, 0), sigmaX=sigma, sigmaY=sigma), 1e-4, None)
+    method = method if method in METHODS else "efas"
+    ref = np.ascontiguousarray(ref, dtype=np.float32)
+    if method != "negpy" and min(ref.shape[:2]) >= 8:
+        ref = cv2.medianBlur(ref, 5)  # specks of dust on the light source or the lens must not become dark spots in the gain map
+    sigma = max(ref.shape[:2]) / (_IMPROVED_DIV if method == "improved" else _SMOOTH_DIV)
+    border = cv2.BORDER_REPLICATE if method == "improved" else cv2.BORDER_REFLECT_101
+    blur = np.clip(cv2.GaussianBlur(ref, (0, 0), sigmaX=sigma, sigmaY=sigma, borderType=border), 1e-4, None)
     means = blur.reshape(-1, blur.shape[2]).mean(axis=0)
     gain = means[None, None, :] / blur
     return np.clip(gain, _GAIN_MIN, _GAIN_MAX).astype(np.float32)
 
 
-def pool_gain_from_frames(frames: list[np.ndarray], percentile: float = _POOL_PERCENTILE) -> np.ndarray:
+def compute_gain(reference_rgb: np.ndarray, method: str = "efas") -> np.ndarray:
+    """Per-channel gain from a uint8 or uint16 reference, on a downsampled copy, by one of METHODS."""
+    return gain_from_map(reference_map(reference_rgb), method)
+
+
+def _gain_from_linear(ref: np.ndarray, method: str = "efas") -> np.ndarray:
+    return gain_from_map(ref, method)
+
+
+def pool_reference_from_frames(frames: list[np.ndarray], percentile: float = _POOL_PERCENTILE) -> np.ndarray:
     """Roll-wide stand-in for a dedicated blank-light reference: a per-pixel,
     per-channel high percentile across many frames. Picture content varies
     frame to frame and pulls a given pixel down from clear film's own reading
     there; the light's falloff does not - so a high percentile across enough
-    frames converges on the light itself. Frames are uint8 RGB of any size."""
+    frames converges on the light itself. Frames are uint8 RGB of any size.
+    Returns the small linear reference map (see reference_map)."""
     small = [_shrink(_to_linear(f)) for f in frames]
     h = min(s.shape[0] for s in small)
     w = min(s.shape[1] for s in small)
     stack = np.stack([s[:h, :w] for s in small], axis=0)
-    pooled = np.percentile(stack, percentile, axis=0).astype(np.float32)
-    return _gain_from_linear(pooled)
+    return np.percentile(stack, percentile, axis=0).astype(np.float32)
+
+
+def pool_gain_from_frames(frames: list[np.ndarray], percentile: float = _POOL_PERCENTILE, method: str = "efas") -> np.ndarray:
+    """The gain map of the pooled reference (see pool_reference_from_frames)."""
+    return gain_from_map(pool_reference_from_frames(frames, percentile), method)
 
 
 def gain_token(gain: np.ndarray) -> str:

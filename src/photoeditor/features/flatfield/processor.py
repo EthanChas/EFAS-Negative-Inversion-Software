@@ -6,7 +6,7 @@ from PIL import Image
 
 from ..open_image.logic import is_raw
 from ..open_image.processor import load_image_rgb
-from .logic import POOL_MIN_FRAMES, compute_gain, pool_gain_from_frames
+from .logic import POOL_MIN_FRAMES, gain_from_map, pool_reference_from_frames, reference_map
 
 _FRAME_MAX_DIM = 640
 
@@ -23,13 +23,18 @@ def load_small_frame(path: str) -> np.ndarray:
     return np.array(img)
 
 
-def gain_from_reference(path: str) -> np.ndarray:
+def reference_from_file(path: str) -> np.ndarray:
+    """The small linear reference map of one dedicated reference shot (a scan of the bare light)."""
+    return reference_map(load_image_rgb(path))
+
+
+def gain_from_reference(path: str, method: str = "efas") -> np.ndarray:
     """A gain map from one dedicated reference shot (a scan of the bare light)."""
-    return compute_gain(load_image_rgb(path))
+    return gain_from_map(reference_from_file(path), method)
 
 
-def gain_from_roll(paths: list[str], progress=None, cancelled=None):
-    """A gain map pooled from every frame in paths."""
+def reference_from_roll(paths: list[str], progress=None, cancelled=None):
+    """The small linear reference map pooled from every frame in paths (None if cancelled)."""
     frames = []
     total = len(paths)
     for i, path in enumerate(paths):
@@ -43,4 +48,10 @@ def gain_from_roll(paths: list[str], progress=None, cancelled=None):
             progress(i + 1, total, path)
     if len(frames) < POOL_MIN_FRAMES:
         raise ValueError(f"Auto (Roll) needs at least {POOL_MIN_FRAMES} readable frames; this folder has {len(frames)}.")
-    return pool_gain_from_frames(frames)
+    return pool_reference_from_frames(frames)
+
+
+def gain_from_roll(paths: list[str], progress=None, cancelled=None, method: str = "efas"):
+    """A gain map pooled from every frame in paths."""
+    ref = reference_from_roll(paths, progress, cancelled)
+    return None if ref is None else gain_from_map(ref, method)
