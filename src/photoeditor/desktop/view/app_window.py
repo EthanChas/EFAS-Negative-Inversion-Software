@@ -72,7 +72,9 @@ from ...features.settings import logic as app_settings
 from ...features.slideshow import logic as slideshow_logic
 from ...theme import runtime as theme_runtime
 from ...features.library.index import LibraryIndex, read_record
+from ...features.livefolder import filing as live_filing
 from ...features.livefolder import logic as live_logic
+from ...features.browse.processor import load_edited_thumbnail
 from ...features.focuspeaking.logic import overlay_from_levels
 from ...features.whitebalance.logic import range_overlay, range_share
 from ...features.contactsheet.logic import SheetOptions
@@ -374,6 +376,10 @@ class AppWindow(QMainWindow):
         self._quick_export = False
         self._index_worker = None
         self._live = LiveFolder(self)
+        self._live_session: list[str] = list(app_settings.get("live_session"))   # photos that arrived in the live folder and are not filed yet
+        self._live_aside: list[str] = list(app_settings.get("live_aside"))       # the photos of it that were retaken, set aside
+        self._retake: str | None = None                                          # the photo the next arrival replaces
+        self._retake_note = ""                                                   # why a retake could not be done, for the arrival's message
         self._update_worker = None
         self._export_paths_override: list[str] = []
         self._peaking_request = 0
@@ -470,6 +476,9 @@ class AppWindow(QMainWindow):
         self._lighttable.live_folder_requested.connect(self.choose_live_folder)
         self._lighttable.live_editor_toggled.connect(lambda on: app_settings.save({"live_open_editor": on}))
         self._lighttable.set_live_editor(app_settings.get("live_open_editor"))
+        self._lighttable.finish_requested.connect(self.finish_live_session)
+        self._lighttable.retake_requested.connect(self.arm_retake)
+        self._lighttable.set_session(len(self._live_session))
         self.controller.rating_changed.connect(lambda path, stars: self._lighttable.update_item(library_query.norm(path), rating=stars))
         self.controller.flag_changed.connect(lambda path, flag: self._lighttable.update_item(library_query.norm(path), flag=flag))
         self.controller.history_changed.connect(self._mark_lighttable_edited)
@@ -491,6 +500,7 @@ class AppWindow(QMainWindow):
         self._filmstrip = Filmstrip()
         self._filmstrip.image_selected.connect(self.controller.open_file)
         self._filmstrip.remove_requested.connect(self.remove_photos)
+        self._filmstrip.retake_requested.connect(self.arm_retake)
         self._filmstrip.crop_roll_requested.connect(lambda: self.bulk_crop("auto"))
         self._filmstrip.reset_crops_requested.connect(lambda: self.bulk_crop("reset"))
         self._filmstrip.undo_roll_requested.connect(self.undo_roll_action)
@@ -646,6 +656,18 @@ class AppWindow(QMainWindow):
         self._live_action.setToolTip("Watch the folder your camera software saves into: each photo that lands in it is shown as it arrives (the same switch as the Workbench's Live Folder button)")
         self._live_action.toggled.connect(self.set_live_folder)
         file_menu.addAction(self._live_action)
+        self._finish_live_action = QAction("Finish Live Session...", self)
+        self._finish_live_action.setToolTip("Put the photos that arrived in the Live Folder into a dated folder (DD-MM-YYYY), with their edits, ratings, flags and tags")
+        self._finish_live_action.triggered.connect(self.finish_live_session)
+        file_menu.addAction(self._finish_live_action)
+        self._retake_action = QAction("Retake Open Photo", self)
+        self._retake_action.setToolTip("Shoot the open photo again: the next photo that arrives in the Live Folder takes its place, and this one is set aside in a Retakes folder")
+        self._retake_action.triggered.connect(lambda: self._photo_action_for_open(lambda paths: self.arm_retake(paths[0])))
+        file_menu.addAction(self._retake_action)
+        self._cancel_retake_action = QAction("Cancel Retake", self)
+        self._cancel_retake_action.setEnabled(False)
+        self._cancel_retake_action.triggered.connect(self.cancel_retake)
+        file_menu.addAction(self._cancel_retake_action)
         file_menu.addSeparator()
 
         self._merge_action = QAction("Merge Scans...", self)
@@ -2055,9 +2077,19 @@ class AppWindow(QMainWindow):
         self._live_action.blockSignals(True)
         self._live_action.setChecked(on)
         self._live_action.blockSignals(False)
+        self._lighttable.set_retake(self._retake)
+        self._cancel_retake_action.setEnabled(self._retake is not None)
+        self._lighttable.set_session(len(self._live_session))
 
     def _on_live_arrived(self, paths: list[str]) -> None:
-        """Photos landed in the live folder: they are read into the library, shown in the Workbench (the newest one selected) and, if asked, opened in the editor."""
+        """Photos landed in the live folder: they are read into the library, shown in the Workbench (the newest one selected) and, if asked, opened in the editor. When a retake is
+        waiting, the first of them takes the place of the photo being retaken."""
+        added = list(paths)
+        swapped = self._take_retake(paths[0]) if self._retake else None
+        if swapped is not None:
+            target, in_session = swapped
+            paths = [target, *paths[1:]]
+            added = paths[1:] + ([target] if in_session else [])
         last = paths[-1]
         records = []
         for path in paths:
@@ -2071,7 +2103,13 @@ class AppWindow(QMainWindow):
                 index.upsert(records)
             finally:
                 index.close()
-        message = live_logic.describe(paths)
+        self._remember_session(added)
+        name = os.path.basename(paths[0])
+        message = (f"Retake: the new photo is {name}. The old one is set aside in its Retakes folder, and the new one starts with the old one's edits."
+                   if swapped is not None else live_logic.describe(paths))
+        if swapped is None and self._retake_note:
+            message += " " + self._retake_note
+        self._retake_note = ""
         if self.lighttable_active():
             self._lighttable_reload_rows()
             if not self._lighttable.select_path(last):
@@ -2082,6 +2120,133 @@ class AppWindow(QMainWindow):
             if library_query.norm(last) not in {library_query.norm(p) for p in self._filmstrip.paths()}:
                 self._on_library_folder_selected(os.path.dirname(last))   # the filmstrip lists the folder again, with the new frame in it
             self.open_in_editor(last)
+
+    def _remember_session(self, added: list[str]) -> None:
+        """The photos that arrived are part of the session until it is finished (kept across restarts)."""
+        norm = library_query.norm
+        have = {norm(p) for p in self._live_session}
+        for path in added:
+            if norm(path) not in have:
+                self._live_session.append(path)
+                have.add(norm(path))
+        app_settings.save({"live_session": self._live_session, "live_aside": self._live_aside})
+        self._lighttable.set_session(len(self._live_session))
+
+    # ------------------------------------------------------------ retakes
+    def arm_retake(self, path: str) -> None:
+        """Retake a photo: shoot it again, and the next photo that arrives replaces it - it takes the name and place of this one, which is set aside in a Retakes folder beside it (never
+        deleted). Choosing the same photo again cancels."""
+        norm = library_query.norm
+        if self._retake and norm(self._retake) == norm(path):
+            self.cancel_retake()
+            return
+        if not os.path.isfile(path):
+            self._coord_label.setText("That photo is not on disk any more, so it cannot be retaken.")
+            return
+        if not self._live.running() and not self.set_live_folder(True):
+            self._coord_label.setText("A retake needs the Live Folder on, to catch the new photo. Turn it on, then ask again.")
+            return
+        self._retake = path
+        self._sync_live_ui()
+        name = os.path.basename(path)
+        self._coord_label.setText(f"Retake armed for {name}: take the photo again. The next photo to arrive replaces it (this one is set aside in a Retakes folder). Choose Retake again to cancel.")
+        self._lighttable.set_index_status(f"Retake: waiting for the new {name}")
+
+    def cancel_retake(self) -> None:
+        if self._retake is None:
+            return
+        self._retake = None
+        self._sync_live_ui()
+        self._coord_label.setText("Retake cancelled.")
+        self._lighttable.set_index_status("Retake cancelled")
+
+    def _take_retake(self, new: str) -> tuple[str, bool] | None:
+        """The photo waiting to be retaken is set aside and `new` takes its name and place. Returns (where the new photo is, whether the old one belonged to this session), or None when it
+        could not be done - the new photo is then an ordinary arrival."""
+        old, self._retake = self._retake, None
+        self._sync_live_ui()
+        name = os.path.basename(old)
+        if not os.path.isfile(old):
+            self._retake_note = f"The photo to retake ({name}) is not there any more, so the new photo is kept as it is."
+            return None
+        c = self.controller
+        norm = library_query.norm
+        open_here = bool(c.state.image_path) and norm(c.state.image_path) == norm(old)
+        if open_here:
+            c._save_edit_state()   # what was done to the old photo moves on to the retake
+        try:
+            aside, target = live_filing.swap_in_retake(old, new)
+        except OSError as exc:
+            self._retake_note = f"The retake could not replace {name} ({exc}), so the new photo is kept as it is."
+            return None
+        self._live.ignore([aside, target])
+        c.swap_in_retake(old, aside, target)
+        in_session = norm(old) in {norm(p) for p in self._live_session}
+        if in_session:
+            self._live_aside.append(aside)
+            self._live_session = [target if norm(p) == norm(old) else p for p in self._live_session]
+        if open_here and not self._lighttable.live_editor():
+            c.open_file(target)   # the editor shows the new file, not the one that was set aside
+        return target, in_session
+
+    # ------------------------------------------------------------ finishing a session
+    def finish_live_session(self) -> None:
+        """Done with the photos that arrived in the live folder: put them into a dated folder (DD-MM-YYYY, by the day of each file) inside it, and the retaken ones that were set aside into a
+        Retakes folder in that. Everything saved for a photo - edits, rating, flag, tags, versions - and its folder's flat field and Roll Card go with it. Nothing is deleted."""
+        norm = library_query.norm
+        folder = self._live.folder() or app_settings.get("live_folder")
+        plan = live_filing.finish_plan([p for p in self._live_session if os.path.isfile(p)], [p for p in self._live_aside if os.path.isfile(p)], folder)
+        if not plan:
+            self._live_session, self._live_aside = [], []
+            app_settings.save({"live_session": [], "live_aside": []})
+            self._lighttable.set_session(0)
+            self._coord_label.setText("Nothing to file: the photos of this session are already in their dated folders, or are gone.")
+            return
+        kept = [(src, dst) for src, dst in plan if os.path.basename(os.path.dirname(dst)) != live_filing.RETAKES]
+        days = sorted({os.path.basename(os.path.dirname(dst)) for _src, dst in kept}) or sorted({os.path.basename(os.path.dirname(os.path.dirname(dst))) for _s, dst in plan})
+        text = (f"Move {len(kept)} photo{'s' if len(kept) != 1 else ''} from this live session into {'a dated folder' if len(days) == 1 else 'dated folders'} ({', '.join(days)})?\n\n"
+                "Each photo goes with its edits, ratings, flags and tags.")
+        if len(plan) > len(kept):
+            n = len(plan) - len(kept)
+            text += f"\n{n} retaken photo{'s' if n != 1 else ''} that were set aside go into a Retakes folder beside them."
+        text += "\n\nNothing is deleted."
+        if QMessageBox.question(self, "Finish Session", text) != QMessageBox.StandardButton.Yes:
+            return
+        c = self.controller
+        was_on, watching = self._live.running(), self._live.folder()
+        self._live.stop()   # the filed photos would look new in their new folders
+        open_path = c.state.image_path
+        if open_path and norm(open_path) in {norm(src) for src, _dst in plan}:
+            c._save_edit_state()
+        cache = thumbnail_cache_dir()
+        moved: dict[str, str] = {}
+        failed: list[str] = []
+        for src, dst in plan:
+            thumbnail = load_edited_thumbnail(cache, src)
+            try:
+                final = live_filing.move_photo(src, dst)
+            except OSError:
+                failed.append(src)
+                continue
+            c.relocate_photo(src, final, thumbnail)
+            moved[norm(src)] = final
+        self._live_session = [p for p in self._live_session if os.path.isfile(p) and norm(p) not in moved]
+        self._live_aside = [p for p in self._live_aside if os.path.isfile(p) and norm(p) not in moved]
+        app_settings.save({"live_session": self._live_session, "live_aside": self._live_aside})
+        if was_on:
+            self._live.start(watching)
+        self._sync_live_ui()
+        self._lighttable_reload_rows()
+        self.lighttable_refresh()
+        if open_path and norm(open_path) in moved:
+            c.open_file(moved[norm(open_path)])   # the editor's open photo is at its new path now
+        elif self._filmstrip_folder and os.path.isdir(self._filmstrip_folder):
+            self._on_library_folder_selected(self._filmstrip_folder)
+        message = f"Filed {len(moved)} photo{'s' if len(moved) != 1 else ''} into {', '.join(days)}."
+        if failed:
+            message += f" {len(failed)} could not be moved and stay in the session."
+        self._coord_label.setText(message)
+        self._lighttable.set_index_status(message)
 
     def _on_index_finished(self, added: int, changed: int, removed: int) -> None:
         self._index_worker = None

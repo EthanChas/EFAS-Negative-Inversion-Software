@@ -62,7 +62,8 @@ from ..features.open_image.logic import is_raw
 from ..features.open_image.processor import load_image_rgb, make_preview_rgb, to_uint8
 from ..features.support import applog
 from ..features.library import removal as photo_removal
-from ..features.library.index import LibraryIndex
+from ..features.library.index import LibraryIndex, read_record
+from ..features.browse.processor import put_edited_thumbnail
 from ..features.persistence import edit_store, roll_undo
 from ..features.persistence import export as data_export
 from ..features.persistence.consolidate import ensure_ready as ensure_data_ready
@@ -92,7 +93,7 @@ from ..features.watermark import logic as wm
 from ..features.xmp import logic as xmp
 from ..features.whitebalance.logic import clipping_overlay
 from ..features.datadir import BACKUP_DIR, EDITS_DB
-from .paths import app_data_dir
+from .paths import app_data_dir, thumbnail_cache_dir
 from .ai_dust_worker import AiDustWorker
 from .render import EditParams, _scale_rect, RenderJob, Renderer, RenderOutput, RenderThread
 from .session import AppState, HistoryEntry, entry_from_json, entry_to_json
@@ -2224,6 +2225,35 @@ class AppController(QObject):
 
     def hidden_keys(self) -> set[str]:
         return edit_store.hidden_keys(self._db)
+
+    def relocate_photo(self, old: str, new: str, thumbnail: bytes | None = None) -> None:
+        """A photo file was moved (the Live Folder filed it into a dated folder): everything saved for it follows it to the new path, the new folder is given the old folder's own
+        settings (its flat field and Roll Card) unless it has some, and the library index and the photo's edited-look thumbnail (read before the move) follow too."""
+        edit_store.move_photo_records(self._db, old, new)
+        edit_store.copy_folder_records(self._db, edit_store.folder_key(old), edit_store.folder_key(new))
+        if thumbnail:
+            put_edited_thumbnail(thumbnail_cache_dir(), new, thumbnail)
+        index = LibraryIndex()
+        try:
+            index.remove([old])
+            index.upsert([read_record(new)])
+        finally:
+            index.close()
+
+    def swap_in_retake(self, old: str, aside: str, target: str) -> None:
+        """A retake took the place of a photo (see features/livefolder/filing.py): the photo set aside keeps everything that was saved for it and is taken off the Workbench (the file
+        is still on disk), the retake starts from the same edits, and the rating and flag - which judged the old photo - are cleared."""
+        edit_store.copy_photo_records(self._db, old, aside)
+        edit_store.move_photo_records(self._db, old, target)
+        edit_store.forget_judgement(self._db, target)
+        edit_store.hide_photos(self._db, [aside])
+        index = LibraryIndex()
+        try:
+            if target != old:
+                index.remove([old])
+            index.upsert([read_record(target)])
+        finally:
+            index.close()
 
     def delete_photos_from_disk(self, paths: list[str], trasher=None) -> "photo_removal.DeleteResult":
         """Move photos (and their EFAS sidecars) to the Recycle Bin and forget them in the library index. Edits, ratings and tags are kept so a restored file keeps its look."""

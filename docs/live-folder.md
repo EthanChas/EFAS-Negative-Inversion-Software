@@ -23,6 +23,28 @@ Camera software that makes a sub-folder for each day (EOS Utility does by defaul
 
 Photos already in the folder when you turn it on are not "new": they are read into the Workbench and left alone.
 
+## Retaking a photo
+
+If a frame came out wrong, shoot it again and let the new photo take its place:
+
+1. Select the photo in the Workbench and press **Retake This Photo** (or right-click it and choose Retake, or File > Retake Open Photo, or right-click its tile in the editor's filmstrip). The Live Folder turns on if it was off, and the status line says the retake is armed. Press the button again (it now says **Cancel Retake**) or choose File > Cancel Retake to change your mind.
+2. Shoot the frame again. The next photo to arrive **takes the old photo's name and place**: if the old one was `4N0A7869.CR2` in the day's folder, the retake is now `4N0A7869.CR2` there, in the same spot in the roll.
+3. The old photo is **set aside, not deleted**: it goes into a `Retakes` folder beside where it was, with its sidecars, and is taken off the Workbench (bring it back from **Removed Photos**). Its edits, rating, flag and tags stay with it. A second retake of the same name goes in next to the first as `_1`.
+
+The retake **starts from the old photo's edits** (crop, negative settings, film base, tags and notes), so a roll that is set up does not have to be set up again; its rating and flag are cleared, because they judged the old photo. If the retake needs different settings (a change of exposure, a different crop), use Reset in the editor. If the old photo is open in the editor, the editor shows the new file straight away.
+
+A retake only takes one photo: if several arrive at once, the first one replaces the old photo and the rest are ordinary arrivals. If the photo to retake has been moved or deleted before the new one arrives, the new photo is kept as an ordinary arrival and the status line says so.
+
+## Finishing a session
+
+Every photo that arrives is part of the **session**, until you finish it. While there are photos in it, the Workbench's top bar shows **Finish Session (n)** (also File > Finish Live Session...). When you are done shooting:
+
+1. Press **Finish Session**. It lists how many photos it will move and into which folder, and asks you to confirm.
+2. Each photo is **moved into a folder named for the day** of its file, `DD-MM-YYYY` (the same name the Export panel's date sub-folders use), inside the live folder. A day that ran past midnight makes two folders. The retaken photos that were set aside go into a `Retakes` folder inside that day's folder. Nothing is deleted, and a photo is never written over another: a name that is taken becomes `_1`, `_2`.
+3. Everything saved for a photo goes with it: its edits and their history, versions, rating, flag, tags, notes and film base, and its sidecar files. The folder's own **flat field and Roll Card are given to the dated folder** too (unless it has its own), so the roll keeps looking the way you set it up. If the Live Folder was on it stays on, and the filed photos are not reported as new.
+
+The session is kept when you close the editor, so you can finish it the next day. Only the photos that arrived during the live session are moved: the others in the folder are left alone, and so is a photo you retook that was not part of the session (it is replaced where it is).
+
 ## If nothing shows
 
 - The folder must be the one the camera software really saves into. Shoot one frame and look for the file in that folder in Explorer.

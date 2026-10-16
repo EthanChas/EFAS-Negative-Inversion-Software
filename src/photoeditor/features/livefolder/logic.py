@@ -43,6 +43,13 @@ class LiveWatch:
                 del self._growing[key]
         return [path for _mtime, path in sorted(ready)]
 
+    def ignore(self, paths: list[str]) -> None:
+        """Photos the editor itself has put in the folder (a set-aside retake) are not news."""
+        for path in paths:
+            key = _key(path)
+            self._seen.add(key)
+            self._growing.pop(key, None)
+
     def pending(self) -> int:
         """How many new files are still arriving."""
         return len(self._growing)

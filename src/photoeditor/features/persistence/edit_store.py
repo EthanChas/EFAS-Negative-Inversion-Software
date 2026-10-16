@@ -1042,6 +1042,53 @@ def hidden_keys(conn: sqlite3.Connection) -> set[str]:
     return {os.path.normcase(os.path.abspath(p)) for p in hidden_paths(conn)}
 
 
+def _tables_with(conn: sqlite3.Connection, column: str) -> list[tuple[str, list[str]]]:
+    """The tables that have a column of this name, with all their columns (so a table added later is covered too)."""
+    out = []
+    for (name,) in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'").fetchall():
+        columns = [row[1] for row in conn.execute(f'PRAGMA table_info("{name}")')]
+        if column in columns:
+            out.append((name, columns))
+    return out
+
+
+def move_photo_records(conn: sqlite3.Connection, old: str, new: str) -> None:
+    """A photo file has another path now: everything saved for it (edits and their history, versions, snapshots, rating, flag, tags, film base, hidden state) follows it."""
+    if old == new:
+        return
+    for name, _columns in _tables_with(conn, "path"):
+        conn.execute(f'UPDATE OR REPLACE "{name}" SET path = ? WHERE path = ?', (new, old))
+    conn.commit()
+
+
+def copy_photo_records(conn: sqlite3.Connection, old: str, new: str) -> None:
+    """Everything saved for a photo, saved again for another path (the original keeps its own)."""
+    for name, columns in _tables_with(conn, "path"):
+        names = ", ".join(f'"{c}"' for c in columns)
+        picks = ", ".join("?" if c == "path" else f'"{c}"' for c in columns)
+        conn.execute(f'INSERT OR REPLACE INTO "{name}" ({names}) SELECT {picks} FROM "{name}" WHERE path = ?', (new, old))
+    conn.commit()
+
+
+def forget_judgement(conn: sqlite3.Connection, path: str) -> None:
+    """A photo's rating and flag are dropped (they judged another photo that was in its place)."""
+    conn.execute("DELETE FROM flags WHERE path = ?", (path,))
+    conn.execute("DELETE FROM ratings WHERE path = ?", (path,))
+    conn.commit()
+
+
+def copy_folder_records(conn: sqlite3.Connection, old_folder: str, new_folder: str) -> None:
+    """A folder's own settings (its flat field, Roll Card, film base and light references) are given to a folder that photos were moved into - unless that folder has its own.
+    Both folders are spelled as folder_key() spells them."""
+    if old_folder == new_folder:
+        return
+    for name, columns in _tables_with(conn, "folder"):
+        names = ", ".join(f'"{c}"' for c in columns)
+        picks = ", ".join("?" if c == "folder" else f'"{c}"' for c in columns)
+        conn.execute(f'INSERT OR IGNORE INTO "{name}" ({names}) SELECT {picks} FROM "{name}" WHERE folder = ?', (new_folder, old_folder))
+    conn.commit()
+
+
 def tag_counts(conn: sqlite3.Connection) -> list[tuple[str, int]]:
     """Every tag in use with how many photos carry it, most used first."""
     return [(t, n) for t, n in conn.execute("SELECT tag, COUNT(*) FROM tags GROUP BY tag COLLATE NOCASE ORDER BY COUNT(*) DESC, tag COLLATE NOCASE")]

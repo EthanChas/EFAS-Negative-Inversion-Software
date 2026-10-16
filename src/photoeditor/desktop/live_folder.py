@@ -37,6 +37,11 @@ class LiveFolder(QObject):
     def folder(self) -> str:
         return self._watch.folder if self._watch is not None else ""
 
+    def ignore(self, paths: list[str]) -> None:
+        """Files the editor itself put in the folder (a set-aside retake) are not news."""
+        if self._watch is not None:
+            self._watch.ignore(paths)
+
     def poll(self) -> list[str]:
         """Look now (the timer does this; the tests do it too). A big folder that is slow to read is looked at less often."""
         if self._watch is None:

@@ -51,6 +51,8 @@ DEFAULTS: dict[str, Any] = {
     "ffmpeg_path": "",
     "live_folder": "",
     "live_open_editor": True,
+    "live_session": [],
+    "live_aside": [],
     "flatfield_method": "improved",
     "plugins_enabled": {},
     "theme": "modern",
@@ -73,7 +75,7 @@ def settings_path() -> str:
 
 def _clean(data: Any) -> dict[str, Any]:
     """Unknown keys are dropped and a wrong-typed value falls back to its default, so a damaged file never stops the app."""
-    out = {k: (dict(v) if isinstance(v, dict) else v) for k, v in DEFAULTS.items()}
+    out = {k: (dict(v) if isinstance(v, dict) else list(v) if isinstance(v, list) else v) for k, v in DEFAULTS.items()}
     if not isinstance(data, dict):
         return out
     if data.get("raw_demosaic") in DEMOSAIC_CHOICES:
@@ -104,6 +106,9 @@ def _clean(data: Any) -> dict[str, Any]:
         out["ffmpeg_path"] = data["ffmpeg_path"].strip()
     if isinstance(data.get("live_folder"), str):
         out["live_folder"] = data["live_folder"].strip()[:500]
+    for key in ("live_session", "live_aside"):   # the photos of a live session that is not finished (paths), and the retaken ones set aside
+        if isinstance(data.get(key), list):
+            out[key] = [p for p in data[key] if isinstance(p, str) and 0 < len(p) <= 500][:5000]
     if data.get("slideshow_source") in ("shown", "selected", "folder"):
         out["slideshow_source"] = data["slideshow_source"]
     if isinstance(data.get("theme"), str) and 0 < len(data["theme"]) <= 120:

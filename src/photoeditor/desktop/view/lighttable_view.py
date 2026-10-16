@@ -290,12 +290,15 @@ class LighttableView(QWidget):
     live_toggled = pyqtSignal(bool)
     live_folder_requested = pyqtSignal()
     live_editor_toggled = pyqtSignal(bool)
+    finish_requested = pyqtSignal()
+    retake_requested = pyqtSignal(str)
     selection_changed = pyqtSignal()
 
     def __init__(self, cache_dir: str | None, parent: QWidget | None = None):
         super().__init__(parent)
         self._resolve_key = lambda _event: None
         self._known_tags: list[str] | None = None
+        self._retake_path: str | None = None   # the photo waiting to be replaced by the next one that arrives
         self._rows: list[dict] = []
         self._shown: list[dict] = []
         self._loading = False
@@ -568,6 +571,11 @@ class LighttableView(QWidget):
         self._live_editor_action.toggled.connect(self.live_editor_toggled)
         self._live_options.setMenu(live_menu)
         bar.addWidget(self._live_options)
+        self._finish_btn = QPushButton("Finish Session")
+        self._finish_btn.setToolTip("You are done with the photos that arrived in the Live Folder: put them into a dated folder (DD-MM-YYYY) inside it. Their edits, ratings, flags and tags go with them.")
+        self._finish_btn.clicked.connect(self.finish_requested)
+        self._finish_btn.hide()
+        bar.addWidget(self._finish_btn)
         self._removed_btn = QPushButton("Removed Photos...")
         self._removed_btn.setToolTip("Photos you took off the Workbench (they are still on disk). Bring them back from here.")
         self._removed_btn.clicked.connect(self.removed_list_requested)
@@ -641,6 +649,10 @@ class LighttableView(QWidget):
         self._open_btn = QPushButton("Open in Editor")
         self._open_btn.clicked.connect(self._emit_open)
         body.addWidget(self._open_btn)
+        self._retake_btn = QPushButton("Retake This Photo")
+        self._retake_btn.setToolTip("Shoot this photo again: the next photo that arrives in the Live Folder takes its name and place, and this one is set aside in a Retakes folder (not deleted). Press again to cancel.")
+        self._retake_btn.clicked.connect(self._emit_retake)
+        body.addWidget(self._retake_btn)
         self._export_btn = QPushButton("Export Selected...")
         self._export_btn.setToolTip("Export the selected photos with the presets ticked in the Export panel")
         self._export_btn.clicked.connect(lambda: self.export_requested.emit(self.selected_paths()))
@@ -795,6 +807,28 @@ class LighttableView(QWidget):
         if busy:
             self._index_progress.setRange(0, total)
             self._index_progress.setValue(done)
+
+    def set_session(self, count: int) -> None:
+        """How many photos have arrived in the live folder and are not filed yet: the Finish Session button shows when there are some."""
+        self._finish_btn.setVisible(count > 0)
+        self._finish_btn.setText(f"Finish Session ({count})")
+
+    def set_retake(self, path: str | None) -> None:
+        """The photo that is waiting to be replaced (or None): its Retake button then says Cancel Retake."""
+        self._retake_path = path
+        self._refresh_retake_button()
+
+    def _refresh_retake_button(self) -> None:
+        paths = self.selected_paths()
+        one = paths[0] if len(paths) == 1 else None
+        self._retake_btn.setEnabled(one is not None)
+        armed = one is not None and self._retake_path is not None and Q.norm(one) == Q.norm(self._retake_path)
+        self._retake_btn.setText("Cancel Retake" if armed else "Retake This Photo")
+
+    def _emit_retake(self) -> None:
+        paths = self.selected_paths()
+        if len(paths) == 1:
+            self.retake_requested.emit(paths[0])
 
     def set_live(self, on: bool, folder: str = "") -> None:
         """Show the Live Folder button as on or off, with the folder it watches in its tip (without announcing it)."""
@@ -1005,6 +1039,7 @@ class LighttableView(QWidget):
         self._delete_btn.setEnabled(n >= 1)
         self._refresh_tag_editor(rows)
         self._copy_btn.setEnabled(n == 1)
+        self._refresh_retake_button()
         self._paste_btn.setEnabled(n >= 1)
         row = self._current_row() if n <= 1 else None
         if n > 1:
@@ -1119,6 +1154,8 @@ class LighttableView(QWidget):
         menu.addAction("Open in Editor", self._emit_open)
         menu.addAction("Show in Folder", self._emit_reveal)
         menu.addAction("Make Virtual Copy", self._emit_copy_version)
+        if n == 1:
+            menu.addAction("Retake This Photo", self._emit_retake)
         menu.addSeparator()
         menu.addAction(f"Remove {what} from Workbench", self._emit_remove)
         delete = menu.addAction(f"Delete {what} from Disk...", self._emit_delete)

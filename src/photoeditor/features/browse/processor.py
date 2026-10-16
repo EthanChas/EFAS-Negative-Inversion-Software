@@ -107,6 +107,16 @@ def load_edited_thumbnail(cache_dir: str, path: str) -> bytes | None:
         return None
 
 
+def put_edited_thumbnail(cache_dir: str, path: str, data: bytes) -> None:
+    """Keep an edited-look thumbnail (as load_edited_thumbnail read it) for a photo that was moved to this path."""
+    try:
+        os.makedirs(cache_dir, exist_ok=True)
+        with open(_edited_cache_path(cache_dir, path), "wb") as f:
+            f.write(data)
+    except OSError:
+        pass
+
+
 def forget_edited_thumbnail(cache_dir: str, path: str) -> None:
     """Drop the edited-look thumbnail (the photo's crop or edits changed behind the editor's back); the plain one shows until the photo is opened again."""
     try:
