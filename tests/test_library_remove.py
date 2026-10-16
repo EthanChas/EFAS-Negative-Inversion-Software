@@ -33,7 +33,10 @@ menus = []
 def fake_menu_exec(self, *args):
     menus.append([(x.text(), x.isEnabled()) for x in self.actions()])
     pick = os.environ.get("PICK")
-    return next((x for x in self.actions() if x.text() == pick), None)
+    chosen = next((x for x in self.actions() if x.text() == pick), None)
+    if chosen is not None:
+        chosen.trigger()   # a real QMenu.exec fires the action it returns
+    return chosen
 QMenu.exec = fake_menu_exec
 def fake_box(self):
     self.buttons()[0 if os.environ.get("ANSWER") == "remove" else 1].click()

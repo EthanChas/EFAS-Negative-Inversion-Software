@@ -45,7 +45,7 @@ def test_a_session_is_filed_into_a_folder_for_the_day_of_each_photo(tmp_path):
     aside = _photo(os.path.join(live, "Retakes", "4N0A1.CR2"), when=_stamp(2026, 10, 16))
     elsewhere = _photo(str(tmp_path / "other" / "x.CR2"), when=_stamp(2026, 10, 16))
     already = _photo(os.path.join(live, "16-10-2026", "4N0A4.CR2"), when=_stamp(2026, 10, 16))
-    plan = F.finish_plan([p1, p2, p3, elsewhere, already, os.path.join(live, "gone.CR2")], [aside], live)
+    plan = F.finish_plan([p1, p2, p3, elsewhere, already, os.path.join(live, "gone.CR2")], [aside], [live])
     assert plan == [
         (p1, os.path.join(live, "16-10-2026", "4N0A1.CR2")),
         (p2, os.path.join(live, "16-10-2026", "4N0A2.CR2")),

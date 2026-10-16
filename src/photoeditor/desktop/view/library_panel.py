@@ -31,6 +31,7 @@ class LibraryPanel(CollapsiblePanel):
     root_removed = pyqtSignal(str)
     root_added = pyqtSignal(str)
     sort_changed = pyqtSignal(str)
+    hotstack_requested = pyqtSignal(str, bool)
 
     def __init__(self, parent: QWidget | None = None, workbench: bool = False):
         super().__init__(
@@ -40,7 +41,8 @@ class LibraryPanel(CollapsiblePanel):
                 + ("Click any folder (or subfolder) to show only the photos in it; the reset button in this header clears the choice and shows every photo. "
                    if workbench else "Click any folder (or subfolder) to browse its photos in the Import window. ")
                 + "Sort the folders with the Sort box: by name, by date (when the newest photo in the folder was last changed), by number of photos, or as you added them. "
-                + "Right-click a top-level folder to remove it from the list (your photos and edits are not touched)."
+                + "Right-click a top-level folder to remove it from the list (your photos and edits are not touched). Right-click any folder to mark it as a Hotstack (its icon and name turn red): "
+                + "it is watched, and each photo that lands in it is shown as it arrives."
             ),
             collapsible=False,
             parent=parent,
@@ -78,6 +80,7 @@ class LibraryPanel(CollapsiblePanel):
         self._tree.folder_selected.connect(self.folder_selected)
         self._tree.folder_double_clicked.connect(self.folder_double_clicked)
         self._tree.remove_root_requested.connect(self._remove_root_folder)
+        self._tree.hotstack_requested.connect(self.hotstack_requested)
         body.addWidget(self._tree)
 
         saved = str(self._settings.value(SORT_SETTINGS_KEY, DEFAULT_SORT, type=str))
@@ -127,6 +130,10 @@ class LibraryPanel(CollapsiblePanel):
             self._settings.setValue(ROOTS_SETTINGS_KEY, self._tree.roots())
             self._settings.sync()
             self.root_removed.emit(folder)
+
+    def set_hotstack(self, folders: list[str]) -> None:
+        """The folders marked hotstack are drawn red."""
+        self._tree.set_hotstack(folders)
 
     def _tree_refresh(self) -> None:
         self._tree.refresh()

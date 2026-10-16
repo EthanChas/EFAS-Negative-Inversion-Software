@@ -17,7 +17,7 @@ _SCRIPT = textwrap.dedent(r"""
     os.makedirs(day); os.makedirs(other)
     import numpy as np, cv2
     from photoeditor.features.settings import logic as S
-    S.save({"scan_quality": False, "advanced_mode": False, "live_folder": shoot})
+    S.save({"scan_quality": False, "advanced_mode": False})
     def frame(path, seed, shape=(60, 90, 3)):
         os.makedirs(os.path.dirname(path), exist_ok=True)
         cv2.imwrite(path, np.random.default_rng(seed).integers(30, 220, shape, dtype=np.uint8))
@@ -48,7 +48,10 @@ _SCRIPT = textwrap.dedent(r"""
     win.set_view("lighttable"); pump(0.5)
     assert until(lambda: win._index_worker is None)
     lt._live_editor_action.setChecked(False)
-    assert win.set_live_folder(True) and live.running()
+    win.arm_retake(old1)
+    assert win._retake is None and "hotstack" in win._coord_label.text(), "a retake needs a hotstack folder to catch the new photo"
+    win._on_hotstack_requested(shoot, True); pump(0.3)
+    assert live.running() and live.folders() == [shoot]
     assert until(lambda: win._index_worker is None)
     assert not lt._finish_btn.isVisible(), "nothing has arrived yet: no Finish Session button"
     def arrive(path):
@@ -62,6 +65,31 @@ _SCRIPT = textwrap.dedent(r"""
     f2 = arrive(lambda: frame(os.path.join(day, "f2.png"), 12))
     f3 = arrive(lambda: frame(os.path.join(day, "f3.png"), 13))
     assert lt._finish_btn.isVisible() and lt._finish_btn.text() == "Finish Session (3)", lt._finish_btn.text()
+    assert win._finish_live_action.isEnabled()
+
+    # the button is only there while the person is in the hotstack folder: not with a photo from another folder selected, not browsing another folder in the Library list
+    elsewhere = os.path.join(other, "elsewhere.png")
+    lt.select_path(elsewhere); pump(0.2)
+    assert not lt._finish_btn.isVisible() and not win._finish_live_action.isEnabled(), "a photo outside the hotstack is selected"
+    tree = lt.library_panel._tree
+    tree.add_root(shoot); tree.add_root(other)
+    def click(folder):
+        item = next(tree.topLevelItem(i) for i in range(tree.topLevelItemCount()) if tree.topLevelItem(i).data(0, 256) == folder)
+        tree.setCurrentItem(item); item.setSelected(True); tree._on_clicked(item, 0); pump(0.2)
+    click(other)
+    assert not lt._finish_btn.isVisible(), "browsing another folder"
+    click(shoot)
+    assert lt._finish_btn.isVisible() and lt.library_panel.selected_folder() == shoot, "browsing the hotstack folder"
+    lt._clear_library_selection(); lt.select_path(f3); pump(0.2)
+    assert lt._finish_btn.isVisible(), "a photo of the hotstack is selected"
+    win.open_in_editor(f3)
+    assert until(lambda: norm(win.controller.state.image_path or "") == norm(f3))
+    assert win._finish_live_action.isEnabled(), "in the editor with a hotstack photo open"
+    win.open_in_editor(elsewhere)
+    assert until(lambda: norm(win.controller.state.image_path or "") == norm(elsewhere))
+    assert not win._finish_live_action.isEnabled(), "in the editor with another photo open"
+    win.set_view("lighttable"); pump(0.3); lt.select_path(f3); pump(0.2)
+    assert lt._finish_btn.isVisible()
     assert [norm(p) for p in S.load()["live_session"]] == [norm(f1), norm(f2), norm(f3)], "kept across restarts"
 
     # things saved for the photos: a rating, a flag, tags, a sidecar, and a Roll Card for the folder they are in
@@ -127,6 +155,8 @@ _SCRIPT = textwrap.dedent(r"""
     dated = os.path.join(shoot, today)
     win.controller.set_rating_for(f1, 5)
     n_got = len(got)
+    lt.select_path(kept); pump(0.2)
+    assert lt._finish_btn.isVisible()
     lt._finish_btn.click(); pump(1.0)
     assert asked and today in asked[-1] and "Nothing is deleted" in asked[-1], asked[-1]
     for name in ("f1.png", "f2.png", "f3.png", "kept.png"):

@@ -2227,7 +2227,7 @@ class AppController(QObject):
         return edit_store.hidden_keys(self._db)
 
     def relocate_photo(self, old: str, new: str, thumbnail: bytes | None = None) -> None:
-        """A photo file was moved (the Live Folder filed it into a dated folder): everything saved for it follows it to the new path, the new folder is given the old folder's own
+        """A photo file was moved (a hotstack's Finish Session filed it into a dated folder): everything saved for it follows it to the new path, the new folder is given the old folder's own
         settings (its flat field and Roll Card) unless it has some, and the library index and the photo's edited-look thumbnail (read before the move) follow too."""
         edit_store.move_photo_records(self._db, old, new)
         edit_store.copy_folder_records(self._db, edit_store.folder_key(old), edit_store.folder_key(new))

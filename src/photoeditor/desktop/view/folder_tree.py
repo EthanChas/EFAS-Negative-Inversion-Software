@@ -3,8 +3,8 @@ import os
 from datetime import datetime
 
 from PyQt6.QtCore import QPoint, QSize, Qt, QUrl, pyqtSignal
-from PyQt6.QtGui import QColor, QDesktopServices, QIcon
-from PyQt6.QtWidgets import QMenu, QTreeWidget, QTreeWidgetItem
+from PyQt6.QtGui import QBrush, QColor, QDesktopServices, QIcon
+from PyQt6.QtWidgets import QHeaderView, QMenu, QTreeWidget, QTreeWidgetItem
 
 from ...features.browse.logic import DEFAULT_SORT, SORT_MODES, folder_stats, list_subfolders, sort_fact
 from ...theme.tokens import THEME
@@ -50,25 +50,57 @@ class FolderTree(QTreeWidget):
     folder_selected = pyqtSignal(str)
     folder_double_clicked = pyqtSignal(str)
     remove_root_requested = pyqtSignal(str)
+    hotstack_requested = pyqtSignal(str, bool)   # a folder was marked (True) or unmarked (False) as a hotstack
 
     def __init__(self, parent=None, removable: bool = False):
         super().__init__(parent)
         self._removable = removable
+        self._hot: set[str] = set()   # the folders marked hotstack (see set_hotstack)
         self.sort_mode = DEFAULT_SORT
         self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.customContextMenuRequested.connect(self._on_context_menu)
         self.setHeaderHidden(True)
         self.setColumnCount(2)
         self.header().setStretchLastSection(False)
+        # the name takes what room there is (and is cut short with ... when it is too long, the tip has the whole path); the count or date beside it is always shown whole
+        self.header().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        self.header().setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.setIconSize(QSize(16, 16))
         self.itemExpanded.connect(self._on_expanded)
-        self.itemCollapsed.connect(lambda item: item.setIcon(0, self._folder_icon(False)))
+        self.itemCollapsed.connect(lambda item: item.setIcon(0, self._folder_icon(False, self._is_hot(item))))
         self.itemClicked.connect(self._on_clicked)
         self.itemDoubleClicked.connect(self._on_double_clicked)
 
-    def _folder_icon(self, opened: bool) -> QIcon:
-        """The folder icon beside a name (a Lucide file from assets/icon): shut, or open while the folder is expanded."""
-        return QIcon(panel_icons.pixmap("folder-open" if opened else "folder", 16, THEME.text_secondary))
+    def _folder_icon(self, opened: bool, hot: bool = False) -> QIcon:
+        """The folder icon beside a name (a Lucide file from assets/icon): shut, or open while the folder is expanded; red for a hotstack."""
+        return QIcon(panel_icons.pixmap("folder-open" if opened else "folder", 16, THEME.status_critical if hot else THEME.text_secondary))
+
+    def _is_hot(self, item: QTreeWidgetItem) -> bool:
+        folder = item.data(0, Qt.ItemDataRole.UserRole)
+        return bool(folder) and folder != _PLACEHOLDER and os.path.normcase(os.path.abspath(folder)) in self._hot
+
+    def _paint(self, item: QTreeWidgetItem) -> None:
+        """A hotstack folder's icon and text are red; any other folder is drawn as usual."""
+        hot = self._is_hot(item)
+        item.setIcon(0, self._folder_icon(item.isExpanded(), hot))
+        item.setForeground(0, QColor(THEME.status_critical) if hot else QBrush())
+        item.setForeground(1, QColor(THEME.status_critical) if hot else QColor(THEME.text_muted))
+
+    def _paint_all(self, parent: QTreeWidgetItem) -> None:
+        for i in range(parent.childCount()):
+            item = parent.child(i)
+            if item.data(0, Qt.ItemDataRole.UserRole) != _PLACEHOLDER:
+                self._paint(item)
+            self._paint_all(item)
+
+    def set_hotstack(self, folders: list[str]) -> None:
+        """The folders marked hotstack: their icon and name turn red here, in the rows that are shown now and in the ones that are made later."""
+        self._hot = {os.path.normcase(os.path.abspath(f)) for f in folders if f}
+        self._paint_all(self.invisibleRootItem())
+
+    def is_hotstack(self, folder: str) -> bool:
+        return os.path.normcase(os.path.abspath(folder)) in self._hot
 
     def set_sort(self, mode: str) -> None:
         """List the folders (the roots, and the subfolders under each) by name, date, number of photos, or as they were added."""
@@ -112,26 +144,31 @@ class FolderTree(QTreeWidget):
                 return True
         return False
 
-    def _on_context_menu(self, pos: QPoint) -> None:
-        item = self.itemAt(pos)
+    def build_context_menu(self, item: QTreeWidgetItem) -> QMenu | None:
         folder = item.data(0, Qt.ItemDataRole.UserRole) if item is not None else None
         if not folder or folder == _PLACEHOLDER:
-            return
+            return None
         menu = QMenu(self)
-        explorer = menu.addAction("Show in File Explorer")
-        remove = None
+        hot = self.is_hotstack(folder)
+        mark = menu.addAction("Remove Hotstack Mark" if hot else "Mark as Hotstack")
+        mark.setToolTip("A hotstack folder is the one your photos land in (from Canon's EOS Utility, say): it is watched, and each photo that arrives in it is shown as it arrives. Its icon and name turn red.")
+        mark.triggered.connect(lambda _c=False: self.hotstack_requested.emit(folder, not hot))
+        menu.addSeparator()
+        menu.addAction("Show in File Explorer").triggered.connect(lambda _c=False: QDesktopServices.openUrl(QUrl.fromLocalFile(folder)))
         if self._removable:
             if item.parent() is None:
                 remove = menu.addAction("Remove from Library")
                 remove.setToolTip("Takes the folder off this list. Your photos and edits are not touched.")
+                remove.triggered.connect(lambda _c=False: self.remove_root_requested.emit(folder))
             else:
                 note = menu.addAction("Remove from Library (top-level folders only)")
                 note.setEnabled(False)
-        chosen = menu.exec(self.viewport().mapToGlobal(pos))
-        if chosen is explorer:
-            QDesktopServices.openUrl(QUrl.fromLocalFile(folder))
-        elif remove is not None and chosen is remove:
-            self.remove_root_requested.emit(folder)
+        return menu
+
+    def _on_context_menu(self, pos: QPoint) -> None:
+        menu = self.build_context_menu(self.itemAt(pos))
+        if menu is not None:
+            menu.exec(self.viewport().mapToGlobal(pos))
 
     def roots(self) -> list[str]:
         return [self.topLevelItem(i).data(0, Qt.ItemDataRole.UserRole) for i in range(self.topLevelItemCount())]
@@ -144,7 +181,7 @@ class FolderTree(QTreeWidget):
         self.set_roots(self.roots())
 
     def _resize_columns(self) -> None:
-        self.resizeColumnToContents(0)
+        """(The columns size themselves now: the name stretches, the count or date fits its text.)"""
 
     def _make_item(self, folder: str, order: int | None = None) -> QTreeWidgetItem:
         name = os.path.basename(folder.rstrip(os.sep)) or folder
@@ -164,6 +201,7 @@ class FolderTree(QTreeWidget):
         item.setForeground(1, QColor(THEME.text_muted))
         if sort_fact(self.sort_mode)[0] == "date" and newest:
             item.setText(1, _date_label(newest))
+        self._paint(item)
         if list_subfolders(folder):
             placeholder = QTreeWidgetItem(["Loading..."])
             placeholder.setData(0, Qt.ItemDataRole.UserRole, _PLACEHOLDER)
@@ -191,7 +229,7 @@ class FolderTree(QTreeWidget):
         return False
 
     def _on_expanded(self, item: QTreeWidgetItem) -> None:
-        item.setIcon(0, self._folder_icon(True))
+        item.setIcon(0, self._folder_icon(True, self._is_hot(item)))
         if item.childCount() != 1 or item.child(0).data(0, Qt.ItemDataRole.UserRole) != _PLACEHOLDER:
             return
         item.takeChildren()

@@ -49,7 +49,7 @@ DEFAULTS: dict[str, Any] = {
     "slideshow_video_size": "1920x1080",
     "slideshow_video_fps": 30,
     "ffmpeg_path": "",
-    "live_folder": "",
+    "hotstack_folders": [],
     "live_open_editor": True,
     "live_session": [],
     "live_aside": [],
@@ -104,9 +104,7 @@ def _clean(data: Any) -> dict[str, Any]:
         out["slideshow_video_fps"] = data["slideshow_video_fps"]
     if isinstance(data.get("ffmpeg_path"), str):
         out["ffmpeg_path"] = data["ffmpeg_path"].strip()
-    if isinstance(data.get("live_folder"), str):
-        out["live_folder"] = data["live_folder"].strip()[:500]
-    for key in ("live_session", "live_aside"):   # the photos of a live session that is not finished (paths), and the retaken ones set aside
+    for key in ("live_session", "live_aside", "hotstack_folders"):   # the photos of a live session that is not finished (paths), the retaken ones set aside, the folders marked hotstack
         if isinstance(data.get(key), list):
             out[key] = [p for p in data[key] if isinstance(p, str) and 0 < len(p) <= 500][:5000]
     if data.get("slideshow_source") in ("shown", "selected", "folder"):

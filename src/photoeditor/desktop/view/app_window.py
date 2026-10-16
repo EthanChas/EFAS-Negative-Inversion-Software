@@ -376,7 +376,7 @@ class AppWindow(QMainWindow):
         self._quick_export = False
         self._index_worker = None
         self._live = LiveFolder(self)
-        self._live_session: list[str] = list(app_settings.get("live_session"))   # photos that arrived in the live folder and are not filed yet
+        self._live_session: list[str] = list(app_settings.get("live_session"))   # photos that arrived in a hotstack folder and are not filed yet
         self._live_aside: list[str] = list(app_settings.get("live_aside"))       # the photos of it that were retaken, set aside
         self._retake: str | None = None                                          # the photo the next arrival replaces
         self._retake_note = ""                                                   # why a retake could not be done, for the arrival's message
@@ -472,13 +472,13 @@ class AppWindow(QMainWindow):
         self._lighttable.removed_list_requested.connect(self.show_removed_photos)
         self._lighttable.duplicates_requested.connect(self.find_duplicates)
         self._live.arrived.connect(self._on_live_arrived)
-        self._lighttable.live_toggled.connect(self.set_live_folder)
-        self._lighttable.live_folder_requested.connect(self.choose_live_folder)
+        self._lighttable.library_panel.hotstack_requested.connect(self._on_hotstack_requested)
+        self._lighttable.selection_changed.connect(self._refresh_finish_button)
+        self.controller.file_changed.connect(self._refresh_finish_button)
         self._lighttable.live_editor_toggled.connect(lambda on: app_settings.save({"live_open_editor": on}))
         self._lighttable.set_live_editor(app_settings.get("live_open_editor"))
         self._lighttable.finish_requested.connect(self.finish_live_session)
         self._lighttable.retake_requested.connect(self.arm_retake)
-        self._lighttable.set_session(len(self._live_session))
         self.controller.rating_changed.connect(lambda path, stars: self._lighttable.update_item(library_query.norm(path), rating=stars))
         self.controller.flag_changed.connect(lambda path, flag: self._lighttable.update_item(library_query.norm(path), flag=flag))
         self.controller.history_changed.connect(self._mark_lighttable_edited)
@@ -527,6 +527,7 @@ class AppWindow(QMainWindow):
         self._debug_action.toggled.connect(self._debug_controller.set_enabled)
         for panel in self.findChildren(CollapsiblePanel):
             insert_before_headings(panel.body())  # a thin line in front of each section heading inside a module
+        self._apply_hotstack()
         self._start_plugins()
 
     # ------------------------------------------------------------ plugins
@@ -651,17 +652,13 @@ class AppWindow(QMainWindow):
         self._removed_action.setToolTip("Photos taken off the Workbench (still on disk); bring them back")
         self._removed_action.triggered.connect(self.show_removed_photos)
         file_menu.addAction(self._removed_action)
-        self._live_action = QAction("Live Folder", self)
-        self._live_action.setCheckable(True)
-        self._live_action.setToolTip("Watch the folder your camera software saves into: each photo that lands in it is shown as it arrives (the same switch as the Workbench's Live Folder button)")
-        self._live_action.toggled.connect(self.set_live_folder)
-        file_menu.addAction(self._live_action)
-        self._finish_live_action = QAction("Finish Live Session...", self)
-        self._finish_live_action.setToolTip("Put the photos that arrived in the Live Folder into a dated folder (DD-MM-YYYY), with their edits, ratings, flags and tags")
+        self._finish_live_action = QAction("Finish Session...", self)
+        self._finish_live_action.setEnabled(False)
+        self._finish_live_action.setToolTip("Put the photos that arrived in the hotstack folder into a dated folder (DD-MM-YYYY), with their edits, ratings, flags and tags. Available while you are in a hotstack folder.")
         self._finish_live_action.triggered.connect(self.finish_live_session)
         file_menu.addAction(self._finish_live_action)
         self._retake_action = QAction("Retake Open Photo", self)
-        self._retake_action.setToolTip("Shoot the open photo again: the next photo that arrives in the Live Folder takes its place, and this one is set aside in a Retakes folder")
+        self._retake_action.setToolTip("Shoot the open photo again: the next photo that arrives in a hotstack folder takes its place, and this one is set aside in a Retakes folder")
         self._retake_action.triggered.connect(lambda: self._photo_action_for_open(lambda paths: self.arm_retake(paths[0])))
         file_menu.addAction(self._retake_action)
         self._cancel_retake_action = QAction("Cancel Retake", self)
@@ -890,6 +887,7 @@ class AppWindow(QMainWindow):
         self._library_panel.folder_selected.connect(self._on_library_folder_selected)
         self._library_panel.folder_double_clicked.connect(self._on_library_folder_double_clicked)
         self._library_panel.root_removed.connect(self._on_library_root_removed)
+        self._library_panel.hotstack_requested.connect(self._on_hotstack_requested)
         self._library_panel.root_added.connect(self._on_editor_root_added)
         self._library_panel.sort_changed.connect(lambda mode: self._lighttable.library_panel.apply_sort(mode))
         left_tools_col.addWidget(self._library_panel)
@@ -1702,6 +1700,7 @@ class AppWindow(QMainWindow):
         for key, btn in self._view_buttons.items():
             btn.setChecked(key == name)
         self._plugin_emit("view_changed", {"view": "workbench" if name == "lighttable" else name})
+        self._refresh_finish_button()
 
     def _photo_action_for_open(self, action) -> None:
         path = self.controller.state.image_path
@@ -2004,7 +2003,7 @@ class AppWindow(QMainWindow):
     def lighttable_roots(self) -> list[str]:
         """The folders the Lighttable covers: the Library panel's roots, and the folders opened recently or now (outside them)."""
         roots = [r for r in self._library_panel._tree.roots() if r]
-        extra = [f for f in (*self._session.get("recent_folders", []), self._filmstrip_folder, self._live.folder()) if f and os.path.isdir(f)]
+        extra = [f for f in (*self._session.get("recent_folders", []), self._filmstrip_folder, *self._live.folders()) if f and os.path.isdir(f)]
         chosen: list[str] = []
         for r in sorted(roots + extra, key=lambda p: len(library_query.norm(p))):
             n = library_query.norm(r).rstrip("\\/") + os.sep
@@ -2042,47 +2041,64 @@ class AppWindow(QMainWindow):
         self._lighttable.set_index_status("Looking for photos...")
         worker.start()
 
-    # ------------------------------------------------------------ the live folder
-    def set_live_folder(self, on: bool) -> bool:
-        """Turn the live folder on or off (the Workbench's Live Folder button, File > Live Folder). On, it watches the folder chosen before, or asks for one. True when it is on."""
-        if on and not self._live.running():
-            folder = app_settings.get("live_folder")
-            if not (folder and os.path.isdir(folder)):
-                folder = self._ask_live_folder()
-            if folder and self._live.start(folder):
-                self.lighttable_refresh()   # what is in the folder already is read into the Workbench
-                self._coord_label.setText(f"Live folder on: watching {folder}. Photos that land in it are shown as they arrive.")
-        elif not on and self._live.running():
-            self._live.stop()
-            self._coord_label.setText("Live folder off.")
+    # ------------------------------------------------------------ hotstack folders
+    def hotstack_folders(self) -> list[str]:
+        """The folders marked as hotstack (all of them, whether or not they can be reached just now)."""
+        return list(app_settings.get("hotstack_folders"))
+
+    def _on_hotstack_requested(self, folder: str, on: bool) -> None:
+        """A folder was marked (or unmarked) as a hotstack in a Library list: it is saved, drawn red in both lists, and watched - each photo that lands in it is shown as it arrives."""
+        norm = library_query.norm
+        folders = [f for f in self.hotstack_folders() if norm(f) != norm(folder)]
+        if on:
+            folders.append(folder)
+        app_settings.save({"hotstack_folders": folders})
+        self._apply_hotstack()
+        name = os.path.basename(folder.rstrip("\\/")) or folder
+        if on:
+            self._coord_label.setText(f"{name} is a hotstack now: photos that land in it are shown as they arrive.")
+            self.lighttable_refresh()   # what is in the folder already is read into the Workbench
+        else:
+            self._coord_label.setText(f"{name} is not a hotstack any more.")
+
+    def _apply_hotstack(self) -> None:
+        """Draw the marked folders red, watch them, and update what depends on them."""
+        folders = self.hotstack_folders()
+        self._library_panel.set_hotstack(folders)
+        self._lighttable.library_panel.set_hotstack(folders)
+        self._live.set_folders(folders)
         self._sync_live_ui()
-        return self._live.running()
-
-    def choose_live_folder(self) -> None:
-        """The Workbench's Live Folder > Choose Folder...: pick the folder to watch, and watch it."""
-        if self._ask_live_folder():
-            self._live.stop()
-            self.set_live_folder(True)
-
-    def _ask_live_folder(self) -> str:
-        start = app_settings.get("live_folder") or self._filmstrip_folder or ""
-        folder = QFileDialog.getExistingDirectory(self, "Live Folder: the folder your camera software saves its photos into", start)
-        if folder:
-            app_settings.save({"live_folder": folder})
-        return folder
 
     def _sync_live_ui(self) -> None:
-        on = self._live.running()
-        self._lighttable.set_live(on, self._live.folder())
-        self._live_action.blockSignals(True)
-        self._live_action.setChecked(on)
-        self._live_action.blockSignals(False)
+        self._lighttable.set_hotstack_info(self._live.folders())
         self._lighttable.set_retake(self._retake)
         self._cancel_retake_action.setEnabled(self._retake is not None)
-        self._lighttable.set_session(len(self._live_session))
+        self._refresh_finish_button()
+
+    def _in_hotstack(self) -> bool:
+        """Whether the person is in a hotstack folder: browsing it in the Workbench's Library list, or with a photo of it selected there, or - in the editor - with one of its photos open."""
+        folders = self._live.folders()
+        if not folders:
+            return False
+        def inside(path: str) -> bool:
+            return any(live_filing.is_under(path, f) or library_query.norm(path) == library_query.norm(f) for f in folders)
+
+        if self.lighttable_active():
+            chosen = self._lighttable.library_panel.selected_folder()
+            return bool(chosen and inside(chosen)) or any(inside(p) for p in self._lighttable.selected_paths())
+        path = self.controller.state.image_path
+        return bool(path) and inside(path)
+
+    def _refresh_finish_button(self, *_args) -> None:
+        """Finish Session shows only while the person is in a hotstack folder and there are photos to file (the File menu item follows the same rule)."""
+        show = bool(self._live_session) and self._in_hotstack()
+        self._lighttable.set_session(len(self._live_session), show)
+        action = getattr(self, "_finish_live_action", None)   # (this can run while the window is still being built)
+        if action is not None:
+            action.setEnabled(show)
 
     def _on_live_arrived(self, paths: list[str]) -> None:
-        """Photos landed in the live folder: they are read into the library, shown in the Workbench (the newest one selected) and, if asked, opened in the editor. When a retake is
+        """Photos landed in a hotstack folder: they are read into the library, shown in the Workbench (the newest one selected) and, if asked, opened in the editor. When a retake is
         waiting, the first of them takes the place of the photo being retaken."""
         added = list(paths)
         swapped = self._take_retake(paths[0]) if self._retake else None
@@ -2130,7 +2146,7 @@ class AppWindow(QMainWindow):
                 self._live_session.append(path)
                 have.add(norm(path))
         app_settings.save({"live_session": self._live_session, "live_aside": self._live_aside})
-        self._lighttable.set_session(len(self._live_session))
+        self._refresh_finish_button()
 
     # ------------------------------------------------------------ retakes
     def arm_retake(self, path: str) -> None:
@@ -2143,8 +2159,8 @@ class AppWindow(QMainWindow):
         if not os.path.isfile(path):
             self._coord_label.setText("That photo is not on disk any more, so it cannot be retaken.")
             return
-        if not self._live.running() and not self.set_live_folder(True):
-            self._coord_label.setText("A retake needs the Live Folder on, to catch the new photo. Turn it on, then ask again.")
+        if not self._live.running():
+            self._coord_label.setText("A retake needs a hotstack folder to catch the new photo: right-click a folder in the Library list, choose Mark as Hotstack, then ask again.")
             return
         self._retake = path
         self._sync_live_ui()
@@ -2191,15 +2207,14 @@ class AppWindow(QMainWindow):
 
     # ------------------------------------------------------------ finishing a session
     def finish_live_session(self) -> None:
-        """Done with the photos that arrived in the live folder: put them into a dated folder (DD-MM-YYYY, by the day of each file) inside it, and the retaken ones that were set aside into a
+        """Done with the photos that arrived in a hotstack folder: put them into a dated folder (DD-MM-YYYY, by the day of each file) inside it, and the retaken ones that were set aside into a
         Retakes folder in that. Everything saved for a photo - edits, rating, flag, tags, versions - and its folder's flat field and Roll Card go with it. Nothing is deleted."""
         norm = library_query.norm
-        folder = self._live.folder() or app_settings.get("live_folder")
-        plan = live_filing.finish_plan([p for p in self._live_session if os.path.isfile(p)], [p for p in self._live_aside if os.path.isfile(p)], folder)
+        plan = live_filing.finish_plan([p for p in self._live_session if os.path.isfile(p)], [p for p in self._live_aside if os.path.isfile(p)], self._live.folders())
         if not plan:
             self._live_session, self._live_aside = [], []
             app_settings.save({"live_session": [], "live_aside": []})
-            self._lighttable.set_session(0)
+            self._refresh_finish_button()
             self._coord_label.setText("Nothing to file: the photos of this session are already in their dated folders, or are gone.")
             return
         kept = [(src, dst) for src, dst in plan if os.path.basename(os.path.dirname(dst)) != live_filing.RETAKES]
@@ -2213,8 +2228,7 @@ class AppWindow(QMainWindow):
         if QMessageBox.question(self, "Finish Session", text) != QMessageBox.StandardButton.Yes:
             return
         c = self.controller
-        was_on, watching = self._live.running(), self._live.folder()
-        self._live.stop()   # the filed photos would look new in their new folders
+        self._live.set_folders([])   # the filed photos would look new in their new folders
         open_path = c.state.image_path
         if open_path and norm(open_path) in {norm(src) for src, _dst in plan}:
             c._save_edit_state()
@@ -2233,8 +2247,7 @@ class AppWindow(QMainWindow):
         self._live_session = [p for p in self._live_session if os.path.isfile(p) and norm(p) not in moved]
         self._live_aside = [p for p in self._live_aside if os.path.isfile(p) and norm(p) not in moved]
         app_settings.save({"live_session": self._live_session, "live_aside": self._live_aside})
-        if was_on:
-            self._live.start(watching)
+        self._live.set_folders(self.hotstack_folders())   # watched again from what is there now
         self._sync_live_ui()
         self._lighttable_reload_rows()
         self.lighttable_refresh()
@@ -2805,6 +2818,10 @@ class AppWindow(QMainWindow):
     def _on_library_root_removed(self, folder: str) -> None:
         """A folder was taken off the Library: forget it in the recents and the Workbench's index (photos and edits stay on disk and in the database)."""
         prefix = library_query.norm(folder).rstrip("\\/") + os.sep
+        gone = [f for f in self.hotstack_folders() if (library_query.norm(f) + os.sep).startswith(prefix)]
+        if gone:   # a hotstack that is no longer in the list could not be seen to be watched
+            app_settings.save({"hotstack_folders": [f for f in self.hotstack_folders() if f not in gone]})
+            self._apply_hotstack()
         self._lighttable.library_panel.reload_roots()
         self._lighttable.forget_folder_filter(folder)
         recents = self._session.get("recent_folders", [])
@@ -4437,7 +4454,7 @@ class AppWindow(QMainWindow):
             self._coord_label.setText("Quick export: " + (f"saved {os.path.basename(done[0])}" if done else ". ".join(parts)))
 
     def closeEvent(self, event) -> None:
-        self._live.stop()
+        self._live.set_folders([])
         self._shutdown_plugins()
         self._measure_timer.stop()
         self.controller.wait_linear_workers()

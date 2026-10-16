@@ -9,7 +9,7 @@ from collections import OrderedDict
 from datetime import date
 
 from PyQt6.QtCore import QAbstractListModel, QDate, QModelIndex, QPointF, QRect, QSize, Qt, QTimer, pyqtSignal
-from PyQt6.QtGui import QAction, QColor, QFontMetrics, QKeyEvent, QPainter, QPen, QPolygonF, QStandardItem, QStandardItemModel
+from PyQt6.QtGui import QAction, QColor, QFontMetrics, QIcon, QKeyEvent, QPainter, QPen, QPolygonF, QStandardItem, QStandardItemModel
 from PyQt6.QtWidgets import (
     QAbstractItemView, QCompleter, QComboBox, QDateEdit, QFrame, QHBoxLayout, QLabel, QLineEdit, QListView, QProgressBar, QPushButton, QScrollArea, QSlider,
     QMenu, QStyle, QStyledItemDelegate, QVBoxLayout, QWidget,
@@ -21,6 +21,7 @@ from ...features.library import query as Q
 from ...features.library import suggest
 from ...theme.tokens import THEME
 from ..library_worker import ThumbPool
+from . import panel_icons
 from .collapsible_panel import CollapsiblePanel
 from .library_panel import LibraryPanel
 from .tagging_panel import TaggingPanel
@@ -36,8 +37,8 @@ _LABEL_H = 16
 _PANEL_W = 270
 _RIGHT_W = 250
 _STAR_R = 4.5
-_LIVE_TIP = ("Watch the folder your camera software saves into (Canon's EOS Utility, for one): each photo that lands in it is read in and shown as it arrives. "
-             "It starts off each time the editor opens.")
+_HOT_TIP = ("Hotstack: a folder you marked (right-click it in the Library list) is watched, and each photo that lands in it - from Canon's EOS Utility, say - is read in and shown "
+            "as it arrives. Options for that are in this menu.")
 _GOLD = QColor(THEME.status_warning)
 _FLAG_COLORS = {"keeper": QColor(76, 175, 80), "rejected": QColor(224, 96, 92)}
 
@@ -287,8 +288,6 @@ class LighttableView(QWidget):
     collection_delete_requested = pyqtSignal(str)
     removed_list_requested = pyqtSignal()
     duplicates_requested = pyqtSignal()
-    live_toggled = pyqtSignal(bool)
-    live_folder_requested = pyqtSignal()
     live_editor_toggled = pyqtSignal(bool)
     finish_requested = pyqtSignal()
     retake_requested = pyqtSignal(str)
@@ -363,6 +362,9 @@ class LighttableView(QWidget):
 
     def _combo(self, items: list[tuple[str, object]], on_change=None) -> QComboBox:
         combo = QComboBox()
+        # a long entry (a lens called "EF100mm f/2.8L Macro IS USM") must not widen the whole column and push its right edge out of sight
+        combo.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
+        combo.setMinimumContentsLength(8)
         for text, data in items:
             combo.addItem(text, data)
         combo.currentIndexChanged.connect(on_change or self._changed)
@@ -555,24 +557,23 @@ class LighttableView(QWidget):
         refresh.setToolTip("Look for new, changed and removed photos in the library folders")
         refresh.clicked.connect(self.refresh_requested)
         bar.addWidget(refresh)
-        self._live_btn = QPushButton("Live Folder")
-        self._live_btn.setCheckable(True)
-        self._live_btn.setToolTip(_LIVE_TIP)
-        self._live_btn.toggled.connect(self.live_toggled)
-        bar.addWidget(self._live_btn)
-        self._live_options = QPushButton()   # just the menu arrow: the bar is crowded
-        self._live_options.setFixedWidth(38)
-        self._live_options.setToolTip("Live Folder options: which folder to watch, and whether each new photo opens in the editor")
-        live_menu = QMenu(self._live_options)
-        live_menu.addAction("Choose Folder...").triggered.connect(self.live_folder_requested)
-        self._live_editor_action = live_menu.addAction("Show Each New Photo in the Editor")
+        self._hot_btn = QPushButton()   # just the flame and the menu arrow: the bar is crowded
+        self._hot_btn.setIcon(QIcon(panel_icons.pixmap("flame", 16, THEME.status_critical)))
+        self._hot_btn.setFixedWidth(56)
+        self._hot_btn.setToolTip(_HOT_TIP)
+        hot_menu = QMenu(self._hot_btn)
+        self._hot_info = hot_menu.addAction("")
+        self._hot_info.setEnabled(False)
+        hot_menu.addSeparator()
+        self._live_editor_action = hot_menu.addAction("Show Each New Photo in the Editor")
         self._live_editor_action.setCheckable(True)
         self._live_editor_action.setToolTip("Open every photo that arrives in the editor, so you see it large as it lands. Off: it is only selected here in the Workbench.")
         self._live_editor_action.toggled.connect(self.live_editor_toggled)
-        self._live_options.setMenu(live_menu)
-        bar.addWidget(self._live_options)
+        self._hot_btn.setMenu(hot_menu)
+        self.set_hotstack_info([])
+        bar.addWidget(self._hot_btn)
         self._finish_btn = QPushButton("Finish Session")
-        self._finish_btn.setToolTip("You are done with the photos that arrived in the Live Folder: put them into a dated folder (DD-MM-YYYY) inside it. Their edits, ratings, flags and tags go with them.")
+        self._finish_btn.setToolTip("You are done with the photos that arrived in the hotstack folder: put them into a dated folder (DD-MM-YYYY) inside it. Their edits, ratings, flags and tags go with them.")
         self._finish_btn.clicked.connect(self.finish_requested)
         self._finish_btn.hide()
         bar.addWidget(self._finish_btn)
@@ -650,7 +651,7 @@ class LighttableView(QWidget):
         self._open_btn.clicked.connect(self._emit_open)
         body.addWidget(self._open_btn)
         self._retake_btn = QPushButton("Retake This Photo")
-        self._retake_btn.setToolTip("Shoot this photo again: the next photo that arrives in the Live Folder takes its name and place, and this one is set aside in a Retakes folder (not deleted). Press again to cancel.")
+        self._retake_btn.setToolTip("Shoot this photo again: the next photo that arrives in a hotstack folder takes its name and place, and this one is set aside in a Retakes folder (not deleted). Press again to cancel.")
         self._retake_btn.clicked.connect(self._emit_retake)
         body.addWidget(self._retake_btn)
         self._export_btn = QPushButton("Export Selected...")
@@ -792,11 +793,13 @@ class LighttableView(QWidget):
             combo.addItem("Any", any_value)
             for value, label, n in f[key]:
                 combo.addItem(f"{label}  ({n})", value)
+                combo.setItemData(combo.count() - 1, f"{label}  ({n})", Qt.ItemDataRole.ToolTipRole)
             i = combo.findData(keep)
             if i < 0 and keep not in (None, "", 0, any_value):
                 combo.addItem(f"{keep}  (0)", keep)
                 i = combo.count() - 1
             combo.setCurrentIndex(max(0, i))
+            combo.view().setMinimumWidth(combo.view().sizeHintForColumn(0) + 30)   # the list opens wide enough for its longest entry
         self._loading = False
         self._refresh_collection_counts()
 
@@ -808,9 +811,9 @@ class LighttableView(QWidget):
             self._index_progress.setRange(0, total)
             self._index_progress.setValue(done)
 
-    def set_session(self, count: int) -> None:
-        """How many photos have arrived in the live folder and are not filed yet: the Finish Session button shows when there are some."""
-        self._finish_btn.setVisible(count > 0)
+    def set_session(self, count: int, show: bool = True) -> None:
+        """How many photos have arrived in a hotstack folder and are not filed yet. The Finish Session button shows when there are some and `show` (the Workbench is in a hotstack folder)."""
+        self._finish_btn.setVisible(count > 0 and show)
         self._finish_btn.setText(f"Finish Session ({count})")
 
     def set_retake(self, path: str | None) -> None:
@@ -830,15 +833,11 @@ class LighttableView(QWidget):
         if len(paths) == 1:
             self.retake_requested.emit(paths[0])
 
-    def set_live(self, on: bool, folder: str = "") -> None:
-        """Show the Live Folder button as on or off, with the folder it watches in its tip (without announcing it)."""
-        self._live_btn.blockSignals(True)
-        self._live_btn.setChecked(on)
-        self._live_btn.blockSignals(False)
-        self._live_btn.setToolTip(_LIVE_TIP + (f"\nWatching: {folder}" if on and folder else ""))
-
-    def live_checked(self) -> bool:
-        return self._live_btn.isChecked()
+    def set_hotstack_info(self, folders: list[str]) -> None:
+        """The hotstack button's menu says which folders are being watched (the ones marked with a right-click in the Library list)."""
+        names = ", ".join(os.path.basename(f.rstrip("\\/")) or f for f in folders)
+        self._hot_info.setText(f"Watching: {names}" if folders else "No hotstack folder yet: right-click a folder in the Library list")
+        self._hot_btn.setToolTip(_HOT_TIP + (f"\nWatching: {', '.join(folders)}" if folders else "\nNo folder is marked yet."))
 
     def set_live_editor(self, on: bool) -> None:
         self._live_editor_action.blockSignals(True)

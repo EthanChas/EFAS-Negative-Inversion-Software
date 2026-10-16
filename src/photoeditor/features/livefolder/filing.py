@@ -1,4 +1,4 @@
-"""Moving photos about on disk for the Live Folder - no Qt: into a dated folder when a session is finished, and out of the way when a retake replaces one.
+"""Moving photos about on disk for the hotstack folders - no Qt: into a dated folder when a session is finished, and out of the way when a retake replaces one.
 
 A photo goes with its sidecars (the .xmp and merge files EFAS writes beside it), is never overwritten (a name that is taken gets _1, _2...) and is never deleted."""
 import os
@@ -52,14 +52,14 @@ def move_photo(src: str, dst: str) -> str:
     return dst
 
 
-def finish_plan(photos: list[str], asides: list[str], live_folder: str) -> list[tuple[str, str]]:
-    """Where each photo of a session goes: (from, to). A photo goes into a DD-MM-YYYY folder (the day of its file) inside the live folder - inside its own folder when it is not under
-    the live folder - and a set-aside retake goes into the Retakes folder of that. Photos that are gone, or already where they would go, are left out."""
+def finish_plan(photos: list[str], asides: list[str], hotstacks: list[str]) -> list[tuple[str, str]]:
+    """Where each photo of a session goes: (from, to). A photo goes into a DD-MM-YYYY folder (the day of its file) inside the hotstack folder it is in - inside its own folder when it is
+    in none - and a set-aside retake goes into the Retakes folder of that. Photos that are gone, or already where they would go, are left out."""
     plan = []
     for src, aside in [(p, False) for p in photos] + [(p, True) for p in asides]:
         if not os.path.isfile(src):
             continue
-        base = live_folder if is_under(src, live_folder) else os.path.dirname(src)
+        base = next((h for h in hotstacks if is_under(src, h)), os.path.dirname(src))
         folder = os.path.join(base, date_folder_name(os.path.getmtime(src)))
         if aside:
             folder = os.path.join(folder, RETAKES)
