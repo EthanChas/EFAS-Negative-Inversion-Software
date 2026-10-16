@@ -69,7 +69,7 @@ _SCRIPT = textwrap.dedent(r"""
     pump(2)
 
     # --- Slideshow, Maps and Classroom: buttons next to Workbench and Editor, each a page that says Soon
-    assert list(win._view_buttons) == ["lighttable", "editor", "slideshow", "maps", "classroom"], list(win._view_buttons)
+    assert list(win._view_buttons) == ["slideshow", "maps", "classroom", "lighttable", "editor"], list(win._view_buttons)
     for key, title in (("slideshow", "Slideshow"), ("maps", "Maps"), ("classroom", "Classroom")):
         win._view_buttons[key].click(); pump(0.3)
         page = win._view_stack.currentWidget()

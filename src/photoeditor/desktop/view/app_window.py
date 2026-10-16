@@ -799,7 +799,7 @@ class AppWindow(QMainWindow):
         corner_row.setContentsMargins(0, 0, THEME.space_sm, 0)
         corner_row.setSpacing(2)
         self._view_buttons: dict[str, QPushButton] = {}
-        for key, text in (("lighttable", "Workbench"), ("editor", "Editor"), *_SOON_VIEWS.items()):
+        for key, text in (*_SOON_VIEWS.items(), ("lighttable", "Workbench"), ("editor", "Editor")):
             btn = QPushButton(text)
             btn.setCheckable(True)
             btn.setFixedHeight(22)

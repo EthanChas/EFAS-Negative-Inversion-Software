@@ -78,7 +78,7 @@ Open a negative (RAW, TIFF, PNG or JPEG), invert it, balance the colour and tone
 - **Tags** nest (`People/Family`; searching People finds everything inside it), with a drop-down of every tag you have made, a quick tag bar (`T`), and a Tagging panel like darktable's with Lightroom keyword import and export
 - **Error marks in the Workbench**: search `error:yes`, `error:none`, `error:scratch` (or `-error:...`), pick **Errors** under Rating & Status, or save it in a smart collection, to find the photos that have faults marked on them (Negative tab > Error marking)
 - **Folder icons** beside the folders in the editor's and the Workbench's Library, shut or open (Lucide icons from the icon folder)
-- **Slideshow, Maps and Classroom** buttons beside Workbench and Editor: pages that say *Soon™* for now
+- **Slideshow, Maps and Classroom** buttons before Workbench and Editor: pages that say *Soon™* for now
 - **Find (Ctrl+K)** reaches any control, menu action, preset, module preset or smart collection
 - **Virtual copies** (several edits of one scan), **smart collections**, a **duplicate finder**, and **undo for whole-roll actions**
 - **Proofing tools**: test strip, ring-around, split view, contact sheets
