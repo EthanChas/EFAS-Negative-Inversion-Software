@@ -353,25 +353,31 @@ class HistogramPanel(BevelPanel):
         font.setPointSize(THEME.font_size_small)
         painter.setFont(font)
 
+        # the names beside the colour squares give way to the squares alone when the clipped shares and the log mark would not fit beside them
+        metrics = painter.fontMetrics()
+        room = self.rect().width() - 2 * (THEME.border_width + THEME.space_sm) - self._clip_shares_width(metrics) - (36 if self._log else 0) - THEME.space_md
+        names = (self._mode == "color" and sum(12 + metrics.horizontalAdvance(n) + THEME.space_md for _k, n in _CHANNEL_LABELS) <= room) or                 (self._mode != "color" and 12 + metrics.horizontalAdvance("Luminance") <= room)
         if self._mode == "color":
             for key, name in _CHANNEL_LABELS:
                 painter.setPen(Qt.PenStyle.NoPen)
                 painter.setBrush(QBrush(QColor(_CHANNEL_COLORS[key])))
                 painter.drawRect(x, y + 3, 8, 8)
-                painter.setPen(QColor(THEME.text_secondary))
-                painter.drawText(x + 12, y + 11, name)
-                x += 12 + painter.fontMetrics().horizontalAdvance(name) + THEME.space_md
+                if names:
+                    painter.setPen(QColor(THEME.text_secondary))
+                    painter.drawText(x + 12, y + 11, name)
+                x += 12 + (metrics.horizontalAdvance(name) if names else 0) + THEME.space_md
         else:
             painter.setPen(Qt.PenStyle.NoPen)
             painter.setBrush(QBrush(QColor(THEME.channel_luminance)))
             painter.drawRect(x, y + 3, 8, 8)
-            painter.setPen(QColor(THEME.text_secondary))
-            painter.drawText(x + 12, y + 11, "Luminance")
+            if names:
+                painter.setPen(QColor(THEME.text_secondary))
+                painter.drawText(x + 12, y + 11, "Luminance")
 
         shift = self._draw_clip_shares(painter, y)
         if self._log:
             painter.setPen(QColor(THEME.text_muted))
-            painter.drawText(QRect(self.rect().right() - 34 - THEME.space_sm, y, 34, _LEGEND_HEIGHT), int(Qt.AlignmentFlag.AlignRight), "log")
+            painter.drawText(QRect(self.rect().right() - 34 - THEME.space_sm - shift, y, 34, _LEGEND_HEIGHT), int(Qt.AlignmentFlag.AlignRight), "log")
             shift += 36
         if self._zoom_min != _FULL_RANGE[0] or self._zoom_max != _FULL_RANGE[1]:
             zoom_text = f"{self.zoom_percent()}% (2x-click reset)"
@@ -380,13 +386,19 @@ class HistogramPanel(BevelPanel):
             label_rect = QRect(widget_rect.right() - 140 - shift, y, 140 - THEME.space_sm, _LEGEND_HEIGHT)
             painter.drawText(label_rect, int(Qt.AlignmentFlag.AlignRight), zoom_text)
 
+    @staticmethod
+    def _percent_text(share: float) -> str:
+        return "0%" if share < 0.005 else f"{share:.1f}%" if share >= 0.1 else f"{share:.2f}%"
+
+    def _clip_shares_width(self, metrics) -> int:
+        """The room the two clipped shares and their arrows take at the header's right edge."""
+        return (10 + 3 + metrics.horizontalAdvance(self._percent_text(self._clip_share[0])) + THEME.space_sm
+                + metrics.horizontalAdvance(self._percent_text(self._clip_share[1])) + 3 + 10 + THEME.space_md)
+
     def _draw_clip_shares(self, painter: QPainter, y: int) -> int:
         """\u25c0 shadows % and highlights % \u25b6 in the header's right corner, each lit in its marking colour while that clipping is marked on the picture.
         Returns the width taken from the right edge."""
-        def text_of(share: float) -> str:
-            return "0%" if share < 0.005 else f"{share:.1f}%" if share >= 0.1 else f"{share:.2f}%"
-
-        left_text, right_text = text_of(self._clip_share[0]), text_of(self._clip_share[1])
+        left_text, right_text = self._percent_text(self._clip_share[0]), self._percent_text(self._clip_share[1])
         metrics = painter.fontMetrics()
         arrow = 10
         gap = THEME.space_sm

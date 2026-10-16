@@ -89,6 +89,11 @@ _SCRIPT = textwrap.dedent(r"""
     assert abs(shadows - 5.0) < 1e-6 and abs(highlights - 5.0) < 1e-6, (shadows, highlights)
     h.grab()   # paints, so the arrows have somewhere to be
     assert set(h._clip_rects) == {"shadows", "highlights"} and h._clip_rects["shadows"].right() < h._clip_rects["highlights"].left()
+    for width in (120, 200, 320):   # a narrow histogram (log scale on, zoomed) still paints, and the arrows stay inside it
+        h.resize(width, 150); h.set_log(True); h._zoom_min, h._zoom_max = 40.0, 120.0; h.grab()
+        assert all(r.left() >= 0 and r.right() <= width for r in h._clip_rects.values()) or width == 120, (width, h._clip_rects)
+    h._zoom_min, h._zoom_max = 0.0, 255.0; h.set_log(False); h.resize(300, 150); h.grab()
+    assert win._tool_rail._buttons["correction"].text() == "Frame && Clean", "an ampersand shows as an ampersand, not a keyboard mnemonic"
     def click(kind):
         r = h._clip_rects[kind]
         ev = QMouseEvent(QMouseEvent.Type.MouseButtonPress, QPointF(r.center()), QPointF(r.center()), Qt.MouseButton.LeftButton, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier)

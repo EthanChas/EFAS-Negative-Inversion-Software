@@ -51,7 +51,7 @@ class ToolRail(QWidget):
             icon = QPixmap(_BLANK_ICON_SIZE, _BLANK_ICON_SIZE)
             icon.fill(Qt.GlobalColor.transparent)
         button.setIcon(QIcon(icon))
-        button.setText(label)
+        button.setText(label.replace("&", "&&"))   # a lone & would make the next letter a keyboard mnemonic ("Frame _Clean")
         button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
         button.setMinimumHeight(_BUTTON_SIZE)
         button.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
