@@ -10,6 +10,7 @@ from ..exposure.logic import EV_RANGE
 from ..finishing.logic import BORDER_COLORS, BORDER_MAX, DEFAULT_BORDER_COLOR, DEFAULT_VIGNETTE_SIZE
 from ..negative.logic import FILM_TYPE_LABELS, FILM_TYPES
 from ..colormix import logic as color_mix
+from ..edgebleed import logic as edge_bleed
 from ..lablook import logic as lab_look
 from ..printresponse import logic as print_response
 from ..sharpening.logic import DEFAULT_METHOD, METHOD_LABELS, SharpenMethod
@@ -67,6 +68,16 @@ MODULES: tuple[ModuleSpec, ...] = (
         _trim("vibrance", "Vibrance"),
         *(_trim(f"mix_{kind}_{band}", f"{band.capitalize()} {label}") for band in color_mix.BANDS for kind, label in (("hue", "hue"), ("sat", "saturation"), ("lum", "lightness"))),
     )),
+    ModuleSpec("edgebleed", "Edge bleed", (
+        FieldSpec("edge_holder", "Fill holder and sprockets", "float", 0.0, 0.0, 1.0),
+        FieldSpec("edge_bleed", "Bleed repair strength", "float", 0.0, 0.0, 1.0),
+        FieldSpec("edge_dodge", "Edge dodge", "float", 0.0, 0.0, 1.0),
+        FieldSpec("edge_reach", "Reach", "float", edge_bleed.DEFAULTS["edge_reach"], *edge_bleed.REACH_RANGE),
+        FieldSpec("edge_mask", "Mask width", "float", 0.0, *edge_bleed.MASK_RANGE),
+        FieldSpec("edge_feather", "Mask feather", "float", edge_bleed.DEFAULTS["edge_feather"], 0.0, 1.0),
+        FieldSpec("edge_mask_color", "Mask colour", "choice", "black", choices=tuple(edge_bleed.MASK_COLOUR_LABELS.items())),
+        FieldSpec("edge_mask_meter", "Leave the mask out of the metering", "bool", True),
+    )),
     ModuleSpec("colortoning", "Color toning", tuple(
         field for r, label in (("shadows", "shadows"), ("mids", "midtones"), ("highs", "highlights"))
         for field in (FieldSpec(f"tone_hue_{r}", f"Tint hue in {label}", "float", 0.0, 0.0, 360.0), FieldSpec(f"tone_amt_{r}", f"Tint strength in {label}", "float", 0.0, 0.0, 1.0))
@@ -113,6 +124,7 @@ PANEL_MODULES: dict[str, tuple[str, tuple[str, ...]]] = {
     "lablook": ("Lab Look", ("lablook",)),
     "colormixer": ("Color Mixer", ("colormixer",)),
     "colortoning": ("Color Toning", ("colortoning",)),
+    "edgebleed": ("Edge Bleed", ("edgebleed",)),
     "tonecurve": ("Tone Curve", ("tonecurve",)),
     "shadows_highlights": ("Shadows & Highlights", ("shadows_highlights",)),
     "color": ("Color", ("whitebalance", "color")),

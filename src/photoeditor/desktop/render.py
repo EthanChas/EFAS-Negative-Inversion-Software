@@ -28,7 +28,7 @@ from ..features.colormix.logic import apply_color
 from ..features.colormix.logic import is_neutral as color_is_neutral
 from ..features.lablook.logic import apply_lab_tone
 from ..features.negative import printengine
-from ..features.negative.metering import Metering
+from ..features.negative.metering import MAX_BUFFER, Metering
 from ..features.lookpresets.modules import off_overrides
 from ..features.aidust import logic as aidust
 from ..features.watermark.marks import Marks, apply_marks
@@ -47,6 +47,7 @@ from ..features.geometry.logic import (
 from ..features.lut.logic import (
     apply_channel_lut, apply_wide_lut, identity_ramp, is_identity, ramp_to_lut, to_uint8, wide_ramp, wide_ramp_to_lut,
 )
+from ..features.edgebleed import logic as edge_logic
 from ..features.flatfield.logic import apply_flatfield
 from ..features.negative.logic import (
     analysis_region,
@@ -171,6 +172,14 @@ class EditParams:
     tone_amt_mids: float = 0.0
     tone_hue_highs: float = 0.0
     tone_amt_highs: float = 0.0
+    edge_holder: float = 0.0
+    edge_bleed: float = 0.0
+    edge_dodge: float = 0.0
+    edge_reach: float = 0.08
+    edge_mask: float = 0.0
+    edge_feather: float = 0.5
+    edge_mask_color: str = "black"
+    edge_mask_meter: bool = True
     vignette: float = 0.0
     vignette_size: float = 0.5
     border: float = 0.0
@@ -290,6 +299,14 @@ class EditParams:
             tone_amt_mids=float(getattr(s, "tone_amt_mids", 0.0)),
             tone_hue_highs=float(getattr(s, "tone_hue_highs", 0.0)),
             tone_amt_highs=float(getattr(s, "tone_amt_highs", 0.0)),
+            edge_holder=float(getattr(s, "edge_holder", 0.0)),
+            edge_bleed=float(getattr(s, "edge_bleed", 0.0)),
+            edge_dodge=float(getattr(s, "edge_dodge", 0.0)),
+            edge_reach=float(getattr(s, "edge_reach", 0.08)),
+            edge_mask=float(getattr(s, "edge_mask", 0.0)),
+            edge_feather=float(getattr(s, "edge_feather", 0.5)),
+            edge_mask_color=str(getattr(s, "edge_mask_color", "black")),
+            edge_mask_meter=bool(getattr(s, "edge_mask_meter", True)),
             vignette=float(getattr(s, "vignette", 0.0)),
             vignette_size=float(getattr(s, "vignette_size", 0.5)),
             border=float(getattr(s, "border", 0.0)),
@@ -377,6 +394,7 @@ class Renderer:
         self._retouch: OrderedDict = OrderedDict()
         self.ai_prob_lookup = None
         self._flat: OrderedDict = OrderedDict()
+        self._edge: OrderedDict = OrderedDict()
         self._eight: OrderedDict = OrderedDict()
         self._patched: OrderedDict = OrderedDict()
         self._density: tuple | None = None
@@ -388,6 +406,7 @@ class Renderer:
             self._invert_key = None
             self._retouch.clear()
             self._flat.clear()
+            self._edge.clear()
             self._eight.clear()
             self._patched.clear()
             self._density = None
@@ -434,6 +453,32 @@ class Renderer:
         while len(self._flat) > _RETOUCH_CACHE_SIZE:
             self._flat.popitem(last=False)
         return result
+
+    def _edge_fixed(self, pixels: np.ndarray, key_parts: tuple, values: dict, rect, retouched) -> np.ndarray:
+        """The picture (after the geometry and the dust repair, before the crop and the conversion) with Holder and sprocket fill, Edge bleed repair and Edge gradient dodge applied,
+        worked from the crop's edge when there is a crop - cached per picture and settings, since it is a few passes over the picture."""
+        key = (key_parts, pixels.shape, pixels.dtype.str, edge_logic.scan_token(values))
+        if key in self._edge:
+            self._edge.move_to_end(key)
+            return self._edge[key][1]
+        result = edge_logic.correct_scan(pixels, values, rect)
+        self._edge[key] = (retouched, result)   # holding the repair result keeps its id from being reused
+        while len(self._edge) > _RETOUCH_CACHE_SIZE:
+            self._edge.popitem(last=False)
+        return result
+
+    def _fix_edges(self, pixels, pixels16, params: EditParams, edge_values: dict, token, retouched, scale: float):
+        """Apply the scan-side edge tools to the picture after its geometry, at the depth it is held at. -> (pixels, pixels16)"""
+        if not edge_logic.scan_active(edge_values):
+            return pixels, pixels16
+        frame = pixels16 if pixels16 is not None else pixels
+        rect = _scale_rect(params.crop_rect, scale, frame.shape[1], frame.shape[0])
+        geometry = (params.rotation_quarter_turns, params.flip_h, params.flip_v, params.fine_rotation, params.distortion, params.keystone_v, params.keystone_h,
+                    params.film_type == "bw", params.crop_rect)
+        parts = (token, id(retouched), geometry, rect)
+        if pixels16 is not None:   # with a 16-bit scan the geometry is done on that copy alone: it is the picture
+            return pixels, self._edge_fixed(pixels16, parts, edge_values, rect, retouched)
+        return self._edge_fixed(pixels, parts, edge_values, rect, retouched), pixels16
 
     def _density_image(self, pixels: np.ndarray, settings: "printengine.Settings") -> np.ndarray:
         """The scan as a density image for the Print Engine (the dyes' crosstalk taken out), kept while the same picture is rendered again."""
@@ -585,6 +630,7 @@ class Renderer:
             if flatfield is not None:  # evened out at the picture's own depth: a 16-bit scan keeps all its levels
                 source = self._flatfielded(source, token, flatfield)
                 token = (token, flatfield[0])
+            edge_values = {k: getattr(params, k) for k in edge_logic.KEYS}
             if source.dtype == np.uint16:
                 source16 = source
                 source = self._as_uint8(source, token)
@@ -611,6 +657,7 @@ class Renderer:
                 geometry(flip_horizontal)
             if params.flip_v:
                 geometry(flip_vertical)
+            pixels, pixels16 = self._fix_edges(pixels, pixels16, params, edge_values, token, retouched, scale)   # the border's light, its holder and holes: repaired before the conversion reads the picture
             if params.negative_inverted and params.metering.engine == "print":
                 deep = deep and pixels16 is not None   # an 8-bit source has no more levels to keep, whatever depth the density image is held at
                 pixels16 = self._density_image(pixels16 if pixels16 is not None else pixels, print_settings(params.metering))
@@ -627,10 +674,20 @@ class Renderer:
             ramp = wide_ramp() if wide else identity_ramp()
             if params.negative_inverted:
                 meter_rect = rect if params.metering.rect is None else _scale_rect(params.metering.rect, scale, frame.shape[1], frame.shape[0])
+                meter_params = params
+                inset = edge_logic.meter_inset(edge_values)   # the Border mask's band is not part of the picture the metering reads
+                if inset:
+                    if meter_rect is not None:
+                        mx1, my1, mx2, my2 = meter_rect
+                        d = int(inset * min(mx2 - mx1, my2 - my1))
+                        meter_rect = (mx1 + d, my1 + d, mx2 - d, my2 - d) if mx2 - mx1 > 2 * d + 8 and my2 - my1 > 2 * d + 8 else meter_rect
+                    else:
+                        meter_params = dataclasses.replace(params, metering=dataclasses.replace(params.metering, buffer=min(MAX_BUFFER, max(params.metering.buffer, inset))))
+                lut_token = (token, edge_logic.scan_token(edge_values), meter_rect) if (edge_logic.scan_active(edge_values) or inset) else token
                 if wide:
-                    ramp = np.ascontiguousarray(self._get_invert_lut(pixels16, params, meter_rect, token).T[None])
+                    ramp = np.ascontiguousarray(self._get_invert_lut(pixels16, meter_params, meter_rect, lut_token).T[None])
                 else:
-                    ramp = apply_invert_lut(ramp, self._get_invert_lut(pixels, params, meter_rect, token))
+                    ramp = apply_invert_lut(ramp, self._get_invert_lut(pixels, meter_params, meter_rect, lut_token))
             ramp = apply_channel_offsets(ramp, (params.invert_r, params.invert_g, params.invert_b))
             ramp = adjust_temperature_tint(ramp, params.temperature, params.tint)
             ramp = apply_exposure(ramp, params.exposure_ev)
@@ -697,6 +754,8 @@ class Renderer:
                 )
             if params.marks.wanted(params.wm_info, params.wm_camera, params.wm_lens, watermark_active(params.wm_film)):
                 image = apply_marks(image, params.marks, params.wm_info, params.wm_camera, params.wm_lens, watermark_active(params.wm_film))
+            if edge_logic.mask_active(edge_values):
+                image = edge_logic.apply_edge_mask(image, params.edge_mask, params.edge_feather, params.edge_mask_color)
             if params.border > 0:
                 image = apply_border(image, params.border, params.border_color)
             return image, pixels, stats, overlay_rgba
@@ -736,6 +795,7 @@ class Renderer:
                 geometry(flip_horizontal)
             if params.flip_v:
                 geometry(flip_vertical)
+            pixels, pixels16 = self._fix_edges(pixels, pixels16, params, {k: getattr(params, k) for k in edge_logic.KEYS}, token, retouched, scale)
             frame = pixels16 if pixels16 is not None else pixels
             rect = _scale_rect(params.crop_rect, scale, frame.shape[1], frame.shape[0])
             meter_rect = rect if params.metering.rect is None else _scale_rect(params.metering.rect, scale, frame.shape[1], frame.shape[0])

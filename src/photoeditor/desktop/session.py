@@ -106,6 +106,14 @@ class HistoryEntry:
     tone_amt_mids: float = 0.0
     tone_hue_highs: float = 0.0
     tone_amt_highs: float = 0.0
+    edge_holder: float = 0.0
+    edge_bleed: float = 0.0
+    edge_dodge: float = 0.0
+    edge_reach: float = 0.08
+    edge_mask: float = 0.0
+    edge_feather: float = 0.5
+    edge_mask_color: str = "black"
+    edge_mask_meter: bool = True
     keystone_v: float = 0.0
     keystone_h: float = 0.0
     metering: Metering = field(default_factory=Metering)
@@ -252,6 +260,14 @@ class AppState:
     tone_amt_mids: float = 0.0
     tone_hue_highs: float = 0.0
     tone_amt_highs: float = 0.0
+    edge_holder: float = 0.0
+    edge_bleed: float = 0.0
+    edge_dodge: float = 0.0
+    edge_reach: float = 0.08
+    edge_mask: float = 0.0
+    edge_feather: float = 0.5
+    edge_mask_color: str = "black"
+    edge_mask_meter: bool = True
     vignette: float = 0.0
     vignette_size: float = 0.5
     border: float = 0.0

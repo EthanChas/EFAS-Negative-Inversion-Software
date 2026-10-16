@@ -51,6 +51,7 @@ from ..features.negative.metering import Metering
 from ..features.watermark import layout as wm_layout
 from ..features.errormarks import logic as error_marks_logic
 from ..features.colormix import logic as color_mix_logic
+from ..features.edgebleed import logic as edge_logic
 from ..features.lablook import logic as lab_look_logic
 from ..features.printresponse import logic as print_response_logic
 from ..features.geometry import corners as corners_logic
@@ -105,7 +106,7 @@ BW_SATURATION = -1.0
 
 LOOK_FIELDS = (
     "exposure_ev", "tone_curve_points", "tone_curve_red", "tone_curve_green", "tone_curve_blue", "negative_inverted", "saturation", "temperature", "tint", "shadows", "highlights",
-    "contrast", "local_contrast", "print_snap", "print_toe", "print_toe_width", "print_shoulder", "print_shoulder_width", "lab_fade", "lab_glow", "lab_by_shadows", "lab_by_mids", "lab_by_highs", "lab_gm_shadows", "lab_gm_mids", "lab_gm_highs", "lab_response", "lab_response_amount", "vibrance", "mix_hue_red", "mix_sat_red", "mix_lum_red", "mix_hue_orange", "mix_sat_orange", "mix_lum_orange", "mix_hue_yellow", "mix_sat_yellow", "mix_lum_yellow", "mix_hue_green", "mix_sat_green", "mix_lum_green", "mix_hue_aqua", "mix_sat_aqua", "mix_lum_aqua", "mix_hue_blue", "mix_sat_blue", "mix_lum_blue", "mix_hue_purple", "mix_sat_purple", "mix_lum_purple", "mix_hue_magenta", "mix_sat_magenta", "mix_lum_magenta", "tone_hue_shadows", "tone_amt_shadows", "tone_hue_mids", "tone_amt_mids", "tone_hue_highs", "tone_amt_highs", "vignette", "vignette_size", "border", "border_color", "sharpen_amount", "sharpen_radius", "sharpen_masking", "sharpen_method", "film_type", "invert_r", "invert_g",
+    "contrast", "local_contrast", "print_snap", "print_toe", "print_toe_width", "print_shoulder", "print_shoulder_width", "lab_fade", "lab_glow", "lab_by_shadows", "lab_by_mids", "lab_by_highs", "lab_gm_shadows", "lab_gm_mids", "lab_gm_highs", "lab_response", "lab_response_amount", "vibrance", "mix_hue_red", "mix_sat_red", "mix_lum_red", "mix_hue_orange", "mix_sat_orange", "mix_lum_orange", "mix_hue_yellow", "mix_sat_yellow", "mix_lum_yellow", "mix_hue_green", "mix_sat_green", "mix_lum_green", "mix_hue_aqua", "mix_sat_aqua", "mix_lum_aqua", "mix_hue_blue", "mix_sat_blue", "mix_lum_blue", "mix_hue_purple", "mix_sat_purple", "mix_lum_purple", "mix_hue_magenta", "mix_sat_magenta", "mix_lum_magenta", "tone_hue_shadows", "tone_amt_shadows", "tone_hue_mids", "tone_amt_mids", "tone_hue_highs", "tone_amt_highs", "edge_holder", "edge_bleed", "edge_dodge", "edge_reach", "edge_mask", "edge_feather", "edge_mask_color", "edge_mask_meter", "vignette", "vignette_size", "border", "border_color", "sharpen_amount", "sharpen_radius", "sharpen_masking", "sharpen_method", "film_type", "invert_r", "invert_g",
     "invert_b", "chroma_denoise", "wm_film", "wm_texture", "wm_size", "wm_position", "wm_info", "wm_camera", "wm_lens",
 )
 
@@ -174,6 +175,7 @@ class AppController(QObject):
         self._last_logged_crop = None
         self._last_logged_color = (0.0, 0.0, 0.0)
         self._last_logged_toning: dict = {}
+        self._last_logged_edge: dict = {}
         self._last_logged_shadows_highlights = (0.0, 0.0)
         self._last_logged_sharpen = (0.0, 1.0, 0.0, DEFAULT_METHOD)
         self._last_logged_dust = (False, DEFAULT_THRESHOLD, DEFAULT_SIZE, DEFAULT_SCRATCH_SENSITIVITY)
@@ -335,6 +337,8 @@ class AppController(QObject):
         self.state.lab_response_amount = float(saved.get("lab_response_amount", 1.0))
         for key, default in color_mix_logic.DEFAULTS.items():
             setattr(self.state, key, float(saved.get(key, default)))
+        for key, default in edge_logic.DEFAULTS.items():
+            setattr(self.state, key, self._edge_value(key, saved.get(key, default)))
         self.state.vignette = float(saved.get("vignette", 0.0))
         self.state.vignette_size = float(saved.get("vignette_size", 0.5))
         self.state.border = float(saved.get("border", 0.0))
@@ -561,6 +565,7 @@ class AppController(QObject):
         self._last_logged_lab = self._lab_values()
         self._last_logged_color = self._color_values()
         self._last_logged_toning = self._toning_values()
+        self._last_logged_edge = self._edge_values()
         self._last_logged_finish = self._finishing_values()
         self._clone_source_raw = self._clone_source_display = self._clone_offset_raw = None
         self._last_logged_ai = (self.state.ai_dust, round(self.state.ai_threshold, 4), self.state.ai_grow)
@@ -1178,6 +1183,75 @@ class AppController(QObject):
             self._last_logged_color = now
             changed = [k for k in color_mix_logic.MIXER_PANEL_KEYS if abs(now[k]) > 1e-9]
             self._log("Color mixer: " + (", ".join(f"{k.replace('mix_', '').replace('_', ' ')} {now[k]:+.2f}" for k in changed[:6]) + (" ..." if len(changed) > 6 else "") if changed else "reset"))
+
+    # ------------------------------------------------------------ Edge Bleed
+    @staticmethod
+    def _edge_value(key: str, value):
+        default = edge_logic.DEFAULTS[key]
+        if isinstance(default, bool):
+            return bool(value)
+        if isinstance(default, str):
+            return value if value in edge_logic.MASK_COLOURS else default
+        return float(value)
+
+    def _edge_values(self) -> dict:
+        return {k: getattr(self.state, k) for k in edge_logic.KEYS}
+
+    def _set_edge_values(self, values: dict) -> None:
+        for key in edge_logic.KEYS:
+            if key in values:
+                setattr(self.state, key, self._edge_value(key, values[key]))
+
+    def preview_edge_bleed(self, values: dict) -> None:
+        if self.state.preview_rgb is None:
+            return
+        self._set_edge_values(values)
+        self._preview(LIVE_OTHER_METHODS)
+
+    def set_edge_bleed(self, values: dict) -> None:
+        """Edge Bleed: fill the holder and sprocket holes, repair the bleed from the film border, dodge the edges, and a mask over the picture's outer band."""
+        if self.state.preview_rgb is None:
+            return
+        self._set_edge_values(values)
+        self._settle()
+        now = self._edge_values()
+        if now != self._last_logged_edge:
+            self._last_logged_edge = now
+            s = self.state
+            parts = [f"{label} {getattr(s, key):.2f}" for key, label in (("edge_holder", "holder fill"), ("edge_bleed", "bleed repair"), ("edge_dodge", "edge dodge")) if getattr(s, key) > 1e-9]
+            if edge_logic.scan_active(now):
+                parts.append(f"reach {s.edge_reach:.2f}")
+            if s.edge_mask > 1e-9:
+                parts.append(f"{s.edge_mask_color} mask {s.edge_mask * 100:.1f}%")
+            self._log("Edge bleed: " + (", ".join(parts) if parts else "reset"))
+
+    def _edge_probe(self):
+        """(the picture after its geometry, the crop rectangle in it or None) as the edge tools see it - without their own changes - or None when no photo is open."""
+        base = self._render_base()
+        if base is None:
+            return None
+        params = dataclasses.replace(EditParams.from_state(self.state), edge_holder=0.0, edge_bleed=0.0, edge_dodge=0.0)
+        probe = self._renderer.probe_negative(base, params, self._token(), base.shape[1], flatfield=self._ff)
+        return None if probe is None else (probe[0], probe[1])
+
+    def edge_bleed_info(self) -> dict:
+        """What the Edge Bleed panel says about the open photo: where the picture's edge is taken to be (the crop, or the film border found round it)."""
+        probe = self._edge_probe()
+        if probe is None:
+            return {"frame": None, "text": "Open a photo to look for its film border."}
+        frame, crop = probe
+        if crop is not None:
+            return {"frame": crop, "text": "Working from your crop as the edge of the picture: the light outside it is what the repair takes off."}
+        found = edge_logic.find_frame(frame)
+        if found is None:
+            return {"frame": None, "text": "No crop and no clear film border found: set a crop round the picture for Bleed repair and Fill holder to work from. Edge dodge and the Border mask do not need one."}
+        h, w = frame.shape[:2]
+        return {"frame": found, "text": f"No crop: taking the film border found round the picture ({100.0 * (found[2] - found[0]) * (found[3] - found[1]) / (w * h):.0f}% of the scan). A crop round the picture works better."}
+
+    def estimate_edge_bleed(self) -> float:
+        """The Bleed repair strength (0-1) the picture's own edge suggests, at the current Reach; 0 when there is no picture edge to measure from."""
+        probe = self._edge_probe()
+        return 0.0 if probe is None else edge_logic.estimate_bleed(probe[0], self.state.edge_reach, probe[1])
 
     def _toning_values(self) -> dict:
         return {k: getattr(self.state, k) for k in color_mix_logic.TONING_KEYS}
@@ -2319,6 +2393,7 @@ class AppController(QObject):
             print_shoulder_width=s.print_shoulder_width,
             **{k: getattr(s, k) for k in lab_look_logic.ALL_KEYS},
             **{k: getattr(s, k) for k in color_mix_logic.KEYS},
+            **{k: getattr(s, k) for k in edge_logic.KEYS},
             metering=s.metering,
             vignette=s.vignette,
             vignette_size=s.vignette_size,
@@ -2438,6 +2513,7 @@ class AppController(QObject):
             **dict(zip(print_response_logic.DEFAULTS, self._print_values())),
             **self._lab_values(),
             **self._color_values(),
+            **self._edge_values(),
             "vignette": s.vignette,
             "vignette_size": s.vignette_size,
             "border": s.border,
@@ -2500,6 +2576,8 @@ class AppController(QObject):
         for key, default in lab_look_logic.ALL_DEFAULTS.items():
             setattr(self.state, key, default)
         for key, default in color_mix_logic.DEFAULTS.items():
+            setattr(self.state, key, default)
+        for key, default in edge_logic.DEFAULTS.items():
             setattr(self.state, key, default)
         self.state.vignette, self.state.vignette_size, self.state.border, self.state.border_color = 0.0, 0.5, 0.0, "white"
         self.state.metering = Metering()
@@ -2693,7 +2771,7 @@ class AppController(QObject):
         self._last_logged_local = entry.local_contrast
         s.print_snap, s.print_toe, s.print_toe_width, s.print_shoulder, s.print_shoulder_width = (
             entry.print_snap, entry.print_toe, entry.print_toe_width, entry.print_shoulder, entry.print_shoulder_width)
-        for key in (*lab_look_logic.ALL_KEYS, *color_mix_logic.KEYS):
+        for key in (*lab_look_logic.ALL_KEYS, *color_mix_logic.KEYS, *edge_logic.KEYS):
             setattr(s, key, getattr(entry, key))
         self._last_logged_print = self._print_values()
         s.vignette, s.vignette_size, s.border, s.border_color = entry.vignette, entry.vignette_size, entry.border, entry.border_color
@@ -3641,7 +3719,7 @@ class AppController(QObject):
             EditParams.from_state(s),
             exposure_ev=0.0, tone_curve_points=tuple(tuple(p) for p in DEFAULT_POINTS), tone_curve_red=tuple(DEFAULT_POINTS), tone_curve_green=tuple(DEFAULT_POINTS), tone_curve_blue=tuple(DEFAULT_POINTS), saturation=0.0, temperature=0.0, tint=0.0, shadows=0.0,
             highlights=0.0, sharpen_amount=0.0, dust_auto=False, scratch_lines=(), heal_strokes=(), clone_strokes=(), ai_dust=False, contrast=0.0,
-            chroma_denoise=0.0, local_contrast=0.0, print_snap=0.0, print_toe=0.0, print_shoulder=0.0, **lab_look_logic.ALL_DEFAULTS, **color_mix_logic.DEFAULTS, vignette=0.0, border=0.0, wm_film="off", wm_info=False, crop_rect=None,
+            chroma_denoise=0.0, local_contrast=0.0, print_snap=0.0, print_toe=0.0, print_shoulder=0.0, **lab_look_logic.ALL_DEFAULTS, **color_mix_logic.DEFAULTS, **edge_logic.DEFAULTS, vignette=0.0, border=0.0, wm_film="off", wm_info=False, crop_rect=None,
             rotation_quarter_turns=0, flip_h=False, flip_v=False, fine_rotation=0.0, distortion=0.0, keystone_v=0.0, keystone_h=0.0,
         )
         scanned = self._negative_base()
@@ -3792,7 +3870,7 @@ class AppController(QObject):
             exposure_ev=0.0, tone_curve_points=tuple(tuple(p) for p in DEFAULT_POINTS), tone_curve_red=tuple(DEFAULT_POINTS), tone_curve_green=tuple(DEFAULT_POINTS), tone_curve_blue=tuple(DEFAULT_POINTS),
             saturation=0.0, temperature=0.0, tint=0.0, shadows=0.0, highlights=0.0, sharpen_amount=0.0,
             dust_auto=False, scratch_lines=(), heal_strokes=(), clone_strokes=(), ai_dust=False, contrast=0.0, chroma_denoise=0.0, local_contrast=0.0,
-            print_snap=0.0, print_toe=0.0, print_shoulder=0.0, **lab_look_logic.ALL_DEFAULTS, **color_mix_logic.DEFAULTS,
+            print_snap=0.0, print_toe=0.0, print_shoulder=0.0, **lab_look_logic.ALL_DEFAULTS, **color_mix_logic.DEFAULTS, **edge_logic.DEFAULTS,
             vignette=0.0, border=0.0 if not keep_frame else EditParams.from_state(self.state).border,
             wm_film="off", wm_info=False,
         )

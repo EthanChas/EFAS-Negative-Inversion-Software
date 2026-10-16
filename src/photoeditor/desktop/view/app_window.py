@@ -40,6 +40,7 @@ from .denoise_panel import ChromaDenoiseToolPanel
 from .local_contrast_panel import LocalContrastToolPanel
 from .color_mixer_panel import ColorMixerToolPanel
 from .color_toning_panel import ColorToningToolPanel
+from .edge_bleed_panel import EdgeBleedPanel
 from .lab_look_panel import LabLookToolPanel
 from .print_response_panel import PrintResponseToolPanel
 from ...features.metadata.source_exif import read_exif_from_file
@@ -458,7 +459,7 @@ class AppWindow(QMainWindow):
 
         self._module_menus = ModuleMenus(self.controller, self)
         for key, panel in (
-            ("exposure", self._exposure_tool), ("contrast", self._contrast_tool), ("printresponse", self._print_response_tool), ("lablook", self._lab_look_tool), ("colormixer", self._color_mixer_tool), ("colortoning", self._color_toning_tool), ("tonecurve", self._curve_tool),
+            ("exposure", self._exposure_tool), ("contrast", self._contrast_tool), ("printresponse", self._print_response_tool), ("lablook", self._lab_look_tool), ("colormixer", self._color_mixer_tool), ("colortoning", self._color_toning_tool), ("edgebleed", self._edge_tool), ("tonecurve", self._curve_tool),
             ("shadows_highlights", self._shadows_highlights_tool), ("color", self._color_tool), ("sharpening", self._sharpening_tool),
             ("localcontrast", self._local_contrast_tool), ("denoise", self._denoise_tool), ("negative", self._negative_tool),
             ("watermark", self._watermark_tool), ("finishing", self._finishing_tool),
@@ -1217,6 +1218,11 @@ class AppWindow(QMainWindow):
         self.controller.flatfield_busy_changed.connect(lambda _busy: self._refresh_flatfield_panel())
         self.controller.flatfield_progress.connect(self._flatfield_tool.set_progress)
         negative_tools_col.addWidget(self._flatfield_tool)
+        self._edge_tool = EdgeBleedPanel()
+        self._edge_tool.changed.connect(self.controller.set_edge_bleed)
+        self._edge_tool.preview_requested.connect(self.controller.preview_edge_bleed)
+        self._edge_tool.estimate_requested.connect(self._on_edge_estimate)
+        negative_tools_col.addWidget(self._edge_tool)
         negative_tools_col.addWidget(self._advanced)
 
         self._crop_tool = CropToolPanel()
@@ -2581,6 +2587,9 @@ class AppWindow(QMainWindow):
         self._color_mixer_tool.set_values(self.controller._color_values())
         self._color_toning_tool.reset()
         self._color_toning_tool.set_values(self.controller._toning_values())
+        self._edge_tool.reset()
+        self._edge_tool.set_values(self.controller._edge_values())
+        self._edge_tool.show_status(self.controller.edge_bleed_info()["text"])
         self._watermark_tool.set_values(
             state.wm_film, state.wm_texture, state.wm_size, state.wm_position, state.wm_info, state.wm_camera, state.wm_lens
         )
@@ -2755,6 +2764,13 @@ class AppWindow(QMainWindow):
         self._flatfield_tool.show_message(result.headline)
         if not result.ok:
             self._show_flat_check(result, "The flat field built from this roll")
+
+    def _on_edge_estimate(self) -> None:
+        """Edge Bleed's Auto strength: fit the repair to how the picture's own edge brightens toward the clear border."""
+        strength = self.controller.estimate_edge_bleed()
+        self._edge_tool.show_status(self.controller.edge_bleed_info()["text"] + (f" Estimated strength {strength:.2f}." if strength > 0 else " No bleed found to fit."))
+        if strength > 0:
+            self._edge_tool.set_strength(strength)
 
     def _refresh_flatfield_panel(self) -> None:
         self._flatfield_tool.refresh(self.controller.flatfield_info())
@@ -3131,6 +3147,7 @@ class AppWindow(QMainWindow):
         self._lab_look_tool.set_values(self.controller._lab_values())
         self._color_mixer_tool.set_values(self.controller._color_values())
         self._color_toning_tool.set_values(self.controller._toning_values())
+        self._edge_tool.set_values(self.controller._edge_values())
         self._watermark_tool.set_values(
             state.wm_film, state.wm_texture, state.wm_size, state.wm_position, state.wm_info, state.wm_camera, state.wm_lens
         )

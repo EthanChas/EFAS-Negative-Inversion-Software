@@ -37,7 +37,7 @@ _SCRIPT = textwrap.dedent(r"""
     order = [k for k in rail._buttons]
     assert order[:6] == ["negative", "correction", "exposure", "color", "detail", "watermark"] and order[6:] == ["metadata", "plugins"], order
     columns = win._tab_columns
-    assert column(columns["negative"])[:2] == ["Negative", "Flat Field"], column(columns["negative"])
+    assert column(columns["negative"])[:3] == ["Negative", "Flat Field", "Edge Bleed"], column(columns["negative"])
     assert "Dust & Scratches" not in column(columns["negative"]), "clean-up is not with the conversion any more"
     assert column(columns["correction"]) == ["Crop & Rotate", "Dust & Scratches", "AI Dust Detection", "Error marking"], column(columns["correction"])
     assert column(columns["exposure"]) == ["Exposure", "Contrast", "Shadows & Highlights", "Tone Curve", "Print Response", "Masking"], column(columns["exposure"])
