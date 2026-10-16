@@ -50,6 +50,8 @@ DEFAULTS: dict[str, Any] = {
     "slideshow_video_fps": 30,
     "ffmpeg_path": "",
     "hotstack_folders": [],
+    "gpu_enabled": True,
+    "gpu_limit": 100,
     "live_open_editor": True,
     "live_session": [],
     "live_aside": [],
@@ -83,9 +85,12 @@ def _clean(data: Any) -> dict[str, Any]:
     for key in ("raw_auto_bright", "raw_linear", "auto_advance", "backup_auto", "check_updates", "advanced_mode", "scan_quality", "hover_modules", "module_colours", "workbench_library", "hq_always", "collapse_on_tab_change", "film_reference_online", "crop_roll_same_size", "hover_preview", "error_marks_visible", "histogram_log", "histogram_split"):
         if isinstance(data.get(key), bool):
             out[key] = data[key]
-    for key in ("slideshow_shuffle", "slideshow_loop", "slideshow_captions", "slideshow_edits", "slideshow_progress", "live_open_editor"):
+    for key in ("slideshow_shuffle", "slideshow_loop", "slideshow_captions", "slideshow_edits", "slideshow_progress", "live_open_editor", "gpu_enabled"):
         if isinstance(data.get(key), bool):
             out[key] = data[key]
+    limit = data.get("gpu_limit")   # the share of the graphics card's time (per cent) the picture work may take
+    if isinstance(limit, int) and not isinstance(limit, bool):
+        out["gpu_limit"] = max(10, min(100, limit))
     seconds = data.get("slideshow_interval")
     if isinstance(seconds, (int, float)) and not isinstance(seconds, bool):
         out["slideshow_interval"] = float(min(max(seconds, 1.0), 120.0))

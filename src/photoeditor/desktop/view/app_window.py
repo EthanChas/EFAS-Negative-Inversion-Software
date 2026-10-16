@@ -1,6 +1,7 @@
 import atexit
 import dataclasses
 import os
+import threading
 import time
 import weakref
 
@@ -72,6 +73,8 @@ from ...features.settings import logic as app_settings
 from ...features.slideshow import logic as slideshow_logic
 from ...theme import runtime as theme_runtime
 from ...features.library.index import LibraryIndex, read_record
+from ...features import gpu as gpu_config
+from ...features.gpu import pipeline as gpu_pipeline
 from ...features.livefolder import filing as live_filing
 from ...features.livefolder import logic as live_logic
 from ...features.browse.processor import load_edited_thumbnail
@@ -528,6 +531,7 @@ class AppWindow(QMainWindow):
         for panel in self.findChildren(CollapsiblePanel):
             insert_before_headings(panel.body())  # a thin line in front of each section heading inside a module
         self._apply_hotstack()
+        self._apply_gpu_settings()
         self._start_plugins()
 
     # ------------------------------------------------------------ plugins
@@ -2555,6 +2559,12 @@ class AppWindow(QMainWindow):
                              else old + f"{widget.metaObject().className()} {{ border: 2px solid {THEME.accent_primary}; }}")
         QTimer.singleShot(1300, lambda: widget.setStyleSheet(old))
 
+    def _apply_gpu_settings(self) -> None:
+        """Hand the graphics card settings to the render code, and open the card in the background (it takes about a second) so the first big picture does not wait for it."""
+        gpu_config.configure(enabled=app_settings.get("gpu_enabled"), limit=app_settings.get("gpu_limit"))
+        if gpu_config.enabled():
+            threading.Thread(target=gpu_pipeline.warm_up, name="gpu-warm-up", daemon=True).start()
+
     def show_settings(self, page: str = "") -> None:
         dialog = SettingsDialog(self, self.controller, plugins=self._plugin_manager, start_page=page if isinstance(page, str) else "")
         if dialog.exec() != QDialog.DialogCode.Accepted:
@@ -2567,6 +2577,7 @@ class AppWindow(QMainWindow):
         if app_settings.get("theme") != old_theme:
             self._plugin_emit("theme_changed", {"theme": app_settings.get("theme")})
         self._lighttable.set_library_visible(app_settings.get("workbench_library"))
+        self._apply_gpu_settings()
         self.apply_keybinds()
         path = self.controller.state.image_path
         if changed and path:

@@ -19,7 +19,7 @@ from . import applog
 REPO = "EthanChas/EFAS-Negative-Inversion-Software"
 ISSUE_URL = f"https://github.com/{REPO}/issues/new"
 MAX_URL_BODY = 3500
-PACKAGES = ("PyQt6", "numpy", "opencv-python-headless", "Pillow", "rawpy", "onnxruntime", "send2trash")
+PACKAGES = ("PyQt6", "numpy", "opencv-python-headless", "Pillow", "rawpy", "onnxruntime", "wgpu", "send2trash")
 
 _WIN_PATH = re.compile(r"[A-Za-z]:\\(?:[^\\/:*?\"<>|\r\n]+\\)*[^\\/:*?\"<>|\r\n\s]*")
 _UNIX_PATH = re.compile(r"(?<![\w.:>])/(?:[\w.\- ]+/)+[\w.\- ]*[\w.\-]")

@@ -10,7 +10,10 @@ from PyQt6.QtWidgets import (
 )
 
 from ...features.aidust import logic as aidust
+from ...features import gpu as gpu_config
 from ...features.datadir import BACKUP_DIR, app_data_dir
+from ...features.gpu import device as gpu_device
+from ...features.gpu import pipeline as gpu_pipeline
 from ...features.keybinds import logic as binds
 from ...features.persistence import export as data_export
 from ...features.persistence.backup import backup_database, list_backups
@@ -79,7 +82,7 @@ class SettingsDialog(QDialog):
         self._categories.setFixedWidth(160)
         self._pages = QStackedWidget()
         for title, page in (
-            ("General", self._general_page()), ("Themes", self._themes_page()), ("Image decoding", self._decoding_page()), ("Keybinds", self._keybinds_page()),
+            ("General", self._general_page()), ("Themes", self._themes_page()), ("Image decoding", self._decoding_page()), ("Graphics card", self._gpu_page()), ("Keybinds", self._keybinds_page()),
             ("Data & backup", self._data_page()), ("Storage", self._storage_page()), ("Plugins", self._plugins_page()),
         ):
             self._categories.addItem(title)
@@ -395,6 +398,50 @@ class SettingsDialog(QDialog):
         col.addWidget(self._module_colours)
         col.addWidget(_hint("Every module gets its own header gradient. The colours are assigned, not random: a module has the same colour every time and on every computer. "
                             "Right-click a module's header to pick a different colour for it, or none."))
+        col.addStretch(1)
+        return page
+
+    def _gpu_page(self) -> QWidget:
+        """Settings > Graphics card: whether the heavy per-pixel picture work (the colour mixer, vibrance, the scanner colour response and toning, shadows / highlights, saturation, the
+        vignette) runs on the graphics card, through Vulkan, and how much of the card's time it may take."""
+        page = QWidget()
+        col = QVBoxLayout(page)
+        col.setSpacing(THEME.space_md)
+        col.addWidget(_hint("The editor can hand the heaviest per-pixel picture work to your graphics card, through Vulkan: the colour mixer, vibrance, the scanner colour response and "
+                            "colour toning, shadows / highlights, saturation and the vignette. On a full-size photo the colour work takes a fraction of a second instead of half a "
+                            "minute. Everything else (denoise, sharpening, local contrast, geometry, dust repair) still runs on the processor. If the card cannot be used, or "
+                            "gives any trouble, the processor does the work, exactly as before."))
+        self._gpu_status = QLabel(f"Graphics card: {gpu_device.describe()}")
+        col.addWidget(self._gpu_status)
+        self._gpu_enabled = QCheckBox("Use the graphics card for the colour work")
+        self._gpu_enabled.setChecked(self._initial["gpu_enabled"])
+        self._gpu_enabled.setToolTip("Off: everything runs on the processor. Pictures under about a third of a megapixel always do.")
+        col.addWidget(self._gpu_enabled)
+        row = QHBoxLayout()
+        row.setSpacing(THEME.space_md)
+        row.addWidget(QLabel("Most of the card's time it may take"))
+        self._gpu_limit = QSlider(Qt.Orientation.Horizontal)
+        self._gpu_limit.setRange(*gpu_config.LIMIT_RANGE)
+        self._gpu_limit.setSingleStep(5)
+        self._gpu_limit.setPageStep(10)
+        self._gpu_limit.setValue(self._initial["gpu_limit"])
+        self._gpu_limit.setToolTip("100% works the card as hard as it will go. Lower it and the work is done in short bands with a rest after each, so the card is busy for only that share of the time")
+        row.addWidget(self._gpu_limit, 1)
+        self._gpu_limit_label = QLabel("")
+        self._gpu_limit_label.setMinimumWidth(48)
+        row.addWidget(self._gpu_limit_label)
+        col.addLayout(row)
+        self._gpu_limit.valueChanged.connect(lambda v: self._gpu_limit_label.setText(f"{v}%"))
+        self._gpu_limit_label.setText(f"{self._gpu_limit.value()}%")
+        col.addWidget(_hint("The limit is the share of time the card works on your pictures. At 100% it is not held back. At 50% each short burst of work is followed by an equal rest, "
+                            "at 25% by three times as long: the picture takes longer, but the card stays cooler and quieter and the screen and other programs keep the rest of its time. "
+                            "It applies to previews and exports alike."))
+        self._gpu_used = QLabel("")
+        self._gpu_used.setProperty("role", "hint")
+        col.addWidget(self._gpu_used)
+        stats = gpu_pipeline.STATS
+        self._gpu_used.setText(f"This session: {stats['runs']} job{'s' if stats['runs'] != 1 else ''} on the card, {stats['pixels'] / 1e6:.0f} megapixels, "
+                               f"busy for {stats['busy']:.1f} s, rested for {stats['rested']:.1f} s.")
         col.addStretch(1)
         return page
 
@@ -838,6 +885,7 @@ class SettingsDialog(QDialog):
             "raw_demosaic": self._demosaic.currentData(), "raw_auto_bright": self._auto_bright.isChecked(), "raw_linear": self._raw_linear.isChecked(), "auto_advance": self._auto_advance.isChecked(),
             "check_updates": self._check_updates.isChecked(), "scan_quality": self._scan_quality.isChecked(),
             "hover_modules": self._hover_modules.isChecked(), "workbench_library": self._workbench_library.isChecked(), "hq_always": self._hq_always.isChecked(), "collapse_on_tab_change": self._collapse_on_tab_change.isChecked(), "film_reference_online": self._film_reference_online.isChecked(), "hover_preview": self._hover_preview.isChecked(), "module_colours": self._module_colours.isChecked(),
+            "gpu_enabled": self._gpu_enabled.isChecked(), "gpu_limit": self._gpu_limit.value(),
             "backup_auto": self._backup_auto.isChecked(), "backup_keep": self._backup_keep.value(), "backup_dir": self._backup_dir,
             "keybinds": binds.overrides_from(self._keys), **self._theme_values(),
         }

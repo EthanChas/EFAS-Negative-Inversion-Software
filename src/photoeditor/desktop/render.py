@@ -35,6 +35,7 @@ from ..features.watermark.marks import Marks, apply_marks
 from ..features.watermark.logic import apply_watermark, is_active as watermark_active
 from ..features.exposure.logic import apply_exposure
 from ..features.finishing.logic import apply_border, apply_vignette, is_active as finishing_active
+from ..features.gpu import pipeline as gpu_pipeline
 from ..features.geometry.logic import (
     apply_crop,
     fine_rotate,
@@ -725,13 +726,20 @@ class Renderer:
                     pixels = apply_chroma_denoise(pixels, params.chroma_denoise, scale)
                 if local:
                     pixels = apply_local_contrast(pixels, params.local_contrast)
-                pixels = adjust_shadows_highlights(pixels, params.shadows, params.highlights)
-                pixels = adjust_saturation(pixels, params.saturation)
                 post = ramp_to_lut(lab(tone(identity_ramp())))
-                if not is_identity(post):
-                    pixels = apply_channel_lut(pixels, post)
-                if color_active:   # vibrance, the colour mixer and the scanner colour response: in OKLCH, on the finished tones
-                    pixels = apply_color(pixels, color_values, color_response, params.lab_response_amount)
+                post_lut = None if is_identity(post) else post
+                # these four stages work on every pixel by itself: on a big enough picture they go to the graphics card (see features/gpu), the rest of the time they run here
+                on_card = gpu_pipeline.tone(pixels, params.shadows, params.highlights, params.saturation, post_lut,
+                                            (color_values, color_response, params.lab_response_amount) if color_active else None)
+                if on_card is not None:
+                    pixels = on_card
+                else:
+                    pixels = adjust_shadows_highlights(pixels, params.shadows, params.highlights)
+                    pixels = adjust_saturation(pixels, params.saturation)
+                    if post_lut is not None:
+                        pixels = apply_channel_lut(pixels, post_lut)
+                    if color_active:   # vibrance, the colour mixer and the scanner colour response: in OKLCH, on the finished tones
+                        pixels = apply_color(pixels, color_values, color_response, params.lab_response_amount)
             elif wide:
                 final = lab(tone(ramp))
                 if deep and not (ec_active or params.sharpen_amount or params.vignette or watermark_active(params.wm_film) or params.marks.wanted(params.wm_info, params.wm_camera, params.wm_lens, watermark_active(params.wm_film)) or params.border > 0):
@@ -760,7 +768,8 @@ class Renderer:
             if ec_active:   # the edges' colour and brightness, on the finished and cropped picture, before the vignette
                 image = ec_logic.apply_edge_color(image, ec_values)
             if params.vignette:
-                image = apply_vignette(image, params.vignette, params.vignette_size)
+                lit = gpu_pipeline.vignette(image, params.vignette, params.vignette_size)
+                image = lit if lit is not None else apply_vignette(image, params.vignette, params.vignette_size)
             if watermark_active(params.wm_film):
                 image = apply_watermark(
                     image, params.wm_film, params.wm_texture, params.wm_size, params.wm_position,
