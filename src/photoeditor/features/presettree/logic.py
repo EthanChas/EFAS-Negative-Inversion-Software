@@ -91,6 +91,22 @@ def flatten(nodes: list[Node]) -> list[str]:
     return out
 
 
+def search(names: list[str], query: str, tips: dict[str, str] | None = None) -> list[str]:
+    """The names that have every word of `query` in their path (the folders they sit in and their own name) or, where `tips` gives a description for the name, in that - without
+    regard to case, and in the order given. An empty query keeps every name. "warm frontier" finds "Scanners/Frontier 100" if its description says warm."""
+    words = [w for w in str(query).casefold().replace(SEP, " ").replace(ARROW.strip(), " ").split() if w]
+    if not words:
+        return list(names)
+    described = {clean_path(k).casefold(): v for k, v in (tips or {}).items()}
+    found = []
+    for name in names:
+        path = clean_path(name)
+        haystack = (path.replace(SEP, " ") + " " + described.get(path.casefold(), "")).casefold()
+        if all(w in haystack for w in words):
+            found.append(name)
+    return found
+
+
 def in_folder(names: list[str], folder: str) -> list[str]:
     """The names inside a folder, at any depth."""
     prefix = clean_path(folder).casefold() + SEP

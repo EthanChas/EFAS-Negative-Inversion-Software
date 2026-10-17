@@ -253,7 +253,9 @@ Once one frame looks right, the rest of the roll should not take as long. That i
 
 A **preset** is a saved look: the open photo's **tone, colour, film type, sharpening and watermark settings**, stored under a name. It deliberately **leaves out the crop, the rotation and the dust repairs**, because those belong to one particular frame and would be wrong on another. Apply a preset to a different photograph and you recreate the *look*, not the framing.
 
-In the **Presets** panel, **My Presets** are the ones you made, and **Built-in Presets** come with EFAS and are read-only (copy one to My Presets to change it). Put a slash in a name to make a folder: `B&W/Number 1` is *Number 1* inside *B&W*, shown as a tree. Apply a preset by double-clicking it, or select it and press **Apply**. **Hover preview** lets you rest the mouse on a preset to see it on the picture before you apply it; move away and the photo goes back (Settings > General can turn it off).
+In the **Presets** panel, **My Presets** are the ones you made, and **Built-in Presets** come with EFAS and are read-only (copy one to My Presets to change it). Put a slash in a name to make a folder: `B&W/Number 1` is *Number 1* inside *B&W*, shown as a tree.
+
+With a long list, use the **search box** above it. It keeps only the presets that have every word you type in their folder, name or, for the built-in ones, description, so `portra` finds the Portra stocks and the presets whose description mentions Portra, and `warm lab` finds the built-ins whose description has both words. The folders the matches are in open by themselves. `Esc` clears the box, and `Enter` or the Down arrow selects the first one found. If the list you are looking at has no match, the line under the box says how many the other list has. Apply a preset by double-clicking it, or select it and press **Apply**. **Hover preview** lets you rest the mouse on a preset to see it on the picture before you apply it; move away and the photo goes back (Settings > General can turn it off).
 
 ## The built-in sets
 

@@ -37,8 +37,9 @@ class PresetTree(QTreeWidget):
         self.viewport().installEventFilter(self)
 
     # ------------------------------------------------------------ filling
-    def set_names(self, names: list[str], select: str | None = None, tips: dict[str, str] | None = None, empty_text: str = "") -> None:
-        """Show these names as a tree. A folder seen for the first time starts closed; one the person opened stays open, and the folders above a selected preset are opened to show it. `select` is a name to select."""
+    def set_names(self, names: list[str], select: str | None = None, tips: dict[str, str] | None = None, empty_text: str = "", expand_all: bool = False) -> None:
+        """Show these names as a tree. A folder seen for the first time starts closed; one the person opened stays open, and the folders above a selected preset are opened to show it. `select` is a name to select.
+        `expand_all` opens every folder (a search's results, which would otherwise hide inside closed folders) without it being remembered as the person's choice."""
         self.blockSignals(True)
         self.clear()
         self._tips = {tree.clean_path(k).casefold(): v for k, v in (tips or {}).items()}
@@ -61,7 +62,7 @@ class PresetTree(QTreeWidget):
                     add(child, item)
                 key = node.path.casefold()
                 self._known.add(key)
-                item.setExpanded(key in self._open)
+                item.setExpanded(expand_all or key in self._open)
             else:
                 item.setData(0, NAME_ROLE, node.full)
                 tip = self._tips.get(node.path.casefold(), "")

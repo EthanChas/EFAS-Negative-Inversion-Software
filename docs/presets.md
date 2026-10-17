@@ -7,6 +7,7 @@ The **Presets** module (left column, under History) holds saved looks: tone, col
 Two buttons at the top of the module choose which list shows.
 
 - **My Presets** are the presets you made. Save the open photo's look with **Save Current...**; delete, rename, move and edit them (Advanced Preset Edit).
+- The **search box** above the list narrows whichever list is showing to the presets that have every word you type in their folder, name or, for the built-in ones, their description (so `warm lab` finds the built-ins whose description has both words). The folders the matches are in open by themselves and close again when you clear the box. Esc clears it, and Enter or the Down arrow selects the first preset found and moves to the list. A line under the box says how many presets are left, and when the list showing has none, how many the other one has.
 - **Built-in Presets** come with EFAS and cannot be changed. Select one to read what it is; **Apply** it (or double-click), apply it to the **roll** (**To Roll...**), or hover it to preview it on the picture first. **Copy to My Presets** makes an editable copy of it.
 
 ## Folders

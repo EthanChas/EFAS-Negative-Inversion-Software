@@ -1,19 +1,35 @@
 from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtWidgets import QHBoxLayout, QInputDialog, QLabel, QMenu, QMessageBox, QPushButton, QWidget
+from PyQt6.QtGui import QIcon
+from PyQt6.QtWidgets import QHBoxLayout, QInputDialog, QLabel, QLineEdit, QMenu, QMessageBox, QPushButton, QWidget
 
 from ...features.presettree import logic as tree
 from ...theme.tokens import THEME
+from . import panel_icons
 from .collapsible_panel import CollapsiblePanel
 from .preset_tree import PresetTree
 
 _LIST_MAX_HEIGHT = 190
 
 
+class _SearchBox(QLineEdit):
+    """The search box: Esc clears it, and the Down arrow goes to the first preset found."""
+
+    down_pressed = pyqtSignal()
+
+    def keyPressEvent(self, event) -> None:
+        if event.key() == Qt.Key.Key_Escape and self.text():
+            self.clear()
+        elif event.key() == Qt.Key.Key_Down:
+            self.down_pressed.emit()
+        else:
+            super().keyPressEvent(event)
+
+
 class LookPresetsPanel(CollapsiblePanel):
     """Saved looks, under History: save the open photo's tone, color, film type, sharpening and watermark under a name, then put it on any photo with Apply (or a
     double-click) - or on the whole folder. Two buttons choose which presets the list shows: My Presets (the ones you made) or Built-in Presets (those that come with
-    EFAS, read-only). Either list is a tree: a name with slashes, like "B&W/Number 1", is a preset inside a folder. The panel only asks for names and confirmations;
-    the controller keeps the presets."""
+    EFAS, read-only). Either list is a tree: a name with slashes, like "B&W/Number 1", is a preset inside a folder. A search box above the list narrows it to the presets
+    whose folder, name or (for the built-in ones) description has every word typed. The panel only asks for names and confirmations; the controller keeps the presets."""
 
     save_requested = pyqtSignal(str)
     apply_requested = pyqtSignal(str)
@@ -38,7 +54,8 @@ class LookPresetsPanel(CollapsiblePanel):
                 "Save the open photo's look (tone, color, film type, sharpening, watermark) under a name, then apply it to any photo - "
                 "double-click a preset, or select it and press Apply. Cropping, rotation and dust repairs are never part of a preset.\n\n"
                 "My Presets are the ones you made; Built-in Presets come with EFAS and cannot be changed (copy one to My Presets to edit it). "
-                "Put a slash in a name to make a folder: 'B&W/Number 1' is Number 1 inside B&W. Right-click a folder or preset for more."
+                "Put a slash in a name to make a folder: 'B&W/Number 1' is Number 1 inside B&W. Right-click a folder or preset for more.\n\n"
+                "The search box narrows the list to the presets that have every word you type in their folder, name or description (Esc clears it)."
             ),
             start_expanded=False,
             parent=parent,
@@ -62,6 +79,21 @@ class LookPresetsPanel(CollapsiblePanel):
             switch.addWidget(button, 1)
         self._mine_btn.setChecked(True)
         body.addLayout(switch)
+
+        self._search = _SearchBox()
+        self._search.setPlaceholderText("Search presets: warm, B&W, Portra...")
+        self._search.setClearButtonEnabled(True)
+        self._search.setToolTip("Narrow the list to the presets that have every word you type in their folder, name or description. Esc clears it; the Down arrow goes to the first one found")
+        self._search.addAction(QIcon(panel_icons.pixmap("search", 16, THEME.text_secondary)), QLineEdit.ActionPosition.LeadingPosition)
+        self._search.textChanged.connect(lambda _text: self._refill(self.selected()))
+        self._search.returnPressed.connect(self._pick_first)
+        self._search.down_pressed.connect(self._pick_first)
+        body.addWidget(self._search)
+        self._found = QLabel("")
+        self._found.setProperty("role", "hint")
+        self._found.setWordWrap(True)
+        self._found.hide()
+        body.addWidget(self._found)
 
         self._tree = PresetTree()
         self._tree.setMaximumHeight(_LIST_MAX_HEIGHT)
@@ -146,11 +178,41 @@ class LookPresetsPanel(CollapsiblePanel):
             self._refill()
 
     def _refill(self, select: str | None = None) -> None:
-        if self.showing_builtin():
-            self._tree.set_names(self._builtin, select, self._builtin_tips, "No built-in presets.")
-        else:
-            self._tree.set_names(self._mine, select, None, "No presets yet.")
+        builtin = self.showing_builtin()
+        names, tips = (self._builtin, self._builtin_tips) if builtin else (self._mine, None)
+        query = self._search.text().strip()
+        shown = tree.search(names, query, tips)
+        empty = ("No built-in presets." if builtin else "No presets yet.") if not names else "No preset matches."
+        self._tree.set_names(shown, select, tips if builtin else None, empty, expand_all=bool(query))
+        self._show_found(query, len(shown), len(names), builtin)
         self._sync_buttons()
+
+    def _show_found(self, query: str, shown: int, total: int, builtin: bool) -> None:
+        """Under the search box: how many presets it left, and - when this list has none - how many the other list has."""
+        if not query:
+            self._found.hide()
+            return
+        text = f"{shown} of {total} preset{'s' if total != 1 else ''}"
+        if shown == 0:
+            other_names, other_tips = (self._mine, None) if builtin else (self._builtin, self._builtin_tips)
+            other = tree.search(other_names, query, other_tips)
+            text = "No match here" + (f"; {len(other)} in {'My Presets' if builtin else 'Built-in Presets'}" if other else "")
+        self._found.setText(text)
+        self._found.show()
+
+    def search(self, text: str) -> None:
+        """Put `text` in the search box (it narrows the list as if typed)."""
+        self._search.setText(text)
+
+    def search_text(self) -> str:
+        return self._search.text().strip()
+
+    def _pick_first(self) -> None:
+        """Enter or the Down arrow in the search box: the first preset found is selected, and the keyboard moves to the list."""
+        names = self._tree.names_in_view()
+        if names:
+            self._tree.select_name(names[0])
+            self._tree.setFocus()
 
     def set_has_photo(self, has_photo: bool) -> None:
         self._has_photo = has_photo
