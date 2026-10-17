@@ -54,6 +54,10 @@ Presets for the three are offered once. Each can also write a **conversion recor
 
 Reads the RAW scans in the open folder and finds frames whose film base reads brighter, darker or tinted compared with the rest, which means the light, the exposure or the white balance changed during the scan. Each frame is listed with how far it differs (in stops) and why. Frames with a clear border are judged strictly; frames without one are estimated from the picture and judged more leniently, because the difference may be the scene. If you sampled a film base for the roll, it is used as the reference. Nothing is changed; the check only reports.
 
+## Tethering a Canon camera (Extra > Canon Tether and Live View)
+
+EFAS can drive a Canon camera on a copy stand: live picture as a positive with focus peaking and a loupe, the lens driven from the computer with a sharpness meter, and the shutter released without refocusing into a numbered roll folder. It needs your own copy of Canon's EDSDK (which EFAS cannot include) and works on Windows only so far; a practice camera lets you try it without a camera. The full description, what has and has not been tried, and troubleshooting are in [tether.md](tether.md).
+
 ## Check your scanning light (Extra > Check My Scanning Light)
 
 Measures whether the light you scan with is steady and even, from RAW photos taken with your scanning camera. It reads the sensor's own values (black level taken off, no demosaic, no white balance, no profile), so the numbers describe the light and not any conversion, and it changes nothing. There are two checks. The method is adapted from [lightdrift](https://github.com/davidesqalv/lightdrift) by David Esquivel (MIT licence).

@@ -1,0 +1,175 @@
+"""What the tether window does with each live picture from the camera: decode it, turn the negative into a positive, mark what is in focus, and measure how sharp it is. No Qt.
+
+The positive is EFAS's own Modern conversion (features/negative/printengine.py), not a plain flip: a plain flip keeps the orange mask and comes out cyan. The conversion's lookup
+table is made from the picture and then reused for about half a second, so most pictures cost only a table lookup. Focus peaking is EFAS's own too (features/focuspeaking).
+Sharpness is a gated edge-energy number: gradients below the picture's noise floor count for nothing, because the sum of many tiny noise gradients would otherwise score a
+blurred picture as high as a sharp one.
+"""
+
+import time
+from dataclasses import dataclass
+
+import cv2
+import numpy as np
+
+from ..focuspeaking import logic as peaking
+from ..negative import printengine as engine
+
+WORK_WIDTH = 800          # the positive and the picture shown are made at most this wide
+PEAK_WIDTH = 528          # peaking is worked out at most this wide, and stretched over the picture
+PEAK_EVERY = 3            # peaking is worked out for one frame in this many and kept for the others: focus changes slowly, and it is the dearest step
+RELEARN_S = 0.6           # how long a conversion table is reused before it is made again from a newer picture
+NOISE_FLOOR = 6.0         # edge strength (grey levels per pixel) below this counts for nothing
+CLIP_LEVEL = 250          # a camera value this high is blown out
+LOUPE_PIXELS = 96         # the side of the camera-pixel square the loupe enlarges
+LOUPE_SCALE = 4
+SETTINGS = engine.Settings(transfer="srgb")   # the camera's live picture is an ordinary sRGB JPEG
+
+
+@dataclass(frozen=True)
+class View:
+    """What the person has asked to see."""
+
+    positive: bool = True
+    peaking: bool = False
+    peaking_level: int = 1                      # 0 blue ... 3 red: the weakest level of sharpness that is marked
+    base_rgb: tuple | None = None               # the colour of the clear film as the camera shows it, when it was sampled
+    region: tuple = (0.5, 0.5, 0.25)            # where sharpness is measured: centre x, centre y, side (all as fractions of the picture)
+
+
+@dataclass
+class LiveFrame:
+    image: np.ndarray       # the picture to show: RGB, uint8
+    rgb: np.ndarray         # the camera's picture as it came, decoded (RGB, uint8)
+    sharpness: float
+    clipped: dict           # per cent of the picture blown out in R, G, B
+
+
+def decode(jpeg: bytes) -> np.ndarray | None:
+    """RGB, uint8, or None when the bytes are not a picture (a damaged frame is skipped, never fatal)."""
+    if not jpeg:
+        return None
+    bgr = cv2.imdecode(np.frombuffer(jpeg, np.uint8), cv2.IMREAD_COLOR)
+    return None if bgr is None else cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
+
+
+def edge_strength(grey: np.ndarray) -> np.ndarray:
+    """Edge strength per pixel in grey levels per pixel (Scharr: the most accurate 3x3 gradient, which suits fine, directionless film grain)."""
+    g = grey.astype(np.float32)
+    return np.hypot(cv2.Scharr(g, cv2.CV_32F, 1, 0), cv2.Scharr(g, cv2.CV_32F, 0, 1)) / 16.0
+
+
+def region_box(shape, cx: float, cy: float, size: float) -> tuple:
+    """(x0, y0, x1, y1) of a square region `size` (a fraction of the picture's width) across, slid inward at an edge and not shrunk, so a region near the edge still measures as
+    many pixels as one in the middle."""
+    h, w = shape[:2]
+    half = max(8, int(w * min(max(size, 0.02), 1.0) / 2))
+    half_h = min(half, h // 2)
+    x0 = int(min(max(cx * w - half, 0), w - 2 * half))
+    y0 = int(min(max(cy * h - half_h, 0), h - 2 * half_h))
+    return x0, y0, x0 + 2 * half, y0 + 2 * half_h
+
+
+def sharpness(rgb: np.ndarray, region: tuple | None = None) -> float:
+    """How sharp the picture (or the region of it) is, as a number that only means something compared with itself in one session: it depends on the subject, the light and how
+    big the region is. Higher is sharper."""
+    if region is not None:
+        x0, y0, x1, y1 = region_box(rgb.shape, *region)
+        rgb = rgb[y0:y1, x0:x1]
+    strength = edge_strength(cv2.cvtColor(rgb, cv2.COLOR_RGB2GRAY))
+    gated = np.where(strength >= NOISE_FLOOR, strength, 0.0).astype(np.float64)
+    return float((gated ** 2).mean() / 10.0)
+
+
+def corner_sharpness(rgb: np.ndarray, size: float = 0.18) -> dict:
+    """Sharpness at the middle and in each corner. A camera that is not parallel to the film shows corners that differ from each other."""
+    inset = size / 2 + 0.02
+    spots = {"centre": (0.5, 0.5), "top left": (inset, inset), "top right": (1 - inset, inset), "bottom left": (inset, 1 - inset), "bottom right": (1 - inset, 1 - inset)}
+    return {name: sharpness(rgb, (x, y, size)) for name, (x, y) in spots.items()}
+
+
+def clipped_percent(rgb: np.ndarray) -> dict:
+    """The per cent of the picture at or above the blown-out level, in each colour."""
+    return {c: float((rgb[..., i] >= CLIP_LEVEL).mean() * 100.0) for i, c in enumerate("RGB")}
+
+
+def sample_colour(rgb: np.ndarray, x: float, y: float, radius: int = 5) -> tuple:
+    """The average colour round a point (x and y as fractions of the picture): what a click on the clear film measures."""
+    h, w = rgb.shape[:2]
+    cx, cy = int(min(max(x, 0.0), 1.0) * (w - 1)), int(min(max(y, 0.0), 1.0) * (h - 1))
+    patch = rgb[max(0, cy - radius):cy + radius + 1, max(0, cx - radius):cx + radius + 1].reshape(-1, 3)
+    return tuple(float(v) for v in patch.mean(axis=0))
+
+
+class Pipeline:
+    """Makes the picture to show from each live frame. One at a time: it keeps the conversion table between frames."""
+
+    def __init__(self):
+        self._lut = None
+        self._lut_key = None
+        self._lut_at = 0.0
+        self._peak = None          # (the level it was made for, the size of the picture, where it marks, the colour of each mark)
+        self._peak_age = 0
+
+    def _table(self, codes: np.ndarray, view: View):
+        base = tuple(round(v) for v in view.base_rgb) if view.base_rgb else None
+        now = time.monotonic()
+        if self._lut is None or base != self._lut_key or now - self._lut_at > RELEARN_S:
+            dens = engine.base_density(base, SETTINGS, 255.0) if base else None
+            h, w = codes.shape[:2]
+            middle = codes[int(h * 0.2):int(h * 0.8), int(w * 0.15):int(w * 0.85)]   # metered on the middle: the edges are the holder, the clear film and the sprocket holes, not the picture
+            self._lut = engine.build_lut(engine.analysis_block(middle), SETTINGS, dens)
+            self._lut_key, self._lut_at = base, now
+        return self._lut
+
+    def process(self, jpeg: bytes, view: View) -> LiveFrame | None:
+        rgb = decode(jpeg)
+        if rgb is None:
+            return None
+        h, w = rgb.shape[:2]
+        small = rgb if w <= WORK_WIDTH else cv2.resize(rgb, (WORK_WIDTH, round(h * WORK_WIDTH / w)), interpolation=cv2.INTER_AREA)
+        shown = self._positive(small, view) if view.positive else small
+        if view.peaking:
+            shown = self._with_peaking(shown, small, view.peaking_level)
+        else:
+            self._peak = None
+        return LiveFrame(np.ascontiguousarray(shown), rgb, sharpness(rgb, view.region), clipped_percent(rgb))
+
+    def _positive(self, small: np.ndarray, view: View) -> np.ndarray:
+        codes = engine.density_codes(small, SETTINGS)
+        return engine.apply_lut(codes, self._table(codes, view))
+
+    def _with_peaking(self, shown: np.ndarray, small: np.ndarray, level: int) -> np.ndarray:
+        level = max(0, min(3, int(level)))
+        h, w = small.shape[:2]
+        size = (shown.shape[1], shown.shape[0])
+        stale = self._peak is None or self._peak[0] != level or self._peak[1] != size or self._peak_age >= PEAK_EVERY
+        if stale:
+            k = min(1.0, PEAK_WIDTH / w)
+            peak_src = small if k >= 1.0 else cv2.resize(small, (round(w * k), round(h * k)), interpolation=cv2.INTER_AREA)
+            overlay = peaking.overlay_from_levels(peaking.level_map(peak_src), level)
+            if overlay is None:
+                self._peak, self._peak_age = (level, size, None, None), 0
+            else:
+                overlay = cv2.resize(overlay, size, interpolation=cv2.INTER_NEAREST)
+                mask = overlay[..., 3] > 0
+                self._peak, self._peak_age = (level, size, mask, overlay[..., :3][mask]), 0
+        else:
+            self._peak_age += 1
+        _level, _size, mask, colours = self._peak
+        if mask is None:
+            return shown
+        out = shown.copy()
+        out[mask] = colours   # the marks are very nearly opaque, so they replace the picture where they are
+        return out
+
+    def loupe(self, frame: LiveFrame, x: float, y: float, view: View) -> np.ndarray:
+        """The camera's own pixels round a point, enlarged: made from the full-size picture, not the smaller one on screen, so it shows detail the screen picture has lost."""
+        h, w = frame.rgb.shape[:2]
+        half = LOUPE_PIXELS // 2
+        cx, cy = int(min(max(x, 0.0), 1.0) * w), int(min(max(y, 0.0), 1.0) * h)
+        x0, y0 = min(max(cx - half, 0), max(0, w - LOUPE_PIXELS)), min(max(cy - half, 0), max(0, h - LOUPE_PIXELS))
+        crop = frame.rgb[y0:y0 + LOUPE_PIXELS, x0:x0 + LOUPE_PIXELS]
+        if view.positive and self._lut is not None:
+            crop = engine.apply_lut(engine.density_codes(crop, SETTINGS), self._lut)
+        return cv2.resize(crop, (crop.shape[1] * LOUPE_SCALE, crop.shape[0] * LOUPE_SCALE), interpolation=cv2.INTER_NEAREST)

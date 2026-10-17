@@ -1,0 +1,291 @@
+"""Canon tethering, the parts that need no window and no camera: file names, the live picture's measurements and conversion, the practice camera, and the session."""
+import os
+import time
+
+import cv2
+import numpy as np
+import pytest
+
+from photoeditor.features.tether import liveview, naming, practice_camera
+from photoeditor.features.tether.backend import CameraInfo, Capabilities, TetherError
+from photoeditor.features.tether.session import FOCUS_MOVES, TetherSession, make_backend
+
+
+def _scene(seed=0, size=(240, 360)):
+    """Fine detail to measure sharpness on: stripes of several widths and some texture."""
+    rng = np.random.default_rng(seed)
+    h, w = size
+    y, x = np.mgrid[0:h, 0:w]
+    grey = 128 + 60 * np.sign(np.sin(x / 3.0)) * (x < w // 2) + 50 * np.sign(np.sin(y / 5.0)) * (x >= w // 2) + rng.normal(0, 2, (h, w))
+    return np.clip(np.stack([grey, grey * 0.9, grey * 0.8], -1), 0, 255).astype(np.uint8)
+
+
+def _jpeg(rgb, quality=92):
+    ok, data = cv2.imencode(".jpg", cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR), [cv2.IMWRITE_JPEG_QUALITY, quality])
+    assert ok
+    return data.tobytes()
+
+
+# ---------------------------------------------------------------- names
+def test_names_continue_from_the_folder_and_keep_the_cameras_extension(tmp_path):
+    folder = str(tmp_path)
+    assert naming.next_frame(folder, "scan_") == 1
+    for name in ("scan_0001.CR3", "scan_0001.JPG", "scan_0007.CR3", "other_0099.CR3", "scan_x.jpg", "SCAN_0003.tif"):
+        (tmp_path / name).write_bytes(b"x")
+    assert naming.next_frame(folder, "scan_") == 8, "the highest scan_ number plus one (case does not matter, other prefixes do not count)"
+    assert naming.next_frame(str(tmp_path / "missing"), "scan_") == 1
+    assert naming.file_name("scan_", 7, "IMG_4412.CR3") == "scan_0007.CR3" and naming.file_name("scan_", 7, "IMG_4412.JPG") == "scan_0007.JPG", "a RAW and its JPEG share a number"
+    assert naming.file_name("roll_12_", 12345, "x.HIF") == "roll_12_12345.HIF" and naming.file_name(" roll 12 ", 3, "x.JPG") == "roll 120003.JPG", "spaces round a prefix are dropped"
+    assert naming.clean_prefix('a/b:c*"') == "abc" and naming.clean_prefix("   ") == naming.DEFAULT_PREFIX and naming.clean_prefix("..") == naming.DEFAULT_PREFIX
+    assert len(naming.clean_prefix("x" * 100)) == 40
+
+
+def test_a_file_is_never_overwritten(tmp_path):
+    (tmp_path / "scan_0001.CR3").write_bytes(b"x")
+    assert naming.unique_path(str(tmp_path), "scan_0001.CR3") == str(tmp_path / "scan_0001-1.CR3")
+    (tmp_path / "scan_0001-1.CR3").write_bytes(b"x")
+    assert naming.unique_path(str(tmp_path), "scan_0001.CR3") == str(tmp_path / "scan_0001-2.CR3")
+    assert naming.unique_path(str(tmp_path), "fresh.CR3") == str(tmp_path / "fresh.CR3")
+
+
+# ---------------------------------------------------------------- measuring the live picture
+def test_sharpness_falls_as_a_picture_blurs_and_noise_alone_scores_nothing():
+    sharp = _scene()
+    scores = [liveview.sharpness(cv2.GaussianBlur(sharp, (0, 0), s) if s else sharp) for s in (0, 0.7, 1.5, 3.0, 6.0)]
+    assert scores == sorted(scores, reverse=True) and len(set(scores)) == 5 and scores[-1] < 0.3 * scores[0], scores
+    flat = np.clip(128 + np.random.default_rng(1).normal(0, 1.5, (240, 360, 3)), 0, 255).astype(np.uint8)
+    assert liveview.sharpness(flat) < 0.05, "a flat picture with a little noise is not sharp: gradients under the noise floor count for nothing"
+
+
+def test_sharpness_can_be_measured_in_a_region_and_regions_near_an_edge_keep_their_size():
+    img = _scene()
+    left, right = liveview.sharpness(img, (0.25, 0.5, 0.3)), liveview.sharpness(img, (0.75, 0.5, 0.3))
+    assert left > 0 and right > 0 and left != right
+    h, w = img.shape[:2]
+    x0, y0, x1, y1 = liveview.region_box(img.shape, 0.0, 0.0, 0.25)
+    assert (x0, y0) == (0, 0) and x1 - x0 == int(w * 0.25 / 2) * 2, "a region at the very corner slides inward and is not shrunk"
+    x0b, y0b, x1b, y1b = liveview.region_box(img.shape, 0.5, 0.5, 0.25)
+    assert (x1b - x0b, y1b - y0b) == (x1 - x0, y1 - y0)
+    assert liveview.region_box(img.shape, 1.0, 1.0, 0.25)[2:] == (w, h)
+
+
+def test_corners_that_differ_show_a_camera_that_is_not_parallel_to_the_film():
+    img = _scene(size=(400, 600))
+    flat = liveview.corner_sharpness(img)
+    assert set(flat) == {"centre", "top left", "top right", "bottom left", "bottom right"}
+    tilted = img.copy()
+    tilted[:200, 300:] = cv2.GaussianBlur(tilted[:200, 300:], (0, 0), 3)   # the top right corner is soft
+    got = liveview.corner_sharpness(tilted)
+    assert got["top right"] < 0.2 * flat["top right"] and got["top left"] == pytest.approx(flat["top left"], rel=0.2), (flat, got)
+
+
+def test_blown_out_picture_is_measured_and_a_click_samples_the_colour_round_it():
+    img = np.full((100, 200, 3), 100, np.uint8)
+    img[:10, :, 0] = 255
+    img[:, :20, 2] = 252
+    clip = liveview.clipped_percent(img)
+    assert clip["R"] == pytest.approx(10.0) and clip["B"] == pytest.approx(10.0) and clip["G"] == 0.0
+    img[40:60, 80:120] = (200, 120, 60)
+    r, g, b = liveview.sample_colour(img, 0.5, 0.5)
+    assert (round(r), round(g), round(b)) == (200, 120, 60)
+    assert liveview.sample_colour(img, 5.0, -2.0) is not None, "a point off the picture is held to its edge"
+
+
+def test_a_frame_that_is_not_a_picture_is_skipped():
+    assert liveview.decode(b"") is None and liveview.decode(b"not a jpeg") is None
+    assert liveview.Pipeline().process(b"garbage", liveview.View()) is None
+    assert liveview.decode(_jpeg(_scene())).shape == (240, 360, 3)
+
+
+# ---------------------------------------------------------------- the pipeline
+def test_the_positive_is_not_the_cyan_flip_and_the_negative_is_left_as_it_came():
+    camera = practice_camera.PracticeCamera()
+    camera.open()
+    camera._pos = practice_camera.BEST
+    camera._frame = None
+    _seq, jpeg = camera.live_frame()
+    pipe = liveview.Pipeline()
+    negative = pipe.process(jpeg, liveview.View(positive=False))
+    positive = pipe.process(jpeg, liveview.View(positive=True))
+    assert negative.image.shape == (533, 800, 3) and negative.rgb.shape == (640, 960, 3), "shown at most 800 wide; the camera's own picture is kept whole"
+    mean_neg, mean_pos = negative.image[200:300, 300:500].reshape(-1, 3).mean(0), positive.image[200:300, 300:500].reshape(-1, 3).mean(0)
+    assert mean_neg[0] > mean_neg[2] + 15, "the negative is orange: red well above blue"
+    assert abs(mean_pos[0] - mean_pos[2]) < abs(mean_neg[0] - mean_neg[2]) / 2, "the orange mask is gone in the positive"
+    flip = 255 - negative.image.astype(int)
+    assert flip[200:300, 300:500, 2].mean() > flip[200:300, 300:500, 0].mean() + 15, "a plain flip is cyan-blue, which is what the conversion is there to avoid"
+    clean = pipe.process(jpeg, liveview.View(positive=True, base_rgb=(235, 150, 100)))
+    assert clean is not None and not np.array_equal(clean.image, positive.image), "a sampled clear-film colour changes the conversion"
+
+
+def test_peaking_marks_the_sharp_picture_and_not_the_blurred_one():
+    camera = practice_camera.PracticeCamera()
+    camera.open()
+    pipe = liveview.Pipeline()
+    marked = {}
+    for name, pos in (("sharp", practice_camera.BEST), ("blurred", practice_camera.BEST - 100)):
+        camera._pos, camera._frame = pos, None
+        _seq, jpeg = camera.live_frame()
+        plain = liveview.Pipeline().process(jpeg, liveview.View(positive=True, peaking=False)).image   # each from its own pipeline, so both make their table from this picture
+        peak = liveview.Pipeline().process(jpeg, liveview.View(positive=True, peaking=True, peaking_level=0)).image
+        marked[name] = float((peak != plain).any(axis=-1).mean())
+    assert marked["sharp"] > 0.01 and marked["blurred"] < marked["sharp"] / 5, marked
+
+
+def test_the_loupe_enlarges_the_cameras_own_pixels():
+    camera = practice_camera.PracticeCamera()
+    camera.open()
+    _seq, jpeg = camera.live_frame()
+    pipe = liveview.Pipeline()
+    view = liveview.View(positive=True)
+    frame = pipe.process(jpeg, view)
+    loupe = pipe.loupe(frame, 0.5, 0.5, view)
+    assert loupe.shape == (liveview.LOUPE_PIXELS * liveview.LOUPE_SCALE,) * 2 + (3,)
+    corner = pipe.loupe(frame, 0.0, 0.0, view)
+    assert corner.shape == loupe.shape, "a loupe at the very corner keeps its size"
+
+
+def test_the_conversion_table_is_reused_between_frames_and_remade_when_the_film_base_changes():
+    camera = practice_camera.PracticeCamera()
+    camera.open()
+    _seq, jpeg = camera.live_frame()
+    pipe = liveview.Pipeline()
+    pipe.process(jpeg, liveview.View())
+    first = pipe._lut
+    pipe.process(jpeg, liveview.View())
+    assert pipe._lut is first, "the same table for the next frame"
+    pipe.process(jpeg, liveview.View(base_rgb=(230, 150, 100)))
+    assert pipe._lut is not first, "a new film base makes a new table"
+
+
+# ---------------------------------------------------------------- the practice camera
+def test_the_practice_camera_goes_out_of_focus_and_back_as_the_lens_is_driven():
+    camera = practice_camera.PracticeCamera()
+    camera.open()
+    assert camera.capabilities.focus_drive and camera.info.model == "Practice camera"
+    start = camera.position
+
+    def sharpness_here():
+        camera._frame = None
+        return liveview.sharpness(liveview.decode(camera.live_frame()[1]), (0.5, 0.5, 0.25))
+
+    far_off = sharpness_here()
+    for _ in range(40):
+        camera.focus("far", 2, 1)
+        if camera.position >= practice_camera.BEST:
+            break
+    assert camera.position > start
+    if camera.position != practice_camera.BEST:
+        camera.focus("near", 1, camera.position - practice_camera.BEST)
+    assert camera.position == practice_camera.BEST
+    assert sharpness_here() > 20 * max(far_off, 0.01), "the lens is back in focus"
+    for _ in range(100):
+        camera.focus("far", 3, 5)
+    assert camera.position == practice_camera.RANGE[1], "the lens stops at the end of its range"
+    with pytest.raises(ValueError):
+        camera.focus("sideways")
+
+
+def test_the_practice_camera_makes_new_pictures_and_saves_a_raw_stand_in_and_a_jpeg(tmp_path, monkeypatch):
+    camera = practice_camera.PracticeCamera(frames_per_second=60)
+    with pytest.raises(TetherError, match="not open"):
+        camera.live_frame()
+    camera.open()
+    seq_a, jpeg_a = camera.live_frame()
+    time.sleep(0.05)
+    seq_b, jpeg_b = camera.live_frame()
+    assert seq_b != seq_a and jpeg_a != jpeg_b, "a later look is a newer picture"
+    monkeypatch.setattr(practice_camera.time, "monotonic", lambda: 1000.0)
+    assert camera.live_frame() == camera.live_frame(), "two looks at the same instant are the same picture"
+    paths = camera.shoot(str(tmp_path / "roll"), lambda name: "scan_0001" + os.path.splitext(name)[1], 0.0)
+    assert sorted(os.path.basename(p) for p in paths) == ["scan_0001.JPG", "scan_0001.TIF"]
+    jpg = cv2.imread(paths[0] if paths[0].endswith("JPG") else paths[1])
+    tif = cv2.imread(paths[0] if paths[0].endswith("TIF") else paths[1], cv2.IMREAD_UNCHANGED)
+    assert jpg.shape == (1280, 1920, 3) and tif.dtype == np.uint16
+    again = camera.shoot(str(tmp_path / "roll"), lambda name: "scan_0001" + os.path.splitext(name)[1], 0.0)
+    assert sorted(os.path.basename(p) for p in again) == ["scan_0001-1.JPG", "scan_0001-1.TIF"], "a second shot under the same number never overwrites the first"
+    camera.close()
+    with pytest.raises(TetherError):
+        camera.shoot(str(tmp_path), lambda n: n, 0.0)
+
+
+# ---------------------------------------------------------------- the session
+class RecordingCamera:
+    """A backend that records what it was asked."""
+
+    info = CameraInfo("Recorder")
+    capabilities = Capabilities(focus_drive=True)
+
+    def __init__(self):
+        self.calls = []
+        self.seq, self.jpeg = 0, None
+
+    def open(self):
+        self.calls.append(("open",))
+
+    def close(self):
+        self.calls.append(("close",))
+
+    def live_frame(self):
+        return self.seq, self.jpeg
+
+    def focus(self, direction, size=2, steps=1):
+        self.calls.append(("focus", direction, size, steps))
+
+    def shoot(self, folder, name_for, settle_s=1.0):
+        self.calls.append(("shoot", folder, settle_s))
+        return [os.path.join(folder, name_for("IMG_9.CR3")), os.path.join(folder, name_for("IMG_9.JPG"))]
+
+
+def test_the_session_drives_the_lens_by_coarseness_and_names_captures(tmp_path):
+    cam = RecordingCamera()
+    session = TetherSession(cam, str(tmp_path), "roll_", 0.5)
+    session.open()
+    session.focus("near", "fine")
+    session.focus("far", "medium")
+    session.focus("far", "coarse")
+    assert [c for c in cam.calls if c[0] == "focus"] == [("focus", "near", *FOCUS_MOVES["fine"]), ("focus", "far", *FOCUS_MOVES["medium"]), ("focus", "far", *FOCUS_MOVES["coarse"])]
+    assert FOCUS_MOVES["fine"][0] < FOCUS_MOVES["medium"][0] < FOCUS_MOVES["coarse"][0] and FOCUS_MOVES["fine"][1] < FOCUS_MOVES["coarse"][1]
+    with pytest.raises(ValueError):
+        session.focus("far", "enormous")
+    assert session.capture() == [str(tmp_path / "roll_0001.CR3"), str(tmp_path / "roll_0001.JPG")] and ("shoot", str(tmp_path), 0.5) in cam.calls
+    (tmp_path / "roll_0001.CR3").write_bytes(b"x")
+    assert session.next_frame_number() == 2 and session.capture()[0].endswith("roll_0002.CR3")
+    session.close()
+    assert cam.calls[0] == ("open",) and cam.calls[-1] == ("close",)
+    with pytest.raises(TetherError, match="folder"):
+        TetherSession(RecordingCamera(), "", "x").capture()
+
+
+def test_the_session_gives_each_new_frame_once_and_keeps_the_sharpness_readings(tmp_path):
+    cam = RecordingCamera()
+    session = TetherSession(cam, str(tmp_path))
+    assert session.step(-1) == (-1, None), "no picture yet"
+    cam.seq, cam.jpeg = 5, _jpeg(_scene())
+    seq, frame = session.step(-1)
+    assert seq == 5 and frame is not None and frame.sharpness > 0 and session.latest == frame.sharpness == session.best
+    assert session.step(5) == (5, None), "the same frame is not made twice"
+    cam.seq, cam.jpeg = 6, _jpeg(cv2.GaussianBlur(_scene(), (0, 0), 3))
+    seq, blurred = session.step(5)
+    assert blurred.sharpness < frame.sharpness and session.best == frame.sharpness and len(session.history) == 2
+    session.reset_best()
+    assert session.best == blurred.sharpness and len(session.history) == 0
+    session.note_sharpness(1e6)
+    assert session.best == 1e6
+    cam.seq, cam.jpeg = 7, b"garbage"
+    assert session.step(6) == (7, None), "a damaged frame is skipped"
+
+
+def test_a_new_region_starts_the_best_reading_over_and_the_view_is_kept(tmp_path):
+    session = TetherSession(RecordingCamera(), str(tmp_path))
+    session.note_sharpness(4.0)
+    view = session.set_view(positive=False, peaking=True)
+    assert not view.positive and view.peaking and session.best == 4.0, "a change that is not the region keeps the best"
+    session.set_view(region=(0.2, 0.3, 0.25))
+    assert session.view.region == (0.2, 0.3, 0.25) and session.best == 0.0 and not session.history
+    assert session.view.peaking, "the rest of the view is kept"
+
+
+def test_the_backend_factory_gives_the_practice_camera_or_a_canon_one_without_touching_the_sdk():
+    assert isinstance(make_backend("practice"), practice_camera.PracticeCamera)
+    canon = make_backend("canon", "C:/nowhere")
+    assert type(canon).__name__ == "EdsdkCamera" and canon.info.model == "(not connected)"

@@ -4,7 +4,7 @@ A **hotstack** is a folder you mark as the one your photos land in. It is watche
 
 ## What it is for
 
-Canon's **EOS Utility** (and the other tethering programs) can fire the camera from the computer and save every shot into a folder on it, over a USB cable or over Wi-Fi. A hotstack takes it from there: EFAS does not talk to the camera, it watches that folder. So it works with any program that puts photos into a folder, and with photos you copy in by hand.
+(For a Canon camera on Windows EFAS can also drive the camera itself, with a live view and a lens drive: see [tether.md](tether.md).) Canon's **EOS Utility** (and the other tethering programs) can fire the camera from the computer and save every shot into a folder on it, over a USB cable or over Wi-Fi. A hotstack takes it from there: EFAS does not talk to the camera, it watches that folder. So it works with any program that puts photos into a folder, and with photos you copy in by hand.
 
 ## Marking a folder
 

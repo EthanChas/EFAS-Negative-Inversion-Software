@@ -50,6 +50,12 @@ DEFAULTS: dict[str, Any] = {
     "slideshow_video_fps": 30,
     "ffmpeg_path": "",
     "hotstack_folders": [],
+    "tether_camera": "practice",
+    "tether_sdk_dir": "",
+    "tether_folder": "",
+    "tether_prefix": "scan_",
+    "tether_settle": 1.5,
+    "tether_show": True,
     "gpu_enabled": True,
     "classroom_last": "",
     "preset_sort": "made",
@@ -90,6 +96,18 @@ def _clean(data: Any) -> dict[str, Any]:
     for key in ("slideshow_shuffle", "slideshow_loop", "slideshow_captions", "slideshow_edits", "slideshow_progress", "live_open_editor", "gpu_enabled"):
         if isinstance(data.get(key), bool):
             out[key] = data[key]
+    if data.get("tether_camera") in ("practice", "canon"):   # the camera the tether window last used
+        out["tether_camera"] = data["tether_camera"]
+    for key in ("tether_sdk_dir", "tether_folder"):   # the folder of Canon's own SDK, and where tethered pictures are saved
+        if isinstance(data.get(key), str):
+            out[key] = data[key].strip()[:500]
+    if isinstance(data.get("tether_prefix"), str) and data["tether_prefix"].strip():
+        out["tether_prefix"] = data["tether_prefix"].strip()[:40]
+    settle = data.get("tether_settle")   # seconds to wait after the shutter button, for the rig to stop shaking
+    if isinstance(settle, (int, float)) and not isinstance(settle, bool):
+        out["tether_settle"] = float(min(max(settle, 0.0), 10.0))
+    if isinstance(data.get("tether_show"), bool):
+        out["tether_show"] = data["tether_show"]
     if data.get("preset_sort") in ("made", "az", "za"):   # how the presets inside each folder are ordered: the order made, A to Z, Z to A
         out["preset_sort"] = data["preset_sort"]
     if isinstance(data.get("classroom_last"), str):   # the Classroom lesson that was open

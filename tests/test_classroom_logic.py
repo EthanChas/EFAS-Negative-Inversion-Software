@@ -142,7 +142,7 @@ def test_the_best_lesson_comes_first():
     assert _search("sharpening")[0] == "sharpening-module"
     assert _search("histogram")[0] == "histogram-basics"
     assert _search("vignette")[0] in ("finishing-module", "edge-color-module", "flat-field-module") and "finishing-module" in _search("vignette")[:3]
-    assert _search("tether")[0] in ("scanning-tethered", "hotstack-lesson")
+    assert _search("tether")[0] in ("tether-live-view", "scanning-tethered", "hotstack-lesson") and {"tether-live-view", "scanning-tethered"} <= set(_search("tether")[:4])
     assert _search("hotstack")[0] == "hotstack-lesson"
 
 

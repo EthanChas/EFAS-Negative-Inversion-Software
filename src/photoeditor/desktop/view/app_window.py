@@ -145,6 +145,7 @@ from .title_bar import TitleBar
 from .tone_curve_panel import ToneCurveToolPanel
 from .film_reference_dialog import FilmReferenceDialog
 from .light_check_dialog import LightCheckDialog
+from .tether_window import TetherWindow
 from .tool_rail import SlideOutPanel, ToolRail
 from ...features.geometry.stabilize import stabilize as stabilize_rect
 from .plugin_host import WindowPluginHost
@@ -801,6 +802,10 @@ class AppWindow(QMainWindow):
         self._light_check_action.setToolTip("Measure whether the light you scan film with is steady and even, and whether a roll was scanned consistently under it, from RAW photos taken with your scanning camera")
         self._light_check_action.triggered.connect(lambda _c=False: self.show_light_check())
         extra_menu.addAction(self._light_check_action)
+        self._tether_action = QAction("Canon Tether and Live View...", self)
+        self._tether_action.setToolTip("See a Canon camera's live picture in EFAS (as a positive, with focus peaking and a loupe), focus its lens from the computer with a sharpness meter, and take pictures into a roll folder")
+        self._tether_action.triggered.connect(lambda _c=False: self.show_tether())
+        extra_menu.addAction(self._tether_action)
 
         self._plugins_menu = menubar.addMenu("Plugins")
         self._plugin_menu_anchor = self._plugins_menu.addSeparator()
@@ -2661,6 +2666,30 @@ class AppWindow(QMainWindow):
             return load_roll(path, self.controller._db).film.strip()
         except Exception:
             return ""
+
+    def show_tether(self) -> None:
+        """Extra > Canon Tether and Live View (features/tether): the camera's live picture, the lens drive and the shutter. Each picture can open in the editor as it is taken."""
+        existing = getattr(self, "_tether", None)
+        try:
+            still_open = existing is not None and existing.isVisible()
+        except RuntimeError:  # closed with the window's X: Qt has already deleted it
+            still_open = False
+        if still_open:
+            existing.raise_()
+            existing.activateWindow()
+            return
+        folder = self._filmstrip_folder if self._filmstrip_folder and os.path.isdir(self._filmstrip_folder) and not app_settings.get("tether_folder") else ""
+        dialog = TetherWindow(self, start_folder=folder)
+        dialog.open_requested.connect(self._on_tether_open)
+        dialog.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, True)
+        dialog.destroyed.connect(lambda *_: setattr(self, "_tether", None) if getattr(self, "_tether", None) is dialog else None)
+        self._tether = dialog
+        dialog.show()
+
+    def _on_tether_open(self, path: str) -> None:
+        """A picture was taken from the tether window: its roll loads in the filmstrip and it opens in the editor (the Workbench picks the folder up as a recent one)."""
+        if os.path.isfile(path):
+            self.open_folder(os.path.dirname(path), prefer=path)
 
     def show_light_check(self) -> None:
         """Extra > Check My Scanning Light: the bare-light check and the film-scan check (features/lightcheck). It reads RAW photos and changes nothing."""
@@ -4569,6 +4598,12 @@ class AppWindow(QMainWindow):
             self._coord_label.setText("Quick export: " + (f"saved {os.path.basename(done[0])}" if done else ". ".join(parts)))
 
     def closeEvent(self, event) -> None:
+        tether = getattr(self, "_tether", None)
+        if tether is not None:
+            try:
+                tether.close()   # gives the camera back (its own screen, its session) before the program ends
+            except RuntimeError:  # already closed with its own X: Qt has deleted it
+                pass
         self._live.set_folders([])
         self._shutdown_plugins()
         self._measure_timer.stop()

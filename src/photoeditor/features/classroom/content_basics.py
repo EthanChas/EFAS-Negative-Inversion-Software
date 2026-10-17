@@ -472,10 +472,27 @@ A USB cable is faster and steadier, and the better choice for a whole roll, beca
 
 ## How EFAS fits in
 
-EFAS cannot control the camera, but it can watch the folder the camera software saves into. Mark that folder as a **Hotstack** and each photo that lands in it is read in, selected, and opened in the editor with the negative already converted, so you can check the **focus**, the **exposure** and the **edges** of each frame at once. If a frame is wrong, **Retake** it: the next photo replaces it. When the roll is finished, **Finish Session** files everything into a dated folder.
+For a Canon camera on Windows, EFAS can drive the camera itself ([[tether-live-view]]). For any other camera it cannot, but it can watch the folder the camera software saves into. Mark that folder as a **Hotstack** and each photo that lands in it is read in, selected, and opened in the editor with the negative already converted, so you can check the **focus**, the **exposure** and the **edges** of each frame at once. If a frame is wrong, **Retake** it: the next photo replaces it. When the roll is finished, **Finish Session** files everything into a dated folder.
 
 The details, and all the options, are in [[hotstack-lesson]], and a start-to-finish description of a session is in [[recipe-tether-session]].
-""", keywords=("tethered", "eos utility", "wifi", "usb", "hotstack", "live", "canon", "remote"), see=("hotstack-lesson", "recipe-tether-session")),
+""", keywords=("tethered", "eos utility", "wifi", "usb", "hotstack", "live", "canon", "remote"), see=("tether-live-view", "hotstack-lesson", "recipe-tether-session")),
+
+    Lesson("tether-live-view", "scan", "Tethering a Canon camera in EFAS", "Use EFAS's own live view, lens drive and sharpness meter to focus once, check it, and shoot a roll.",
+           r"""
+For a Canon camera on Windows, EFAS can do what the camera's own software does and a little more: **Extra > Canon Tether and Live View...** shows the camera's live picture, drives the lens, and takes the picture into your roll folder. It is made for a copy stand, where you focus once and then shoot thirty-six frames that must all be focused the same.
+
+## Connecting
+
+EFAS cannot include Canon's SDK, which Canon licenses to each developer, so you get your own copy from Canon's developer site and choose its folder in the window. Put the camera's exposure on manual with a fixed shutter speed, aperture and ISO, because EFAS does not change the camera's exposure. Switch the camera's Wi-Fi and Bluetooth off, since a Canon body turns USB data off while wireless is on and the only symptom is that no camera is found. Close EOS Utility, and plug a data cable straight into the computer. If you want to look around first, the **practice camera** needs no camera at all: it is a made-up negative with a lens that goes out of focus as you drive it, and every control works on it.
+
+## Focusing
+
+The live picture is shown as a **positive**, converted by the same Modern conversion as the editor, so you judge focus on what you will see rather than on a murky orange negative. Click a patch of clear film and the conversion learns the film's colour. **Focus peaking** marks what is sharp in colour, and the **loupe** enlarges the camera's own pixels under the mouse. Drive the lens with the Left and Right keys (Shift for fine steps, Ctrl for coarse). The **sharpness meter** is the part a screen alone cannot give you: a number that rises as focus improves, with the best so far kept beside it. Go past the sharpest spot and back, and the meter peaks there. It is relative, so it means something within one focusing session only, and it measures a square you can move by clicking. **Corners** compares the middle with each corner: a soft corner on a copy stand means the camera is not parallel to the film.
+
+## Taking the roll
+
+**Capture** waits a moment for the rig to stop shaking, since vibration is the commonest cause of a soft scan, then releases the shutter without focusing, so focus cannot change between frames. Each picture is saved as your name and a frame number, and a RAW and its JPEG share the number. Each can open in the editor straight away, and the roll folder can be a hotstack ([[hotstack-lesson]]). The RAW files this makes are exactly what **Check My Scanning Light** reads ([[check-your-light]]).
+""", keywords=("tether", "tethered", "canon", "live view", "focus", "sharpness", "peaking", "loupe", "edsdk", "shutter", "practice camera", "copy stand", "remote"), see=("scanning-tethered", "scanning-exposure", "hotstack-lesson", "check-your-light")),
 
     Lesson("scan-quality-check", "scan", "The scan quality check", "Learn what EFAS measures to rate a scan, and how to read its verdict.",
            r"""
