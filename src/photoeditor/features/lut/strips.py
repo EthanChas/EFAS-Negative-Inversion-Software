@@ -13,14 +13,14 @@ _MIN_ROWS_PER_STRIP = 128
 
 
 def run_strips(fn, pixels: np.ndarray, overlap: int = 0) -> np.ndarray:
-    """fn(strip) -> same-shaped uint8 array."""
+    """fn(strip) -> a same-shaped array of the picture's own depth (uint8 or uint16)."""
     h = pixels.shape[0]
     n = min(_WORKERS, h // _MIN_ROWS_PER_STRIP)
     if n <= 1:
         return fn(pixels)
 
     bounds = np.linspace(0, h, n + 1).astype(int)
-    out = np.empty(pixels.shape, dtype=np.uint8)
+    out = np.empty(pixels.shape, dtype=pixels.dtype)
 
     def work(i: int) -> None:
         y0, y1 = int(bounds[i]), int(bounds[i + 1])

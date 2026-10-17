@@ -46,6 +46,7 @@ from ..features.geometry.logic import (
     radial_distort,
     rotate_quarter_turns,
 )
+from ..features.lut.logic import wide_ramp_to_lut16
 from ..features.lut.logic import (
     apply_channel_lut, apply_wide_lut, identity_ramp, is_identity, ramp_to_lut, to_uint8, wide_ramp, wide_ramp_to_lut,
 )
@@ -412,6 +413,7 @@ class Renderer:
     """Runs the edit pipeline."""
 
     def __init__(self):
+        self.wide_mixing = True   # keep a 16-bit scan 16-bit through the mixing stages (False gives the older 8-bit path: the tests compare the two)
         self.lock = threading.RLock()
         self._invert_lut = None
         self._invert_key = None
@@ -636,8 +638,10 @@ class Renderer:
         flatfield: tuple | None = None,
         deep: bool = False,
     ):
-        """-> (image, pre_crop, stats, overlay). With deep=True the image is 16-bit (uint16) when the photo has a 16-bit source and only tone edits
-        (inversion, colour balance, exposure, contrast, tone curve, geometry, crop); any 8-bit-only stage switched on gives the usual 8-bit image."""
+        """-> (image, pre_crop, stats, overlay). With deep=True the image is 16-bit (uint16) when the photo has a 16-bit source and only edits that keep 16 bits are on (inversion,
+        colour balance, exposure, contrast, tone curve, shadows / highlights, saturation, colour, denoise, local contrast, geometry, crop); a stage that works in 8 bits only
+        (sharpening, edge colour, vignette, watermark, border) gives the usual 8-bit image. A 16-bit scan is held at 16 bits through every stage that keeps them and rounded to 8
+        bits once, so the stretch of a negative's narrow range shows no gaps."""
         with self.lock:
             scale = source.shape[1] / base_width
             source16 = None
@@ -688,6 +692,10 @@ class Renderer:
             color_active = not color_is_neutral(color_values, color_response)
             mixing = bool(params.shadows or params.highlights or params.saturation or denoise or local or camera_matrix or color_active)
             wide = pixels16 is not None
+            keeps_16 = not (ec_active or params.sharpen_amount or params.vignette or watermark_active(params.wm_film) or params.border > 0
+                            or params.marks.wanted(params.wm_info, params.wm_camera, params.wm_lens, watermark_active(params.wm_film)))   # nothing after the colour stages needs 8 bits
+            deep_ok = deep and wide and keeps_16
+            hold_16 = wide and self.wide_mixing and (gpu_pipeline.wide_ok() or not gpu_pipeline.usable(frame.shape))   # the picture stays 16-bit through the mixing stages
             ramp = wide_ramp() if wide else identity_ramp()
             if params.negative_inverted:
                 meter_rect = rect if params.metering.rect is None else _scale_rect(params.metering.rect, scale, frame.shape[1], frame.shape[0])
@@ -717,7 +725,9 @@ class Renderer:
             lab_gm = (params.lab_gm_shadows, params.lab_gm_mids, params.lab_gm_highs)
             lab = lambda r: apply_lab_tone(r, params.lab_fade, lab_by, lab_gm, params.lab_glow)   # the lab look comes last, after the tone curve
             if mixing:
-                if wide:
+                if hold_16:
+                    pixels = apply_wide_lut(pixels16, wide_ramp_to_lut16(ramp))
+                elif wide:
                     pixels = apply_wide_lut(pixels16, wide_ramp_to_lut(ramp))
                 else:
                     pre = ramp_to_lut(ramp)
@@ -729,7 +739,7 @@ class Renderer:
                     pixels = apply_chroma_denoise(pixels, params.chroma_denoise, scale)
                 if local:
                     pixels = apply_local_contrast(pixels, params.local_contrast)
-                post = ramp_to_lut(lab(tone(identity_ramp())))
+                post = wide_ramp_to_lut16(lab(tone(wide_ramp()))) if hold_16 else ramp_to_lut(lab(tone(identity_ramp())))   # the tone table, as deep as the picture
                 post_lut = None if is_identity(post) else post
                 # these four stages work on every pixel by itself: on a big enough picture they go to the graphics card (see features/gpu), the rest of the time they run here
                 on_card = gpu_pipeline.tone(pixels, params.shadows, params.highlights, params.saturation, post_lut,
@@ -743,9 +753,11 @@ class Renderer:
                         pixels = apply_channel_lut(pixels, post_lut)
                     if color_active:   # vibrance, the colour mixer and the scanner colour response: in OKLCH, on the finished tones
                         pixels = apply_color(pixels, color_values, color_response, params.lab_response_amount)
+                if pixels.dtype == np.uint16 and not deep_ok:
+                    pixels = to_uint8(pixels)   # the one rounding to 8 bits, after every stage that keeps 16
             elif wide:
                 final = lab(tone(ramp))
-                if deep and not (ec_active or params.sharpen_amount or params.vignette or watermark_active(params.wm_film) or params.marks.wanted(params.wm_info, params.wm_camera, params.wm_lens, watermark_active(params.wm_film)) or params.border > 0):
+                if deep_ok:
                     table = np.clip(np.rint(final[0].T * np.float32(65535.0 / 255.0)), 0, 65535).astype(np.uint16)
                     pixels = np.empty(pixels16.shape, dtype=np.uint16)
                     for c in range(3):

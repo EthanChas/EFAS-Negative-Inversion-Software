@@ -1,12 +1,13 @@
 """The compute shader (WGSL) for the per-pixel stages, and the layout of the numbers it is given - no wgpu import, so this can be read and tested anywhere.
 
-One kernel does every stage that works on each pixel by itself, in the order the CPU pipeline runs them, and rounds to 8 bits after each stage exactly as the CPU stage does:
+One kernel does every stage that works on each pixel by itself, in the order the CPU pipeline runs them, and rounds to 8 bits after each stage exactly as the CPU stage does (for a
+16-bit picture, F_WIDE, there is no rounding between stages and the picture is read and written as 16-bit values, two to a word):
   shadows / highlights  ->  saturation  ->  the tone table (a 3 x 256 lookup)  ->  colour in OKLCH (vibrance, mixer, scanner response, toning)  ->  vignette
 Which stages run is a set of flags. A thread takes four pixels (12 bytes = three 32-bit words of the packed RGB picture) so that it alone writes those words."""
 from string import Template
 
 # the flags (geo[3])
-F_SH, F_SAT, F_LUT, F_COLOR, F_VIG, F_MIX, F_VIB, F_RESP, F_TONING = (1 << n for n in range(9))
+F_SH, F_SAT, F_LUT, F_COLOR, F_VIG, F_MIX, F_VIB, F_RESP, F_TONING, F_WIDE = (1 << n for n in range(10))
 
 # geo: unsigned integers
 M_WIDTH, M_FIRST_ROW, M_PIXELS, M_FLAGS, M_HEIGHT = range(5)
@@ -47,21 +48,49 @@ fn sstep(e0: f32, e1: f32, x: f32) -> f32 {
     return t * t * (3.0 - 2.0 * t);
 }
 
+fn is_wide() -> bool { return (geo[$M_FLAGS] & $F_WIDE) != 0u; }
+
+// what a stage rounds to: the 8-bit picture's whole levels, or - for a 16-bit picture - nothing (the fraction is carried on to the next stage and the end)
+fn round8(x: vec3<f32>) -> vec3<f32> {
+    if (is_wide()) { return clamp(x, vec3<f32>(0.0), vec3<f32>(255.0)); }
+    return floor(clamp(x + vec3<f32>(0.5), vec3<f32>(0.0), vec3<f32>(255.0)));
+}
+
+fn trunc8(x: vec3<f32>) -> vec3<f32> {
+    if (is_wide()) { return clamp(x, vec3<f32>(0.0), vec3<f32>(255.0)); }
+    return floor(clamp(x, vec3<f32>(0.0), vec3<f32>(255.0)));
+}
+
 fn stage_sh(v: vec3<f32>) -> vec3<f32> {
-    let li = u32(clamp(round(dot(v, LUMA)), 0.0, 255.0));
-    var gain = prm[$P_GAIN + li];
+    let luma = dot(v, LUMA);
+    var gain: f32;
+    if (is_wide()) {
+        // the brightness is looked up between the two neighbouring entries of the gain table, not rounded to one of them
+        let y = clamp(luma, 0.0, 255.0);
+        let i0 = min(u32(y), 254u);
+        let fr = y - f32(i0);
+        gain = prm[$P_GAIN + i0] * (1.0 - fr) + prm[$P_GAIN + i0 + 1u] * fr;
+    } else {
+        let li = u32(clamp(round(luma), 0.0, 255.0));
+        gain = prm[$P_GAIN + li];
+    }
     let brightest = max(v.x, max(v.y, v.z));
     gain = min(gain, 255.0 / max(brightest, 1.0));
-    return floor(clamp(v * gain + vec3<f32>(0.5), vec3<f32>(0.0), vec3<f32>(255.0)));
+    return round8(v * gain);
 }
 
 fn stage_sat(v: vec3<f32>) -> vec3<f32> {
     let gray = dot(v, LUMA);
     let out = (v - vec3<f32>(gray)) * prm[$P_SAT_K] + vec3<f32>(gray);
-    return floor(clamp(out, vec3<f32>(0.0), vec3<f32>(255.0)));
+    return trunc8(out);
 }
 
 fn stage_lut(v: vec3<f32>) -> vec3<f32> {
+    if (is_wide()) {
+        // a table of 65536 entries a channel, holding 16-bit values; the picture is on the 0-255 scale, so 257 per level
+        let i = vec3<u32>(u32(clamp(round(v.x * 257.0), 0.0, 65535.0)), u32(clamp(round(v.y * 257.0), 0.0, 65535.0)), u32(clamp(round(v.z * 257.0), 0.0, 65535.0)));
+        return vec3<f32>(f32(lut[i.x]), f32(lut[65536u + i.y]), f32(lut[131072u + i.z])) / 257.0;
+    }
     return vec3<f32>(f32(lut[u32(v.x)]), f32(lut[256u + u32(v.y)]), f32(lut[512u + u32(v.z)]));
 }
 
@@ -117,6 +146,7 @@ fn oklab_to_srgb8(lab_in: vec3<f32>) -> vec3<f32> {
     }
     let rgb = oklab_to_linear(lab);
     let out = vec3<f32>(linear_to_srgb(rgb.x), linear_to_srgb(rgb.y), linear_to_srgb(rgb.z)) * 255.0;
+    if (is_wide()) { return clamp(out, vec3<f32>(0.0), vec3<f32>(255.0)); }
     return clamp(round(out), vec3<f32>(0.0), vec3<f32>(255.0));
 }
 
@@ -208,7 +238,7 @@ fn stage_vig(v: vec3<f32>, x: u32, y: u32) -> vec3<f32> {
     } else {
         out = v + (vec3<f32>(255.0) - v) * (-strength * weight);
     }
-    return floor(clamp(out + vec3<f32>(0.5), vec3<f32>(0.0), vec3<f32>(255.0)));
+    return round8(out);
 }
 
 fn shade(v_in: vec3<f32>, idx: u32) -> vec3<f32> {
@@ -253,6 +283,40 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     dst[3u * g] = a;
     dst[3u * g + 1u] = b;
     dst[3u * g + 2u] = c;
+}
+
+// the 16-bit picture: a thread takes four pixels = twelve 16-bit values = six words. The values go in and out on the 0-255 scale (a 16-bit level over 257).
+fn half_of(w: u32, k: u32) -> f32 { return f32((w >> (16u * k)) & 65535u) / 257.0; }
+
+fn put16(v: f32) -> u32 { return u32(clamp(round(v * 257.0), 0.0, 65535.0)); }
+
+@compute @workgroup_size($WORKGROUP)
+fn main_wide(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let g = gid.x;
+    let base = g * 4u;
+    let n = geo[$M_PIXELS];
+    if (base >= n) { return; }
+    let w0 = src[6u * g];
+    let w1 = src[6u * g + 1u];
+    let w2 = src[6u * g + 2u];
+    let w3 = src[6u * g + 3u];
+    let w4 = src[6u * g + 4u];
+    let w5 = src[6u * g + 5u];
+    var px = array<vec3<f32>, 4>(
+        vec3<f32>(half_of(w0, 0u), half_of(w0, 1u), half_of(w1, 0u)),
+        vec3<f32>(half_of(w1, 1u), half_of(w2, 0u), half_of(w2, 1u)),
+        vec3<f32>(half_of(w3, 0u), half_of(w3, 1u), half_of(w4, 0u)),
+        vec3<f32>(half_of(w4, 1u), half_of(w5, 0u), half_of(w5, 1u)));
+    let first = geo[$M_FIRST_ROW] * geo[$M_WIDTH];
+    for (var k = 0u; k < 4u; k = k + 1u) {
+        if (base + k < n) { px[k] = shade(px[k], first + base + k); }
+    }
+    dst[6u * g] = put16(px[0].x) | (put16(px[0].y) << 16u);
+    dst[6u * g + 1u] = put16(px[0].z) | (put16(px[1].x) << 16u);
+    dst[6u * g + 2u] = put16(px[1].y) | (put16(px[1].z) << 16u);
+    dst[6u * g + 3u] = put16(px[2].x) | (put16(px[2].y) << 16u);
+    dst[6u * g + 4u] = put16(px[2].z) | (put16(px[3].x) << 16u);
+    dst[6u * g + 5u] = put16(px[3].y) | (put16(px[3].z) << 16u);
 }
 """)
 

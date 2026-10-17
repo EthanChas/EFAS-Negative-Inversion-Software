@@ -422,7 +422,7 @@ def export_photos(paths: list[str], jobs: list, db_path: str, progress=None, can
                             if kind == "standard":
                                 data = pixels
                                 if deep_requested(options) and pixels.dtype != np.uint16:
-                                    summary.setdefault("notes", []).append((path, "16-bit was asked for, but this photo has 8-bit edits switched on (or an 8-bit source), so it was saved as 8-bit"))
+                                    summary.setdefault("notes", []).append((path, "16-bit was asked for, but this photo has a step that works at 8 bits only switched on (sharpening, edge colour, vignette, border or watermark) or an 8-bit source, so it was saved as 8-bit"))
                             else:
                                 if kind not in alternates:
                                     alternates[kind] = render_alternate(path, conn, kind, state)

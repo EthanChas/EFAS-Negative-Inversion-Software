@@ -51,6 +51,6 @@ It follows the idea of NegPy's split toning (a hue and a strength for shadows an
 
 ## Where it sits in the picture's chain
 
-Vibrance, the mixer and the scanner response are applied to the finished tones: after the tone curve and Lab Look's tone shaping, before sharpening and the finishing steps. Because they need the 8-bit picture, a picture with any of them switched on is made at 8 bits (like Shadows & Highlights, Saturation and Local Contrast do), so a 16-bit export falls back to 8 bits with the note.
+Vibrance, the mixer and the scanner response are applied to the finished tones: after the tone curve and Lab Look's tone shaping, before sharpening and the finishing steps. A RAW or 16-bit scan is kept at 16 bits through them, as it is through Shadows & Highlights, Saturation, Chroma Denoise and Local Contrast, and is rounded to 8 bits once, before sharpening and the finishing steps. A 16-bit export keeps its 16 bits unless one of those later steps is on.
 
 Each module has the usual on/off light, a reset button, module presets, undo and per-photo saving, and both can be part of a preset.

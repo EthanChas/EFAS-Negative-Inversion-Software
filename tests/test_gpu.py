@@ -84,14 +84,16 @@ def test_small_pictures_and_other_depths_never_go_to_the_card(monkeypatch):
     monkeypatch.setenv("PHOTOEDITOR_GPU", "on")
     assert not P.usable((100, 100, 3)), "too small to be worth the trip"
     assert not P.usable((1000, 1000)), "not an RGB picture"
-    assert P.tone(np.zeros((1000, 1000, 3), np.uint16), saturation=0.2) is None, "only 8-bit pictures"
+    assert P.tone(np.zeros((1000, 1000, 3), np.float32), saturation=0.2) is None, "only 8-bit and 16-bit pictures"
+    lut8 = np.tile(np.arange(256, dtype=np.uint8), (3, 1))
+    assert P.tone(np.zeros((1000, 1000, 3), np.uint16), tone_lut=lut8) is None, "a table of the wrong depth for the picture: the processor does it"
     monkeypatch.setenv("PHOTOEDITOR_GPU", "off")
     assert not P.usable((1000, 1000, 3)) and P.tone(np.zeros((1000, 1000, 3), np.uint8), saturation=0.2) is None
 
 
 def test_the_shader_source_is_complete_and_the_layout_does_not_overlap():
     src = K.source()
-    assert "$" not in src and "@compute" in src and "fn main" in src
+    assert "$" not in src and "@compute" in src and "fn main" in src and "fn main_wide" in src
     assert K.P_GAIN + 256 == K.PARAM_COUNT
     spans = [(K.P_SAT_K, 1), (K.P_VIG_STRENGTH, 3), (K.P_VIBRANCE, 1), (K.P_RESP_AMOUNT, 2), (K.P_RESP_CAST, 6), (K.P_TONE_COS, 3), (K.P_TONE_SIN, 3), (K.P_TONE_STRENGTH, 3),
              (K.P_M1INV, 9), (K.P_M2INV, 9), (K.P_MIX, 24), (K.P_GAIN, 256)]
@@ -101,7 +103,7 @@ def test_the_shader_source_is_complete_and_the_layout_does_not_overlap():
         assert not cells & used, (start, n)
         used |= cells
     assert max(used) < K.PARAM_COUNT
-    flags = [K.F_SH, K.F_SAT, K.F_LUT, K.F_COLOR, K.F_VIG, K.F_MIX, K.F_VIB, K.F_RESP, K.F_TONING]
+    flags = [K.F_SH, K.F_SAT, K.F_LUT, K.F_COLOR, K.F_VIG, K.F_MIX, K.F_VIB, K.F_RESP, K.F_TONING, K.F_WIDE]
     assert len(set(flags)) == len(flags) and all(f & (f - 1) == 0 for f in flags)
 
 
@@ -198,6 +200,71 @@ def test_the_per_pixel_stages_on_the_card_match_the_processors(card, name):
         # the card's arithmetic differs from numpy's in the last place: a pixel can land one level away, and in the colour work a colour right on the edge of the gamut can be
         # judged in or out differently (a few pixels in a hundred thousand)
         _close(got, _cpu(img, **kw), f"{name} {label}", within_one=1.0 if tight else 0.9995, mean=0.001 if tight else 0.02)
+
+
+def _pictures16():
+    """The same pictures at 16 bits, with fine levels (not just the 8-bit ones times 257)."""
+    rng = np.random.default_rng(4)
+    return {name: np.clip(img.astype(np.int32) * 257 + rng.integers(-120, 121, img.shape), 0, 65535).astype(np.uint16) for name, img in _pictures().items()}
+
+
+_X = np.arange(65536) / 257.0   # the 0-255 value of each 16-bit level
+_LUT16 = np.clip(np.rint(np.stack([np.clip(_X ** 1.1, 0, 255), _X[::-1], np.clip(_X * 1.2 - 10, 0, 255)]) * 257.0), 0, 65535).astype(np.uint16)
+
+
+def _close16(got, ref, label, share=0.999, mean=3.0, reach=48):
+    d = np.abs(got.astype(np.int32) - ref.astype(np.int32))
+    assert (d <= reach).mean() >= share and d.mean() <= mean, f"{label}: max {d.max()}, mean {d.mean():.3f}, share beyond {reach} codes {(d > reach).mean():.6f}"
+
+
+@pytest.mark.parametrize("name", ["noise", "gradient", "primaries", "greys"])
+def test_the_16_bit_stages_on_the_card_match_the_processors(card, name):
+    img = _pictures16()[name]
+    for label, kw, tight in (
+        ("shadows and highlights", dict(shadows=0.3, highlights=-0.2), True),
+        ("saturation", dict(saturation=0.25), True),
+        ("tone table", dict(tone_lut=_LUT16), True),
+        ("vibrance and mixer", dict(color=({"vibrance": 0.3, "mix_hue_red": 0.4, "mix_sat_blue": -0.5, "mix_lum_green": 0.3}, "none", 1.0)), False),
+        ("scanner response", dict(color=({}, "frontier", 0.8)), False),
+        ("everything together", dict(shadows=0.2, highlights=-0.1, saturation=0.15, tone_lut=_LUT16, color=(_MIX, "crystal", 1.0)), False),
+    ):
+        got = P.tone(img, **kw)
+        assert got is not None and got.shape == img.shape and got.dtype == np.uint16, label
+        # the card's arithmetic differs from numpy's in the last place, and a tone-table lookup can land one 16-bit level away: a few codes of 65535; colours right on the gamut's
+        # edge can be judged in or out differently, in a few pixels in ten thousand
+        _close16(got, _cpu(img, **kw), f"{name} {label}", share=0.9999 if tight else 0.999, mean=1.0 if tight else 6.0, reach=24 if tight else 64)
+
+
+def test_a_16_bit_picture_that_is_not_a_whole_number_of_bands_comes_back_whole(card, monkeypatch):
+    monkeypatch.setattr(P, "MIN_PIXELS", 0)
+    rng = np.random.default_rng(9)
+    for shape in ((401, 777, 3), (1, 5000, 3), (3000, 1, 3), (7, 9999, 3), (3, 3, 3)):
+        img = rng.integers(0, 65536, shape, dtype=np.uint16)
+        got = P.tone(img, tone_lut=_LUT16)
+        assert got is not None and got.shape == img.shape and got.dtype == np.uint16, shape
+        _close16(got, _cpu(img, tone_lut=_LUT16), str(shape), share=0.9999, mean=1.0, reach=24)
+
+
+def test_a_16_bit_picture_keeps_its_fine_levels_through_the_card(card):
+    ramp = np.broadcast_to(np.linspace(20000, 22570, 1200)[None, :, None], (900, 1200, 3)).astype(np.uint16).copy()   # about ten 8-bit levels
+    got = P.tone(ramp, shadows=0.4, saturation=0.1, tone_lut=_LUT16)
+    assert got is not None and np.unique(got[..., 1]).size > 500, "an 8-bit picture of that range has about ten levels; the 16-bit one keeps hundreds"
+
+
+def test_the_renderer_keeps_16_bits_on_the_card_and_gets_the_processors_picture(card):
+    from photoeditor.desktop.render import Renderer
+
+    img = _pictures16()["gradient"]
+    params = _params(saturation=0.2, shadows=0.2, highlights=-0.1, vibrance=0.3, mix_hue_red=0.3, mix_sat_blue=-0.3, exposure_ev=0.2, contrast=10.0,
+                     tone_curve_points=((0, 0), (80, 50), (200, 225), (255, 255)))
+    runs = P.STATS["runs"]
+    on = Renderer().render(img, params, "t", img.shape[1], want_stats=False, deep=True)[0]
+    assert P.STATS["runs"] >= runs + 1 and on.dtype == np.uint16, "the colour stages went to the card, and the picture is still 16-bit"
+    gpu.configure(enabled=False)
+    runs = P.STATS["runs"]
+    off = Renderer().render(img, params, "t", img.shape[1], want_stats=False, deep=True)[0]
+    assert P.STATS["runs"] == runs and off.dtype == np.uint16, "switched off: the processor does it all, and also keeps 16 bits"
+    _close16(on, off, "rendered 16-bit picture", share=0.999, mean=6.0, reach=64)
 
 
 def test_the_vignette_on_the_card_matches_the_processors(card):

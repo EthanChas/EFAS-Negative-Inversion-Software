@@ -70,9 +70,12 @@ def tint_swatch(hue: float) -> tuple[int, int, int]:
     return int(r), int(g), int(b)
 
 
+_SRGB_TO_LINEAR16 = np.where((np.arange(65536) / 65535.0) <= 0.04045, (np.arange(65536) / 65535.0) / 12.92, (((np.arange(65536) / 65535.0) + 0.055) / 1.055) ** 2.4).astype(np.float32)
+
+
 def srgb8_to_oklab(pixels: np.ndarray) -> np.ndarray:
-    """(h, w, 3) uint8 sRGB -> (h, w, 3) float32 OKLab (L, a, b)."""
-    linear = _SRGB_TO_LINEAR[pixels]
+    """(h, w, 3) uint8 sRGB (or uint16, the same colours at 16 bits) -> (h, w, 3) float32 OKLab (L, a, b)."""
+    linear = (_SRGB_TO_LINEAR16 if pixels.dtype == np.uint16 else _SRGB_TO_LINEAR)[pixels]
     lms = np.cbrt(np.clip(linear @ _M1.T, 0.0, None))
     return lms @ _M2.T
 
@@ -87,8 +90,8 @@ def oklab_to_linear(lab: np.ndarray) -> np.ndarray:
     return (lms ** 3) @ _M1_INV.T
 
 
-def oklab_to_srgb8(lab: np.ndarray) -> np.ndarray:
-    """OKLab -> uint8 sRGB, with the colours that fall outside the sRGB gamut brought in by reducing their chroma (up to a few steps) before the last clip."""
+def oklab_to_srgb8(lab: np.ndarray, wide: bool = False) -> np.ndarray:
+    """OKLab -> uint8 sRGB (uint16 when `wide`), with the colours that fall outside the sRGB gamut brought in by reducing their chroma (up to a few steps) before the last clip."""
     lab = lab.copy()
     for _ in range(6):
         rgb = oklab_to_linear(lab)
@@ -96,7 +99,8 @@ def oklab_to_srgb8(lab: np.ndarray) -> np.ndarray:
         if not outside.any():
             break
         lab[..., 1:][outside] *= 0.85
-    return np.clip(np.rint(_linear_to_srgb(oklab_to_linear(lab)) * 255.0), 0, 255).astype(np.uint8)
+    top = 65535.0 if wide else 255.0
+    return np.clip(np.rint(_linear_to_srgb(oklab_to_linear(lab)) * top), 0, top).astype(np.uint16 if wide else np.uint8)
 
 
 def _smoothstep(e0: float, e1: float, x: np.ndarray) -> np.ndarray:
@@ -123,7 +127,7 @@ def tone_weights(lightness: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndar
 
 
 def apply_color(pixels: np.ndarray, values: dict | None = None, response: str = "none", amount: float = 1.0) -> np.ndarray:
-    """An 8-bit RGB picture with Vibrance, the Color Mixer and a scanner colour response applied in OKLCH. Neutral settings return the picture untouched."""
+    """An 8-bit RGB picture (or a 16-bit one, kept at 16 bits) with Vibrance, the Color Mixer and a scanner colour response applied in OKLCH. Neutral settings return the picture untouched."""
     values = values or {}
     amount = float(min(max(amount, 0.0), 1.0))
     use_response = response in RESPONSE and amount > 0.0
@@ -134,7 +138,8 @@ def apply_color(pixels: np.ndarray, values: dict | None = None, response: str = 
     if not use_response and vibrance == 0.0 and not mix and not toning:
         return pixels
     h, w = pixels.shape[:2]
-    out = np.empty(pixels.shape, dtype=np.uint8)
+    wide = pixels.dtype == np.uint16
+    out = np.empty(pixels.shape, dtype=pixels.dtype)
     step = max(1, (1 << 20) // max(w, 1))
     for y in range(0, h, step):
         lab = srgb8_to_oklab(np.ascontiguousarray(pixels[y:y + step]))
@@ -173,5 +178,5 @@ def apply_color(pixels: np.ndarray, values: dict | None = None, response: str = 
                 rad = np.radians(degrees)
                 a = a + np.cos(rad) * TONING_CHROMA * strength * weights[region]
                 b = b + np.sin(rad) * TONING_CHROMA * strength * weights[region]
-        out[y:y + step] = oklab_to_srgb8(np.stack([light, a, b], axis=-1).astype(np.float32))
+        out[y:y + step] = oklab_to_srgb8(np.stack([light, a, b], axis=-1).astype(np.float32), wide)
     return out

@@ -97,7 +97,7 @@ Every export preset makes four decisions: the **format**, the **size**, the **bi
 
 ## Bit depth
 
-**8-bit** has 256 levels per channel and is enough for any finished picture. **16-bit** has 65,536 and matters for pictures you will keep **editing**: a strongly stretched tone leaves visible banding in 8 bits. EFAS keeps RAW and 16-bit scans at 16 bits through the conversion, exposure, contrast and tone curve, so a 16-bit TIFF export keeps that precision ([[raw-and-bit-depth]]).
+**8-bit** has 256 levels per channel and is enough for any finished picture. **16-bit** has 65,536 and matters for pictures you will keep **editing**: a strongly stretched tone leaves visible banding in 8 bits. EFAS keeps RAW and 16-bit scans at 16 bits through the conversion and every tone and colour edit (exposure, contrast, tone curve, shadows and highlights, saturation, colour, chroma denoise and local contrast), so a 16-bit TIFF export keeps that precision, unless sharpening, edge colour, a vignette, a border or a watermark is on ([[raw-and-bit-depth]]).
 
 ## Colour and sharpening
 

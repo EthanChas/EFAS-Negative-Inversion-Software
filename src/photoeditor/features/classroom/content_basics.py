@@ -253,7 +253,7 @@ For editing a negative, RAW is much better. A negative has to be flipped and reb
 
 ## Bit depth
 
-**Bit depth** is how many levels of brightness each colour channel can hold. **8-bit** has 256 levels. **16-bit** has 65,536. In a normal picture 256 is plenty; but stretching a narrow range, as a negative needs, with only 256 levels leaves visible **banding** (steps where there should be a smooth gradient). EFAS reads RAW and 16-bit scans at 16 bits and keeps them through the inversion, exposure, contrast and tone curve, so the narrow range of a negative is not left banded.
+**Bit depth** is how many levels of brightness each colour channel can hold. **8-bit** has 256 levels. **16-bit** has 65,536. In a normal picture 256 is plenty; but stretching a narrow range, as a negative needs, with only 256 levels leaves visible **banding** (steps where there should be a smooth gradient). EFAS reads RAW and 16-bit scans at 16 bits and keeps them through the inversion and every tone and colour edit, rounding to 8 bits only once, at the very end, so the narrow range of a negative is not left banded.
 
 TIP: Scan in **RAW**, and export a 16-bit **TIFF** if you plan to edit the result further elsewhere.
 """, keywords=("raw", "jpeg", "tiff", "16-bit", "8-bit", "banding", "bit depth", "file format"), see=("scanning-exposure", "export-formats")),

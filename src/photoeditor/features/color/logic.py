@@ -20,12 +20,17 @@ def adjust_saturation(pixels: np.ndarray, amount: float) -> np.ndarray:
 
 def _saturate(pixels: np.ndarray, amount: float) -> np.ndarray:
     h, w, _ = pixels.shape
+    wide = pixels.dtype == np.uint16
     out = pixels.astype(np.float32)
+    if wide:
+        out *= np.float32(255.0 / 65535.0)   # the 0-255 scale
     gray = (out.reshape(-1, 3) @ _LUMA_VEC).reshape(h, w, 1)
     out -= gray
     out *= 1.0 + amount
     out += gray
     np.clip(out, 0, 255, out=out)
+    if wide:
+        return np.clip(out * np.float32(65535.0 / 255.0) + 0.5, 0, 65535).astype(np.uint16)
     return out.astype(np.uint8)
 
 

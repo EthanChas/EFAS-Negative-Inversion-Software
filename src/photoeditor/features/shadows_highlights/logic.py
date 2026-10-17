@@ -16,6 +16,8 @@ from ..lut.strips import run_strips
 _LUMA_VEC = np.array((0.299, 0.587, 0.114), dtype=np.float32)
 _SHADOW_REACH = 1.2     # stops of gain at full strength at the darkest end
 _HIGHLIGHT_REACH = 0.65  # stops of gain at full strength where the highlight curve peaks (three quarters of the way to white)
+_TO_255 = np.float32(255.0 / 65535.0)
+_TO_WIDE = np.float32(65535.0 / 255.0)
 
 
 def tone_curve(shadows: float, highlights: float) -> np.ndarray:
@@ -46,16 +48,30 @@ def gain_table(shadows: float, highlights: float) -> np.ndarray:
 
 def adjust_shadows_highlights(pixels: np.ndarray, shadows: float, highlights: float) -> np.ndarray:
     """shadows, highlights in [-1, 1]: positive brightens that tonal range, negative darkens it - a consistent +/- direction for both, rather
-    than Lightroom's inverted-feeling "negative highlights to recover them." The pixels are uint8 RGB; the result is a new array."""
+    than Lightroom's inverted-feeling "negative highlights to recover them." The pixels are uint8 RGB (or uint16, kept at 16 bits); the result is a new array."""
     if shadows == 0.0 and highlights == 0.0:
         return pixels
     table = gain_table(float(shadows), float(highlights))
     return run_strips(lambda strip: _apply_gain(strip, table), pixels)
 
 
+def _apply_gain_wide(flat: np.ndarray, table: np.ndarray) -> np.ndarray:
+    """The same gain on a 16-bit picture: the brightness is not rounded to one of 256 steps but looked up between two neighbouring entries of the table, and nothing is rounded
+    until the end."""
+    f = flat.astype(np.float32) * _TO_255   # the 0-255 scale
+    luma = np.clip(f @ _LUMA_VEC, 0.0, 255.0)
+    i0 = np.minimum(luma.astype(np.int32), 254)
+    frac = luma - i0
+    gain = table[i0] * (np.float32(1.0) - frac) + table[i0 + 1] * frac
+    gain = np.minimum(gain, 255.0 / np.maximum(f.max(axis=1), 1.0))
+    return np.clip(f * gain[:, None] * _TO_WIDE + 0.5, 0, 65535).astype(np.uint16)
+
+
 def _apply_gain(pixels: np.ndarray, table: np.ndarray) -> np.ndarray:
     h, w, _ = pixels.shape
     flat = pixels.reshape(-1, 3)
+    if pixels.dtype == np.uint16:
+        return _apply_gain_wide(flat, table).reshape(h, w, 3)
     luma = np.rint(flat.astype(np.float32) @ _LUMA_VEC).astype(np.uint8)
     gain = table[luma]
     brightest = flat.max(axis=1).astype(np.float32)

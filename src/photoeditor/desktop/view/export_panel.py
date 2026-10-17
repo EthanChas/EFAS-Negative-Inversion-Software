@@ -166,7 +166,7 @@ class ExportPanel(CollapsiblePanel):
         self._bit_depth = QComboBox()
         self._bit_depth.addItem("8-bit", 8)
         self._bit_depth.addItem("16-bit", 16)
-        self._bit_depth.setToolTip("16-bit keeps the full precision of a 16-bit scan for grading elsewhere. It is used for photos whose edits are tone-only (inversion, colour balance, exposure, contrast, tone curve, crop and rotation); a photo with sharpening, shadows/highlights, saturation, denoise, local contrast, vignette, border or watermark is saved as 8-bit, and the export says so.")
+        self._bit_depth.setToolTip("16-bit keeps the full precision of a 16-bit scan for grading elsewhere. It is used for photos whose edits keep 16 bits (inversion, colour balance, exposure, contrast, tone curve, shadows/highlights, saturation, colour, chroma denoise, local contrast, crop and rotation); a photo with sharpening, edge colour, a vignette, a border or a watermark is saved as 8-bit, and the export says so.")
         self._bit_depth.currentIndexChanged.connect(self._on_changed)
         tv.addLayout(self._row("Bit depth", self._bit_depth))
         body.addWidget(self._tiff_box)

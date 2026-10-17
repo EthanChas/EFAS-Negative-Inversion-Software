@@ -54,12 +54,17 @@ def camera_to_srgb(rgb_xyz_matrix) -> tuple | None:
 _TO_LINEAR = np.where((np.arange(256) / 255.0) <= 0.04045, (np.arange(256) / 255.0) / 12.92, (((np.arange(256) / 255.0) + 0.055) / 1.055) ** 2.4).astype(np.float32)
 
 
+_TO_LINEAR16 = np.where((np.arange(65536) / 65535.0) <= 0.04045, (np.arange(65536) / 65535.0) / 12.92, (((np.arange(65536) / 65535.0) + 0.055) / 1.055) ** 2.4).astype(np.float32)
+
+
 def apply_matrix(pixels: np.ndarray, matrix) -> np.ndarray:
-    """An 8-bit positive with the camera matrix applied in linear light (so, as the camera's own processing does, on light and not on display values)."""
+    """A positive (8-bit, or 16-bit and kept at 16 bits) with the camera matrix applied in linear light (so, as the camera's own processing does, on light and not on display values)."""
     if matrix is None:
         return pixels
+    wide = pixels.dtype == np.uint16
     m = np.asarray(matrix, dtype=np.float32)
-    linear = _TO_LINEAR[np.asarray(pixels)]
+    linear = (_TO_LINEAR16 if wide else _TO_LINEAR)[np.asarray(pixels)]
     mixed = np.clip(linear.reshape(-1, 3) @ m.T, 0.0, 1.0).reshape(linear.shape)
     encoded = np.where(mixed <= 0.0031308, mixed * 12.92, 1.055 * np.power(mixed, 1 / 2.4) - 0.055)
-    return np.clip(encoded * 255.0 + 0.5, 0, 255).astype(np.uint8)
+    top = 65535.0 if wide else 255.0
+    return np.clip(encoded * top + 0.5, 0, top).astype(np.uint16 if wide else np.uint8)

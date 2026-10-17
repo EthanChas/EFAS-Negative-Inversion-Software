@@ -113,6 +113,26 @@ def test_a_16_bit_scan_exports_as_a_16_bit_tiff_with_its_profile_and_a_smooth_gr
     assert eight["done"] and cv2.imread(eight["done"][0], cv2.IMREAD_UNCHANGED).dtype == np.uint8
 
 
+def test_a_16_bit_scan_stays_16_bit_through_shadows_saturation_colour_and_denoise(tmp_path, db):
+    """These stages used to make an 8-bit picture of it: now they keep the 16 bits, so the export is a 16-bit TIFF with a smooth gradient and no note."""
+    src = write16(tmp_path / "scan.png", gradient16())
+    state = default_edit_state(False)
+    state.update({"shadows": 0.4, "highlights": -0.2, "saturation": 0.2, "vibrance": 0.3, "mix_sat_blue": 0.3, "local_contrast": 0.3, "chroma_denoise": 1.0})
+    conn = edit_store.connect(db)
+    edit_store.save_edit_state(conn, src, state)
+    conn.close()
+    opts = X.ExportOptions(fmt="tiff", bit_depth=16, dest_mode="folder", folder=str(tmp_path / "out"))
+    s = export_photos([src], [("p", opts)], db)
+    assert not s["failed"] and not s.get("notes"), s
+    data = cv2.imread(s["done"][0], cv2.IMREAD_UNCHANGED)
+    assert data.dtype == np.uint16 and len(np.unique(data[..., 1])) > 800, "16-bit, and one level per column or nearly (8 bits would have at most 256)"
+    # a step that works at 8 bits only still gives an 8-bit export, with the note that names it
+    state["vignette"] = 0.3
+    conn = edit_store.connect(db); edit_store.save_edit_state(conn, src, state); conn.close()
+    s8 = export_photos([src], [("p", dataclasses.replace(opts, folder=str(tmp_path / "out2")))], db)
+    assert cv2.imread(s8["done"][0], cv2.IMREAD_UNCHANGED).dtype == np.uint8 and len(s8["notes"]) == 1 and "vignette" in s8["notes"][0][1]
+
+
 def test_16_bit_falls_back_to_8_bit_and_says_why_when_an_8_bit_edit_is_on_or_the_source_is_8_bit(tmp_path, db):
     src = write16(tmp_path / "scan.png", gradient16())
     state = default_edit_state(False)
