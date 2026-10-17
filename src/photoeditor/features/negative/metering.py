@@ -14,10 +14,11 @@ _FIELDS_NAMES = {
     "buffer": "analysis margin", "rect": "analysis region", "range_clip": "range clip", "cast_removal": "cast removal",
     "white": "white point", "black": "black point", "white_trim": "white point trim", "black_trim": "black point trim",
     "engine": "conversion", "crosstalk": "dye crosstalk", "film_curve": "film curve", "grade": "print grade", "density": "print density",
-    "paper_toe": "paper toe", "paper_shoulder": "paper shoulder", "grade_trim": "colour crossover", "film": "film profile",
+    "paper_toe": "paper toe", "paper_shoulder": "paper shoulder", "grade_trim": "colour crossover", "film": "film profile", "transfer": "scan encoding",
 }
 ENGINES = ("print", "standard")   # "print" is Modern (film and paper: features/negative/printengine.py), "standard" is Original (a straight stretch of each channel)
 DEFAULT_ENGINE = "print"
+TRANSFERS = ("auto", "srgb", "bt709", "linear")   # how the scan's codes were made from light; "auto" reads it from the file (RAW decoded by EFAS: bt709, anything else: srgb)
 
 
 def _num(value: Any, low: float, high: float, default: float) -> float:
@@ -48,6 +49,7 @@ class Metering:
     black_trim: tuple[float, float, float] = (0.0, 0.0, 0.0)
     engine: str = DEFAULT_ENGINE    # "print" (Modern) or "standard" (Original)
     film: str = "generic"            # print engine: the crosstalk profile (printengine.profiles(): generic, none, a bundled film's file name, or user:<file>)
+    transfer: str = "auto"          # print engine: how the scan was encoded (TRANSFERS). Photos saved before this was a setting have "srgb", the reading they were edited with
     crosstalk: float = 1.0          # print engine: how much of the dyes' crosstalk is taken out
     film_curve: float = 0.4         # print engine: how much of the film's toe and shoulder is put back
     grade: float = 0.0              # print engine: added to the automatic print slope
@@ -59,6 +61,13 @@ class Metering:
     def is_default(self) -> bool:
         return self == Metering()
 
+    def resolved(self, source_is_raw: bool) -> "Metering":
+        """With "auto" replaced by the encoding the file really has: RAW files are decoded with libraw's default (BT.709) curve, every other file is read as sRGB. The renderer is
+        only ever given a resolved metering, so what it caches and keys on is the curve actually used."""
+        if self.transfer != "auto":
+            return self
+        return dataclasses.replace(self, transfer="bt709" if source_is_raw else "srgb")
+
     def white_points(self) -> tuple[float, float, float]:
         return tuple(max(-POINT_LIMIT, min(POINT_LIMIT, self.white + t)) for t in self.white_trim)
 
@@ -66,19 +75,19 @@ class Metering:
         return tuple(max(-POINT_LIMIT, min(POINT_LIMIT, self.black + t)) for t in self.black_trim)
 
     def to_dict(self) -> dict[str, Any]:
-        """The conversion method and whatever else differs from the defaults. The method is always written: a saved photo with no method is one from before the Modern
-        conversion existed, and that one keeps the Original look (see from_dict)."""
-        base, out = Metering(), {"engine": self.engine}
+        """The conversion method, the scan encoding and whatever else differs from the defaults. The method and the encoding are always written: a saved photo with no method is
+        one from before the Modern conversion existed, and one with no encoding is from before that was a setting; each keeps the look it was edited with (see from_dict)."""
+        base, out = Metering(), {"engine": self.engine, "transfer": self.transfer}
         for field in dataclasses.fields(self):
             value, default = getattr(self, field.name), getattr(base, field.name)
-            if field.name != "engine" and value != default:
+            if field.name not in ("engine", "transfer") and value != default:
                 out[field.name] = list(value) if isinstance(value, tuple) else value
         return out
 
     @classmethod
     def from_dict(cls, data: Any) -> "Metering":
         """Always valid: unknown keys are ignored, bad values fall back to the default, numbers are pulled into range. A saved dict with no conversion method was made before
-        the Modern conversion existed and keeps the Original one."""
+        the Modern conversion existed and keeps the Original one; one with no scan encoding was made when every scan was read as sRGB and keeps that."""
         if isinstance(data, Metering):
             return data
         if not isinstance(data, dict):
@@ -99,6 +108,7 @@ class Metering:
             white_trim=_triple(data.get("white_trim")), black_trim=_triple(data.get("black_trim")),
             film=data["film"] if isinstance(data.get("film"), str) and 0 < len(data["film"]) <= 120 else "generic",
             engine=data["engine"] if data.get("engine") in ENGINES else ("standard" if "engine" not in data else DEFAULT_ENGINE),
+            transfer=data["transfer"] if data.get("transfer") in TRANSFERS else ("srgb" if "transfer" not in data else "auto"),
             crosstalk=_num(data.get("crosstalk"), 0.0, 1.0, 1.0), film_curve=_num(data.get("film_curve"), 0.0, 1.0, 0.4),
             grade=_num(data.get("grade"), -0.5, 0.5, 0.0), density=_num(data.get("density"), -1.0, 1.0, 0.0),
             paper_toe=_num(data.get("paper_toe"), -1.0, 1.0, 0.0), paper_shoulder=_num(data.get("paper_shoulder"), -1.0, 1.0, 0.0),

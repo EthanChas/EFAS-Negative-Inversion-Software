@@ -226,6 +226,24 @@ class NegativeToolPanel(CollapsiblePanel):
         self._film.currentIndexChanged.connect(self._on_metering_slider)
         film_row.addWidget(self._film, 1)
         body.addLayout(film_row)
+        encoding_row = QHBoxLayout()
+        encoding_label = QLabel("Encoding")
+        encoding_label.setFixedWidth(80)
+        encoding_row.addWidget(encoding_label)
+        self._encoding = QComboBox()
+        self._encoding.addItem("Automatic (from the file)", "auto")
+        self._encoding.addItem("sRGB", "srgb")
+        self._encoding.addItem("BT.709 (RAW decoded by EFAS)", "bt709")
+        self._encoding.addItem("Linear (a linear scan)", "linear")
+        self._encoding.setToolTip(
+            "How the scan's numbers were made from light, so Modern can turn them back into density correctly. Automatic is right for most photos: a RAW file EFAS decodes carries "
+            "the BT.709 curve, any other file is read as sRGB. Choose Linear for a 16-bit TIFF from scanner software that saved the scan without a curve. A photo edited before this "
+            "was a setting keeps sRGB, the reading it was edited with: switch it to Automatic to use the correct one (the picture will change).")
+        self._encoding.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
+        self._encoding.setMinimumContentsLength(10)
+        self._encoding.currentIndexChanged.connect(self._on_metering_slider)
+        encoding_row.addWidget(self._encoding, 1)
+        body.addLayout(encoding_row)
         self._print_rows = {
             "crosstalk": SliderRow("Crosstalk", min_value=0.0, max_value=1.0, reset_value=1.0),
             "film_curve": SliderRow("Film curve", min_value=0.0, max_value=1.0, reset_value=0.4),
@@ -498,13 +516,14 @@ class NegativeToolPanel(CollapsiblePanel):
     def set_metering(self, metering: Metering) -> None:
         """Show a Metering in the controls without emitting anything."""
         self._metering = metering
-        widgets = (self._margin, self._range, self._cast, self._white, self._black, self._conversion, self._film, *self._print_rows.values(), *self._trim_rows)
+        widgets = (self._margin, self._range, self._cast, self._white, self._black, self._conversion, self._film, self._encoding, *self._print_rows.values(), *self._trim_rows)
         for w in widgets:
             w.blockSignals(True)
         self._conversion.setCurrentIndex(max(0, self._conversion.findData(metering.engine)))
         if self._film.findData(metering.film) < 0:   # a profile that is no longer there reads as the generic one
             self._film.addItem(f"{metering.film} (missing: generic used)", metering.film)
         self._film.setCurrentIndex(self._film.findData(metering.film))
+        self._encoding.setCurrentIndex(max(0, self._encoding.findData(metering.transfer)))
         for key, row in self._print_rows.items():
             row.set_value(getattr(metering, key))
         for row, value in zip(self._trim_rows, metering.grade_trim):
@@ -525,6 +544,7 @@ class NegativeToolPanel(CollapsiblePanel):
         """The Modern conversion has its own grade and density; the stretch's range clip, colour cast and white / black points belong to Original and are put away under Modern."""
         modern = engine == "print"
         self._film.setEnabled(modern)
+        self._encoding.setEnabled(modern)
         for row in (*self._print_rows.values(), *self._trim_rows):
             row.setEnabled(modern)
         original_only = (self._range, self._cast, self._white, self._black, self._channel, *self._droppers.values())
@@ -563,7 +583,7 @@ class NegativeToolPanel(CollapsiblePanel):
             m = dataclasses.replace(m, white_trim=tuple(wt), black_trim=tuple(bt))
         engine = self._conversion.currentData() or "standard"
         self._sync_engine_controls(engine)
-        return dataclasses.replace(m, film=self._film.currentData() or "generic", buffer=self._margin.value(), range_clip=self._range.value(), cast_removal=self._cast.value(), engine=engine,
+        return dataclasses.replace(m, film=self._film.currentData() or "generic", transfer=self._encoding.currentData() or "auto", buffer=self._margin.value(), range_clip=self._range.value(), cast_removal=self._cast.value(), engine=engine,
                                    grade_trim=tuple(row.value() for row in self._trim_rows), **{key: row.value() for key, row in self._print_rows.items()})
 
     def _on_metering_slider(self, _value: float) -> None:

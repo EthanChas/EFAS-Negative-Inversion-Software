@@ -124,10 +124,10 @@ def test_the_simulated_film_responds_like_film():
 
 
 def test_modern_is_the_default_and_the_choice_is_always_saved():
-    assert Metering().engine == "print" and Metering().to_dict() == {"engine": "print"}
-    assert Metering(engine="standard").to_dict() == {"engine": "standard"}
+    assert Metering().engine == "print" and Metering().to_dict() == {"engine": "print", "transfer": "auto"}
+    assert Metering(engine="standard").to_dict() == {"engine": "standard", "transfer": "auto"}
     m = Metering(engine="print", grade=0.2, crosstalk=0.5, film_curve=0.9, density=-0.3, paper_toe=0.4, paper_shoulder=-0.2, grade_trim=(0.1, 0.0, -0.2))
-    assert Metering.from_dict(m.to_dict()) == m and set(m.to_dict()) == {"engine", "grade", "crosstalk", "film_curve", "density", "paper_toe", "paper_shoulder", "grade_trim"}
+    assert Metering.from_dict(m.to_dict()) == m and set(m.to_dict()) == {"engine", "transfer", "grade", "crosstalk", "film_curve", "density", "paper_toe", "paper_shoulder", "grade_trim"}
     assert Metering.from_dict({"engine": "print", "grade_trim": [5, -5, 0]}).grade_trim == (0.3, -0.3, 0.0)
     original = Metering(engine="standard", range_clip=0.3)
     assert Metering.from_dict(original.to_dict()) == original

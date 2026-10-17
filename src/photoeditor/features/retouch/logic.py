@@ -718,13 +718,15 @@ def route_wide_defects(score: np.ndarray) -> Optional[np.ndarray]:
 
 
 def _linearize(pixels: np.ndarray) -> np.ndarray:
-    return np.power(pixels.astype(np.float32) * np.float32(1.0 / 255.0), np.float32(_GAMMA))
+    top = 65535.0 if pixels.dtype == np.uint16 else 255.0
+    return np.power(pixels.astype(np.float32) * np.float32(1.0 / top), np.float32(_GAMMA))
 
 
-def _delinearize(lin: np.ndarray) -> np.ndarray:
+def _delinearize(lin: np.ndarray, wide: bool = False) -> np.ndarray:
+    """8-bit pixels from the linear working image (16-bit when `wide`)."""
     out = np.power(np.clip(lin, 0.0, 1.0), np.float32(1.0 / _GAMMA))
-    out *= np.float32(255.0)
-    return (out + np.float32(0.5)).astype(np.uint8)
+    out *= np.float32(65535.0 if wide else 255.0)
+    return (out + np.float32(0.5)).astype(np.uint16 if wide else np.uint8)
 
 
 class DustStatsCache:
@@ -742,6 +744,7 @@ class RetouchResult:
     specks: Optional[np.ndarray] = None
     hairs: Optional[np.ndarray] = None
     manual: Optional[np.ndarray] = None
+    wide: Optional[np.ndarray] = None   # the 16-bit scan with the same repairs, when one was given to repair (None if nothing was repaired)
 
 
 def drop_marked(mask: Optional[np.ndarray], points, slack_px: float = 2.0) -> Optional[np.ndarray]:
@@ -828,12 +831,16 @@ def remove_dust_and_scratches(
     stats_cache: Optional[DustStatsCache] = None,
     cache_token=None,
     excluded=None,
+    wide: Optional[np.ndarray] = None,
 ) -> RetouchResult:
     """Repairs dust specks, hairs (auto), painted heal strokes, traced
     scratches and clone strokes in a raw scan (uint8 sRGB). pixels in the
     result is the input itself, untouched, if nothing was found. Clone strokes
     go first, so everything after them - detection, heals - sees the cloned
-    picture."""
+    picture.
+
+    `wide` is the same scan at 16 bits (uint16, `pixels` being its 8-bit copy). The repair is then made on it, so a repaired patch carries the scan's own fine levels instead of
+    256 steps, and the result holds the 16-bit picture too (`wide`); `pixels` is still the 8-bit one, made from the same repair."""
     scratch_lines = list(scratch_lines or [])
     heal_strokes = list(heal_strokes or [])
     clone_strokes = list(clone_strokes or [])
@@ -843,7 +850,7 @@ def remove_dust_and_scratches(
         ai_mask = None
     if not auto and not scratch_lines and not heal_strokes and not clone_strokes and ai_mask is None:
         return RetouchResult(pixels)
-    lin = _linearize(pixels)
+    lin = _linearize(wide if wide is not None else pixels)
     changed = False
     if clone_strokes:
         from .clone import apply_clone_strokes
@@ -888,4 +895,6 @@ def remove_dust_and_scratches(
             out = _apply_hair_inpaint(out, routed)
         changed = True
 
-    return RetouchResult(_delinearize(out) if changed else pixels, specks, hairs, manual)
+    if not changed:
+        return RetouchResult(pixels, specks, hairs, manual)
+    return RetouchResult(_delinearize(out), specks, hairs, manual, _delinearize(out, wide=True) if wide is not None else None)

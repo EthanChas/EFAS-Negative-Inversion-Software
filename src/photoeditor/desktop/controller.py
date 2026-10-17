@@ -2968,7 +2968,7 @@ class AppController(QObject):
         if marks is not None:
             self.state.marks = Marks.from_dict(marks)
         if meter is not None:
-            self.state.metering = dataclasses.replace(meter, rect=self.state.metering.rect)
+            self.state.metering = dataclasses.replace(meter, rect=self.state.metering.rect, transfer=self.state.metering.transfer)   # the scan encoding is the file's, not the look's
         self._log(label)
         self._restore_entry(self.state.history[-1])
         self._finish_restore()
@@ -2986,7 +2986,7 @@ class AppController(QObject):
         if marks is not None:
             changes["marks"] = Marks.from_dict(marks)
         if meter is not None:
-            changes["metering"] = dataclasses.replace(meter, rect=s.metering.rect)
+            changes["metering"] = dataclasses.replace(meter, rect=s.metering.rect, transfer=s.metering.transfer)
         if not changes:
             return None
         shown = dataclasses.replace(s, **changes)

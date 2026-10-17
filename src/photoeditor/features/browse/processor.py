@@ -8,11 +8,13 @@ import numpy as np
 import rawpy
 from PIL import Image
 
-from ..negative.logic import ProcessMode, detect_process_mode, invert_negative
+from ..negative import printengine
+from ..negative.logic import ProcessMode, detect_process_mode
 from ..open_image.logic import is_raw
 from .logic import thumbnail_cache_key
 
 _THUMB_QUALITY = 85
+_NEUTRAL = "_modern"   # a neutral thumbnail's file-name tag: they used to be made with the Original conversion, and those are not reused
 
 
 def _embedded_preview(path: str, max_dim: int):
@@ -37,19 +39,21 @@ def make_thumbnail_bytes(path: str, max_dim: int = 200) -> bytes | None:
     raw orange-mask scans, the same reasoning as NegPy's own thumbnailer.
     None if the file is unreadable."""
     try:
+        transfer = "srgb"   # how the pixels were encoded: a camera's JPEG preview and an ordinary picture are sRGB
         if is_raw(path):
             img = _embedded_preview(path, max_dim)
             if img is None:
                 with rawpy.imread(path) as raw:
                     rgb = raw.postprocess(use_camera_wb=True, half_size=True, output_bps=8)
                 img = Image.fromarray(rgb)
+                transfer = "bt709"   # libraw's own curve, which is what the editor's RAW decode carries too
         else:
             img = Image.open(path).convert("RGB")
 
         img.thumbnail((max_dim, max_dim), Image.Resampling.LANCZOS)
         pixels = np.array(img)
         if detect_process_mode(pixels) != ProcessMode.E6:
-            pixels = invert_negative(pixels)
+            pixels = printengine.convert(pixels, printengine.Settings(transfer=transfer))   # the conversion the editor starts a photo with, so a tile matches what opening it shows
             img = Image.fromarray(pixels)
 
         buf = io.BytesIO()
@@ -62,7 +66,7 @@ def make_thumbnail_bytes(path: str, max_dim: int = 200) -> bytes | None:
 def load_cached_thumbnail(cache_dir: str, path: str) -> bytes | None:
     """The cached JPEG bytes for `path`, if a cache entry for its current
     mtime/size already exists - None on any kind of miss."""
-    cache_path = os.path.join(cache_dir, f"{thumbnail_cache_key(path)}.jpg")
+    cache_path = os.path.join(cache_dir, f"{thumbnail_cache_key(path)}{_NEUTRAL}.jpg")
     try:
         with open(cache_path, "rb") as f:
             return f.read()
@@ -72,7 +76,7 @@ def load_cached_thumbnail(cache_dir: str, path: str) -> bytes | None:
 
 def save_cached_thumbnail(cache_dir: str, path: str, data: bytes) -> None:
     os.makedirs(cache_dir, exist_ok=True)
-    cache_path = os.path.join(cache_dir, f"{thumbnail_cache_key(path)}.jpg")
+    cache_path = os.path.join(cache_dir, f"{thumbnail_cache_key(path)}{_NEUTRAL}.jpg")
     try:
         with open(cache_path, "wb") as f:
             f.write(data)

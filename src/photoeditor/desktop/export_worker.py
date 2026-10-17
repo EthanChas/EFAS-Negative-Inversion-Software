@@ -187,7 +187,7 @@ def _edits_for(path: str, conn, preview, state: dict | None = None) -> tuple:
     roll = load_roll(path, conn)
     base = edit_store.effective_film_base(conn, path)
     params = EditParams.from_dict(
-        {**saved, "roll_camera": roll.camera.strip(), "roll_lens": roll.lens.strip(), "film_base": base}
+        {**saved, "roll_camera": roll.camera.strip(), "roll_lens": roll.lens.strip(), "film_base": base, "source_raw": is_raw(path)}
     )
     flatfield = None
     row = edit_store.effective_flatfield(conn, path)

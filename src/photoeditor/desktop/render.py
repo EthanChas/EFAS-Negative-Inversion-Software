@@ -18,6 +18,7 @@ import numpy as np
 from PyQt6.QtCore import QThread, pyqtSignal
 
 from ..features.open_image import camera
+from ..features.open_image.logic import is_raw
 from ..features.color.logic import adjust_saturation, adjust_temperature_tint
 from ..features.contrast.logic import apply_contrast
 from ..features.denoise.logic import apply_chroma_denoise
@@ -328,7 +329,7 @@ class EditParams:
             ai_threshold=float(getattr(s, "ai_threshold", aidust.DEFAULT_THRESHOLD)),
             ai_grow=int(getattr(s, "ai_grow", aidust.DEFAULT_GROW)),
             marks=Marks.from_dict(getattr(s, "marks", None)),
-            metering=Metering.from_dict(getattr(s, "metering", None)),
+            metering=Metering.from_dict(getattr(s, "metering", None)).resolved(_source_is_raw(s)),
             keystone_v=float(getattr(s, "keystone_v", 0.0)),
             keystone_h=float(getattr(s, "keystone_h", 0.0)),
             dust_excluded=tuple((float(p[0]), float(p[1])) for p in getattr(s, "dust_excluded", ())),
@@ -392,8 +393,19 @@ def _scale_rect(rect, scale: float, width: int, height: int):
 
 
 def print_settings(m: Metering) -> "printengine.Settings":
-    """The Print Engine's settings for a photo's metering."""
-    return printengine.Settings(unmix_matrix=printengine.matrix_for(m.film), unmix_strength=m.crosstalk, restore=m.film_curve, grade=m.grade, density=m.density, toe=m.paper_toe, shoulder=m.paper_shoulder, trims=m.grade_trim)
+    """The Print Engine's settings for a photo's metering (its scan encoding already resolved: see EditParams)."""
+    transfer = m.transfer if m.transfer in printengine.TRANSFER_CURVES else "srgb"
+    return printengine.Settings(unmix_matrix=printengine.matrix_for(m.film), unmix_strength=m.crosstalk, restore=m.film_curve, grade=m.grade, density=m.density, toe=m.paper_toe, shoulder=m.paper_shoulder, trims=m.grade_trim,
+                                transfer=transfer)
+
+
+def _source_is_raw(s) -> bool:
+    """Whether the edit state `s` is for a RAW file (its scan was decoded by EFAS): said outright (`source_raw`, for a saved state with no path) or by the file's extension."""
+    flag = getattr(s, "source_raw", None)
+    if flag is not None:
+        return bool(flag)
+    path = getattr(s, "image_path", None)
+    return bool(path) and is_raw(path)
 
 
 class Renderer:
@@ -408,7 +420,6 @@ class Renderer:
         self._flat: OrderedDict = OrderedDict()
         self._edge: OrderedDict = OrderedDict()
         self._eight: OrderedDict = OrderedDict()
-        self._patched: OrderedDict = OrderedDict()
         self._density: tuple | None = None
         self._dust_stats = DustStatsCache()
 
@@ -420,7 +431,6 @@ class Renderer:
             self._flat.clear()
             self._edge.clear()
             self._eight.clear()
-            self._patched.clear()
             self._density = None
             self._dust_stats = DustStatsCache()
 
@@ -436,21 +446,11 @@ class Renderer:
             self._eight.popitem(last=False)
         return eight
 
-    def _retouched16(self, source16: np.ndarray, source8: np.ndarray, retouched: RetouchResult, token) -> np.ndarray:
-        """The 16-bit source with the dust/scratch/heal repairs laid in."""
-        if retouched.pixels is source8:
-            return source16
-        key = (token, source16.shape, id(retouched))
-        if key in self._patched:
-            self._patched.move_to_end(key)
-            return self._patched[key][1]
-        changed = np.any(retouched.pixels != source8, axis=2)
-        patched = source16.copy()
-        patched[changed] = retouched.pixels[changed].astype(np.uint16) * np.uint16(257)
-        self._patched[key] = (retouched, patched)
-        while len(self._patched) > _RETOUCH_CACHE_SIZE:
-            self._patched.popitem(last=False)
-        return patched
+    @staticmethod
+    def _retouched16(source16: np.ndarray, retouched: RetouchResult) -> np.ndarray:
+        """The 16-bit source with the dust/scratch/heal repairs in it: made on the 16-bit scan itself (see remove_dust_and_scratches), so a repaired patch is as smooth as the scan
+        around it. The scan as it is when nothing was repaired."""
+        return retouched.wide if retouched.wide is not None else source16
 
     def _flatfielded(self, source: np.ndarray, token, flatfield) -> np.ndarray:
         """The scan evened out by the folder's gain map - cached per source and
@@ -518,9 +518,10 @@ class Renderer:
             self._invert_key = key
         return self._invert_lut
 
-    def _retouched(self, source: np.ndarray, params: EditParams, token, want_masks: bool) -> RetouchResult:
+    def _retouched(self, source: np.ndarray, params: EditParams, token, want_masks: bool, wide: np.ndarray | None = None) -> RetouchResult:
         """Dust/scratch/heal repair of the raw scan - expensive, so the result
-        is cached per source and settings rather than redone per slider tick.
+        is cached per source and settings rather than redone per slider tick. `wide` is the 16-bit scan `source` was made from: the repair is made on that, and the result holds
+        the 16-bit picture too.
         want_masks (the detection overlay is on) additionally runs detection
         alone when Auto Dust Removal is off, so its markers preview what
         turning it on would repair."""
@@ -543,6 +544,7 @@ class Renderer:
             params.clone_strokes,
             params.dust_excluded,
             (id(ai_prob), params.ai_threshold, params.ai_grow) if ai_prob is not None else None,
+            wide is not None,
         )
         if key in self._retouch:
             self._retouch.move_to_end(key)
@@ -561,6 +563,7 @@ class Renderer:
             stats_cache=self._dust_stats,
             cache_token=cache_token,
             excluded=list(params.dust_excluded),
+            wide=wide,
         )
         if detect_only:
             detected = detect_dust_masks(
@@ -648,9 +651,9 @@ class Renderer:
             if source.dtype == np.uint16:
                 source16 = source
                 source = self._as_uint8(source, token)
-            retouched = self._retouched(source, params, token, overlay)
+            retouched = self._retouched(source, params, token, overlay, source16)
             pixels = retouched.pixels
-            pixels16 = self._retouched16(source16, source, retouched, token) if source16 is not None else None
+            pixels16 = self._retouched16(source16, retouched) if source16 is not None else None
 
             def geometry(step, *args):
                 nonlocal pixels, pixels16
@@ -797,9 +800,9 @@ class Renderer:
             if source.dtype == np.uint16:
                 source16 = source
                 source = self._as_uint8(source, token)
-            retouched = self._retouched(source, params, token, False)
+            retouched = self._retouched(source, params, token, False, source16)
             pixels = retouched.pixels
-            pixels16 = self._retouched16(source16, source, retouched, token) if source16 is not None else None
+            pixels16 = self._retouched16(source16, retouched) if source16 is not None else None
 
             def geometry(step, *args):
                 nonlocal pixels, pixels16

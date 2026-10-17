@@ -52,3 +52,11 @@ Each picture is exposed onto three modelled films, at three exposure errors, und
 ## Controls that belong to Original
 
 Range clip, Colour cast, the white and black points and their droppers are Original's way of setting black and white. Under Modern they are greyed out; Grade and Print density do that job. Margin and Draw Region still choose which part of the picture is measured.
+
+## Scan encoding
+
+Step 1 turns the scan back into light, so it has to use the curve the scan was made with. **Convert tab > Conversion > Encoding** says which: **Automatic** (the default) reads it from the file: a RAW file EFAS decodes carries libraw's own curve, which is Rec. BT.709, and any other file is read as sRGB. Choose **Linear** for a 16-bit TIFF from scanner software that saved the scan without a curve, or **sRGB** or **BT.709** to override the guess. The choice is saved per photo and is not part of a preset or pasted settings, because it belongs to the file.
+
+The curves differ most in the darkest codes, which on a negative are the densest parts and become the positive's highlights. Reading a BT.709 scan as sRGB overstates density there by up to 0.46, and by about 0.2 at the median of a typical frame.
+
+A photo edited before this was a setting keeps sRGB, the reading it was edited with, so its picture does not change. To move it to the correct curve, set Encoding to **Automatic** (or press Reset Metering); the picture will change, and Grade and Print density may need a touch. The film curve defaults (Film curve 0.4, the generic S-shape) were tuned before this fix; judge them on your own RAW scans.

@@ -26,6 +26,7 @@ from dataclasses import dataclass
 import numpy as np
 
 # density image
+TRANSFER_CURVES = ("srgb", "bt709", "linear")   # how a scan's codes were encoded from light (see density_table)
 DENSITY_SCALE = 13000.0     # density codes per unit of density (uint16: densities up to 5.04)
 # paper
 D_MIN = 0.06                # density of paper white
@@ -69,16 +70,42 @@ class Settings:
     trims: tuple = (0.0, 0.0, 0.0)  # per-layer grade (red, green, blue), added to the slope: corrects colour crossover without moving the middle
     toe: float = 0.0               # positive lifts the shadows' roll-off into paper black, negative sharpens it
     shoulder: float = 0.0          # positive holds the highlights back from paper white, negative sharpens the roll-off
-    transfer: str = "srgb"         # how the scan is encoded: "srgb" or "linear"
+    transfer: str = "srgb"         # how the scan is encoded: "srgb", "bt709" (a RAW file decoded with libraw's default curve) or "linear"
     film_range: float = FILM_RANGE
     film_gamma: float = FILM_GAMMA
 
 
+def _libraw_curve() -> tuple[float, float, float, float]:
+    """libraw's default output curve (power 2.222, toe slope 4.5), which is what a RAW decode that is not told otherwise carries: a straight toe, then a power law
+    (1 + a) * v**p - a, joined where value and slope agree. These are the rounded numbers of Rec. BT.709 (1.099, 0.099, 0.018), but solved exactly, as libraw's gamma_curve
+    does, so the two parts meet without a step. -> (power, slope, knee, offset a), the knee being the encoded value where the toe ends."""
+    power, slope = 1.0 / 2.222, 4.5
+    lo, hi = 0.0, 1.0
+    for _ in range(80):
+        knee = 0.5 * (lo + hi)
+        join_slope = (1.0 + knee * (1.0 / power - 1.0)) * power * (knee / slope) ** (power - 1.0)
+        if join_slope > slope:
+            lo = knee
+        else:
+            hi = knee
+    return power, slope, knee, knee * (1.0 / power - 1.0)
+
+
+_LR_POWER, _LR_SLOPE, _LR_KNEE, _LR_OFFSET = _libraw_curve()
+
+
 def density_table(dtype, transfer: str = "srgb") -> np.ndarray:
-    """The optical density of every code of a scan's depth (256 entries for 8 bits, 65536 for 16)."""
+    """The optical density of every code of a scan's depth (256 entries for 8 bits, 65536 for 16). The codes are turned back into light with the curve that made them: sRGB, the
+    BT.709 curve (what libraw puts on a RAW file unless told otherwise, so what EFAS's own RAW decode carries), or none for a linear scan. The three differ most in the darkest
+    codes - on a negative, the densest parts, which become the positive's highlights - where reading BT.709 codes as sRGB overstates density by up to 0.46."""
     top = 65535 if dtype == np.uint16 else 255
     c = np.arange(top + 1, dtype=np.float64) / top
-    t = c if transfer == "linear" else np.where(c <= 0.04045, c / 12.92, np.power((c + 0.055) / 1.055, 2.4))
+    if transfer == "linear":
+        t = c
+    elif transfer == "bt709":
+        t = np.where(c < _LR_KNEE, c / _LR_SLOPE, np.power((c + _LR_OFFSET) / (1.0 + _LR_OFFSET), 1.0 / _LR_POWER))
+    else:
+        t = np.where(c <= 0.04045, c / 12.92, np.power((c + 0.055) / 1.055, 2.4))
     return (-np.log10(np.clip(t, 1e-5, 1.0))).astype(np.float32)
 
 
