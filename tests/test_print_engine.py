@@ -278,3 +278,31 @@ def test_a_film_profile_changes_the_picture_and_is_kept_with_the_photo():
     one = renderer.render(scan, params, "t", scan.shape[1])[0]
     two = renderer.render(scan, other, "t", scan.shape[1])[0]
     assert not np.array_equal(one, two), "changing the film profile is not served from the cache"
+
+
+def test_the_density_step_is_the_log_conversion_the_pakon_reference_documents():
+    """The Pakon F-X35 reference (CC BY 4.0, github.com/alibosworth/pakon-reference) documents the scanner's negative-to-positive step as a pure log conversion of the linear
+    code, D = 3500 * log10(16383 / x), with no tone shaping. Modern's density step is the same function, D = -log10(T), up to the scale (3500 counts per unit of density, and
+    14-bit against 16-bit codes)."""
+    x14 = np.arange(1, 16384, dtype=np.float64)
+    oem = 3500 * np.log10(16383 / x14)
+    mine = printengine.density_table(np.uint16, "linear")[(x14 * 4).astype(int)].astype(np.float64)   # the same light as a 16-bit code
+    assert np.abs(mine - oem / 3500).max() < 1e-4
+
+
+def test_the_film_base_is_used_in_one_place_so_the_light_level_cancels():
+    """The same reference stresses that film-base compensation happens exactly once. Here a sampled base is used in one place (the film-curve step), so halving the light on both
+    the scan and the sampled base - an exposure change - leaves the print as it was, and halving only the scan does not."""
+    rng = np.random.default_rng(1)
+    h, w = 60, 90
+    y, x = np.mgrid[0:h, 0:w]
+    smooth = 0.15 + 0.7 * (x / w)[..., None] * np.array([1.0, 0.9, 0.8]) + 0.1 * (y / h)[..., None]
+    codes = ((2000 + 40000 * np.clip(smooth + rng.normal(0, 0.01, smooth.shape), 0, 1)).astype(np.uint16)) & 0xFFFE   # even, so halving is exact
+    base = np.array([46000, 38000, 31000])
+    settings = printengine.Settings(transfer="linear")
+    full = printengine.convert(codes, settings, base).astype(int)
+    for k in (2, 4):
+        scaled = printengine.convert((codes // k).astype(np.uint16), settings, base // k).astype(int)
+        assert np.abs(full - scaled).max() <= 1, f"light / {k}"
+    only_scan = printengine.convert((codes // 2).astype(np.uint16), settings, base).astype(int)
+    assert np.abs(full - only_scan).max() > 10, "a base that does not move with the scan is a different base"

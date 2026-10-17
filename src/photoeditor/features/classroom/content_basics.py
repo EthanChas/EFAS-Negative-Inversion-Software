@@ -411,6 +411,23 @@ It also needs to be **bright enough** that you can use the camera's lowest ISO a
 Every light has a colour, and it tints the scan. In the Convert tab, **Scanning light...** lets you enter the colour temperature of your backlight, and EFAS works out a starting colour trim to cancel the tint. The reasoning, and its limits, are explained in [[colour-trim-and-scanning-light]].
 """, keywords=("light panel", "backlight", "cri", "led", "flicker", "even light", "colour temperature", "light source"), module="Negative", see=("flat-field-module", "colour-trim-and-scanning-light")),
 
+    Lesson("check-your-light", "scan", "Checking your scanning light", "Measure whether your backlight is steady and even, and tell a changed light from a changed exposure.",
+           r"""
+You cannot judge a backlight by eye. A panel that has dimmed by 5%, or turned a little bluer, looks exactly the same to you, but your camera's sensor sees it, and the scans of a roll will then not match each other. The conversion cannot tell that the light moved from the film having changed, so you end up correcting colours that were never the film's fault. **Extra > Check My Scanning Light...** measures the light instead of leaving you to guess. It reads RAW photos straight from the sensor, before any conversion, and changes nothing.
+
+## Checking the bare light
+
+Take the film out and photograph the light itself, with the camera on manual so the shutter speed, aperture, ISO and focus never change, and the exposure bright but not blown out. Shoot twice straight after switching the light on, because those two shots show how much the numbers wobble on their own, then once every five to ten minutes for an hour. Choose those photos in the check and it compares each with the first.
+
+It answers four questions. Does the light get brighter or dimmer, and when does it settle? Many panels need a few minutes to warm up, and the check says how long yours does. Does its colour move? Red and blue are each compared with green, which exposure cannot change, so a drift there really is the light. Is it even, meaning the middle of the frame against the corners? That figure includes your lens's own falloff, so judge the change rather than the level. And was anything blown out, or did the camera settings change between shots, which would make the comparison meaningless?
+
+## Checking a roll of scans
+
+The same measurements can be made on real negatives, because every frame has pieces that do not depend on the picture: the clear orange film between the frames, the bare light showing through the sprocket holes, and the black holder. Choose the RAW scans of one roll (one roll at a time, because every film is a slightly different orange) and the check compares each scan with a reference.
+
+Its main trick is to tell the causes apart. If the clear film came out darker than the shutter speed and ISO explain, the light dimmed. If it came out darker and the camera used a faster shutter, that is exposure, not the light. If the film's colour changed but the light in the sprocket holes did not, it is a different film or strip, or the light had only just been switched on. It also says how many stops the clear film sits below blown out, whether the camera chose the exposure itself, how much stray light reaches the holder, and what to change. How it differs from **File > Check Roll Consistency...**: that finds which frames differ from the rest, and this explains why, from the camera's own settings.
+""", keywords=("light check", "light drift", "backlight", "warm up", "flicker", "even light", "stray light", "sprocket holes", "film base", "exposure", "lightdrift", "scanning light"), see=("scanning-light", "scanning-exposure", "flat-field-module")),
+
     Lesson("scanning-exposure", "scan", "Exposure and focus for scanning", "Choose camera settings that capture the whole range of a negative cleanly, and focus them exactly.",
            r"""
 Scanning is the one kind of photography where nothing moves and you control the light, so you choose every setting for *quality*. A few decisions do most of the work.

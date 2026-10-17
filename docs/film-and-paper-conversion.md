@@ -41,6 +41,16 @@ On the simulator, Modern and Original are close in colour, and Modern clips far 
 
 On real scans it gives smoother highlights and less clipping than Original, with somewhat lower contrast out of the box; **Grade** and **Print density** are there for taste. Judge it on your own film.
 
+## Checked against the Pakon reference
+
+Ali Bosworth's Pakon F-X35 reference (documentation, CC BY 4.0, https://github.com/alibosworth/pakon-reference) records how the Pakon scanners turn a raw colour-negative scan into a positive, from reverse engineering and checks on real scanners. EFAS never talks to a scanner, so almost all of it (the USB protocol, the firmware, the calibration data) does not matter here. Its colour-pipeline page is a useful outside check on Modern's first steps, and it agrees:
+
+- The scanner's negative-to-positive step is a pure log conversion of the linear scan code, D = 3500 x log10(16383 / x): density, with no tone shaping in it. Modern's density step is the same function (D = -log10 of the linear value; only the scale differs), and a test checks that the two agree to 0.00002.
+- The film base must be compensated once, in one place: doing it both in the linear domain and in the density domain applies it twice. Modern uses a sampled base in one place (the film-curve step), so a scan and its sampled film base can be scaled together (an exposure change) without changing the print. A test checks that, and checks that scaling the scan alone does change it.
+- The off-diagonal terms of the scanner's 3 x 3 matrix are the dye crosstalk correction in density, each row summing to about 1 so neutrals stay neutral. That is what Modern's crosstalk step does with the film profiles.
+
+Two things are deliberately not taken from it. The matrix is documented as the F-235 engine's, and the 135-line scanners (F-135 and F-135+) are reported to use a different, per-unit colour transform, so it is not a general film profile and EFAS does not ship it as one. And the reference documents the scanner's inversion, not its look, so it says nothing about how big the Pakon response in the Lab Look module should be: those sizes stay estimates from published descriptions.
+
 ## Benchmark
 
 ```

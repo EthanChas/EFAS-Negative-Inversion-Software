@@ -144,6 +144,7 @@ from .stats_panel import ChannelStatsPanel
 from .title_bar import TitleBar
 from .tone_curve_panel import ToneCurveToolPanel
 from .film_reference_dialog import FilmReferenceDialog
+from .light_check_dialog import LightCheckDialog
 from .tool_rail import SlideOutPanel, ToolRail
 from ...features.geometry.stabilize import stabilize as stabilize_rect
 from .plugin_host import WindowPluginHost
@@ -796,6 +797,10 @@ class AppWindow(QMainWindow):
         self._film_reference_action.setToolTip("Search a film stock and see photos shot on it, from lomography.com, to judge colour against")
         self._film_reference_action.triggered.connect(lambda _c=False: self.show_film_reference())
         extra_menu.addAction(self._film_reference_action)
+        self._light_check_action = QAction("Check My Scanning Light...", self)
+        self._light_check_action.setToolTip("Measure whether the light you scan film with is steady and even, and whether a roll was scanned consistently under it, from RAW photos taken with your scanning camera")
+        self._light_check_action.triggered.connect(lambda _c=False: self.show_light_check())
+        extra_menu.addAction(self._light_check_action)
 
         self._plugins_menu = menubar.addMenu("Plugins")
         self._plugin_menu_anchor = self._plugins_menu.addSeparator()
@@ -2656,6 +2661,24 @@ class AppWindow(QMainWindow):
             return load_roll(path, self.controller._db).film.strip()
         except Exception:
             return ""
+
+    def show_light_check(self) -> None:
+        """Extra > Check My Scanning Light: the bare-light check and the film-scan check (features/lightcheck). It reads RAW photos and changes nothing."""
+        existing = getattr(self, "_light_check", None)
+        try:
+            still_open = existing is not None and existing.isVisible()
+        except RuntimeError:  # closed with the window's X: Qt has already deleted it
+            still_open = False
+        if still_open:
+            existing.raise_()
+            existing.activateWindow()
+            return
+        folder = self._filmstrip_folder if self._filmstrip_folder and os.path.isdir(self._filmstrip_folder) else ""
+        dialog = LightCheckDialog(folder, self)
+        dialog.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, True)
+        dialog.destroyed.connect(lambda *_: setattr(self, "_light_check", None) if getattr(self, "_light_check", None) is dialog else None)
+        self._light_check = dialog
+        dialog.show()
 
     def show_film_reference(self, ask: bool = True) -> None:
         """Extra > Film Colour Reference / the Negative tab's button: photos of a film stock from lomography.com. It is the one feature besides the update check

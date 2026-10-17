@@ -40,7 +40,7 @@ class _Plot(QWidget):
             p.setPen(QPen(QColor("#2a2a2a")))
             p.drawLine(QPointF(pt.x(), a.top()), QPointF(pt.x(), a.bottom()))
             p.setPen(text)
-            p.drawText(QRectF(pt.x() - 18, a.bottom() + 2, 36, 14), Qt.AlignmentFlag.AlignCenter, f"{v:g}")
+            p.drawText(QRectF(pt.x() - 18, a.bottom() + 2, 36, 14), Qt.AlignmentFlag.AlignCenter, f"{v + 0.0:g}")
             v += step_x
         v = np.ceil(self._y[0] / step_y) * step_y
         while v <= self._y[1] + 1e-9:
@@ -48,7 +48,7 @@ class _Plot(QWidget):
             p.setPen(QPen(QColor("#2a2a2a")))
             p.drawLine(QPointF(a.left(), pt.y()), QPointF(a.right(), pt.y()))
             p.setPen(text)
-            p.drawText(QRectF(0, pt.y() - 7, self.LEFT - 4, 14), Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter, f"{v:g}")
+            p.drawText(QRectF(0, pt.y() - 7, self.LEFT - 4, 14), Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter, f"{v + 0.0:g}")
             v += step_y
         p.setPen(QPen(grid))
         p.drawRect(a)
