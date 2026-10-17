@@ -52,6 +52,7 @@ DEFAULTS: dict[str, Any] = {
     "hotstack_folders": [],
     "gpu_enabled": True,
     "classroom_last": "",
+    "preset_sort": "made",
     "gpu_limit": 100,
     "live_open_editor": True,
     "live_session": [],
@@ -89,6 +90,8 @@ def _clean(data: Any) -> dict[str, Any]:
     for key in ("slideshow_shuffle", "slideshow_loop", "slideshow_captions", "slideshow_edits", "slideshow_progress", "live_open_editor", "gpu_enabled"):
         if isinstance(data.get(key), bool):
             out[key] = data[key]
+    if data.get("preset_sort") in ("made", "az", "za"):   # how the presets inside each folder are ordered: the order made, A to Z, Z to A
+        out["preset_sort"] = data["preset_sort"]
     if isinstance(data.get("classroom_last"), str):   # the Classroom lesson that was open
         out["classroom_last"] = data["classroom_last"].strip()[:80]
     limit = data.get("gpu_limit")   # the share of the graphics card's time (per cent) the picture work may take

@@ -10,6 +10,20 @@ Two buttons at the top of the module choose which list shows.
 - The **search box** above the list narrows whichever list is showing to the presets that have every word you type in their folder, name or, for the built-in ones, their description (so `warm lab` finds the built-ins whose description has both words). The folders the matches are in open by themselves and close again when you clear the box. Esc clears it, and Enter or the Down arrow selects the first preset found and moves to the list. A line under the box says how many presets are left, and when the list showing has none, how many the other one has.
 - **Built-in Presets** come with EFAS and cannot be changed. Select one to read what it is; **Apply** it (or double-click), apply it to the **roll** (**To Roll...**), or hover it to preview it on the picture first. **Copy to My Presets** makes an editable copy of it.
 
+
+## Organising My Presets
+
+The **Organise** button beside the search box, and a right-click on a folder, a preset or empty space in the list, hold the tools for keeping a long list in order. They work on My Presets; the built-in list cannot be changed (a folder of it can be copied to My Presets).
+
+- **New Folder...** makes a folder. It stays when it is empty, so you can set the folders up first and save into them later. A slash in the name makes one inside another: `Film/B&W` makes B&W inside Film (and Film, if it is not there). The name starts with the selected folder in it, so **New Subfolder** is the same command from a folder's right-click menu.
+- **Move Selected to...** and **dragging** put a preset, or a whole folder, inside another folder; dropping on empty space puts it at the top level. A preset is never replaced: if the folder already has one with that name, nothing moves and a message says so. A folder cannot be moved into itself.
+- **Duplicate** makes a copy next to the preset, called the same with " copy" added (" copy 2", and so on, if that is taken).
+- **Remove Folder, Keep Its Presets** takes the folder away but not what is in it: its presets and folders move up one level, into the folder above (or the top level). A name that is already taken up there gets " copy" added, so nothing is replaced or lost. **Delete Folder and Its Presets** removes both, and asks first. An empty folder is removed without asking, and **Remove Empty Folders** clears every empty one at once.
+- **Open All Folders** and **Close All Folders** do what they say. **Order Inside Folders** sets how presets are listed in each folder: in the order made (the default), A to Z, or Z to A, which turns the folders round as well. The choice is remembered.
+- **Copy Folder to My Presets**, on a folder of Built-in Presets, copies every preset in it to My Presets, keeping the folders.
+
+Folders that were made on purpose are kept in the same file as the presets (`look-presets.json` in the data folder, under `folders`), so a backup or a move of the data folder keeps them.
+
 ## Folders
 
 A name with slashes is a path: **B&W/Number 1** is the preset *Number 1* inside the folder *B&W*, like the nesting of tags. A folder exists because a name runs through it; there are no empty folders to look after.

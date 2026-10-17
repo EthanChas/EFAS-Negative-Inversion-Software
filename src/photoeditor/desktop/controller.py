@@ -3263,28 +3263,123 @@ class AppController(QObject):
         self.notice.emit(f"Copied '{name}' to My Presets as '{stored}'")
         return stored
 
+    def look_folders(self) -> list[str]:
+        """The folders of My Presets that were made on purpose (they stay when nothing is in them)."""
+        return look_store.folders()
+
+    def create_look_folder(self, path: str) -> bool:
+        """Make a folder for My Presets (a slash makes a folder inside a folder). It stays when it is empty."""
+        stored = look_store.add_folder(path)
+        if stored is None:
+            self.notice.emit("That folder could not be made: it has no name, or it already exists")
+            return False
+        self.look_presets_changed.emit("")
+        self.notice.emit(f"Made the folder '{stored}'")
+        return True
+
     def rename_look_folder(self, folder: str, new_folder: str) -> int:
         """Rename a folder of My Presets, or move it (and everything in it) somewhere else. Nothing is changed if a name it would take is already used."""
         names = look_store.names()
         moves = preset_tree.move_folder(names, folder, new_folder)
         stay = {n.casefold() for n in names} - {n.casefold() for n in moves}
-        if not moves or any(new.casefold() in stay for new in moves.values()) or len({n.casefold() for n in moves.values()}) != len(moves):
-            self.notice.emit("The folder could not be renamed: a preset with one of the new names already exists")
+        known = {p.casefold() for p in preset_tree.folder_paths(names, look_store.folders())}
+        target = preset_tree.clean_path(new_folder)
+        if not target or (not moves and not any(preset_tree.is_inside(f, folder) for f in look_store.folders())):
+            self.notice.emit("The folder could not be renamed")
+            return 0
+        if any(new.casefold() in stay for new in moves.values()) or len({n.casefold() for n in moves.values()}) != len(moves) or (
+                not moves and target.casefold() in known and target.casefold() != preset_tree.clean_path(folder).casefold()):
+            self.notice.emit("The folder could not be renamed: a preset or folder with one of the new names already exists")
             return 0
         for old, new in moves.items():
             look_store.replace_preset(old, new, look_store.get(old))
+        look_store.rename_folder_records(folder, target)
         self.look_presets_changed.emit("")
-        self.notice.emit(f"Renamed the folder '{folder}' to '{preset_tree.clean_path(new_folder)}'")
+        self.notice.emit(f"Renamed the folder '{folder}' to '{target}'")
         return len(moves)
 
+    def move_look_folder(self, folder: str, into: str) -> int:
+        """Put a folder (and everything in it) inside another folder ("" is the top level)."""
+        if preset_tree.is_inside(into, folder):
+            self.notice.emit("A folder cannot be moved into itself")
+            return 0
+        target = preset_tree.join(into, preset_tree.leaf(folder))
+        if target.casefold() == preset_tree.clean_path(folder).casefold():
+            return 0
+        return self.rename_look_folder(folder, target)
+
     def delete_look_folder(self, folder: str) -> int:
+        """Delete a folder of My Presets with every preset in it."""
         gone = preset_tree.in_folder(look_store.names(), folder)
         for name in gone:
             look_store.delete_preset(name)
-        if gone:
+        had_record = any(preset_tree.is_inside(f, folder) for f in look_store.folders())
+        look_store.remove_folder_records(folder)
+        if gone or had_record:
             self.look_presets_changed.emit("")
-            self.notice.emit(f"Deleted the folder '{folder}' ({len(gone)} preset{'s' if len(gone) != 1 else ''})")
+            self.notice.emit(f"Deleted the folder '{folder}'" + (f" ({len(gone)} preset{'s' if len(gone) != 1 else ''})" if gone else ""))
         return len(gone)
+
+    def remove_look_folder(self, folder: str) -> int:
+        """Remove a folder of My Presets but keep what is in it: the presets and folders inside move up one level. A name that is already taken up there gets " copy" added, so
+        nothing is replaced. Returns how many presets moved."""
+        names = look_store.names()
+        moves, folder_moves = preset_tree.dissolve(names, folder, look_store.folders())
+        for old, new in moves.items():
+            look_store.replace_preset(old, new, look_store.get(old))
+        base = preset_tree.clean_path(folder)
+        look_store.set_folders([folder_moves.get(f, f) for f in look_store.folders() if f.casefold() != base.casefold()])
+        self.look_presets_changed.emit("")
+        up = preset_tree.parent(base)
+        self.notice.emit(f"Removed the folder '{base}'" + (f"; its {len(moves)} preset{'s' if len(moves) != 1 else ''} moved up into {up or 'the top level'}" if moves else ""))
+        return len(moves)
+
+    def move_look_preset(self, name: str, folder: str) -> str | None:
+        """Put a preset in a folder ("" is the top level), keeping its own name. Nothing happens if that folder already has a preset with the name."""
+        target = preset_tree.move_into(name, folder)
+        if target.casefold() == preset_tree.clean_path(name).casefold():
+            return name
+        if any(n.casefold() == target.casefold() for n in look_store.names()):
+            self.notice.emit(f"There is already a preset called '{target}'")
+            return None
+        stored = look_store.replace_preset(name, target, look_store.get(name))
+        if stored is None:
+            self.notice.emit("The preset could not be moved")
+            return None
+        self.look_presets_changed.emit(stored)
+        self.notice.emit(f"Moved the preset to '{stored}'")
+        return stored
+
+    def duplicate_look_preset(self, name: str) -> str | None:
+        """A copy of a preset of My Presets, next to it, called the same with " copy" added."""
+        look = look_store.get(name)
+        if look is None:
+            return None
+        target = preset_tree.unique_name(name, {n.casefold() for n in look_store.names()})
+        stored = look_store.save_preset(target, copy.deepcopy(look))
+        if stored is None:
+            return None
+        self.look_presets_changed.emit(stored)
+        self.notice.emit(f"Duplicated '{name}' as '{stored}'")
+        return stored
+
+    def remove_empty_look_folders(self) -> int:
+        """Remove the folders of My Presets that have nothing in them."""
+        count = look_store.forget_empty_folders()
+        if count:
+            self.look_presets_changed.emit("")
+        self.notice.emit(f"Removed {count} empty folder{'s' if count != 1 else ''}" if count else "There are no empty folders")
+        return count
+
+    def copy_builtin_folder(self, folder: str) -> int:
+        """Copy every built-in preset in a folder to My Presets, keeping the folders (a name that is taken gets " copy" added). Returns how many were copied."""
+        copied = 0
+        for name in preset_tree.in_folder(builtin_presets.names(), folder):
+            if self.copy_builtin_preset(name):
+                copied += 1
+        if copied:
+            self.notice.emit(f"Copied {copied} preset{'s' if copied != 1 else ''} from '{folder}' to My Presets")
+        return copied
 
     def apply_look_preset_to_folder(self, name: str) -> int:
         look = look_store.get(name)

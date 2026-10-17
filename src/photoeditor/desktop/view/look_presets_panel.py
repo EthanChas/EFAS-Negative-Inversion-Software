@@ -1,5 +1,5 @@
 from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtGui import QIcon
+from PyQt6.QtGui import QActionGroup, QIcon
 from PyQt6.QtWidgets import QHBoxLayout, QInputDialog, QLabel, QLineEdit, QMenu, QMessageBox, QPushButton, QWidget
 
 from ...features.presettree import logic as tree
@@ -46,6 +46,14 @@ class LookPresetsPanel(CollapsiblePanel):
     preview_requested = pyqtSignal(str, bool)  # the mouse rests on this preset (and whether it is a built-in one): show it on the picture without applying it
     preview_ended = pyqtSignal()
     source_changed = pyqtSignal(bool)  # True when the built-in list is showing
+    new_folder_requested = pyqtSignal(str)  # a folder to make (it stays when empty)
+    remove_folder_requested = pyqtSignal(str)  # remove a folder but keep what is in it (it moves up a level)
+    move_requested = pyqtSignal(str, str)  # a preset, and the folder to put it in ("" is the top level)
+    move_folder_requested = pyqtSignal(str, str)  # a folder, and the folder to put it in
+    duplicate_requested = pyqtSignal(str)
+    remove_empty_folders_requested = pyqtSignal()
+    copy_builtin_folder_requested = pyqtSignal(str)  # every built-in preset in this folder, to My Presets
+    sort_changed = pyqtSignal(str)  # "made", "az" or "za": how the presets inside each folder are ordered
 
     def __init__(self, parent: QWidget | None = None):
         super().__init__(
@@ -55,7 +63,9 @@ class LookPresetsPanel(CollapsiblePanel):
                 "double-click a preset, or select it and press Apply. Cropping, rotation and dust repairs are never part of a preset.\n\n"
                 "My Presets are the ones you made; Built-in Presets come with EFAS and cannot be changed (copy one to My Presets to edit it). "
                 "Put a slash in a name to make a folder: 'B&W/Number 1' is Number 1 inside B&W. Right-click a folder or preset for more.\n\n"
-                "The search box narrows the list to the presets that have every word you type in their folder, name or description (Esc clears it)."
+                "The search box narrows the list to the presets that have every word you type in their folder, name or description (Esc clears it).\n\n"
+                "Organise makes folders (an empty one stays), moves, duplicates and sorts presets, and removes a folder either with its presets or keeping them. "
+                "You can also drag a preset or a folder onto another folder."
             ),
             start_expanded=False,
             parent=parent,
@@ -66,6 +76,8 @@ class LookPresetsPanel(CollapsiblePanel):
         self._mine: list[str] = []
         self._builtin: list[str] = []
         self._builtin_tips: dict[str, str] = {}
+        self._folders: list[str] = []   # folders made on purpose (they show when empty)
+        self._sort = "made"
         self._has_photo = False
 
         switch = QHBoxLayout()
@@ -81,14 +93,23 @@ class LookPresetsPanel(CollapsiblePanel):
         body.addLayout(switch)
 
         self._search = _SearchBox()
-        self._search.setPlaceholderText("Search presets: warm, B&W, Portra...")
+        self._search.setPlaceholderText("Search presets...")
         self._search.setClearButtonEnabled(True)
         self._search.setToolTip("Narrow the list to the presets that have every word you type in their folder, name or description. Esc clears it; the Down arrow goes to the first one found")
         self._search.addAction(QIcon(panel_icons.pixmap("search", 16, THEME.text_secondary)), QLineEdit.ActionPosition.LeadingPosition)
         self._search.textChanged.connect(lambda _text: self._refill(self.selected()))
         self._search.returnPressed.connect(self._pick_first)
         self._search.down_pressed.connect(self._pick_first)
-        body.addWidget(self._search)
+        search_row = QHBoxLayout()
+        search_row.setSpacing(THEME.space_sm)
+        search_row.addWidget(self._search, 1)
+        self._organise_btn = QPushButton("Organise")
+        self._organise_btn.setToolTip("Make folders, move, duplicate and sort presets, remove a folder, open or close every folder")
+        self._organise_menu = QMenu(self._organise_btn)
+        self._organise_menu.aboutToShow.connect(self._fill_organise_menu)
+        self._organise_btn.setMenu(self._organise_menu)
+        search_row.addWidget(self._organise_btn)
+        body.addLayout(search_row)
         self._found = QLabel("")
         self._found.setProperty("role", "hint")
         self._found.setWordWrap(True)
@@ -102,6 +123,7 @@ class LookPresetsPanel(CollapsiblePanel):
         self._tree.hovered.connect(lambda name: self.preview_requested.emit(name, self.showing_builtin()) if self._has_photo else self.preview_ended.emit())
         self._tree.hover_left.connect(self.preview_ended)
         self._tree.context_requested.connect(self._context_menu)
+        self._tree.moved.connect(self._on_moved)
         body.addWidget(self._tree)
 
         self._note = QLabel("")
@@ -163,9 +185,11 @@ class LookPresetsPanel(CollapsiblePanel):
         self._refill()
         self.source_changed.emit(builtin)
 
-    def set_presets(self, names: list[str], select: str | None = None) -> None:
-        """My Presets, by name (a name with slashes sits in folders)."""
+    def set_presets(self, names: list[str], select: str | None = None, folders: list[str] | None = None) -> None:
+        """My Presets, by name (a name with slashes sits in folders), and the folders made on purpose (shown even when nothing is in them)."""
         self._mine = list(names)
+        if folders is not None:
+            self._folders = list(folders)
         if not self.showing_builtin():
             self._refill(select)
         else:
@@ -183,7 +207,9 @@ class LookPresetsPanel(CollapsiblePanel):
         query = self._search.text().strip()
         shown = tree.search(names, query, tips)
         empty = ("No built-in presets." if builtin else "No presets yet.") if not names else "No preset matches."
-        self._tree.set_names(shown, select, tips if builtin else None, empty, expand_all=bool(query))
+        mine = not builtin
+        self._tree.set_names(shown, select, tips if builtin else None, empty, expand_all=bool(query), folders=self._folders if mine and not query else (), sort=self._sort)
+        self._tree.set_drag_enabled(mine and not query)   # a drop needs the whole list in view, and only My Presets can be reorganised
         self._show_found(query, len(shown), len(names), builtin)
         self._sync_buttons()
 
@@ -305,16 +331,27 @@ class LookPresetsPanel(CollapsiblePanel):
                 menu.addAction("Copy to My Presets", lambda: self.copy_builtin_requested.emit(target))
             else:
                 menu.addAction("Rename or Move...", lambda: self._rename(target))
+                menu.addAction("Move to...", lambda: self._move_selected())
+                menu.addAction("Duplicate", lambda: self._duplicate())
                 menu.addAction("Delete", lambda: self._delete())
-        else:
+        elif kind == "folder":
             if not builtin:
                 save_here = menu.addAction("Save Current Look Here...")
                 save_here.setEnabled(self._has_photo)
                 save_here.triggered.connect(lambda _c=False: self._save(target))
+                menu.addAction("New Subfolder...", lambda: self._new_folder(target))
                 menu.addAction("Rename Folder...", lambda: self._rename_folder(target))
+                menu.addAction("Move Folder to...", lambda: self._move_selected())
+                menu.addAction("Remove Folder, Keep Its Presets...", lambda: self._remove_folder(target))
                 menu.addAction("Delete Folder and Its Presets...", lambda: self._delete_folder(target))
             else:
                 menu.addAction("Open All Folders Below", lambda: self._tree.expandAll())
+                menu.addAction("Copy Folder to My Presets", lambda: self.copy_builtin_folder_requested.emit(target))
+        else:   # empty space in the list
+            if not builtin:
+                menu.addAction("New Folder...", lambda: self._new_folder(""))
+            menu.addAction("Open All Folders", lambda: self._tree.expandAll())
+            menu.addAction("Close All Folders", lambda: self._tree.collapseAll())
         menu.exec(where)
 
     def _rename(self, old: str) -> None:
@@ -332,9 +369,130 @@ class LookPresetsPanel(CollapsiblePanel):
 
     def _delete_folder(self, folder: str) -> None:
         count = len(tree.in_folder(self._mine, folder))
+        if count == 0:   # an empty folder: nothing is lost, so there is nothing to ask
+            self.delete_folder_requested.emit(folder)
+            return
         answer = QMessageBox.question(
             self, "Delete Folder", f"Delete the folder '{folder}' and the {count} preset{'s' if count != 1 else ''} in it? Photos they were applied to keep their edits.",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, QMessageBox.StandardButton.No,
         )
         if answer == QMessageBox.StandardButton.Yes:
             self.delete_folder_requested.emit(folder)
+
+    # ------------------------------------------------------------ organising
+    def set_sort(self, mode: str) -> None:
+        """How the presets inside each folder are ordered: "made" (the order they were made), "az" or "za" (the folders follow the same direction)."""
+        mode = mode if mode in tree.SORTS else "made"
+        if mode != self._sort:
+            self._sort = mode
+            self._refill(self.selected())
+
+    def sort_mode(self) -> str:
+        return self._sort
+
+    def _choose_sort(self, mode: str) -> None:
+        self.set_sort(mode)
+        self.sort_changed.emit(self._sort)
+
+    def _fill_organise_menu(self) -> None:
+        """The Organise menu, made fresh each time it opens so that what it offers fits what is selected."""
+        menu = self._organise_menu
+        menu.clear()
+        builtin = self.showing_builtin()
+        folder = self._tree.current_folder_row()
+        picked = self.selected() is not None
+        if builtin:
+            copy = menu.addAction("Copy Folder to My Presets")
+            copy.setEnabled(bool(folder))
+            copy.triggered.connect(lambda _c=False: self.copy_builtin_folder_requested.emit(folder))
+        else:
+            menu.addAction("New Folder...", lambda: self._new_folder(folder or self._tree.selected_folder()))
+            sub = menu.addAction("New Subfolder in the Selected Folder...")
+            sub.setEnabled(bool(folder))
+            sub.triggered.connect(lambda _c=False: self._new_folder(folder))
+            menu.addSeparator()
+            move = menu.addAction("Move Selected to...")
+            move.setEnabled(picked or bool(folder))
+            move.triggered.connect(lambda _c=False: self._move_selected())
+            duplicate = menu.addAction("Duplicate Selected")
+            duplicate.setEnabled(picked)
+            duplicate.triggered.connect(lambda _c=False: self._duplicate())
+            menu.addSeparator()
+            keep = menu.addAction("Remove Folder, Keep Its Presets...")
+            keep.setEnabled(bool(folder))
+            keep.triggered.connect(lambda _c=False: self._remove_folder(folder))
+            delete = menu.addAction("Delete Folder and Its Presets...")
+            delete.setEnabled(bool(folder))
+            delete.triggered.connect(lambda _c=False: self._delete_folder(folder))
+            empties = tree.empty_folders(self._mine, self._folders)
+            clean = menu.addAction(f"Remove Empty Folders ({len(empties)})" if empties else "Remove Empty Folders")
+            clean.setEnabled(bool(empties))
+            clean.triggered.connect(lambda _c=False: self.remove_empty_folders_requested.emit())
+        menu.addSeparator()
+        menu.addAction("Open All Folders", lambda: self._tree.expandAll())
+        menu.addAction("Close All Folders", lambda: self._tree.collapseAll())
+        order = menu.addMenu("Order Inside Folders")
+        group = QActionGroup(order)
+        for mode, label in (("made", "In the order made"), ("az", "A to Z"), ("za", "Z to A")):
+            action = order.addAction(label)
+            action.setCheckable(True)
+            action.setChecked(mode == self._sort)
+            group.addAction(action)
+            action.triggered.connect(lambda _c=False, m=mode: self._choose_sort(m))
+
+    def _new_folder(self, parent: str | bool = "") -> None:
+        """New Folder...: the name may carry slashes (Film/B&W makes B&W inside Film). It starts inside the folder chosen, which the name can be changed to leave."""
+        parent = tree.clean_path(parent) if isinstance(parent, str) else ""
+        name = self._ask_name("New Folder", "Name for the new folder (a slash makes a folder inside a folder, like Film/B&W):", (parent + "/") if parent else "")
+        if not name:
+            return
+        if name.casefold() in {p.casefold() for p in tree.folder_paths(self._mine, self._folders)}:
+            QMessageBox.information(self, "New Folder", f"There is already a folder called '{name}'.")
+            return
+        self.new_folder_requested.emit(name)
+
+    def _remove_folder(self, folder: str) -> None:
+        """Remove a folder but keep what is in it: the presets and folders inside move up a level. Nothing is deleted."""
+        count = len(tree.in_folder(self._mine, folder))
+        if count:
+            up = tree.parent(folder)
+            answer = QMessageBox.question(
+                self, "Remove Folder",
+                f"Remove the folder '{folder}'? The {count} preset{'s' if count != 1 else ''} in it move up into {('the folder ' + repr(up)) if up else 'the top level'}. Nothing is deleted.",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, QMessageBox.StandardButton.No,
+            )
+            if answer != QMessageBox.StandardButton.Yes:
+                return
+        self.remove_folder_requested.emit(folder)
+
+    def _move_selected(self) -> None:
+        """Move Selected to...: a list of the folders there are (and the top level) to put the selected preset or folder in."""
+        folder = self._tree.current_folder_row()
+        source = folder or self.selected()
+        if not source:
+            return
+        options = {"(top level)": ""}
+        for path in tree.folder_paths(self._mine, self._folders):
+            if not (folder and tree.is_inside(path, folder)):   # a folder cannot go inside itself
+                options[tree.display(path)] = path
+        label, ok = QInputDialog.getItem(self, "Move", f"Move '{source}' into:", list(options), 0, False)
+        if ok:
+            self._move("folder" if folder else "preset", source, options[label])
+
+    def _on_moved(self, kind: str, source: str, target: str) -> None:
+        """A preset or folder was dropped on a folder (only My Presets, and only with no search going on, takes a drop)."""
+        if not self.showing_builtin() and not self.search_text():
+            self._move(kind, source, target)
+
+    def _move(self, kind: str, source: str, target: str) -> None:
+        here = tree.parent(source).casefold() == tree.clean_path(target).casefold()
+        if kind == "folder":
+            if not (tree.is_inside(target, source) or here):
+                self.move_folder_requested.emit(source, target)
+        elif not here:
+            self.move_requested.emit(source, target)
+
+    def _duplicate(self) -> None:
+        name = self.selected()
+        if name is not None:
+            self.duplicate_requested.emit(name)

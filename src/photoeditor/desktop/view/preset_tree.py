@@ -14,7 +14,8 @@ class PresetTree(QTreeWidget):
     activated_name = pyqtSignal(str)  # a preset was double-clicked
     hovered = pyqtSignal(str)  # the mouse rests on a preset
     hover_left = pyqtSignal()  # the mouse left the list, or is over a folder
-    context_requested = pyqtSignal(str, str, QPoint)  # "preset" or "folder", its name or path, where on screen
+    context_requested = pyqtSignal(str, str, QPoint)  # "preset" or "folder" (its name or path), or "root" (empty space: ""), and where on screen
+    moved = pyqtSignal(str, str, str)  # a preset or a folder was dropped on a folder: "preset" or "folder", its name or path, the folder it went to ("" is the top level)
 
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
@@ -26,6 +27,7 @@ class PresetTree(QTreeWidget):
         self.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.setMouseTracking(True)
         self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self._drag_ok = False  # off until set_drag_enabled: only the lists that can be reorganised (My Presets) accept a drop
         self._open: set[str] = set()  # folders the person opened (casefolded paths); the rest start closed
         self._known: set[str] = set()
         self._tips: dict[str, str] = {}
@@ -37,13 +39,15 @@ class PresetTree(QTreeWidget):
         self.viewport().installEventFilter(self)
 
     # ------------------------------------------------------------ filling
-    def set_names(self, names: list[str], select: str | None = None, tips: dict[str, str] | None = None, empty_text: str = "", expand_all: bool = False) -> None:
+    def set_names(self, names: list[str], select: str | None = None, tips: dict[str, str] | None = None, empty_text: str = "", expand_all: bool = False,
+                  folders=(), sort: str = "made") -> None:
         """Show these names as a tree. A folder seen for the first time starts closed; one the person opened stays open, and the folders above a selected preset are opened to show it. `select` is a name to select.
-        `expand_all` opens every folder (a search's results, which would otherwise hide inside closed folders) without it being remembered as the person's choice."""
+        `expand_all` opens every folder (a search's results, which would otherwise hide inside closed folders) without it being remembered as the person's choice.
+        `folders` are folders made on purpose, shown even when empty; `sort` orders the presets inside each folder (see features/presettree: made, az, za)."""
         self.blockSignals(True)
         self.clear()
         self._tips = {tree.clean_path(k).casefold(): v for k, v in (tips or {}).items()}
-        nodes = tree.build(names)
+        nodes = tree.build(names, folders, sort)
         if not nodes and empty_text:
             placeholder = QTreeWidgetItem([empty_text])
             placeholder.setFlags(Qt.ItemFlag.NoItemFlags)
@@ -77,6 +81,39 @@ class PresetTree(QTreeWidget):
         if selected is not None:
             self._reveal(selected)
             self.setCurrentItem(selected)
+
+    def set_drag_enabled(self, on: bool) -> None:
+        """Whether presets and folders can be dragged onto a folder (the list itself is never reordered by the drag: the owner rebuilds it from what `moved` asks for)."""
+        self._drag_ok = on
+        self.setDragEnabled(on)
+        self.setAcceptDrops(on)
+        self.setDropIndicatorShown(on)
+        self.setDragDropMode(QAbstractItemView.DragDropMode.InternalMove if on else QAbstractItemView.DragDropMode.NoDragDrop)
+
+    def folder_of(self, item: QTreeWidgetItem | None) -> str:
+        """The folder an item stands for as a place to put things: a folder row is itself, a preset row is the folder it is in, empty space is the top level ("")."""
+        if item is None:
+            return ""
+        path = item.data(0, FOLDER_ROLE)
+        return path if path else tree.parent(item.data(0, NAME_ROLE) or "")
+
+    def current_folder_row(self) -> str:
+        """The path of the selected row when it is a folder, else "" (a preset, or nothing)."""
+        item = self.currentItem()
+        return (item.data(0, FOLDER_ROLE) or "") if item is not None else ""
+
+    def dropEvent(self, event) -> None:
+        """A drop does not move the row here: it asks (moved) for the preset or folder to be put in the folder it was dropped on, and the list is rebuilt from the store."""
+        source = self.currentItem()
+        target = self.folder_of(self.itemAt(event.position().toPoint()))
+        event.ignore()
+        if source is None or not self._drag_ok:
+            return
+        name, folder = source.data(0, NAME_ROLE), source.data(0, FOLDER_ROLE)
+        if name:
+            self.moved.emit("preset", name, target)
+        elif folder:
+            self.moved.emit("folder", folder, target)
 
     def _reveal(self, item: QTreeWidgetItem) -> None:
         parent = item.parent()
@@ -151,6 +188,7 @@ class PresetTree(QTreeWidget):
     def _on_context(self, pos: QPoint) -> None:
         item = self.itemAt(pos)
         if item is None:
+            self.context_requested.emit("root", "", self.viewport().mapToGlobal(pos))
             return
         self.setCurrentItem(item)
         name, folder = item.data(0, NAME_ROLE), item.data(0, FOLDER_ROLE)

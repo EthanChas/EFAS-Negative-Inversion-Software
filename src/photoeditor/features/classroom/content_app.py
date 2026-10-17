@@ -261,6 +261,12 @@ With a long list, use the **search box** above it. It keeps only the presets tha
 
 The built-in sets come in groups: **Scanners (EFAS Original)** (Frontier 100, Crystal 100, Pakon, Noritsu), **Scanners (DarkSlide)**, **Film Stocks (DarkSlide)** (78 film profiles by maker) and **Film Stocks** (Cinestill, Fuji Superia, Kodak Gold, Portra and more). They are EFAS's own **approximations** of the tone, saturation and warmth of those looks, built from the Lab Look, tone curve and colour tools, not measurements of the real thing ([[lab-look-module]]). They are best treated as good starting points to adjust.
 
+## Keeping presets organised
+
+A long list is easier to use when it is sorted into folders. **Organise**, beside the search box, makes **folders** (an empty one stays, so you can build the structure first) and **subfolders**, moves a preset or a whole folder into another folder, duplicates a preset, and sorts each folder A to Z, Z to A or in the order the presets were made. You can also drag a preset or a folder onto another folder, or onto empty space for the top level, and a preset is never replaced when you do.
+
+To get rid of a folder you have two choices. **Remove Folder, Keep Its Presets** takes the folder away and moves what was in it up one level, adding " copy" to a name that is already taken so nothing is lost. **Delete Folder and Its Presets** removes both, and asks first. **Remove Empty Folders** tidies up the folders that have nothing in them.
+
 ## Module presets
 
 Individual modules can keep **their own presets** too, saved sets of just that module's sliders (see [[modules-basics]]). A module preset is what you want when you like one tool's setting but not the whole look.

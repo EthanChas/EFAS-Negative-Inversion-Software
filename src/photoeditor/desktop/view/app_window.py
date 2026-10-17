@@ -915,7 +915,16 @@ class AppWindow(QMainWindow):
         left_tools_col.addWidget(self._history_panel)
 
         self._presets_panel = LookPresetsPanel()
-        self._presets_panel.set_presets(self.controller.look_presets())
+        self._presets_panel.set_sort(app_settings.get("preset_sort"))
+        self._presets_panel.set_presets(self.controller.look_presets(), None, self.controller.look_folders())
+        self._presets_panel.new_folder_requested.connect(self.controller.create_look_folder)
+        self._presets_panel.remove_folder_requested.connect(self.controller.remove_look_folder)
+        self._presets_panel.move_requested.connect(self.controller.move_look_preset)
+        self._presets_panel.move_folder_requested.connect(self.controller.move_look_folder)
+        self._presets_panel.duplicate_requested.connect(self.controller.duplicate_look_preset)
+        self._presets_panel.remove_empty_folders_requested.connect(self.controller.remove_empty_look_folders)
+        self._presets_panel.copy_builtin_folder_requested.connect(self._on_copy_builtin_folder)
+        self._presets_panel.sort_changed.connect(lambda mode: app_settings.save({"preset_sort": mode}))
         self._presets_panel.save_requested.connect(self.controller.save_look_preset)
         self._presets_panel.apply_requested.connect(self.controller.apply_look_preset)
         self._presets_panel.apply_folder_requested.connect(self._on_apply_preset_to_folder)
@@ -938,7 +947,7 @@ class AppWindow(QMainWindow):
         self._preset_hover_timer.setSingleShot(True)
         self._preset_hover_timer.setInterval(140)
         self._preset_hover_timer.timeout.connect(self._show_preset_preview)
-        self.controller.look_presets_changed.connect(lambda select: self._presets_panel.set_presets(self.controller.look_presets(), select or None))
+        self.controller.look_presets_changed.connect(lambda select: self._presets_panel.set_presets(self.controller.look_presets(), select or None, self.controller.look_folders()))
         for signal in (self.controller.look_preset_changed, self.controller.history_changed, self.controller.image_adjusted, self.controller.reverted, self.controller.file_changed,
                        self.controller.look_presets_changed):
             signal.connect(lambda *_a: self._refresh_look_preset_label())
@@ -3368,7 +3377,12 @@ class AppWindow(QMainWindow):
         stored = self.controller.copy_builtin_preset(name)
         if stored:
             self._presets_panel.show_builtin(False)
-            self._presets_panel.set_presets(self.controller.look_presets(), stored)
+            self._presets_panel.set_presets(self.controller.look_presets(), stored, self.controller.look_folders())
+
+    def _on_copy_builtin_folder(self, folder: str) -> None:
+        if self.controller.copy_builtin_folder(folder):
+            self._presets_panel.show_builtin(False)
+            self._presets_panel.set_presets(self.controller.look_presets(), None, self.controller.look_folders())
 
     def _on_apply_preset_to_folder(self, name: str, builtin: bool = False) -> None:
         path = self.controller.state.image_path
