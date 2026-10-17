@@ -77,6 +77,69 @@ class DeleteConfirmDialog(QDialog):
         self.delete_button.setEnabled(on and self.summary.count > 0)
 
 
+class DeleteFolderDialog(QDialog):
+    """Nothing is deleted unless the box is ticked and the red button pressed. Cancel is the default, so pressing Enter or Escape keeps the folder."""
+
+    def __init__(self, folder: str, summary, hotstack: bool = False, parent=None):
+        super().__init__(parent)
+        self.summary = summary
+        name = os.path.basename(folder.rstrip("\\/")) or folder
+        self.setWindowTitle("Delete Folder")
+        self.setModal(True)
+        self.resize(560, 420)
+        col = QVBoxLayout(self)
+        col.setSpacing(THEME.space_md)
+        self.heading = QLabel(f"Delete the folder \"{name}\" from your disk?")
+        self.heading.setWordWrap(True)
+        self.heading.setStyleSheet(f"font-size: 18px; font-weight: bold; color: {THEME.status_critical};")
+        col.addWidget(self.heading)
+        self.warning = QLabel("The folder, and everything in it, is removed from your computer, not just from EFAS. It is moved to the Recycle Bin, so you can still recover it from there "
+                              "until the Recycle Bin is emptied. (If the folder is too big for the Recycle Bin, or is on a drive that has none, Windows asks before it deletes anything.)")
+        self.warning.setWordWrap(True)
+        col.addWidget(self.warning)
+        lines = [f"Folder: {folder}", f"Photos in it: {summary.photos:,} ({removal.human_size(summary.bytes)})"]
+        if summary.folders:
+            shown = ", ".join(summary.names) + (", ..." if summary.folders > len(summary.names) else "")
+            lines.append(f"Folders in it: {summary.folders:,}" + (f" ({shown})" if shown else ""))
+        if summary.others:
+            lines.append(f"Other files in it: {summary.others:,}")
+        self.details = QLabel("\n".join(lines))
+        self.details.setWordWrap(True)
+        self.details.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        col.addWidget(self.details)
+        notes = ["Your saved edits, ratings and tags for the photos stay in EFAS, so if you restore the folder from the Recycle Bin its photos get their edits back."]
+        if hotstack:
+            notes.append("This folder, or a folder in it, is marked as a hotstack. The mark goes, and it is no longer watched.")
+        self.notes = QLabel("\n".join(notes))
+        self.notes.setWordWrap(True)
+        self.notes.setProperty("role", "hint")
+        col.addWidget(self.notes)
+        col.addStretch(1)
+        self.confirm_box = QCheckBox("I understand that this folder and everything in it will be deleted from my disk")
+        self.confirm_box.toggled.connect(self.confirm_box_toggled)
+        col.addWidget(self.confirm_box)
+        row = QHBoxLayout()
+        row.addStretch(1)
+        self.cancel_button = QPushButton("Cancel - Keep the Folder")
+        self.cancel_button.setDefault(True)
+        self.cancel_button.clicked.connect(self.reject)
+        self.delete_button = QPushButton("Delete Folder from Disk")
+        self.delete_button.setEnabled(False)
+        self.delete_button.setStyleSheet(f"QPushButton:enabled {{ background: {THEME.status_critical}; color: white; font-weight: bold; }}")
+        self.delete_button.clicked.connect(self.accept)
+        row.addWidget(self.cancel_button)
+        row.addWidget(self.delete_button)
+        col.addLayout(row)
+        self.cancel_button.setFocus()
+
+    def confirm_box_toggled(self, on: bool) -> None:
+        self.delete_button.setEnabled(on)
+
+
+def confirm_delete_folder(folder: str, summary, hotstack: bool = False, parent=None) -> bool:
+    return DeleteFolderDialog(folder, summary, hotstack, parent).exec() == QDialog.DialogCode.Accepted
+
+
 def confirm_delete_from_disk(paths: list[str], parent=None) -> bool:
     dlg = DeleteConfirmDialog(paths, parent)
     if dlg.summary.count == 0:

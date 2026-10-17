@@ -8,7 +8,7 @@ from ...theme.tokens import THEME
 from .bevel_widgets import CaptionButton
 from .collapsible_panel import CollapsiblePanel
 from ...features.browse.logic import DEFAULT_SORT, SORT_MODES
-from .folder_tree import ROOTS_SETTINGS_KEY, SORT_SETTINGS_KEY, FolderTree
+from .folder_tree import HIDDEN_SETTINGS_KEY, ROOTS_SETTINGS_KEY, SORT_SETTINGS_KEY, FolderTree
 
 _TREE_MAX_HEIGHT = 260
 
@@ -32,6 +32,12 @@ class LibraryPanel(CollapsiblePanel):
     root_added = pyqtSignal(str)
     sort_changed = pyqtSignal(str)
     hotstack_requested = pyqtSignal(str, bool)
+    new_folder_requested = pyqtSignal(str)
+    rename_folder_requested = pyqtSignal(str)
+    move_folder_requested = pyqtSignal(str, str)
+    delete_folder_requested = pyqtSignal(str)
+    hide_folder_requested = pyqtSignal(str)
+    restore_hidden_requested = pyqtSignal()
 
     def __init__(self, parent: QWidget | None = None, workbench: bool = False):
         super().__init__(
@@ -41,7 +47,8 @@ class LibraryPanel(CollapsiblePanel):
                 + ("Click any folder (or subfolder) to show only the photos in it; the reset button in this header clears the choice and shows every photo. "
                    if workbench else "Click any folder (or subfolder) to browse its photos in the Import window. ")
                 + "Sort the folders with the Sort box: by name, by date (when the newest photo in the folder was last changed), by number of photos, or as you added them. "
-                + "Right-click a top-level folder to remove it from the list (your photos and edits are not touched). Right-click any folder to mark it as a Hotstack (its icon and name turn red): "
+                + "Right-click a folder to make a New Folder inside it, Rename it, Move it (or drag it onto the folder to move it into), Delete it (to the Recycle Bin, after you are asked) or Remove it from the Library (only the entry in this list goes; "
+                + "your photos and edits are not touched, and Bring Back Removed Folders shows them again). Right-click any folder to mark it as a Hotstack (its icon and name turn red): "
                 + "it is watched, and each photo that lands in it is shown as it arrives."
             ),
             collapsible=False,
@@ -81,13 +88,27 @@ class LibraryPanel(CollapsiblePanel):
         self._tree.folder_double_clicked.connect(self.folder_double_clicked)
         self._tree.remove_root_requested.connect(self._remove_root_folder)
         self._tree.hotstack_requested.connect(self.hotstack_requested)
+        self._tree.new_folder_requested.connect(self.new_folder_requested)
+        self._tree.rename_folder_requested.connect(self.rename_folder_requested)
+        self._tree.move_folder_requested.connect(self.move_folder_requested)
+        self._tree.delete_folder_requested.connect(self.delete_folder_requested)
+        self._tree.hide_folder_requested.connect(self.hide_folder_requested)
+        self._tree.restore_hidden_requested.connect(self.restore_hidden_requested)
         body.addWidget(self._tree)
 
         saved = str(self._settings.value(SORT_SETTINGS_KEY, DEFAULT_SORT, type=str))
         self._sort.setCurrentIndex(max(0, self._sort.findData(saved)))
         self._tree.set_sort(self._sort.currentData())
         self._sort.currentIndexChanged.connect(self._on_sort_picked)
-        self._tree.set_roots(self._settings.value(ROOTS_SETTINGS_KEY, [], type=list))
+        self._tree.set_hidden(self._stored(HIDDEN_SETTINGS_KEY))
+        self._tree.set_roots(self._stored(ROOTS_SETTINGS_KEY))
+
+    def _stored(self, key: str) -> list[str]:
+        return [f for f in self._settings.value(key, [], type=list) if f]
+
+    def _store(self, key: str, folders: list[str]) -> None:
+        self._settings.setValue(key, list(folders))
+        self._settings.sync()
 
     def _on_sort_picked(self) -> None:
         mode = self._sort.currentData()
@@ -110,6 +131,10 @@ class LibraryPanel(CollapsiblePanel):
         folder = QFileDialog.getExistingDirectory(self, "Add a root folder")
         if not folder:
             return
+        key = os.path.normcase(os.path.abspath(folder))
+        hidden = self.hidden_folders()
+        if any(os.path.normcase(os.path.abspath(h)) == key for h in hidden):   # a folder that was taken off the list, added again on purpose
+            self.set_hidden_folders([h for h in hidden if os.path.normcase(os.path.abspath(h)) != key])
         self._tree.add_root(folder)
         self._settings.setValue(ROOTS_SETTINGS_KEY, self._tree.roots())
         self._settings.sync()
@@ -136,7 +161,42 @@ class LibraryPanel(CollapsiblePanel):
         self._tree.set_hotstack(folders)
 
     def _tree_refresh(self) -> None:
-        self._tree.refresh()
+        self.rebuild()
+
+    def roots(self) -> list[str]:
+        return self._tree.roots()
+
+    def hidden_folders(self) -> list[str]:
+        """The folders taken off the list (right-click > Remove from Library on a folder that is not a root), kept with the roots in the settings so both Library panels agree."""
+        self._settings.sync()
+        return self._stored(HIDDEN_SETTINGS_KEY)
+
+    def set_hidden_folders(self, folders: list[str]) -> None:
+        self._store(HIDDEN_SETTINGS_KEY, folders)
+        self._tree.set_hidden(folders)
+
+    def expanded_folders(self) -> list[str]:
+        return self._tree.expanded_folders()
+
+    def rewrite_folders(self, mapper, also_open: tuple = ()) -> None:
+        """A folder was renamed or deleted: the folders in the roots list and the removed list are changed by `mapper` (it gives "" for a folder that is gone), and the tree is built
+        again with the same folders open and the same one chosen, under their new names."""
+        roots = [m for m in (mapper(f) for f in self._tree.roots()) if m]
+        hidden = [m for m in (mapper(f) for f in self.hidden_folders()) if m]
+        opened = [m for m in (mapper(f) for f in self._tree.expanded_folders()) if m]
+        current = mapper(self._tree.current_folder()) if self._tree.current_folder() else ""
+        self._store(ROOTS_SETTINGS_KEY, roots)
+        self.set_hidden_folders(hidden)
+        self._tree.set_roots(roots)
+        self._tree.restore_expanded(opened + [m for m in (mapper(f) for f in also_open) if m])
+        if current:
+            self._tree.reveal(current)
+
+    def rebuild(self, current: str | None = None, also_open: tuple = ()) -> None:
+        """The tree is read again (a folder was made, say), with the same folders open - and `also_open` too - and `current` chosen (the one that was, when None)."""
+        self._settings.sync()
+        self._tree.set_hidden(self._stored(HIDDEN_SETTINGS_KEY))
+        self._tree.refresh(self._tree.expanded_folders() + list(also_open), current)
 
     def clear_selection(self) -> None:
         """No folder selected (nothing is emitted)."""
@@ -152,6 +212,11 @@ class LibraryPanel(CollapsiblePanel):
         self._tree.reveal(folder)
 
     def reload_roots(self) -> None:
-        """Picks up roots added from the other root-list editor (the Import window, the other Library panel) since this panel was built."""
+        """Picks up roots (and removed folders) changed from the other root-list editor (the Import window, the other Library panel) since this panel was built. The folders that were open stay open."""
         self._settings.sync()
-        self._tree.set_roots(self._settings.value(ROOTS_SETTINGS_KEY, [], type=list))
+        opened, current = self._tree.expanded_folders(), self._tree.current_folder()
+        self._tree.set_hidden(self._stored(HIDDEN_SETTINGS_KEY))
+        self._tree.set_roots(self._stored(ROOTS_SETTINGS_KEY))
+        self._tree.restore_expanded(opened)
+        if current:
+            self._tree.reveal(current)

@@ -35,7 +35,11 @@ Each folder shows a muted note on the right: how many photos it holds, or, if yo
 
 ## Right-click
 
-Right-click a top-level folder to **remove it from the list**. Only the entry goes: your photos and edits are never touched, and you can add the folder back at any time. Right-click *any* folder to **Mark as Hotstack** (the folder turns red and is watched for photos as they arrive: see [[hotstack-lesson]]) or to show it in Explorer.
+Right-click *any* folder to organise your library without leaving EFAS. **New Folder...** makes a real, empty folder on your disk inside the one you clicked, so the tree can branch the way your archive does (`Film Scans / 2024 / Italy`).
+
+**Rename Folder...** renames it on your disk, and the photos in it keep everything EFAS knows about them: edits, ratings, flags, tags, versions, the folder's flat field and Roll Card, even their thumbnails. A photo you have open is reopened under the new name. **Move Folder to...** moves a folder into another one on the same drive (dragging it onto the other folder does the same, after asking you), and selected photos have a **Move to Folder...** of their own in the Workbench and the filmstrip menu; in both cases the edits go with them and a name that is taken is never overwritten. **Delete Folder...** shows what is inside and, only if you tick the box and press the red button, moves the folder and everything in it to the **Recycle Bin**. It is never a permanent delete, and the edits stay in EFAS, so a photo you restore from the bin gets its look back.
+
+**Remove from Library** takes a folder off the list without touching a thing on disk. On a root it removes the root, as before; on a folder inside a root it hides that folder and the ones in it, and their photos leave the Workbench until you choose **Bring Back Removed Folders** from the same menu. Finally, **Mark as Hotstack** turns the folder red and watches it for photos as they arrive (see [[hotstack-lesson]]), and **Show in File Explorer** opens it.
 
 ## Roots and folders you opened by hand
 

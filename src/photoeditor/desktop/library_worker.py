@@ -15,9 +15,10 @@ class LibraryIndexWorker(QThread):
     progress = pyqtSignal(int, int)
     finished_ok = pyqtSignal(int, int, int)
 
-    def __init__(self, roots: list[str], db_path: str | None = None):
+    def __init__(self, roots: list[str], db_path: str | None = None, excluded: list[str] | None = None):
         super().__init__()
         self._roots = list(roots)
+        self._excluded = list(excluded or [])
         self._db_path = db_path
         self._cancel = False
 
@@ -28,7 +29,8 @@ class LibraryIndexWorker(QThread):
         index = LibraryIndex(self._db_path)
         try:
             added, changed, removed = index.refresh(
-                self._roots, progress=lambda done, total, _path: self.progress.emit(done, total), cancelled=lambda: self._cancel
+                self._roots, progress=lambda done, total, _path: self.progress.emit(done, total), cancelled=lambda: self._cancel,
+                excluded=self._excluded,
             )
         finally:
             index.close()

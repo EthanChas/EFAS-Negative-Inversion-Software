@@ -48,10 +48,11 @@ def connect(db_path: str | None = None) -> sqlite3.Connection:
     return conn
 
 
-def scan_files(roots: Iterable[str]) -> Iterator[tuple[str, int, int]]:
-    """Every photo under the roots, recursively: (path, size, mtime_ns)."""
+def scan_files(roots: Iterable[str], excluded: Iterable[str] = ()) -> Iterator[tuple[str, int, int]]:
+    """Every photo under the roots, recursively: (path, size, mtime_ns). Folders in `excluded` (taken off the Library) are not entered."""
+    skip = {os.path.normcase(os.path.abspath(e)) for e in excluded if e}
     seen: set[str] = set()
-    stack = [r for r in roots if r and os.path.isdir(r)]
+    stack = [r for r in roots if r and os.path.isdir(r) and os.path.normcase(os.path.abspath(r)) not in skip]
     while stack:
         folder = stack.pop()
         key = os.path.normcase(folder)
@@ -66,7 +67,7 @@ def scan_files(roots: Iterable[str]) -> Iterator[tuple[str, int, int]]:
         for entry in entries:
             try:
                 if entry.is_dir(follow_symlinks=False):
-                    if entry.name.lower() not in _SKIP_DIRS and not entry.name.startswith("."):
+                    if entry.name.lower() not in _SKIP_DIRS and not entry.name.startswith(".") and not (skip and os.path.normcase(os.path.abspath(entry.path)) in skip):
                         stack.append(entry.path)
                 elif os.path.splitext(entry.name)[1].lower() in SUPPORTED_EXTS and not entry.name.startswith("."):
                     st = entry.stat()
@@ -169,6 +170,16 @@ class LibraryIndex:
         gone = [p for p in self.known() if os.path.normcase(p).startswith(prefix)]
         return self.remove(gone) if gone else 0
 
+    def move_under(self, remap_path, folder: str) -> int:
+        """The photos in `folder` (any depth) are somewhere else now: their records are kept, under the new paths `remap_path` gives."""
+        prefix = os.path.normcase(os.path.abspath(folder)).rstrip("\\/") + os.sep
+        rows =[r for r in self.all() if os.path.normcase(os.path.abspath(r["path"])).startswith(prefix)]
+        if not rows:
+            return 0
+        self.remove([r["path"] for r in rows])
+        self.upsert([{**r, "path": remap_path(r["path"]), "folder": remap_path(r["folder"])} for r in rows])
+        return len(rows)
+
     def all(self) -> list[dict]:
         cur = self.conn.execute(f"SELECT {','.join(_COLUMNS)} FROM images")
         return [dict(zip(_COLUMNS, row)) for row in cur]
@@ -178,11 +189,11 @@ class LibraryIndex:
         prefixes = [os.path.normcase(os.path.abspath(r)).rstrip("\\/") + os.sep for r in roots if r]
         return [r for r in self.all() if any(os.path.normcase(r["path"]).startswith(p) for p in prefixes)]
 
-    def refresh(self, roots: Iterable[str], batch: int = 200, progress=None, cancelled=None) -> tuple[int, int, int]:
-        """Bring the index up to date with the folders: new and changed files are read, vanished ones dropped."""
+    def refresh(self, roots: Iterable[str], batch: int = 200, progress=None, cancelled=None, excluded: Iterable[str] = ()) -> tuple[int, int, int]:
+        """Bring the index up to date with the folders: new and changed files are read, vanished ones dropped (so are those in `excluded` folders, which were taken off the Library)."""
         roots = [r for r in roots if r and os.path.isdir(r)]
         known = self.known()
-        on_disk = {p: (s, m) for p, s, m in scan_files(roots)}
+        on_disk = {p: (s, m) for p, s, m in scan_files(roots, excluded)}
         todo = [p for p, sm in on_disk.items() if known.get(p) != sm]
         added = sum(1 for p in todo if p not in known)
         buffer: list[dict] = []

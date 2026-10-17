@@ -57,6 +57,7 @@ class Filmstrip(QWidget):
     remove_requested = pyqtSignal(list)
     retake_requested = pyqtSignal(str)
     delete_requested = pyqtSignal(list)
+    move_requested = pyqtSignal(list)
     crop_roll_requested = pyqtSignal()
     reset_crops_requested = pyqtSignal()
     undo_roll_requested = pyqtSignal()
@@ -349,6 +350,7 @@ class Filmstrip(QWidget):
         if self._can_retake(path):
             menu.addAction(f"Retake {name}", lambda: self.retake_requested.emit(path))
         menu.addAction(f"Remove {name} from Workbench", lambda: self.remove_requested.emit([path]))
+        menu.addAction(f"Move {name} to Folder...", lambda: self.move_requested.emit([path]))
         menu.addAction(f"Delete {name} from Disk...", lambda: self.delete_requested.emit([path]))
         return menu
 

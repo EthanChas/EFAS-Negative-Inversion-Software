@@ -61,9 +61,10 @@ from ..features.watermark.marks import Marks
 from ..features.open_image.logic import is_raw
 from ..features.open_image.processor import load_image_rgb, make_preview_rgb, to_uint8
 from ..features.support import applog
+from ..features.library import folders as folder_ops
 from ..features.library import removal as photo_removal
 from ..features.library.index import LibraryIndex, read_record
-from ..features.browse.processor import put_edited_thumbnail
+from ..features.browse.processor import load_cached_thumbnail, load_edited_thumbnail, put_edited_thumbnail, save_cached_thumbnail
 from ..features.persistence import edit_store, roll_undo
 from ..features.persistence import export as data_export
 from ..features.persistence.consolidate import ensure_ready as ensure_data_ready
@@ -2237,6 +2238,47 @@ class AppController(QObject):
         try:
             index.remove([old])
             index.upsert([read_record(new)])
+        finally:
+            index.close()
+
+    def folder_thumbnails(self, folder: str) -> dict:
+        """The thumbnails of every photo in a folder, as (edited look, plain) bytes - read before the folder is renamed, because a thumbnail is kept under a name made from its photo's path."""
+        cache = thumbnail_cache_dir()
+        found = {}
+        for path in folder_ops.photos_under(folder):
+            edited, plain = load_edited_thumbnail(cache, path), load_cached_thumbnail(cache, path)
+            if edited or plain:
+                found[path] = (edited, plain)
+        return found
+
+    def relocate_folder(self, old: str, new: str, thumbnails: dict | None = None) -> None:
+        """A folder was renamed on disk: everything saved for its photos (edits and their history, versions, snapshots, ratings, flags, tags, film base, hidden state) follows them to
+        their new paths, the settings kept for the folder and the folders in it (flat field, Roll Card, film base, light references) are filed under the new names, the library index keeps
+        its records of the photos under the new paths, and the thumbnails read before the rename (see folder_thumbnails) are kept for the new paths."""
+        def remap(path: str) -> str:
+            return folder_ops.remap(path, old, new)
+
+        edit_store.move_folder_records(self._db, remap, old, new)
+        cache = thumbnail_cache_dir()
+        for path, (edited, plain) in (thumbnails or {}).items():
+            target = remap(path)
+            if edited:
+                put_edited_thumbnail(cache, target, edited)
+            if plain:
+                save_cached_thumbnail(cache, target, plain)
+        index = LibraryIndex()
+        try:
+            index.move_under(remap, old)
+        finally:
+            index.close()
+
+    def delete_folder_from_disk(self, folder: str, trasher=None, protected: list[str] = ()) -> None:
+        """Move a folder and everything in it to the Recycle Bin (folder_ops.delete_folder) and forget its photos in the library index. Edits, ratings and tags are kept so a restored
+        photo keeps its look."""
+        folder_ops.delete_folder(folder, trasher, protected)
+        index = LibraryIndex()
+        try:
+            index.remove_under(folder)
         finally:
             index.close()
 

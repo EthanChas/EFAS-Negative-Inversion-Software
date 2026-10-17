@@ -17,6 +17,7 @@ from PyQt6.QtWidgets import (
 
 from ...features.errormarks import logic as error_logic
 from ...features import platform
+from ...features.library import folders as folder_ops
 from ...features.library import query as Q
 from ...features.library import suggest
 from ...theme.tokens import THEME
@@ -283,6 +284,7 @@ class LighttableView(QWidget):
     reveal_requested = pyqtSignal(str)
     remove_requested = pyqtSignal(list)
     delete_requested = pyqtSignal(list)
+    move_requested = pyqtSignal(list)
     copy_requested = pyqtSignal(list)
     collection_save_requested = pyqtSignal(str, dict)
     collection_delete_requested = pyqtSignal(str)
@@ -679,6 +681,10 @@ class LighttableView(QWidget):
         self._remove_btn.setToolTip("Take the selected photos off the Workbench and the filmstrip. The files stay on disk, and you can restore them from Removed Photos. (Delete key)")
         self._remove_btn.clicked.connect(self._emit_remove)
         body.addWidget(self._remove_btn)
+        self._move_btn = QPushButton("Move to Folder...")
+        self._move_btn.setToolTip("Move the selected photos into another folder on your disk. Their edits, ratings, tags and versions go with them.")
+        self._move_btn.clicked.connect(self._emit_move)
+        body.addWidget(self._move_btn)
         self._delete_btn = QPushButton("Delete from Disk...")
         self._delete_btn.setToolTip("Delete the selected photos from your disk (to the Recycle Bin). You will be asked to confirm. (Shift+Delete)")
         self._delete_btn.setStyleSheet(f"QPushButton {{ color: {THEME.status_critical}; font-weight: bold; }}")
@@ -717,6 +723,11 @@ class LighttableView(QWidget):
         """A library folder was taken off the list: drop the folder choice if it was that folder or inside it."""
         if self._under and Q.in_folder({"folder": self._under}, folder):
             self._clear_library_selection()
+
+    def rename_folder_filter(self, old: str, new: str) -> None:
+        """A library folder was renamed: a folder choice that was that folder, or inside it, is the same folder under its new name (the grid is reloaded by the caller)."""
+        if self._under and Q.in_folder({"folder": self._under}, old):
+            self._under = folder_ops.remap(self._under, old, new)
 
     def set_library_visible(self, visible: bool) -> None:
         """The General setting 'Show the Library folder list in the Workbench'. Hiding it also clears a folder choice, so no hidden filter is left on."""
@@ -1043,6 +1054,7 @@ class LighttableView(QWidget):
             b.setEnabled(n >= 1 or self._current_row() is not None)
         self._export_btn.setEnabled(n >= 1)
         self._remove_btn.setEnabled(n >= 1)
+        self._move_btn.setEnabled(n >= 1)
         self._copy_version_btn.setEnabled(n >= 1)
         self._delete_btn.setEnabled(n >= 1)
         self._refresh_tag_editor(rows)
@@ -1143,6 +1155,11 @@ class LighttableView(QWidget):
         if paths:
             self.remove_requested.emit(paths)
 
+    def _emit_move(self) -> None:
+        paths = self.selected_paths()
+        if paths:
+            self.move_requested.emit(paths)
+
     def _emit_delete(self) -> None:
         paths = self.selected_paths()
         if paths:
@@ -1166,6 +1183,7 @@ class LighttableView(QWidget):
             menu.addAction(self._retake_action.text(), self._emit_retake)
         menu.addSeparator()
         menu.addAction(f"Remove {what} from Workbench", self._emit_remove)
+        menu.addAction(f"Move {what} to Folder...", self._emit_move)
         delete = menu.addAction(f"Delete {what} from Disk...", self._emit_delete)
         delete.setToolTip("Moves the files to the Recycle Bin after you confirm")
         return menu

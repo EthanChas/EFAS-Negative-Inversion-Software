@@ -1089,6 +1089,34 @@ def copy_folder_records(conn: sqlite3.Connection, old_folder: str, new_folder: s
     conn.commit()
 
 
+def move_folder_records(conn: sqlite3.Connection, remap_path, old_folder: str, new_folder: str) -> None:
+    """A whole folder was renamed (or moved): every photo in it has another path, so everything saved for those photos follows them (the same tables move_photo_records covers),
+    and the settings kept for the folders themselves (flat field, Roll Card, film base, light references - those of its sub-folders too) are filed under the new names.
+    `remap_path` gives the new path of a path (see features/library/folders.remap); a path outside the folder must come back as it was."""
+    for name, _columns in _tables_with(conn, "path"):
+        for (path,) in conn.execute(f'SELECT DISTINCT path FROM "{name}"').fetchall():
+            moved = remap_path(path)
+            if moved != path:
+                conn.execute(f'UPDATE OR REPLACE "{name}" SET path = ? WHERE path = ?', (moved, path))
+    for name, data in conn.execute("SELECT name, data FROM smart_collections").fetchall():   # a smart collection that looks in the folder looks in it under its new name
+        try:
+            state = json.loads(data)
+        except ValueError:
+            continue
+        under = state.get("under") if isinstance(state, dict) else ""
+        if under and remap_path(under) != under:
+            state["under"] = remap_path(under)
+            conn.execute("UPDATE smart_collections SET data = ? WHERE name = ?", (json.dumps(state), name))
+    old_key, new_key = folder_key(old_folder, False), folder_key(new_folder, False)
+    if old_key != new_key:
+        inside = old_key.rstrip("\\/") + os.sep
+        for name, _columns in _tables_with(conn, "folder"):
+            for (key,) in conn.execute(f'SELECT DISTINCT folder FROM "{name}"').fetchall():
+                if key == old_key or key.startswith(inside):
+                    conn.execute(f'UPDATE OR REPLACE "{name}" SET folder = ? WHERE folder = ?', (new_key + key[len(old_key):], key))
+    conn.commit()
+
+
 def tag_counts(conn: sqlite3.Connection) -> list[tuple[str, int]]:
     """Every tag in use with how many photos carry it, most used first."""
     return [(t, n) for t, n in conn.execute("SELECT tag, COUNT(*) FROM tags GROUP BY tag COLLATE NOCASE ORDER BY COUNT(*) DESC, tag COLLATE NOCASE")]

@@ -98,6 +98,7 @@ from . import panel_icons
 from .icons import eyedropper_cursor
 from .image_view import ImageView
 from .import_window import ImportWindow
+from .library_folder_actions import LibraryFolderActions
 from .library_panel import LibraryPanel
 from .lighttable_view import LighttableView
 from ..paths import old_thumbnail_dirs, system_thumbnail_dir, thumbnail_cache_dir
@@ -379,6 +380,7 @@ class AppWindow(QMainWindow):
         self._sheet_worker = None
         self._quick_export = False
         self._index_worker = None
+        self._folder_actions = LibraryFolderActions(self)   # the Library lists' New / Rename / Delete Folder and Remove from Library
         self._live = LiveFolder(self)
         self._live_session: list[str] = list(app_settings.get("live_session"))   # photos that arrived in a hotstack folder and are not filed yet
         self._live_aside: list[str] = list(app_settings.get("live_aside"))       # the photos of it that were retaken, set aside
@@ -476,7 +478,9 @@ class AppWindow(QMainWindow):
         self._lighttable.library_panel.root_removed.connect(self._on_workbench_root_removed)
         self._lighttable.library_panel.root_added.connect(self._on_workbench_root_added)
         self._lighttable.library_panel.sort_changed.connect(lambda mode: self._library_panel.apply_sort(mode))
+        self._folder_actions.connect(self._lighttable.library_panel)
         self._lighttable.delete_requested.connect(self.delete_photos)
+        self._lighttable.move_requested.connect(self._folder_actions.move_photos)
         self._lighttable.removed_list_requested.connect(self.show_removed_photos)
         self._lighttable.duplicates_requested.connect(self.find_duplicates)
         self._live.arrived.connect(self._on_live_arrived)
@@ -516,6 +520,7 @@ class AppWindow(QMainWindow):
         self.controller.roll_undo_changed.connect(self._refresh_roll_undo)
         self._bulk_worker = None
         self._filmstrip.delete_requested.connect(self.delete_photos)
+        self._filmstrip.move_requested.connect(self._folder_actions.move_photos)
         self.controller.flag_changed.connect(self._filmstrip.set_flag)
         self.controller.rating_changed.connect(self._filmstrip.set_rating)
         self.controller.notice.connect(self._coord_label.setText)
@@ -903,6 +908,7 @@ class AppWindow(QMainWindow):
         self._library_panel.hotstack_requested.connect(self._on_hotstack_requested)
         self._library_panel.root_added.connect(self._on_editor_root_added)
         self._library_panel.sort_changed.connect(lambda mode: self._lighttable.library_panel.apply_sort(mode))
+        self._folder_actions.connect(self._library_panel)
         left_tools_col.addWidget(self._library_panel)
         self._tagging_panel = TaggingPanel()
         left_tools_col.addWidget(self._tagging_panel)
@@ -2058,7 +2064,7 @@ class AppWindow(QMainWindow):
         if not roots:
             self._lighttable.set_index_status("No folders yet: add one in the Library panel")
             return
-        worker = LibraryIndexWorker(roots)
+        worker = LibraryIndexWorker(roots, excluded=self._library_panel.hidden_folders())
         worker.progress.connect(lambda done, total: self._lighttable.set_index_status(f"Reading photos {done:,} of {total:,}", done, total))
         worker.finished_ok.connect(self._on_index_finished)
         self._index_worker = worker

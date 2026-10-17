@@ -62,7 +62,8 @@ os.makedirs(os.path.join(b, "inner"), exist_ok=True)
 tree.set_roots([b]); tree.expandItem(tree.topLevelItem(0))
 sub = tree.topLevelItem(0).child(0); os.environ["PICK"] = ""
 tree._on_context_menu(tree.visualItemRect(sub).center()); (lambda *a, **k: None)("menu(sub):", menus[-1])
-assert ("Remove from Library (top-level folders only)", False) in menus[-1]
+assert ("Remove from Library", True) in menus[-1], "a folder that is not a root can be taken off the list too (see test_library_folder_actions)"
+assert [t for t, _e in menus[-1] if t in ("New Folder...", "Rename Folder...", "Move Folder to...", "Delete Folder...")] == ["New Folder...", "Rename Folder...", "Move Folder to...", "Delete Folder..."]
 # import window tree has no remove
 from photoeditor.desktop.view.import_window import ImportWindow
 iw = ImportWindow(w); iw._tree._on_context_menu(iw._tree.visualItemRect(iw._tree.topLevelItem(0)).center()) if iw._tree.topLevelItemCount() else None
