@@ -1,0 +1,512 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>EFAS Negative Inversion Software: a free film-negative converter</title>
+<meta name="description" content="A free, open-source film-negative converter for your desktop. From a single scan to a whole roll: invert, grade, repair, organise and export, all locally and non-destructively.">
+<link rel="canonical" href="https://ethanchas.github.io/EFAS-Negative-Inversion-Software/">
+<link rel="icon" href="efas-logo.png">
+<meta property="og:type" content="website">
+<meta property="og:title" content="EFAS Negative Inversion Software">
+<meta property="og:description" content="A free, open-source film-negative converter for your desktop. From a single scan to a whole roll: invert, grade, repair, organise and export, all locally and non-destructively.">
+<meta property="og:url" content="https://ethanchas.github.io/EFAS-Negative-Inversion-Software/">
+<meta property="og:image" content="https://ethanchas.github.io/EFAS-Negative-Inversion-Software/efas-logo.png">
+<meta name="color-scheme" content="light dark">
+<style>
+:root { --bg: #ffffff; --text: #1d1f23; --muted: #5b6270; --line: #dfe3e8; --accent: #1565c0; --code: #f3f5f8; }
+@media (prefers-color-scheme: dark) { :root { --bg: #14161a; --text: #e6e8eb; --muted: #9aa3af; --line: #2c3037; --accent: #6cb2ff; --code: #1d2025; } }
+html { scroll-behavior: smooth; }
+body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+main { max-width: 880px; margin: 0 auto; padding: 24px 16px 48px; }
+h1, h2, h3, h4 { line-height: 1.25; }
+h2 { margin-top: 2em; padding-bottom: .3em; border-bottom: 1px solid var(--line); }
+a { color: var(--accent); }
+img { max-width: 100%; height: auto; }
+code, pre { background: var(--code); border-radius: 6px; font: 14px/1.5 ui-monospace, SFMono-Regular, Consolas, monospace; }
+code { padding: .15em .35em; }
+pre { padding: 12px 14px; overflow-x: auto; }
+pre code { padding: 0; background: none; }
+table { border-collapse: collapse; display: block; overflow-x: auto; }
+th, td { border: 1px solid var(--line); padding: 6px 10px; }
+details { border: 1px solid var(--line); border-radius: 8px; padding: 4px 14px; margin: 12px 0; }
+summary { cursor: pointer; padding: 8px 0; }
+blockquote { margin: 12px 0; padding: 2px 14px; border-left: 4px solid var(--line); color: var(--muted); }
+hr { border: 0; border-top: 1px solid var(--line); }
+footer { border-top: 1px solid var(--line); color: var(--muted); font-size: 14px; padding: 18px 16px 40px; text-align: center; }
+</style>
+</head>
+<body>
+<main>
+<div align="center" dir="auto">
+<a target="_blank" rel="noopener noreferrer" href="https://github.com/EthanChas/EFAS-Negative-Inversion-Software/blob/main/efas-logo.png"><img src="efas-logo.png" alt="EFAS logo" width="150" style="max-width: 100%;"></a>
+<h1 id="efas-negative-inversion-software">EFAS Negative Inversion Software</h1>
+<p dir="auto"><strong>Bring your film negatives to life.</strong></p>
+<p dir="auto">A free, open-source film-negative converter for your desktop.<br><br>
+From a single scan to a whole roll: invert, grade, repair, organise and export, all locally and non-destructively.</p>
+<p dir="auto"><a href="https://github.com/EthanChas/EFAS-Negative-Inversion-Software/releases"><strong>Download for Windows →</strong></a>  ·  <a href="#get-started"><strong>Run from source →</strong></a></p>
+<p dir="auto"><a href="#features">Features</a> · <a href="#presets">Presets</a> · <a href="#plugins">Plugins</a> · <a href="#get-started">Get started</a> · <a href="#where-your-data-lives">Your data</a> · <a href="#privacy">Privacy</a> · <a href="#documentation">Docs</a></p>
+</div>
+<hr>
+<blockquote>
+<p dir="auto"><strong>Notice:</strong> this software is heavily under development and may have issues and bugs. Back up your photos and use it at your own risk.</p>
+</blockquote>
+<details>
+<summary><b>About this README (AI-written documentation)</b></summary>
+<p dir="auto"> </p>
+<p dir="auto">The changelogs, release notes, README and guides in this project are written by AI (Claude, by Anthropic), not by hand. Ethan, the author, would rather spend their time on the software than on writing changelogs, and an AI keeps them more consistent and better organised. MINOR Code correction. Ethan decides what gets built and how it should work. If something in the text is wrong or unclear, please open an issue.</p>
+<p dir="auto">Built in <strong>Python</strong> with <strong>PyQt6</strong>. Created by Ethan.</p>
+</details>
+<p dir="auto">Open a negative (RAW, TIFF, PNG or JPEG), invert it, balance the colour and tone, retouch dust and scratches, then export. Every edit is stored per photo in a local database and nothing is ever written over your originals.</p>
+<h2 id="features">Features</h2>
+<details open="">
+<summary><b>Negative inversion and tone</b></summary>
+<p dir="auto"> </p>
+<ul dir="auto">
+<li><strong>Negative inversion and metering</strong>: film-base sampling, per-channel balance, colour-negative and black-and-white modes, eyedropper picking, <strong>White / Black point droppers</strong></li>
+<li><strong>Scanning light</strong> (Negative &gt; Color trim): a starting colour trim from the colour temperature of the backlight the negative was photographed on</li>
+<li><strong>Exposure, tone curve, contrast, shadows/highlights, local contrast, sharpening, denoise, flat-field correction</strong> (the flat-field map ignores specks of dust on the light-source reference)</li>
+<li><strong>Print Response</strong> (WB Correction tab): <strong>Snap</strong>, <strong>Toe</strong> and <strong>Shoulder</strong>, with a width for each roll-off, shape the picture's response curve the way a print's characteristic curve is shaped, drawn as a small graph</li>
+<li><strong>Module on/off lights</strong>: a light beside each editing module's name (a square in the Classic theme, a circle with a grey border in the others); green is on, red is off. Click it to make the picture without that module while keeping its settings</li>
+<li><strong>Histogram</strong>: stays in view while the sidebar scrolls; <strong>Log</strong> scale and <strong>Split</strong> (red, green and blue in separate strips) buttons; the Color graph is greyed out for a black-and-white negative</li>
+<li><strong>A short written read-out under the histogram</strong>: exposure, contrast, range, clipping, colour, saturation and the channel averages, then the scan quality; hover a row for the full detail</li>
+</ul>
+</details>
+<details>
+<summary><b>Retouching, geometry and finishing</b></summary>
+<p dir="auto"> </p>
+<ul dir="auto">
+<li><strong>Dust and scratch removal</strong>: manual spot and curved-scratch tools, a clone tool and AI dust detection. If automatic detection gets one wrong, show the detections, click that one with Delete Repair and only it is left alone (Reset Deleted brings them back)</li>
+<li><strong>Error marking</strong> (Negative tab, and <strong>View &gt; Error Marks</strong> or <strong>Shift+E</strong>): drag boxes round faults in a scan, each kind with its own colour and tag: scratches red, watermarks yellow, transport lines dark navy, Newton rings, light leaks, dust and hairs, fingerprints, unknown. Right-click a mark to change or remove it. Marks are notes kept with the photo, follow the crop and rotation, and are never part of an export</li>
+<li><strong>Geometry</strong>: crop with guides, straighten tool, automatic crop by border gradient, <strong>Four-Corner Straighten</strong> (click the four corners of the photo and the Angle and Keystone are set to make them a true rectangle, then cropped, in one undoable step), keystone correction with an automatic suggestion from straight lines</li>
+<li><strong>Crop Roll</strong> can make every crop the same size, each centred where its own border was found</li>
+<li><strong>Finishing</strong>: vignette and borders</li>
+<li><strong>Watermarks</strong>: a 3D film canister, camera and lens text (with or without the canister), styled text in any installed font or font file, and your own SVG or PNG logo. Drag any of them on the picture to move or resize them</li>
+</ul>
+</details>
+<details>
+<summary><b>Library and workflow</b></summary>
+<p dir="auto"> </p>
+<ul dir="auto">
+<li><strong>Library</strong>: a Workbench grid with search by camera, lens, film, ISO, date, roll, rating and flag; stars, flags, tags, snapshots, history; sort by name, date or number of photos</li>
+<li><strong>Tags</strong> nest (<code class="notranslate">People/Family</code>; searching People finds everything inside it), with a drop-down of every tag you have made, a quick tag bar (<code class="notranslate">T</code>), and a Tagging panel like darktable's with Lightroom keyword import and export</li>
+<li><strong>Find (Ctrl+K)</strong> reaches any control, menu action, preset, module preset or smart collection</li>
+<li><strong>Virtual copies</strong> (several edits of one scan), <strong>smart collections</strong>, a <strong>duplicate finder</strong>, and <strong>undo for whole-roll actions</strong></li>
+<li><strong>Proofing tools</strong>: test strip, ring-around, split view, contact sheets</li>
+<li><strong>Color Mixer</strong> and a better colour model: Vibrance that spares skin tones and already-vivid colours, and Hue / Saturation / Lightness for eight colour ranges, all worked in OKLCH so a colour moves without dragging its lightness or hue along (see <a href="https://github.com/EthanChas/EFAS-Negative-Inversion-Software/blob/main/docs/color-mixer.md">the colour page</a>); Lab Look also has a scanner colour response (Frontier, Noritsu, Pakon, Crystal Archive)</li>
+<li><strong>Lab Look</strong>: Fade, Glow, and warm / cool and green / magenta balance for the shadows, midtones and highlights separately, the character a lab's scanner adds; the built-in Lab Scanners and Film Stocks presets use it</li>
+<li><strong>Modern conversion</strong> (default; <strong>Original</strong> is one dropdown away): a conversion that treats the film, the scene and the paper separately: dye crosstalk is taken out, part of the film's toe and shoulder is put back, and the picture prints through a paper curve with a toe and a shoulder, so highlights roll off instead of clipping. It can be measured against a film simulator (see <a href="https://github.com/EthanChas/EFAS-Negative-Inversion-Software/blob/main/docs/film-and-paper-conversion.md">the design page</a>)</li>
+<li><strong>Steadier colour on a roll</strong>: <em>Find Film Base for the Whole Roll</em> reads the clear border of several frames into one film base; an optional <em>linear camera RGB</em> RAW decode inverts the negative before the camera's colour matrix is applied (see the <a href="https://github.com/EthanChas/EFAS-Negative-Inversion-Software/blob/main/docs/scanning-and-export-guide.md">scanning guide</a>)</li>
+<li><strong>Export</strong>: JPEG, PNG and TIFF (16-bit supported), size and quality options, metadata and XMP, batch export, output sharpening, export safety checks</li>
+<li><strong>Film Colour Reference</strong> (Extra menu, and the Negative tab): search a film stock and see photos shot on it, from lomography.com, in a clean gallery to judge a conversion's colour against (see <a href="#privacy">Privacy</a>)</li>
+<li><strong>Command line</strong>: <code class="notranslate">python -m photoeditor convert|presets|info|check-roll|merge</code>, using the editor's own data folder</li>
+</ul>
+</details>
+<details>
+<summary><b>Scientific measurement and film science (Advanced mode)</b></summary>
+<p dir="auto"> </p>
+<ul dir="auto">
+<li><strong>Scientific measurement</strong>: linear RAW values, optical density, per-channel film base (Dmin) and Dmax, a density histogram, an H&amp;D curve viewer for curve data you supply, and the calibration behind every number. See <a href="https://github.com/EthanChas/EFAS-Negative-Inversion-Software/blob/main/docs/scientific-inversion-design.md">the design document</a></li>
+<li><strong>Film characterization (optional)</strong>: calibrate your camera against a step tablet, fit a film's H&amp;D curves from a strip exposed through one, save film profiles, and optionally convert with the measured curves. Never builds a curve from an ordinary photograph. See the <a href="https://github.com/EthanChas/EFAS-Negative-Inversion-Software/blob/main/docs/film-characterization-guide.md">guide</a> and the <a href="https://github.com/EthanChas/EFAS-Negative-Inversion-Software/blob/main/docs/sensitometry-tier2-design.md">design document</a></li>
+<li><strong>Scanning quality and merging</strong>: a plain scan-quality verdict, automatic film-border finding (confirmed before use), bracketed-exposure and one-light-per-colour scan merging into a measured 16-bit linear scan, roll consistency checks, <strong>Check Flat Field</strong>, <strong>Even Out Roll</strong>, and an optional colour-target accuracy fit. See the <a href="https://github.com/EthanChas/EFAS-Negative-Inversion-Software/blob/main/docs/scanning-and-export-guide.md">scanning guide</a></li>
+<li><strong>Flat exports</strong>: flat, linear-light and density 16-bit TIFF outputs for grading elsewhere, with an optional conversion record</li>
+<li><strong>Shareable film profiles</strong>: <code class="notranslate">.efasprofile</code> bundles that are checksummed, sanity-checked and imported as received, never as your own measurement. Film profiles can be sorted into folders (<code class="notranslate">Kodak/Portra 400/Roll 3</code>)</li>
+</ul>
+</details>
+<details>
+<summary><b>Look and feel</b></summary>
+<p dir="auto"> </p>
+<ul dir="auto">
+<li><strong>Themes</strong>: <strong>Modern</strong> (the default), Default, Midnight, Graphite, Darkroom and High contrast, with accent colours and text size, plus your own themes as CSS files (Settings &gt; Themes; see <a href="https://github.com/EthanChas/EFAS-Negative-Inversion-Software/blob/main/docs/themes.md">docs/themes.md</a>)</li>
+<li><strong>Dividers</strong> between the sections inside the modules, and modules that close when you switch tabs (a setting)</li>
+<li><strong>Keyboard shortcuts</strong> for the common actions, all rebindable in Settings &gt; Keybinds</li>
+</ul>
+</details>
+<details>
+<summary><b>Safety and updates</b></summary>
+<p dir="auto"> </p>
+<ul dir="auto">
+<li><strong>Data safety</strong>: automatic backups, startup health check with restore, and full data export/import (Settings &gt; Data &amp; backup)</li>
+<li><strong>Report a problem</strong>: a redacted report you can read, save and attach to a GitHub issue; nothing is sent automatically</li>
+<li><strong>Updates</strong>: Info &gt; Version, with a startup notice when a new version is out (see <a href="#updates">Updates</a>)</li>
+</ul>
+</details>
+<h2 id="presets">Presets</h2>
+<details>
+<summary><b>Preset folders, built-in presets and hover preview</b></summary>
+<p dir="auto"> </p>
+<ul dir="auto">
+<li><strong>Folders</strong>: a name with slashes (<code class="notranslate">B&amp;W/Number 1</code>) is a preset inside a folder, like the nesting of tags. The Presets list and the Film Profiles list show them as a tree; right-click a folder to save into it, rename it or delete it.</li>
+<li><strong>My Presets and Built-in Presets</strong>: two buttons switch the list between the presets you made and the ones that come with EFAS (read-only; <strong>Copy to My Presets</strong> makes an editable copy).</li>
+<li><strong>Built-in sets</strong>: <strong>Lab Scanners</strong> (Frontier 100, Crystal 100, Pakon, Noritsu) and <strong>Film Stocks</strong> (Cinestill, Fuji Superia, Kodak Gold, Portra, Portra Airy). They are EFAS's own approximations of the tone, saturation and warmth of those looks, not measurements.</li>
+<li><strong>Hover preview</strong>: rest the mouse on a preset to see it on the picture before applying it (Settings &gt; General turns it off). <strong>Clear</strong> takes the look off the photo again.</li>
+</ul>
+<p dir="auto">See <a href="https://github.com/EthanChas/EFAS-Negative-Inversion-Software/blob/main/docs/presets.md">docs/presets.md</a> for how the built-in presets were made and how to add your own.</p>
+</details>
+<h2 id="plugins">Plugins</h2>
+<details open="">
+<summary><b>Extend EFAS with Python or Lua</b></summary>
+<p dir="auto"> </p>
+<p dir="auto">EFAS can be extended with plugins written in <strong>Python</strong> or <strong>Lua</strong> (Lua 5.4 is built in; nothing to install). A plugin can add menu items and modules (buttons, sliders, check boxes, drop-downs, text boxes) to the editor, read the open photo and change its edit the way the sliders do, measure the picture, apply presets, add tags, and react to events.</p>
+<ul dir="auto">
+<li>Every plugin starts <strong>switched off</strong>; turn each on in <strong>Settings &gt; Plugins</strong>, which also opens the plugins folder, installs five examples and makes an empty plugin to start from.</li>
+<li><strong>View &gt; Plugin Output</strong> opens a window with everything the plugins print and every error found in them.</li>
+<li><strong>Lua plugins run in a sandbox</strong> (no files, no programs, no internet, time-limited). <strong>Python plugins run with the same access as EFAS itself</strong>, so only switch on Python plugins you trust.</li>
+</ul>
+<p dir="auto"><strong>Documentation for plugin authors</strong> (<a href="https://github.com/EthanChas/EFAS-Negative-Inversion-Software/blob/main/docs/plugins/README.md">start here: docs/plugins</a>):</p>
+<markdown-accessiblity-table><table role="table">
+<thead>
+<tr>
+<th>Page</th>
+<th>What is in it</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><a href="https://github.com/EthanChas/EFAS-Negative-Inversion-Software/blob/main/docs/plugins/getting-started.md">Getting started</a></td>
+<td>Your first plugin in ten minutes, in Lua and Python</td>
+</tr>
+<tr>
+<td><a href="https://github.com/EthanChas/EFAS-Negative-Inversion-Software/blob/main/docs/plugins/manifest.md">The manifest</a></td>
+<td><code class="notranslate">plugin.json</code> and where plugins live</td>
+</tr>
+<tr>
+<td><a href="https://github.com/EthanChas/EFAS-Negative-Inversion-Software/blob/main/docs/plugins/api-reference.md">API reference</a></td>
+<td>Every function, for both languages</td>
+</tr>
+<tr>
+<td><a href="https://github.com/EthanChas/EFAS-Negative-Inversion-Software/blob/main/docs/plugins/ui-and-modules.md">UI and modules</a></td>
+<td>Menu items, modules, buttons, sliders and the rest</td>
+</tr>
+<tr>
+<td><a href="https://github.com/EthanChas/EFAS-Negative-Inversion-Software/blob/main/docs/plugins/events.md">Events</a></td>
+<td>Reacting to a photo opening, the edit changing and more</td>
+</tr>
+<tr>
+<td><a href="https://github.com/EthanChas/EFAS-Negative-Inversion-Software/blob/main/docs/plugins/lua.md">Lua</a> / <a href="https://github.com/EthanChas/EFAS-Negative-Inversion-Software/blob/main/docs/plugins/python.md">Python</a></td>
+<td>What each language can use and how it behaves</td>
+</tr>
+<tr>
+<td><a href="https://github.com/EthanChas/EFAS-Negative-Inversion-Software/blob/main/docs/plugins/plugin-output.md">Plugin Output and debugging</a></td>
+<td>Finding your plugin's output and errors</td>
+</tr>
+<tr>
+<td><a href="https://github.com/EthanChas/EFAS-Negative-Inversion-Software/blob/main/docs/plugins/security.md">Security</a></td>
+<td>What a plugin can and cannot do</td>
+</tr>
+<tr>
+<td><a href="https://github.com/EthanChas/EFAS-Negative-Inversion-Software/blob/main/docs/plugins/examples.md">Examples</a></td>
+<td>Five complete plugins to read and copy</td>
+</tr>
+<tr>
+<td><a href="https://github.com/EthanChas/EFAS-Negative-Inversion-Software/blob/main/docs/plugins/internals.md">How it is built</a></td>
+<td>For people changing EFAS itself</td>
+</tr>
+</tbody>
+</table></markdown-accessiblity-table>
+</details>
+<h2 id="get-started">Get started</h2>
+<details open="">
+<summary><b>Download (Windows)</b></summary>
+<p dir="auto"> </p>
+<p dir="auto">Grab the single-file <code class="notranslate">.exe</code> from the <a href="https://github.com/EthanChas/EFAS-Negative-Inversion-Software/releases">Releases</a> page. There is nothing to install, and it updates itself from <strong>Info &gt; Version</strong>.</p>
+</details>
+<details>
+<summary><b>Run from source (Windows, Linux, macOS)</b></summary>
+<p dir="auto"> </p>
+<div class="highlight highlight-source-shell" dir="auto"><pre class="notranslate">git clone https://github.com/EthanChas/EFAS-Negative-Inversion-Software.git
+<span class="pl-c1">cd</span> EFAS-Negative-Inversion-Software
+python -m pip install -e <span class="pl-c1">.</span></pre></div>
+<p dir="auto">(That installs every dependency, including <code class="notranslate">send2trash</code> on Linux and macOS, which moves deleted photos to the Trash. To install them by hand instead: <code class="notranslate">python -m pip install PyQt6 Pillow rawpy numpy opencv-python-headless onnxruntime piexif tifffile lupa send2trash</code>.)</p>
+<p dir="auto">On Linux, Qt needs a few system libraries; on Debian or Ubuntu: <code class="notranslate">sudo apt install libegl1 libxkbcommon-x11-0 libxcb-cursor0 libxcb-icccm4 libxcb-keysyms1 libxcb-shape0</code>.</p>
+<p dir="auto">On Windows, double-click <code class="notranslate">start.bat</code> (or run <code class="notranslate">start.bat console</code> to keep a console open for errors). On Linux and macOS run <code class="notranslate">./start.sh</code>. From any shell:</p>
+<div class="highlight highlight-source-shell" dir="auto"><pre class="notranslate">PYTHONPATH=src python -m photoeditor</pre></div>
+<p dir="auto">On Windows PowerShell set the path first: <code class="notranslate">$env:PYTHONPATH = "src"</code>.</p>
+</details>
+<details>
+<summary><b>Supported systems</b></summary>
+<p dir="auto"> </p>
+<markdown-accessiblity-table><table role="table">
+<thead>
+<tr>
+<th>OS</th>
+<th>Status</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Windows 10 / 11</td>
+<td>Supported. The released <code class="notranslate">.exe</code> is Windows only</td>
+</tr>
+<tr>
+<td>Linux</td>
+<td>Runs from source. The automated tests run on it, but the author has not yet used it on a real Linux machine</td>
+</tr>
+<tr>
+<td>macOS</td>
+<td>Runs from source. The automated tests run on it, but the author has not yet used it on a real Mac</td>
+</tr>
+</tbody>
+</table></markdown-accessiblity-table>
+<p dir="auto">The tests run on Windows, Linux and macOS through GitHub Actions (<a href="https://github.com/EthanChas/EFAS-Negative-Inversion-Software/blob/main/github/workflows/tests.yml"><code class="notranslate">tests.yml</code></a>), so a problem on another system shows up there. Please report anything that looks wrong on Linux or macOS. Known differences: the self-updating <code class="notranslate">.exe</code> is Windows only (elsewhere Info &gt; Version opens the release page); fonts and default text sizes follow the system; on a Mac the Delete key in the Workbench is the key labelled delete (Backspace); deleting photos uses the system Trash through the <code class="notranslate">send2trash</code> package.</p>
+</details>
+<details>
+<summary><b>Requirements</b></summary>
+<p dir="auto"> </p>
+<ul dir="auto">
+<li><strong>Python 3.10 or newer</strong> (developed and tested on 3.13)</li>
+<li>Dependencies: PyQt6 &gt;= 6.6, Pillow &gt;= 10, rawpy &gt;= 0.19, numpy &gt;= 1.26, opencv-python-headless &gt;= 4.8, onnxruntime &gt;= 1.17, piexif &gt;= 1.1, tifffile &gt;= 2023.1, lupa &gt;= 2.0 (the Lua interpreter for plugins)</li>
+</ul>
+</details>
+<details>
+<summary><b>Build the app</b></summary>
+<p dir="auto"> </p>
+<p dir="auto"><code class="notranslate">python tools/build_app.py</code> builds for the system it runs on (a <code class="notranslate">.exe</code> on Windows, a <code class="notranslate">.app</code> on macOS, one executable on Linux), after <code class="notranslate">python -m pip install pyinstaller</code>. PyInstaller cannot build for another system. The <strong>Build apps</strong> workflow (Actions tab, run by hand) builds all three. The Windows command it wraps:</p>
+<div class="highlight highlight-source-shell" dir="auto"><pre class="notranslate">python -m pip install pyinstaller
+python -m PyInstaller --noconfirm --onefile --windowed --name <span class="pl-s"><span class="pl-pds">"</span>EFAS Negative Inversion Software<span class="pl-pds">"</span></span> --paths src --add-data <span class="pl-s"><span class="pl-pds">"</span>src/photoeditor/assets;photoeditor/assets<span class="pl-pds">"</span></span> --hidden-import onnxruntime --hidden-import lupa.lua54 --collect-all lupa --exclude-module torch --exclude-module transformers --exclude-module tensorflow --exclude-module scipy --exclude-module numba --exclude-module matplotlib --exclude-module pandas --exclude-module tkinter --exclude-module sklearn --exclude-module sympy --exclude-module onnx run_app.py</pre></div>
+<p dir="auto">The result is <code class="notranslate">dist/EFAS Negative Inversion Software.exe</code>. The excluded modules only keep the build small and fast.</p>
+</details>
+<details>
+<summary><b>Run the tests</b></summary>
+<p dir="auto"> </p>
+<div class="highlight highlight-source-shell" dir="auto"><pre class="notranslate">python -m pip install pytest
+python -m pytest</pre></div>
+</details>
+<h2 id="where-your-data-lives">Where your data lives</h2>
+<details open="">
+<summary><b>The EFAS data folder</b></summary>
+<p dir="auto"> </p>
+<p dir="auto">Everything EFAS keeps for itself lives in <strong>one folder, <code class="notranslate">.EFAS</code>, in your home folder</strong>:</p>
+<markdown-accessiblity-table><table role="table">
+<thead>
+<tr>
+<th>System</th>
+<th>Default location</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Windows</td>
+<td><code class="notranslate">C:\Users\&lt;you&gt;\.EFAS</code></td>
+</tr>
+<tr>
+<td>macOS</td>
+<td><code class="notranslate">/Users/&lt;you&gt;/.EFAS</code></td>
+</tr>
+<tr>
+<td>Linux</td>
+<td><code class="notranslate">/home/&lt;you&gt;/.EFAS</code></td>
+</tr>
+</tbody>
+</table></markdown-accessiblity-table>
+<p dir="auto">Set the <code class="notranslate">PHOTOEDITOR_DATA_DIR</code> environment variable to use a different folder. <strong>Settings &gt; Data &amp; backup</strong> shows the folder, backs it up and exports or imports everything.</p>
+<p dir="auto"><strong>Upgrading from an older version:</strong> versions before 0.6 kept their files in <code class="notranslate">~/.photoeditor</code> under vaguer names. The first start of a newer version moves everything across by itself into <code class="notranslate">.EFAS</code> and removes the old folder, so there is nothing to do.</p>
+<p dir="auto">What is inside:</p>
+<markdown-accessiblity-table><table role="table">
+<thead>
+<tr>
+<th>In <code class="notranslate">.EFAS</code></th>
+<th>What it holds</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="notranslate">photo-edits.db</code></td>
+<td>Every photo's edits, history, ratings, flags, roll cards, snapshots, tags and error marks</td>
+</tr>
+<tr>
+<td><code class="notranslate">workbench-index.db</code></td>
+<td>The Workbench's index of your library, so search and sorting are quick</td>
+</tr>
+<tr>
+<td><code class="notranslate">app-settings.json</code></td>
+<td>Settings &gt; Preferences: theme, keybinds, switches, which plugins are on</td>
+</tr>
+<tr>
+<td><code class="notranslate">window-and-panel-layout.ini</code>, <code class="notranslate">last-session.json</code>, <code class="notranslate">recent-folders.json</code></td>
+<td>Where the window, panels and last folder were</td>
+</tr>
+<tr>
+<td><code class="notranslate">look-presets.json</code>, <code class="notranslate">module-presets.json</code></td>
+<td>Your presets (My Presets and each module's presets)</td>
+</tr>
+<tr>
+<td><code class="notranslate">camera-and-lens-presets.json</code>, <code class="notranslate">camera-and-lens-lists/</code>, <code class="notranslate">remembered-metadata.json</code></td>
+<td>Camera and lens names and the details EFAS remembers for the Roll Card</td>
+</tr>
+<tr>
+<td><code class="notranslate">film-profiles/</code>, <code class="notranslate">camera-setups/</code></td>
+<td>Film profiles and camera set-ups from Advanced mode</td>
+</tr>
+<tr>
+<td><code class="notranslate">database-backups/</code></td>
+<td>The daily database backups (<code class="notranslate">photo-edits-YYYY-MM-DD.db</code>)</td>
+</tr>
+<tr>
+<td><code class="notranslate">plugins/</code></td>
+<td>Your plugins, one folder each (<strong>Settings &gt; Plugins &gt; Open plugins folder</strong>)</td>
+</tr>
+<tr>
+<td><code class="notranslate">plugin-data/</code></td>
+<td>What each plugin saves: its settings and files</td>
+</tr>
+<tr>
+<td><code class="notranslate">themes/</code></td>
+<td>Theme files you imported</td>
+</tr>
+<tr>
+<td><code class="notranslate">thumbnail-cache/</code>, <code class="notranslate">ai-dust-cache/</code>, <code class="notranslate">font-list-cache.json</code>, <code class="notranslate">film-reference-films.json</code></td>
+<td>Caches; safe to delete, they are rebuilt (Settings &gt; Storage clears them)</td>
+</tr>
+<tr>
+<td><code class="notranslate">logs/</code></td>
+<td>The program's log, used by Report a Problem</td>
+</tr>
+</tbody>
+</table></markdown-accessiblity-table>
+<p dir="auto">Next to your <strong>photos</strong>, EFAS also writes a small <code class="notranslate">.xmp</code> sidecar file for each edited photo, so an edit travels with the picture. Your original photo files are never changed.</p>
+</details>
+<h2 id="privacy">Privacy</h2>
+<details>
+<summary><b>What goes online (very little)</b></summary>
+<p dir="auto"> </p>
+<p dir="auto">The editor is <strong>offline only</strong>. No data is sent out: no analytics, no telemetry, no accounts, and your photos and edits never leave your computer.</p>
+<p dir="auto">The one thing it does online is ask the GitHub releases page for the latest version number, so it can tell you when an update exists (and download it if you choose to update). That is a plain web request, so GitHub sees your IP address the way any website does, and nothing else. You can turn the check off under Settings &gt; General, and you can run the app with no internet connection at all.</p>
+<p dir="auto">The other online feature is the <strong>Film Colour Reference</strong>. It does nothing until you open it from the Extra menu or the Negative tab and agree to it once (Settings &gt; General turns it off again). While its window is open it reads lomography.com's film list and the sample photos of the film you pick, only from lomography.com's own film pages (never its search, browse or API pages, which its robots.txt asks programs to avoid), with a User-Agent that says what it is. What you type in its search box stays on this computer (the film list is searched here), no information about you or your photos is sent, and lomography.com sees your IP address like any website does. The photos are shown, not saved or edited; they are by Lomography community members, so each shows who took it and links to its page. Only the film list (names and page addresses) is kept, for two weeks, in the data folder.</p>
+<p dir="auto"><strong>Plugins</strong> are the one place EFAS cannot promise this for you: a Python plugin can do anything Python can, including going online. Lua plugins cannot. See <a href="https://github.com/EthanChas/EFAS-Negative-Inversion-Software/blob/main/docs/plugins/security.md">plugin security</a>.</p>
+<p dir="auto">Your privacy is a right, and it will be respected.</p>
+</details>
+<h2 id="updates">Updates</h2>
+<details>
+<summary><b>How updating works</b></summary>
+<p dir="auto"> </p>
+<ul dir="auto">
+<li><strong>Info &gt; Version</strong> shows the installed version and checks for a newer one. <strong>Info &gt; Check for Updates...</strong> does the same check directly.</li>
+<li>On start, if a newer version is available, the app says so and asks whether you would like to update.</li>
+<li>Choosing <strong>Update</strong> downloads the new <code class="notranslate">.exe</code> from the GitHub release, checks its size and SHA-256 checksum against what GitHub lists, replaces the running program and restarts it. Downloads are only accepted over https from GitHub's own hosts.</li>
+<li>Self-update works for the packaged Windows <code class="notranslate">.exe</code>. When running from source, the update button opens the release page instead.</li>
+</ul>
+</details>
+<h2 id="documentation">Documentation</h2>
+<details>
+<summary><b>All the guides</b></summary>
+<p dir="auto"> </p>
+<markdown-accessiblity-table><table role="table">
+<thead>
+<tr>
+<th>Guide</th>
+<th>What it covers</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><a href="https://github.com/EthanChas/EFAS-Negative-Inversion-Software/blob/main/docs/plugins/README.md">Plugins</a></td>
+<td>Writing plugins in Python and Lua: API, UI, events, security, examples</td>
+</tr>
+<tr>
+<td><a href="https://github.com/EthanChas/EFAS-Negative-Inversion-Software/blob/main/docs/presets.md">Presets</a></td>
+<td>Folders, My and Built-in presets, how the built-in ones were made</td>
+</tr>
+<tr>
+<td><a href="https://github.com/EthanChas/EFAS-Negative-Inversion-Software/blob/main/docs/themes.md">Themes</a></td>
+<td>The built-in themes and writing your own as a CSS file</td>
+</tr>
+<tr>
+<td><a href="https://github.com/EthanChas/EFAS-Negative-Inversion-Software/blob/main/docs/scanning-and-export-guide.md">Scanning and export guide</a></td>
+<td>Scan quality, merging scans, flat exports</td>
+</tr>
+<tr>
+<td><a href="https://github.com/EthanChas/EFAS-Negative-Inversion-Software/blob/main/docs/film-characterization-guide.md">Film characterization guide</a></td>
+<td>Calibrating, fitting film curves, saving film profiles</td>
+</tr>
+<tr>
+<td><a href="https://github.com/EthanChas/EFAS-Negative-Inversion-Software/blob/main/docs/scientific-inversion-design.md">Scientific inversion design</a></td>
+<td>How the measured conversion works</td>
+</tr>
+<tr>
+<td><a href="https://github.com/EthanChas/EFAS-Negative-Inversion-Software/blob/main/docs/sensitometry-tier2-design.md">Sensitometry design</a></td>
+<td>Film profiles, camera set-ups and the curve-informed inversion</td>
+</tr>
+</tbody>
+</table></markdown-accessiblity-table>
+</details>
+<h2 id="credits-and-inspiration">Credits and inspiration</h2>
+<details>
+<summary><b>Projects that inspired EFAS</b></summary>
+<p dir="auto"> </p>
+<p dir="auto">The interface and module layout are based on and inspired by darktable. The editing features draw on the programs below. Please try them; they are excellent.</p>
+<markdown-accessiblity-table><table role="table">
+<thead>
+<tr>
+<th>Project</th>
+<th>What it inspired</th>
+<th>Link</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>darktable</td>
+<td>The darkroom layout, module panels with presets and reset buttons, focus peaking</td>
+<td><a href="https://www.darktable.org" rel="nofollow">darktable.org</a></td>
+</tr>
+<tr>
+<td>Adobe Lightroom</td>
+<td>Culling with flags and stars, presets, histogram and clipping views, contact sheets</td>
+<td><a href="https://www.adobe.com/products/photoshop-lightroom.html" rel="nofollow">adobe.com/products/photoshop-lightroom</a></td>
+</tr>
+<tr>
+<td>CineStill CS Negative+ Convert Tools</td>
+<td>The idea of a fast, accurate film-scan conversion workflow</td>
+<td><a href="https://cinestillfilm.com" rel="nofollow">cinestillfilm.com</a>, <a href="https://petapixel.com/2025/07/01/cinestills-new-film-scan-conversion-software-is-fast-accurate-and-free" rel="nofollow">PetaPixel write-up</a></td>
+</tr>
+<tr>
+<td>NegPy</td>
+<td>Negative inversion and metering approach, dust and scratch repair, local contrast (CLAHE), clone tool, the Snap / Toe / Shoulder response, the print-stage approach behind the Modern conversion, and the sixteen film crosstalk profiles it bundles (unchanged, GPL-3.0). Parts of this app are adapted from its code (GPL-3.0)</td>
+<td><a href="https://github.com/marcinz606/NegPy">github.com/marcinz606/NegPy</a></td>
+</tr>
+<tr>
+<td>Lucide</td>
+<td>The panel and tool-rail icons, loaded from <code class="notranslate">src/photoeditor/assets/icon</code> as plain SVG files (ISC licence)</td>
+<td><a href="https://lucide.dev" rel="nofollow">lucide.dev</a></td>
+</tr>
+<tr>
+<td>DarkSlide</td>
+<td>Ideas for roll-wide same-size crops, previewing a profile on hover and scanning-light settings</td>
+<td><a href="https://github.com/kilianvivien/DarkSlide">github.com/kilianvivien/DarkSlide</a></td>
+</tr>
+<tr>
+<td>FilmDefectNet</td>
+<td>The small ONNX model behind AI dust detection</td>
+<td>FilmDefectNet project</td>
+</tr>
+</tbody>
+</table></markdown-accessiblity-table>
+<p dir="auto">Also built on <a href="https://pypi.org/project/PyQt6/" rel="nofollow">PyQt6</a>, <a href="https://python-pillow.org" rel="nofollow">Pillow</a>, <a href="https://github.com/letmaik/rawpy">rawpy</a>, <a href="https://numpy.org" rel="nofollow">NumPy</a>, <a href="https://opencv.org" rel="nofollow">OpenCV</a>, <a href="https://onnxruntime.ai" rel="nofollow">ONNX Runtime</a> and <a href="https://github.com/scoder/lupa">Lupa</a> (Lua).</p>
+</details>
+<details>
+<summary><b>How it was made</b></summary>
+<p dir="auto"> </p>
+<ul dir="auto">
+<li>Created in PyQt6 by Ethan.</li>
+<li>Changelogs, release notes and documentation are written by AI (Claude), because it is more effective and better organised than writing them by hand.</li>
+<li>UI design and interface are based on, and inspired by, darktable.</li>
+<li>Design, basic functionality and concepts by Ethan.</li>
+<li>Developed with the help of Claude (Anthropic) for code corrections, bug fixes and implementation work.</li>
+</ul>
+</details>
+<h2 id="symbols">Symbols</h2>
+<details>
+<summary><b>Every icon and glyph</b></summary>
+<p dir="auto"> </p>
+<p dir="auto">Every icon and button glyph the app draws is rendered to the <a href="https://github.com/EthanChas/EFAS-Negative-Inversion-Software/blob/main/symbols"><code class="notranslate">symbols</code></a> folder for easy reference. Regenerate them with <code class="notranslate">python tools/export_symbols.py</code> (set <code class="notranslate">QT_QPA_PLATFORM=windows</code> on Windows so fonts render correctly).</p>
+</details>
+<h2 id="licence">Licence</h2>
+<p dir="auto">Copyright (C) 2026 Ethan.</p>
+<p dir="auto">This is free, open-source software, released under the <a href="https://github.com/EthanChas/EFAS-Negative-Inversion-Software/blob/main/LICENSE">GNU General Public License v3.0</a>. You are free to use, edit and redistribute it, as long as redistributed versions (modified or not) stay open source under the same licence. The GPL is used because parts of the app are adapted from <a href="https://github.com/marcinz606/NegPy">NegPy</a>, which is GPL-3.0.</p>
+<p dir="auto">There is no warranty of any kind.</p>
+</main>
+<footer>
+This page is the project's README. The source code, the downloads and the issue tracker are on <a href="https://github.com/EthanChas/EFAS-Negative-Inversion-Software">GitHub</a>. EFAS is free software under the <a href="https://github.com/EthanChas/EFAS-Negative-Inversion-Software/blob/main/LICENSE">GNU GPL v3</a>.
+</footer>
+</body>
+</html>
