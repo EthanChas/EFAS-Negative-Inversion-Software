@@ -219,6 +219,7 @@ class AppController(QObject):
         self._measurement = None
         self._measure_key = None
 
+        self._opening = 0   # open_file calls in progress (it can be re-entered through the event loop it runs)
         self._renderer = Renderer()
         self._renderer.ai_prob_lookup = self._ai_prob_for
         self._ai_probs: dict[tuple, object] = {}
@@ -275,15 +276,22 @@ class AppController(QObject):
         self.state.image_paths = list_images_in_folder(folder)
         self.folder_changed.emit()
 
+    @property
+    def opening(self) -> bool:
+        """True while a photo is being opened: a key for "the open photo" pressed now would land on the one that is going out (see _HotkeyFilter)."""
+        return self._opening > 0
+
     def open_file(self, path: str) -> None:
-        self.loading_started.emit()
-        QCoreApplication.processEvents()
+        self._opening += 1
         try:
+            self.loading_started.emit()
+            QCoreApplication.processEvents()   # keys already waiting are delivered here, to the photo that is going out - the window holds them (opening) and replays them afterwards
             self._open_file_impl(path)
             self._restore_engine(path)
             if app_settings.get("scan_quality") and dens_processor.is_measurable(path):
                 self.request_linear()
         finally:
+            self._opening -= 1
             self.loading_finished.emit()
 
     def _apply_saved_state(self, saved: dict, path: str) -> None:

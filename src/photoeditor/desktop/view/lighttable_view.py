@@ -291,6 +291,9 @@ class LighttableView(QWidget):
     removed_list_requested = pyqtSignal()
     duplicates_requested = pyqtSignal()
     live_editor_toggled = pyqtSignal(bool)
+    date_folder_requested = pyqtSignal()
+    date_folder_reset_requested = pyqtSignal()
+    clear_folder_toggled = pyqtSignal(bool)
     finish_requested = pyqtSignal()
     retake_requested = pyqtSignal(str)
     selection_changed = pyqtSignal()
@@ -577,7 +580,20 @@ class LighttableView(QWidget):
         self._live_editor_action.setCheckable(True)
         self._live_editor_action.setToolTip("Open every photo that arrives in the editor, so you see it large as it lands. Off: it is only selected here in the Workbench.")
         self._live_editor_action.toggled.connect(self.live_editor_toggled)
+        hot_menu.addSeparator()
+        self._date_folder_action = hot_menu.addAction("Date Folder Location...")
+        self._date_folder_action.setToolTip("Choose the folder Finish Session puts its dated folders (DD-MM-YYYY) into. It is remembered until you change it.")
+        self._date_folder_action.triggered.connect(self.date_folder_requested)
+        self._date_folder_reset_action = hot_menu.addAction("Use the Hotstack Folder for Dated Folders")
+        self._date_folder_reset_action.setToolTip("Go back to putting the dated folders inside the hotstack folder itself.")
+        self._date_folder_reset_action.triggered.connect(self.date_folder_reset_requested)
+        self._clear_folder_action = hot_menu.addAction("Clear the Hotstack Folder When Finished")
+        self._clear_folder_action.setCheckable(True)
+        self._clear_folder_action.setToolTip("Finish Session also puts away the older photos still lying loose in the hotstack folder, into dated folders by their file date. Nothing is deleted, and a photo that is still arriving is left.")
+        self._clear_folder_action.toggled.connect(self.clear_folder_toggled)
         self._hot_btn.setMenu(hot_menu)
+        self._date_folder = ""
+        self.set_date_folder("")
         self.set_hotstack_info([])
         self._hot_btn.hide()   # it shows while the person is in a hotstack folder (set_in_hotstack)
         bar.addWidget(self._hot_btn)
@@ -867,6 +883,26 @@ class LighttableView(QWidget):
     def live_editor(self) -> bool:
         """Whether each photo that arrives opens in the editor."""
         return self._live_editor_action.isChecked()
+
+    def set_clear_folder(self, on: bool) -> None:
+        self._clear_folder_action.blockSignals(True)
+        self._clear_folder_action.setChecked(on)
+        self._clear_folder_action.blockSignals(False)
+
+    def clear_folder(self) -> bool:
+        """Whether Finish Session also puts away the older photos lying loose in the hotstack folder."""
+        return self._clear_folder_action.isChecked()
+
+    def set_date_folder(self, folder: str) -> None:
+        """Show where the dated folders go ("" = inside the hotstack folder): the menu entry names it and the reset entry only works when one is chosen."""
+        self._date_folder = folder
+        name = os.path.basename(folder.rstrip("/" + os.sep)) or folder
+        self._date_folder_action.setText(f"Date Folder Location: {name}..." if folder else "Date Folder Location...")
+        self._date_folder_action.setToolTip(f"Dated folders (DD-MM-YYYY) go into {folder}. Choose another folder to change it." if folder else "Choose the folder Finish Session puts its dated folders (DD-MM-YYYY) into. It is remembered until you change it. Now they go inside the hotstack folder.")
+        self._date_folder_reset_action.setEnabled(bool(folder))
+
+    def date_folder(self) -> str:
+        return self._date_folder
 
     def select_path(self, path: str) -> bool:
         """Select this photo alone and scroll it into view. False when the grid is not showing it (the search or a filter hides it)."""

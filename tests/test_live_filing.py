@@ -55,6 +55,54 @@ def test_a_session_is_filed_into_a_folder_for_the_day_of_each_photo(tmp_path):
     ], "the one already in its day folder and the missing one are left out"
 
 
+def test_the_dated_folders_go_into_the_folder_chosen_for_them(tmp_path):
+    live = str(tmp_path / "live")
+    chosen = str(tmp_path / "archive")
+    p1 = _photo(os.path.join(live, "a.CR2"), when=_stamp(2026, 10, 16))
+    p2 = _photo(os.path.join(live, "2026_10_17", "b.CR2"), when=_stamp(2026, 10, 17))
+    aside = _photo(os.path.join(live, "Retakes", "a.CR2"), when=_stamp(2026, 10, 16))
+    assert F.finish_plan([p1, p2], [aside], [live], chosen) == [
+        (p1, os.path.join(chosen, "16-10-2026", "a.CR2")),
+        (p2, os.path.join(chosen, "17-10-2026", "b.CR2")),
+        (aside, os.path.join(chosen, "16-10-2026", "Retakes", "a.CR2")),
+    ]
+    assert F.finish_plan([p1], [], [live], "") == [(p1, os.path.join(live, "16-10-2026", "a.CR2"))], "none chosen: inside the hotstack folder, as before"
+    already = _photo(os.path.join(chosen, "16-10-2026", "c.CR2"), when=_stamp(2026, 10, 16))
+    assert F.finish_plan([already], [], [live], chosen) == [], "already in its day folder of the chosen folder"
+
+
+def test_clearing_the_hotstack_folder_puts_away_the_older_photos_lying_loose_in_it(tmp_path):
+    live = str(tmp_path / "live")
+    now = _stamp(2026, 10, 18)
+    mine = _photo(os.path.join(live, "mine.CR2"), when=now - 600)
+    old1 = _photo(os.path.join(live, "old1.CR2"), when=_stamp(2026, 9, 3))
+    old2 = _photo(os.path.join(live, "old2.JPG"), when=_stamp(2026, 9, 4), sidecar=True)
+    fresh = _photo(os.path.join(live, "arriving.CR2"), when=now - 1)
+    put_away = _photo(os.path.join(live, "03-09-2026", "done.CR2"), when=_stamp(2026, 9, 3))
+    other_folder = _photo(os.path.join(live, "keep", "loose.CR2"), when=_stamp(2026, 9, 3))
+    _photo(os.path.join(live, "notes.txt"), when=_stamp(2026, 9, 3))
+    leftovers, arriving = F.leftover_photos([live], [mine], now=now)
+    assert [os.path.basename(p) for p in leftovers] == ["old1.CR2", "old2.JPG"], "not this session's, not the one still arriving, not what is in a folder inside it, not a non-photo"
+    assert arriving == 1
+    plan = F.finish_plan([mine], [], [live], "", leftovers)
+    assert dict(plan) == {
+        mine: os.path.join(live, "18-10-2026", "mine.CR2"),
+        old1: os.path.join(live, "03-09-2026", "old1.CR2"),
+        old2: os.path.join(live, "04-09-2026", "old2.JPG"),
+    }, "the session goes first, then the older photos, each into the day of its own file"
+    assert fresh not in dict(plan) and put_away not in dict(plan) and other_folder not in dict(plan)
+    moved = F.move_photo(old2, dict(plan)[old2])
+    assert os.path.isfile(moved) and os.path.isfile(moved + ".xmp") and not os.path.exists(old2), "the sidecar goes along"
+
+
+def test_clearing_the_folder_puts_the_older_photos_into_the_chosen_folder_too(tmp_path):
+    live, chosen = str(tmp_path / "live"), str(tmp_path / "archive")
+    old = _photo(os.path.join(live, "old.CR2"), when=_stamp(2026, 9, 3))
+    leftovers, _arriving = F.leftover_photos([live], [], now=_stamp(2026, 10, 18))
+    assert F.finish_plan([], [], [live], chosen, leftovers) == [(old, os.path.join(chosen, "03-09-2026", "old.CR2"))]
+    assert F.leftover_photos([str(tmp_path / "nowhere")], [], now=_stamp(2026, 10, 18)) == ([], 0), "a folder that is gone has nothing in it"
+
+
 def test_a_retake_takes_the_name_and_place_of_the_photo_and_the_old_one_is_set_aside(tmp_path):
     old = _photo(str(tmp_path / "16-10-2026" / "4N0A7.CR2"), 100, sidecar=True)
     new = _photo(str(tmp_path / "2026_10_16" / "4N0A9.CR2"), 555)

@@ -61,6 +61,8 @@ DEFAULTS: dict[str, Any] = {
     "preset_sort": "made",
     "gpu_limit": 100,
     "live_open_editor": True,
+    "live_date_folder": "",   # where Finish Session puts its DD-MM-YYYY folders ("" = inside the hotstack folder)
+    "live_clear_folder": False,   # Finish Session also puts away the older photos lying loose in the hotstack folder
     "live_session": [],
     "live_aside": [],
     "flatfield_method": "improved",
@@ -93,12 +95,12 @@ def _clean(data: Any) -> dict[str, Any]:
     for key in ("raw_auto_bright", "raw_linear", "auto_advance", "backup_auto", "check_updates", "advanced_mode", "scan_quality", "hover_modules", "module_colours", "workbench_library", "hq_always", "collapse_on_tab_change", "film_reference_online", "crop_roll_same_size", "hover_preview", "error_marks_visible", "histogram_log", "histogram_split"):
         if isinstance(data.get(key), bool):
             out[key] = data[key]
-    for key in ("slideshow_shuffle", "slideshow_loop", "slideshow_captions", "slideshow_edits", "slideshow_progress", "live_open_editor", "gpu_enabled"):
+    for key in ("slideshow_shuffle", "slideshow_loop", "slideshow_captions", "slideshow_edits", "slideshow_progress", "live_open_editor", "live_clear_folder", "gpu_enabled"):
         if isinstance(data.get(key), bool):
             out[key] = data[key]
     if data.get("tether_camera") in ("practice", "canon"):   # the camera the tether window last used
         out["tether_camera"] = data["tether_camera"]
-    for key in ("tether_sdk_dir", "tether_folder"):   # the folder of Canon's own SDK, and where tethered pictures are saved
+    for key in ("tether_sdk_dir", "tether_folder", "live_date_folder"):   # the folder of Canon's own SDK, where tethered pictures are saved, where Finish Session puts its day folders
         if isinstance(data.get(key), str):
             out[key] = data[key].strip()[:500]
     if isinstance(data.get("tether_prefix"), str) and data["tether_prefix"].strip():

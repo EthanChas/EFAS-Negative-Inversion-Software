@@ -248,6 +248,11 @@ def _arrows_belong_to_focus(filmstrip_list) -> bool:
 
 
 _ROLL_KEYS = {"prev_photo": Qt.Key.Key_Left, "next_photo": Qt.Key.Key_Right, "first_photo": Qt.Key.Key_Home, "last_photo": Qt.Key.Key_End}
+_PHOTO_ACTIONS = ("flag_rejected", "flag_keeper", "flag_clear", "fit_100", "rotate_left", "rotate_right")   # (and the ratings and the roll keys): what a key does to the photo that is open
+
+
+def _is_photo_action(action: str) -> bool:
+    return action in _PHOTO_ACTIONS or action in _ROLL_KEYS or action.startswith("rating_")
 
 
 class _HotkeyFilter(QObject):
@@ -260,11 +265,16 @@ class _HotkeyFilter(QObject):
 
     Which key does what is up to the user (Settings > Keybinds; see desktop/keybinds.py). By default: Tab collapses/expands the sidebar; [ and ]
     rotate the image; hold backslash to see the original scan; R / K / U reject, keep and unflag; 0-5 rate; the arrow keys, Home and End step
-    through the roll; Z toggles fit and 100%. None of them fire while you are typing in a field (see _typing_in_field)."""
+    through the roll; Z toggles fit and 100%. None of them fire while you are typing in a field (see _typing_in_field).
+
+    A key for the open photo (rotate, rate, flag, step) pressed while another photo is opening is held and applied once it has opened: it would otherwise be delivered to
+    the photo going out - which keeps the turn - and the new one would not get it."""
 
     def __init__(self, window: "AppWindow"):
         super().__init__(window)
         self._window = window
+        self._held: list[str] = []   # keys pressed while a photo was opening, in order
+        window.controller.loading_finished.connect(self._replay)
 
     def eventFilter(self, watched, event) -> bool:
         window = self._window
@@ -307,35 +317,33 @@ class _HotkeyFilter(QObject):
             return True
         if action == "toggle_panels":
             window.toggle_panels()
-        elif action == "shortcuts_help":
+            return True
+        if action == "shortcuts_help":
             window.show_shortcuts()
-        elif action == "flag_rejected":
-            window.flag_and_advance("rejected")
-        elif action == "flag_keeper":
-            window.flag_and_advance("keeper")
-        elif action == "flag_clear":
-            window.controller.set_flag(None)
-        elif action == "fit_100":
-            window.toggle_fit_100()
-        elif action.startswith("rating_"):
-            window.controller.toggle_rating(int(action[-1]))
-        elif action in _ROLL_KEYS:
-            if _arrows_belong_to_focus(window.filmstrip_list()):
-                return False
-            window.step_roll(_ROLL_KEYS[action])
-        elif action == "rotate_left":
-            if window.proof_active():
-                window.rotate_proof(1)
-            else:
-                window.controller.rotate(-1)
-        elif action == "rotate_right":
-            if window.proof_active():
-                window.rotate_proof(-1)
-            else:
-                window.controller.rotate(1)
-        else:
+            return True
+        if not _is_photo_action(action):
             return False
+        if action in _ROLL_KEYS and _arrows_belong_to_focus(window.filmstrip_list()):
+            return False
+        if window.controller.opening:   # a photo is still opening: the key would land on the one going out (and stay there), so it waits and is replayed once the new one is open
+            if not repeat:
+                self._held.append(action)
+            return True
+        window.run_photo_action(action)
         return True
+
+    def _replay(self) -> None:
+        if self._held:
+            QTimer.singleShot(0, self._drain)   # from the event loop, not from inside the open that has just finished
+
+    def _drain(self) -> None:
+        window = self._window
+        while self._held and not window.controller.opening:
+            action = self._held.pop(0)
+            if window.view_name() == "editor":
+                window.run_photo_action(action)
+        if not window.controller.opening:
+            self._held.clear()
 
 
 # the views the buttons in the menu bar's corner switch between: the page each shows in the window's stack
@@ -492,6 +500,11 @@ class AppWindow(QMainWindow):
         self._lighttable.live_editor_toggled.connect(lambda on: app_settings.save({"live_open_editor": on}))
         self._lighttable.set_live_editor(app_settings.get("live_open_editor"))
         self._lighttable.finish_requested.connect(self.finish_live_session)
+        self._lighttable.date_folder_requested.connect(self.choose_live_date_folder)
+        self._lighttable.date_folder_reset_requested.connect(lambda: self.set_live_date_folder(""))
+        self._lighttable.clear_folder_toggled.connect(lambda on: app_settings.save({"live_clear_folder": on}))
+        self._lighttable.set_clear_folder(app_settings.get("live_clear_folder"))
+        self._lighttable.set_date_folder(app_settings.get("live_date_folder"))
         self._lighttable.retake_requested.connect(self.arm_retake)
         self.controller.rating_changed.connect(lambda path, stars: self._lighttable.update_item(library_query.norm(path), rating=stars))
         self.controller.flag_changed.connect(lambda path, flag: self._lighttable.update_item(library_query.norm(path), flag=flag))
@@ -2254,11 +2267,40 @@ class AppWindow(QMainWindow):
         return target, in_session
 
     # ------------------------------------------------------------ finishing a session
+    def choose_live_date_folder(self) -> None:
+        """Pick the folder Finish Session puts its dated folders (DD-MM-YYYY) into; it is kept until it is changed."""
+        start = app_settings.get("live_date_folder") or next(iter(self._live.folders()), "")
+        folder = QFileDialog.getExistingDirectory(self, "Where should the dated folders go?", start if os.path.isdir(start) else "")
+        if folder:
+            self.set_live_date_folder(os.path.normpath(folder))
+
+    def set_live_date_folder(self, folder: str) -> None:
+        """Remember where Finish Session puts its dated folders ("" = inside the hotstack folder, as before)."""
+        app_settings.save({"live_date_folder": folder})
+        folder = app_settings.get("live_date_folder")
+        self._lighttable.set_date_folder(folder)
+        if not folder:
+            self._coord_label.setText("Dated folders go inside the hotstack folder.")
+            return
+        roots = self._lighttable.library_panel.roots()
+        shown = any(live_filing.is_under(folder, r) or library_query.norm(folder) == library_query.norm(r) for r in roots)
+        self._coord_label.setText(f"Finish Session now puts its dated folders into {folder}." + ("" if shown else " That folder is not in your Library, so the filed photos will not show in the Workbench until you add it."))
+
     def finish_live_session(self) -> None:
-        """Done with the photos that arrived in a hotstack folder: put them into a dated folder (DD-MM-YYYY, by the day of each file) inside it, and the retaken ones that were set aside into a
-        Retakes folder in that. Everything saved for a photo - edits, rating, flag, tags, versions - and its folder's flat field and Roll Card go with it. Nothing is deleted."""
+        """Done with the photos that arrived in a hotstack folder: put them into a dated folder (DD-MM-YYYY, by the day of each file) inside it - or inside the folder chosen for them - and the
+        retaken ones that were set aside into a Retakes folder in that. With "Clear the Hotstack Folder When Finished" on, the older photos lying loose in the hotstack folder go the same way.
+        Everything saved for a photo - edits, rating, flag, tags, versions - and its folder's flat field and Roll Card go with it. Nothing is deleted."""
         norm = library_query.norm
-        plan = live_filing.finish_plan([p for p in self._live_session if os.path.isfile(p)], [p for p in self._live_aside if os.path.isfile(p)], self._live.folders())
+        date_root = app_settings.get("live_date_folder")
+        if date_root and not os.path.isdir(date_root) and not os.path.isdir(os.path.dirname(date_root.rstrip("/\\"))):
+            QMessageBox.warning(self, "Finish Session", f"The folder chosen for the dated folders is not there:\n{date_root}\n\nChoose it again from the flame menu (Date Folder Location), or use the hotstack folder.")
+            return
+        session = [p for p in self._live_session if os.path.isfile(p)]
+        asides = [p for p in self._live_aside if os.path.isfile(p)]
+        folders = self._live.folders()
+        leftovers, arriving = live_filing.leftover_photos(folders, session + asides) if self._lighttable.clear_folder() else ([], 0)
+        old = {norm(p) for p in leftovers}
+        plan = live_filing.finish_plan(session, asides, folders, date_root, leftovers)
         if not plan:
             self._live_session, self._live_aside = [], []
             app_settings.save({"live_session": [], "live_aside": []})
@@ -2267,11 +2309,21 @@ class AppWindow(QMainWindow):
             return
         kept = [(src, dst) for src, dst in plan if os.path.basename(os.path.dirname(dst)) != live_filing.RETAKES]
         days = sorted({os.path.basename(os.path.dirname(dst)) for _src, dst in kept}) or sorted({os.path.basename(os.path.dirname(os.path.dirname(dst))) for _s, dst in plan})
-        text = (f"Move {len(kept)} photo{'s' if len(kept) != 1 else ''} from this live session into {'a dated folder' if len(days) == 1 else 'dated folders'} ({', '.join(days)})?\n\n"
-                "Each photo goes with its edits, ratings, flags and tags.")
+        n_old = sum(1 for src, _dst in plan if norm(src) in old)
+        n_new = len(kept) - n_old
+        where = f"{'a dated folder' if len(days) == 1 else 'dated folders'} ({', '.join(days)})" + (f" inside {date_root}" if date_root else "")
+        if n_new:
+            text = f"Move {n_new} photo{'s' if n_new != 1 else ''} from this live session into {where}?"
+        else:
+            text = f"Move {n_old} older photo{'s' if n_old != 1 else ''} lying loose in the hotstack folder into {where}?"
+        text += "\n\nEach photo goes with its edits, ratings, flags and tags."
+        if n_new and n_old:
+            text += f"\n\nThe hotstack folder is cleared too: {n_old} older photo{'s' if n_old != 1 else ''} lying loose in it go into dated folders, by their file date."
         if len(plan) > len(kept):
             n = len(plan) - len(kept)
             text += f"\n{n} retaken photo{'s' if n != 1 else ''} that were set aside go into a Retakes folder beside them."
+        if arriving:
+            text += f"\n{arriving} photo{'s' if arriving != 1 else ''} still arriving {'are' if arriving != 1 else 'is'} left alone."
         text += "\n\nNothing is deleted."
         if QMessageBox.question(self, "Finish Session", text) != QMessageBox.StandardButton.Yes:
             return
@@ -2304,6 +2356,9 @@ class AppWindow(QMainWindow):
         elif self._filmstrip_folder and os.path.isdir(self._filmstrip_folder):
             self._on_library_folder_selected(self._filmstrip_folder)
         message = f"Filed {len(moved)} photo{'s' if len(moved) != 1 else ''} into {', '.join(days)}."
+        cleared = sum(1 for key in moved if key in old)
+        if cleared:
+            message += f" {cleared} of them were older photos cleared from the hotstack folder."
         if failed:
             message += f" {len(failed)} could not be moved and stay in the session."
         self._coord_label.setText(message)
@@ -3393,6 +3448,28 @@ class AppWindow(QMainWindow):
 
     def filmstrip_list(self):
         return self._filmstrip.list_widget()
+
+    def run_photo_action(self, action: str) -> None:
+        """What a key (by its action name, see desktop/keybinds.py) does to the open photo: flag, rate, fit, rotate, or step through the roll."""
+        c = self.controller
+        if action == "flag_rejected":
+            self.flag_and_advance("rejected")
+        elif action == "flag_keeper":
+            self.flag_and_advance("keeper")
+        elif action == "flag_clear":
+            c.set_flag(None)
+        elif action == "fit_100":
+            self.toggle_fit_100()
+        elif action.startswith("rating_"):
+            c.toggle_rating(int(action[-1]))
+        elif action in _ROLL_KEYS:
+            self.step_roll(_ROLL_KEYS[action])
+        elif action in ("rotate_left", "rotate_right"):
+            turn = -1 if action == "rotate_left" else 1
+            if self.proof_active():
+                self.rotate_proof(-turn)
+            else:
+                c.rotate(turn)
 
     def step_roll(self, key) -> None:
         """Arrow keys: previous/next photo of the filmstrip as filtered; Home/End: its first/last."""
