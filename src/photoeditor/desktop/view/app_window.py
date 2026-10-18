@@ -1734,7 +1734,7 @@ class AppWindow(QMainWindow):
                 c._save_edit_state()
                 self._lighttable.thumbnail_changed(c.state.image_path)
             self._peaking_timer.stop()
-            self._filmstrip.setVisible(False)
+        self._filmstrip.set_in_editor(name == "editor")
         self._view_stack.setCurrentIndex(page)
         if name == "lighttable":
             self._lighttable_reload_rows()
@@ -1748,7 +1748,6 @@ class AppWindow(QMainWindow):
         elif name == "classroom":
             self._classroom.open_classroom()
         elif name == "editor":
-            self._filmstrip.setVisible(bool(self._filmstrip.paths()) and not self._panels_hidden)
             self._image_view.setFocus()
         for key, btn in self._view_buttons.items():
             btn.setChecked(key == name)
@@ -2977,8 +2976,6 @@ class AppWindow(QMainWindow):
         )
         self._library_panel.reveal(folder)
         self._refresh_roll_undo()
-        if self.lighttable_active():
-            self._filmstrip.setVisible(False)
 
     def _on_workbench_root_added(self, folder: str) -> None:
         """A root was added in the Workbench's Library: the editor's Library follows, and the new folder is read into the index."""

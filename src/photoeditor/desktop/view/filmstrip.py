@@ -124,6 +124,7 @@ class Filmstrip(QWidget):
         self._ratings: dict[str, int] = {}
         self._edited: set[str] = set()
         self._panels_hidden = False
+        self._in_editor = True   # the strip belongs to the editor: the window says when another view is showing (set_in_editor)
         self.setVisible(False)
 
     def set_bulk_busy(self, busy: bool) -> None:
@@ -170,9 +171,18 @@ class Filmstrip(QWidget):
         """The folder currently loaded into the strip."""
         return list(self._paths)
 
+    def _refresh_visible(self) -> None:
+        """The one rule for showing the strip: there are photos in it, the side panels are not hidden, and the editor is the view on screen - whatever just changed the photos."""
+        self.setVisible(bool(self._paths) and not self._panels_hidden and self._in_editor)
+
+    def set_in_editor(self, on: bool) -> None:
+        """Whether the editor is the view on screen. The Workbench, Slideshow, Maps and Classroom have no filmstrip: it stays hidden there, even when photos are removed or a folder is loaded."""
+        self._in_editor = on
+        self._refresh_visible()
+
     def set_panels_hidden(self, hidden: bool) -> None:
         self._panels_hidden = hidden
-        self.setVisible(bool(self._paths) and not hidden)
+        self._refresh_visible()
 
     def load_folder(
         self, paths: list[str], flags: dict[str, str] | None = None, ratings: dict[str, int] | None = None, edited: set[str] | None = None
@@ -182,7 +192,7 @@ class Filmstrip(QWidget):
         self._flags = dict(flags or {})
         self._ratings = dict(ratings or {})
         self._edited = set(edited or ())
-        self.setVisible(bool(paths) and not self._panels_hidden)
+        self._refresh_visible()
         if not paths:
             return
         self._loader = ThumbnailLoader(paths, thumbnail_cache_dir())
@@ -336,7 +346,7 @@ class Filmstrip(QWidget):
             if p and os.path.normcase(os.path.abspath(p)) in gone:
                 self._list.takeItem(i)
         self._update_count()
-        self.setVisible(bool(self._paths) and not self._panels_hidden)
+        self._refresh_visible()
 
     def set_retake_filter(self, can_retake) -> None:
         """`can_retake(path)` says whether a photo may be retaken: only the ones in a hotstack folder get the Retake entry."""
