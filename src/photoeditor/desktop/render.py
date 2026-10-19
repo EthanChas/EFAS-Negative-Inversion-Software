@@ -602,13 +602,14 @@ class Renderer:
         same rotation/flip/crop as the image and sized to canvas_hw (the
         cropped frame at preview resolution, whatever the source resolution).
         Green: auto-detected specks. Magenta: hair-shaped defects. Amber:
-        painted heals and traced scratches."""
+        painted heals and traced scratches. Blue: clone strokes."""
         import cv2
 
         layers = (
             (result.specks, (60, 230, 120)),
             (result.hairs, (255, 60, 210)),
             (result.manual, (255, 190, 40)),
+            (result.clone, (70, 170, 255)),
         )
         ch, cw = canvas_hw
         rgba = np.zeros((ch, cw, 4), dtype=np.uint8)

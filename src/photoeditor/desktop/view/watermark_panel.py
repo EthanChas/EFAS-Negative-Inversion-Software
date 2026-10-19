@@ -569,8 +569,18 @@ class CanisterWatermarkPanel(CollapsiblePanel):
         self.set_marks(self._base)
         self.marks_changed.emit(self._base)
 
+    def _first_marker_defaults(self, was_empty: bool) -> None:
+        """The first marker chosen on a photo starts as darktable's does: sized to fit the picture (100% of its width, or of its height for a tall one)."""
+        if was_empty and self._logo_path:
+            self._logo_scale_on.blockSignals(True)
+            self._logo_scale_on.setCurrentIndex(max(0, self._logo_scale_on.findData("fit")))
+            self._logo_scale_on.blockSignals(False)
+            self._logo_size.set_value(100)
+
     def _on_marker_picked(self, _index: int) -> None:
+        was_empty = not self._logo_path
         self._logo_path = self._marker_combo.currentData() or ""
+        self._first_marker_defaults(was_empty)
         self._show_logo_name()
         self._emit_marks()
 
@@ -592,7 +602,9 @@ class CanisterWatermarkPanel(CollapsiblePanel):
             except (OSError, ValueError) as exc:
                 QMessageBox.warning(self, "Marker", str(exc) or "That file could not be added.")
                 return
+        was_empty = not self._logo_path
         self._refresh_markers(name)
+        self._first_marker_defaults(was_empty)
         self._emit_marks()
 
     def _open_marker_folder(self) -> None:

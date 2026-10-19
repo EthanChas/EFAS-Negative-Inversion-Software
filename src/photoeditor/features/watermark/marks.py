@@ -305,6 +305,10 @@ def _place(position: str, iw: int, ih: int, sw: int, sh: int, margin: int) -> tu
     vert, horiz = position.split("_") if position != "center" else ("middle", "center")
     x = margin if horiz == "left" else iw - sw - margin if horiz == "right" else (iw - sw) // 2
     y = margin if vert == "top" else ih - sh - margin if vert == "bottom" else (ih - sh) // 2
+    if sw >= iw - 2 * margin:   # as wide as the picture: there is no room for a margin, so it is centred (a strip that fits the width sits square to the edges)
+        x = (iw - sw) // 2
+    if sh >= ih - 2 * margin:
+        y = (ih - sh) // 2
     return x, y
 
 
@@ -335,8 +339,10 @@ def marker_variables(marks: Marks, variables: Mapping[str, str] | None = None) -
     return base
 
 
-def _logo_request(marks: Marks, iw: int, ih: int) -> tuple[str, int]:
+def _logo_request(marks: Marks, iw: int, ih: int, natural: tuple[float, float]) -> tuple[str, int]:
     """(how the size is read, the pixels) for the marker - see logoimage.SCALE_ON."""
+    if marks.logo_scale_on == "fit":   # darktable's default: a wide marker is a share of the picture's width, a tall one of its height
+        return ("width", max(4, round(iw * marks.logo_size))) if natural[0] >= natural[1] else ("height", max(4, round(ih * marks.logo_size)))
     if marks.logo_scale_on == "long":
         return "long", max(4, round(max(iw, ih) * marks.logo_size))
     if marks.logo_scale_on == "width":
@@ -363,8 +369,9 @@ def text_as_marker(marks: Marks) -> Marks:
 def _logo_part(marker: str, marks: Marks, iw: int, ih: int, margin: int, svg_vars: Mapping[str, str]) -> Part:
     """The marker as a part of the watermark: drawn whole when it is a reasonable size; when it is many times the picture (the size has no limit) only the part on the picture is drawn, and
     the part still says where the whole marker is, so it can be dragged and its box shown."""
-    mode, px = _logo_request(marks, iw, ih)
-    width, height = logoimage.drawn_size(logoimage.natural_size(marker, svg_vars), mode, px)
+    natural = logoimage.natural_size(marker, svg_vars)
+    mode, px = _logo_request(marks, iw, ih, natural)
+    width, height = logoimage.drawn_size(natural, mode, px)
     box_w, box_h = logoimage.turned_size(width, height, marks.logo_rotation) if marks.logo_rotation else (width, height)
     if box_w * box_h <= logoimage.FULL_SPRITE_PIXELS:
         rgb, alpha = logoimage.marker_sprite(marker, mode, px, marks.logo_opacity, svg_vars)

@@ -52,6 +52,7 @@ _SCRIPT = textwrap.dedent(r'''
     assert tool._marker_combo.itemText(0) == "None" and "sample" in tool._marker_combo.itemText(names.index("simple-text.svg"))
     assert not tool._logo_text.isEnabled() and not tool._logo_color.isEnabled() and not tool._logo_font.isEnabled(), "no marker: nothing to set"
     tool._marker_combo.setCurrentIndex(names.index("simple-text.svg"))
+    assert s.marks.logo_scale_on == "fit" and s.marks.logo_size == 1.0, "the first marker starts as darktable's does: sized to fit the picture"
     assert s.marks.logo == "simple-text.svg" and tool._logo_text.isEnabled() and tool._logo_color.isEnabled() and tool._logo_font.isEnabled() and tool._logo_bold.isEnabled()
     assert "text, colour, font" in tool._logo_name.text(), tool._logo_name.text()
     tool._marker_combo.setCurrentIndex(names.index("film-frame-info.svg"))

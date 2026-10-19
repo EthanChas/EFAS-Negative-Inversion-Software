@@ -745,6 +745,7 @@ class RetouchResult:
     hairs: Optional[np.ndarray] = None
     manual: Optional[np.ndarray] = None
     wide: Optional[np.ndarray] = None   # the 16-bit scan with the same repairs, when one was given to repair (None if nothing was repaired)
+    clone: Optional[np.ndarray] = None  # where the clone strokes paint (0/1), for the detection overlay
 
 
 def drop_marked(mask: Optional[np.ndarray], points, slack_px: float = 2.0) -> Optional[np.ndarray]:
@@ -852,9 +853,11 @@ def remove_dust_and_scratches(
         return RetouchResult(pixels)
     lin = _linearize(wide if wide is not None else pixels)
     changed = False
+    clone_mask = None
     if clone_strokes:
-        from .clone import apply_clone_strokes
+        from .clone import apply_clone_strokes, clone_footprint
 
+        clone_mask = clone_footprint(lin.shape[:2], clone_strokes)
         lin = apply_clone_strokes(lin, clone_strokes)
         changed = True
     out = lin
@@ -896,5 +899,5 @@ def remove_dust_and_scratches(
         changed = True
 
     if not changed:
-        return RetouchResult(pixels, specks, hairs, manual)
-    return RetouchResult(_delinearize(out), specks, hairs, manual, _delinearize(out, wide=True) if wide is not None else None)
+        return RetouchResult(pixels, specks, hairs, manual, clone=clone_mask)
+    return RetouchResult(_delinearize(out), specks, hairs, manual, _delinearize(out, wide=True) if wide is not None else None, clone_mask)

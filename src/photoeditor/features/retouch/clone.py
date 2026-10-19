@@ -79,6 +79,27 @@ def apply_clone_stroke(out: np.ndarray, stroke) -> None:
     out[y0:y1, x0:x1] = dst * (1.0 - a) + patch * a
 
 
+def clone_footprint(shape: Tuple[int, int], strokes: Iterable) -> np.ndarray | None:
+    """Where the clone strokes paint, as a 0/1 mask the size of the scan (None when there are none): what Show Detections marks, so a clone can be seen and deleted."""
+    h, w = shape
+    mask = None
+    for points, size, dx, dy, strength, _feather, _match in strokes:
+        if not points or strength <= 0.0 or (int(round(float(dx) * w)) == 0 and int(round(float(dy) * h)) == 0):
+            continue   # (the same strokes apply_clone_stroke skips)
+        radius = max(1.0, float(size) * max(w, h) / HEAL_SIZE_REF * 0.5)
+        pad = int(radius) + 3
+        xs = [float(p[0]) * w for p in points]
+        ys = [float(p[1]) * h for p in points]
+        x0, y0 = max(0, int(min(xs)) - pad), max(0, int(min(ys)) - pad)
+        x1, y1 = min(w, int(max(xs)) + pad + 1), min(h, int(max(ys)) + pad + 1)
+        if x1 <= x0 or y1 <= y0:
+            continue
+        if mask is None:
+            mask = np.zeros((h, w), dtype=np.uint8)
+        mask[y0:y1, x0:x1] |= _cover(points, radius, x0, y0, (y1 - y0, x1 - x0), w, h)
+    return mask if mask is not None and mask.any() else None
+
+
 def apply_clone_strokes(img: np.ndarray, strokes: Iterable) -> np.ndarray:
     """A new buffer with every stroke applied in order (the input is not touched)."""
     out = np.array(img, dtype=np.float32, copy=True)

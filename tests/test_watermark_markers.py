@@ -341,3 +341,20 @@ def test_a_picture_marker_many_times_the_picture_covers_it(folder):
     assert cv2.imwrite(_user("white.png"), np.full((20, 20, 4), 255, np.uint8))
     out = apply_marks(GREY, Marks(logo="white.png", logo_size=30.0, logo_opacity=1.0, logo_position="center", logo_rotation=45.0))
     assert out.min() >= 254, "a turned square many times the picture is white all over"
+
+
+def test_fit_the_picture_sizes_a_marker_the_way_darktable_does(folder):
+    """darktable's default: a wide marker's width (a tall one's height) is the picture's width (height) times the scale, so 100% fits the picture."""
+    _write(_user("strip.svg"), '<svg xmlns="http://www.w3.org/2000/svg" width="100" height="5.5" viewBox="0 0 100 5.5"><rect width="100" height="5.5" fill="#fff"/></svg>')
+    _write(_user("tall.svg"), '<svg xmlns="http://www.w3.org/2000/svg" width="40" height="100" viewBox="0 0 40 100"><rect width="40" height="100" fill="#fff"/></svg>')
+    for shape in (GREY.shape, (900, 600, 3)):   # landscape and portrait
+        ih, iw = shape[:2]
+        strip = mark_parts(shape, Marks(logo="strip.svg", logo_scale_on="fit", logo_size=1.0, logo_opacity=1.0, logo_position="bottom_left"))[0].box
+        assert strip[2] == iw and strip[0] == 0 and strip[1] + strip[3] == ih - (ih - strip[1] - strip[3]), (shape, strip)
+        assert abs(strip[2] / strip[3] - 100 / 5.5) < 0.2, "a strip that fits the width keeps its shape and sits square to the edges"
+        half = mark_parts(shape, Marks(logo="strip.svg", logo_scale_on="fit", logo_size=0.5, logo_opacity=1.0))[0].box
+        assert abs(half[2] - iw * 0.5) <= 1
+        tall = mark_parts(shape, Marks(logo="tall.svg", logo_scale_on="fit", logo_size=1.0, logo_opacity=1.0))[0].box
+        assert tall[3] == ih and abs(tall[2] / tall[3] - 0.4) < 0.01, "a tall marker fits the height"
+    assert "fit" in logoimage.SCALE_ON and Marks.from_dict({"logo_scale_on": "fit"}).logo_scale_on == "fit"
+    assert Marks().logo_scale_on == "short", "photos and presets made before keep their size"

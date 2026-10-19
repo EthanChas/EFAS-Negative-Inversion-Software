@@ -21,7 +21,7 @@ _FALLBACK_SIZE = 512
 _app = None
 
 # how the size slider is read: the marker's longer side as a share of the picture's ...
-SCALE_ON = {"short": "Shorter side", "long": "Longer side", "width": "Width", "height": "Height"}   # ... shorter side / longer side; or the marker's width / height as a share of the picture's width / height
+SCALE_ON = {"fit": "Fit the picture", "short": "Shorter side", "long": "Longer side", "width": "Width", "height": "Height"}   # ... shorter side / longer side; or the marker's width / height as a share of the picture's width / height
 DEFAULT_SCALE_ON = "short"
 
 

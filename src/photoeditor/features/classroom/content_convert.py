@@ -339,7 +339,7 @@ Detection works in **linear light** on a brightness-only version of the scan, so
 
 **Size** is the largest a speck is allowed to be (a small whole number, from 3 to 8). A bigger value catches larger blobs but makes it easier for a real feature, like a bright button, to be taken as a speck.
 
-**Show Detections** paints what detection finds on the picture (a view only), **even while removal is off**: **green** for specks, **magenta** for hairs, **amber** for repairs you made by hand. It is the way to tune Threshold by eye: zoom to 100% and lower the Threshold until the real dust is marked and the grain is not.
+**Show Detections** paints what detection finds on the picture (a view only), **even while removal is off**: **green** for specks, **magenta** for hairs, **amber** for heals you made by hand, **blue** for clone strokes. It is the way to tune Threshold by eye: zoom to 100% and lower the Threshold until the real dust is marked and the grain is not.
 
 **Delete Repair**: when automatic detection repairs something real (a star, a highlight in an eye), pick this tool and click the mark. Only that one is left alone. **Reset Deleted** brings all the deleted marks back.
 

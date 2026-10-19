@@ -897,6 +897,9 @@ class _ImageLabel(QLabel):
         if event.button() == Qt.MouseButton.LeftButton and self._painting:
             self._painting = False
             stroke, self._stroke = self._stroke, []
+            end = self._img_pt(event.position())
+            if stroke and (end[0] - stroke[-1][0]) ** 2 + (end[1] - stroke[-1][1]) ** 2 > 0.25:
+                stroke.append(end)   # the stroke runs to where the button was let go, not just to the last point the moves reported (a fast stroke left its end out)
             self.update()
             if stroke:
                 self.stroke_completed.emit(stroke)

@@ -50,7 +50,7 @@ _TOOLS = {
     ),
     "delete": (
         "Delete Repair",
-        "Click one repair or detection to remove just that one: a manual repair (amber), or a speck or hair Auto Dust Removal found "
+        "Click one repair or detection to remove just that one: a manual repair (amber for a heal, blue for a clone), or a speck or hair Auto Dust Removal found "
         "(green, magenta) - it is left as it is in the picture, and every other detection stays. Show Detections is turned on so they "
         "show. Reset Deleted brings the detections you deleted back.",
     ),
@@ -88,7 +88,7 @@ class DustToolPanel(CollapsiblePanel):
                 "Auto Dust Removal finds dust specks and hairs and repairs them from the film "
                 "around them (Threshold: higher is more conservative; Size: how large a speck can "
                 "be). Show Detections marks what detection finds - green specks, magenta hairs, "
-                "amber manual repairs - even while removal is off, so you can tune Threshold by "
+                "amber manual heals, blue clones - even while removal is off, so you can tune Threshold by "
                 "eye. If it got one wrong, pick Delete Repair and click that speck or hair: only that one is left alone, and Reset Deleted "
                 "brings them all back. The tools below heal by hand. Automatic settings apply when you stop adjusting."
             ),
