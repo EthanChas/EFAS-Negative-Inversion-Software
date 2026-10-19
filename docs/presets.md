@@ -131,6 +131,10 @@ Both Fade and Glow run from -1 to +1 here, which is -50 to +50 on the program th
 
 It has an on/off light, a reset button and module presets like the other modules. All of it is curves of the tone ramp, applied after the tone curve and in the 16-bit chain.
 
+## The Watermarks (EFAS Examples) built-in presets
+
+Five examples of [watermarks](watermarks.md) that write the picture's own details (film, ISO, camera, lens, date, the roll's name, the frame's number) from the Roll Card and the frame through `$(NAME)` variables: a film credit in white or black, a film and camera line, a copyright line and a text mark with variables. They set the watermark only (the canister and the camera text are turned off, the tone and colour are left alone), and use the sample markers that come with EFAS, so they work on any computer. They are examples to apply, to learn from, or to copy to My Presets and change.
+
 ## The Film Stocks built-in presets
 
 Under **Film Stocks**, sorted by brand: **Cinestill/Cinestill**, **Fuji/Superia**, **Kodak/Gold**, **Kodak/Portra** and **Kodak/Portra Airy**. They are made the same way as the Scanners (EFAS Original) presets (the same conversion, from the film-look presets in the same published list), so everything said above applies: approximations of the stock's character in tone, saturation and warmth by tone, not a model of the film's colour. Kodak Gold is the warm one (warm, yellow shadows and midtones with clean highlights), Portra keeps its highlights soft and protected, Portra Airy lifts shadows and highlights. A film preset changes the picture the same way whatever film is in the scanner: use it as a starting point, not as proof of what the film looked like.

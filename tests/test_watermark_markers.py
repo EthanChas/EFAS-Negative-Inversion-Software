@@ -34,13 +34,14 @@ def _write(path, text):
 # ------------------------------------------------------------ the watermarks folder
 def test_the_samples_that_come_with_efas_are_listed_and_work(folder):
     names = [m.name for m in library.list_markers()]
-    assert {"simple-text.svg", "copyright-line.svg", "film-frame-info.svg"} <= set(names)
+    assert {"simple-text.svg", "copyright-line.svg", "film-frame-info.svg", "efas-film-credit.svg"} <= set(names)
     assert all(m.bundled for m in library.list_markers())
     for m in library.list_markers():
         assert logoimage.check(m.path) is None, m.name
     assert logoimage.svg_variables(library.resolve("simple-text.svg")) == set(logoimage.MARKER_VARIABLES)
     assert "WATERMARK_TEXT" in logoimage.svg_variables(library.resolve("copyright-line.svg"))
     assert logoimage.svg_variables(library.resolve("film-frame-info.svg")) == set(logoimage.MARKER_VARIABLES) - {"WATERMARK_TEXT"}, "this one writes the film's details, not a text of your own"
+    assert logoimage.svg_variables(library.resolve("efas-film-credit.svg")) == set(logoimage.MARKER_VARIABLES) - {"WATERMARK_TEXT"}
 
 
 def test_a_marker_is_found_by_name_in_the_users_folder_first(folder):
@@ -174,3 +175,26 @@ def test_a_hundred_variables_a_big_svg_and_a_slow_template_stay_bounded(folder):
     sprite = logoimage.marker_sprite(svg, "long", 400, 1.0, {"A": "x" * 5000})
     assert sprite[0].shape[1] == 400
     assert V.MAX_SUBSTITUTIONS < 3000
+
+
+def test_the_example_watermark_presets_are_complete_and_draw_the_pictures_own_details(folder):
+    from photoeditor.features.lookpresets import builtin, share
+    from photoeditor.features.metadata.models import MetadataConfig
+
+    names = [n for n in builtin.names() if n.startswith("Watermarks (EFAS Examples)/")]
+    assert len(names) >= 4
+    portra = V.build("a/Roll 1/frame.jpg", MetadataConfig(camera_make="Pentax", camera_model="K1000", lens_model="SMC 50mm f/2", film="Kodak Portra 400", film_iso=400, capture_date="2024-03-09"))
+    hp5 = V.build("a/Roll 1/frame.jpg", MetadataConfig(camera_make="Nikon", camera_model="FM2", film="Ilford HP5 Plus", film_iso=400, capture_date="2021-06-01"))
+    for name in names:
+        look = builtin.get(name)
+        assert builtin.description(name), name
+        assert look["wm_film"] == "off" and look["wm_info"] is False, "the preset sets the whole watermark: no canister, no camera text beside it"
+        assert share.clean_look(look) == {k: v for k, v in look.items() if k != "marks"} | {"marks": share.clean_look(look)["marks"]}, "nothing in it is dropped by the checks a shared file goes through"
+        marks = Marks.from_dict(look["marks"])
+        assert marks.has_logo() or marks.has_text(), name
+        if marks.logo:
+            assert library.is_name(marks.logo) and library.resolve(marks.logo) == os.path.join(library.bundled_dir(), marks.logo), "it uses a sample marker that comes with EFAS: it works everywhere"
+        a, b = apply_marks(GREY, marks, variables=portra), apply_marks(GREY, marks, variables=hp5)
+        assert not np.array_equal(a, GREY), name
+        if "Film" in name:   # the film and camera ones; the copyright line is the frame's year, and the last one the roll's name and the file's
+            assert not np.array_equal(a, b), f"{name}: a different film and camera write different words"

@@ -103,12 +103,24 @@ _SCRIPT = textwrap.dedent(r'''
     tool.variables_requested.emit()
     assert shown and {"$(CAMERA)", "$(EXIF.YEAR)", "$(FILE.NAME)", "$(FILM)", "$(ROLL.NAME)"} <= set(shown[-1]) and "$(NL)" not in shown[-1], shown
 
+    # ---- the example watermark presets: applying one sets the whole watermark and writes the picture's own details
+    c.set_marks(Marks()); assert pump(lambda: not s.marks.has_logo() and not s.marks.has_text())
+    plain = s.image_rgb.copy()
+    assert c.apply_builtin_preset("Watermarks (EFAS Examples)/Film credit, bottom left, light")
+    assert s.marks.logo == "efas-film-credit.svg" and s.marks.logo_position == "bottom_left" and s.marks.logo_color == "white" and s.wm_film == "off" and not s.wm_info
+    assert pump(lambda: not np.array_equal(s.image_rgb, plain)), "the film credit is drawn"
+    tool.set_marks(s.marks); assert tool._marker_combo.currentData() == "efas-film-credit.svg" and tool._logo_color.isEnabled()
+    one = s.image_rgb.copy()
+    c.set_roll(RollCard(camera="Nikon FM2", film="Ilford HP5 Plus", iso=400, lens="Nikkor 50mm f/1.8"))
+    assert pump(lambda: not np.array_equal(s.image_rgb, one)), "the same preset writes the new roll's film, camera and lens"
+    assert dict(s.wm_vars)["FILM"] == "Ilford HP5 Plus" and dict(s.wm_vars)["LENS"] == "Nikkor 50mm f/1.8"
+
     # ---- the export draws it too: the render parameters for a photo that is not open carry the variables
     from photoeditor.desktop import export_worker as X
     c._save_edit_state()
     params, _ff = X._edits_for(path, c._db, cv2.resize(img, (300, 200)))
     got = dict(params.wm_vars)
-    assert got["CAMERA"] == "Canon AE-1 Program" and got["FILE.NAME"] == "frame7" and got["EXIF.ISO"] == "200", got
+    assert got["CAMERA"] == "Nikon FM2" and got["FILE.NAME"] == "frame7" and got["EXIF.ISO"] == "400", got
     c.set_marks(Marks())
     c._save_edit_state()
     params, _ff = X._edits_for(path, c._db, cv2.resize(img, (300, 200)))

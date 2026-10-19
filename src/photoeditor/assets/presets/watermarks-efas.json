@@ -1,0 +1,45 @@
+{
+  "about": "Examples of watermarks that write the picture's own details, for the Watermark tab: each is a preset of the marker (an SVG from the watermarks folder, see docs/watermarks.md) with its position, size and colour, and it clears the canister and the camera and lens text so the watermark is just this one. The words come from the Roll Card and the frame through $(NAME) variables, so one preset writes the right film, camera, lens and year on every picture of a roll. Fill in the Roll Card first, and press Variables... in the Watermark tab to see what a picture will say.",
+  "presets": [
+    {
+      "name": "Watermarks (EFAS Examples)/Film credit, bottom left, light",
+      "description": "The EFAS film credit in white at the bottom left: the film and ISO in bold, the camera and lens, and the date and Edited with EFAS in small letters, from the Roll Card and the frame. Marker efas-film-credit.svg.",
+      "look": {
+        "wm_film": "off", "wm_texture": "plastic", "wm_size": "medium", "wm_position": "bottom_right", "wm_info": false, "wm_camera": "", "wm_lens": "",
+        "marks": {"logo": "efas-film-credit.svg", "logo_size": 0.42, "logo_opacity": 0.92, "logo_position": "bottom_left", "logo_color": "white"}
+      }
+    },
+    {
+      "name": "Watermarks (EFAS Examples)/Film credit, bottom left, dark",
+      "description": "The same film credit in black, for a bright picture. Marker efas-film-credit.svg.",
+      "look": {
+        "wm_film": "off", "wm_texture": "plastic", "wm_size": "medium", "wm_position": "bottom_right", "wm_info": false, "wm_camera": "", "wm_lens": "",
+        "marks": {"logo": "efas-film-credit.svg", "logo_size": 0.42, "logo_opacity": 0.92, "logo_position": "bottom_left", "logo_color": "black"}
+      }
+    },
+    {
+      "name": "Watermarks (EFAS Examples)/Film and camera line, bottom centre",
+      "description": "Two quiet lines in the middle of the bottom edge: the film with its ISO, and the camera with its lens. Marker film-frame-info.svg.",
+      "look": {
+        "wm_film": "off", "wm_texture": "plastic", "wm_size": "medium", "wm_position": "bottom_right", "wm_info": false, "wm_camera": "", "wm_lens": "",
+        "marks": {"logo": "film-frame-info.svg", "logo_size": 0.5, "logo_opacity": 0.85, "logo_position": "bottom_center", "logo_color": "white"}
+      }
+    },
+    {
+      "name": "Watermarks (EFAS Examples)/Copyright line, bottom right",
+      "description": "(c) and the year of the frame (this year if it has no date) and your name, at the bottom right. Replace the example name in the marker's Text box of the Watermark tab. Marker copyright-line.svg.",
+      "look": {
+        "wm_film": "off", "wm_texture": "plastic", "wm_size": "medium", "wm_position": "bottom_right", "wm_info": false, "wm_camera": "", "wm_lens": "",
+        "marks": {"logo": "copyright-line.svg", "logo_text": "Your Name", "logo_size": 0.36, "logo_opacity": 0.85, "logo_position": "bottom_right", "logo_color": "white"}
+      }
+    },
+    {
+      "name": "Watermarks (EFAS Examples)/Text with the roll and frame, top left",
+      "description": "The Text mark (not a marker) with variables in it: the roll's name and the frame's number, and the file name, in small letters at the top left. Edit the words in the Text box and use any variable from Variables....",
+      "look": {
+        "wm_film": "off", "wm_texture": "plastic", "wm_size": "medium", "wm_position": "bottom_right", "wm_info": false, "wm_camera": "", "wm_lens": "",
+        "marks": {"text": "$(ROLL.NAME-$(FILE.FOLDER))$(FRAME+ - frame $(FRAME))\n$(FILE.NAME)", "text_size": 0.03, "text_opacity": 0.8, "text_position": "top_left", "text_color": "white", "text_shadow": true}
+      }
+    }
+  ]
+}

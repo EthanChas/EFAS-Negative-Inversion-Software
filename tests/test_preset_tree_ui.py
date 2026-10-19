@@ -86,7 +86,9 @@ _SCRIPT = textwrap.dedent(r'''
     assert [x for x in whole[start + 1:stop] if not x.startswith("    ")][:3] == ["  CineStill", "  Foma", "  Fuji"], whole[start:start + 6]
     assert whole[:start] + whole[stop:] == ["Film Stocks", "  Cinestill", "    Cinestill", "  Fuji", "    Superia", "  Kodak", "    Gold", "    Portra", "    Portra Airy",
                        "Scanners (DarkSlide)", "  Frontier Classic", "  Frontier Modern", "  Noritsu", "  Neutral", "  Agfa d-Lab",
-                       "Scanners (EFAS Original)", "  Frontier 100", "  Crystal 100", "  Pakon (Clean and Rich)", "  Noritsu (Green Shadows)"], whole
+                       "Scanners (EFAS Original)", "  Frontier 100", "  Crystal 100", "  Pakon (Clean and Rich)", "  Noritsu (Green Shadows)",
+                       "Watermarks (EFAS Examples)", "  Film credit, bottom left, light", "  Film credit, bottom left, dark", "  Film and camera line, bottom centre",
+                       "  Copyright line, bottom right", "  Text with the roll and frame, top left"], whole
     assert not panel._save_btn.isVisibleTo(panel) and not panel._delete_btn.isVisibleTo(panel) and panel._copy_btn.isVisibleTo(panel), "built-ins are read-only"
 
     # select a built-in: its description shows; applying it sets the slider values as one undoable step

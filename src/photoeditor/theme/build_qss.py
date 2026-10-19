@@ -43,6 +43,8 @@ QPushButton:pressed, QPushButton:checked {
 }
 QPushButton:disabled { color: @text_muted; }
 QPushButton:focus { outline: 1px dotted @border_focus; }
+/* a narrow button with one letter or symbol on it (B, I, a turn arrow): the usual padding would leave no room for it */
+QPushButton[compact="true"] { padding: 0px; min-width: 0px; }
 
 QLineEdit, QTextEdit, QPlainTextEdit {
     background-color: @bg_input;

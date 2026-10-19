@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- The EFAS film credit: the film and its ISO, the camera and lens, and the date and EFAS in small letters, with a thin rule between. Everything comes from the Roll Card and the
+     frame, so one marker writes the right words on every picture of a roll; Colour, Font and Bold of the Marker section apply (the first line is always bold). A part with nothing to
+     show (no lens, no date) is left out. Edit a copy of this file to make your own. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="200" viewBox="0 0 1400 200">
+  <g font-family="$(WATERMARK_FONT_FAMILY)" font-style="$(WATERMARK_FONT_STYLE)" fill="$(WATERMARK_COLOR)">
+    <text x="0" y="58" font-size="58" font-weight="700">$(FILM-$(ROLL.NAME))$(EXIF.ISO+ - ISO $(EXIF.ISO))</text>
+    <rect x="0" y="80" width="420" height="4" fill-opacity="0.9"/>
+    <text x="0" y="132" font-size="44" font-weight="$(WATERMARK_FONT_WEIGHT)">$(CAMERA)$(LENS+ - $(LENS))</text>
+    <text x="0" y="182" font-size="32" font-weight="$(WATERMARK_FONT_WEIGHT)" fill-opacity="0.8">$(EXIF.DATE.REGIONAL)$(EXIF.DATE.REGIONAL+  |  )Edited with EFAS Negative Inversion Software</text>
+  </g>
+</svg>

@@ -181,6 +181,7 @@ class CropToolPanel(CollapsiblePanel):
         guide_row.addWidget(self._guide_combo, 1)
         self._guide_orient_btn = QPushButton("\u21bb")
         self._guide_orient_btn.setFixedWidth(28)
+        self._guide_orient_btn.setProperty("compact", True)   # the theme's padding would leave no room for the arrow
         self._guide_orient_btn.setToolTip("Turn the guide (spiral and triangles have several orientations).")
         self._guide_orient_btn.clicked.connect(self._on_guide_orient)
         guide_row.addWidget(self._guide_orient_btn)

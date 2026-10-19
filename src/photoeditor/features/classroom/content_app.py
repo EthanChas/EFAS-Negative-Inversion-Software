@@ -263,7 +263,7 @@ With a long list, use the **search box** above it. It keeps only the presets tha
 
 ## The built-in sets
 
-The built-in sets come in groups: **Scanners (EFAS Original)** (Frontier 100, Crystal 100, Pakon, Noritsu), **Scanners (DarkSlide)**, **Film Stocks (DarkSlide)** (78 film profiles by maker) and **Film Stocks** (Cinestill, Fuji Superia, Kodak Gold, Portra and more). They are EFAS's own **approximations** of the tone, saturation and warmth of those looks, built from the Lab Look, tone curve and colour tools, not measurements of the real thing ([[lab-look-module]]). They are best treated as good starting points to adjust.
+The built-in sets come in groups: **Watermarks (EFAS Examples)** (ready-made watermarks that write the film, camera, lens and year from the Roll Card, see [[watermark-variables]]), **Scanners (EFAS Original)** (Frontier 100, Crystal 100, Pakon, Noritsu), **Scanners (DarkSlide)**, **Film Stocks (DarkSlide)** (78 film profiles by maker) and **Film Stocks** (Cinestill, Fuji Superia, Kodak Gold, Portra and more). They are EFAS's own **approximations** of the tone, saturation and warmth of those looks, built from the Lab Look, tone curve and colour tools, not measurements of the real thing ([[lab-look-module]]). They are best treated as good starting points to adjust.
 
 ## Keeping presets organised
 

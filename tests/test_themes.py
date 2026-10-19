@@ -188,3 +188,37 @@ def test_saving_keeps_the_theme_for_next_time(app):
     assert tokens.THEME.style == "modern" and tokens.THEME.accent_primary == "#3fd1c0"
     assert tokens.THEME.font_size_base == round(tokens.modern_theme().font_size_base * 1.05)
     S.save({"theme": "classic", "theme_accent": "Blue", "theme_text_scale": 100})
+
+
+@pytest.mark.parametrize("theme", ["classic", "modern"])
+def test_a_narrow_button_with_one_letter_on_it_still_shows_the_letter(app, theme):
+    """The Bold and Italic buttons of the Watermark tab (and the guide's turn arrow) are 28-30 pixels wide: the theme's button padding used to leave no room for the letter."""
+    from PyQt6.QtWidgets import QPushButton, QWidget
+
+    from photoeditor.desktop.view.watermark_panel import _style_button
+    from photoeditor.theme import runtime
+
+    runtime.apply(app, {"theme": theme, "theme_accent": "Blue", "theme_text_scale": 100})
+    host = QWidget()
+    host.resize(200, 90)
+    bold, italic = _style_button("B", "Bold", bold=True), _style_button("I", "Italic", italic=True)
+    plain = QPushButton("B")   # what it was: the usual padding in the same width
+    plain.setFixedWidth(30)
+    for i, button in enumerate((bold, italic, plain)):
+        button.setParent(host)
+        button.move(10 + 50 * i, 10)
+    host.show()
+    app.processEvents()
+
+    def draws_a_letter(button) -> bool:
+        with_letter = button.grab().toImage()
+        text = button.text()
+        button.setText("")
+        app.processEvents()
+        blank = button.grab().toImage()
+        button.setText(text)
+        return with_letter != blank
+
+    assert draws_a_letter(bold) and draws_a_letter(italic), theme
+    assert not draws_a_letter(plain), "(the test does see the difference: without the fix the button is blank)"
+    host.close()

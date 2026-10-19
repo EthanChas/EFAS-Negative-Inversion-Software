@@ -35,6 +35,8 @@ QPushButton:default { background-color: @accent_primary; color: @on_accent; bord
 QPushButton:default:hover { background-color: @accent_hover; border-color: @accent_hover; }
 QPushButton:disabled { background-color: @bg_panel; color: @text_muted; border-color: @border_color; }
 QPushButton:focus { border-color: @accent_primary; }
+/* a narrow button with one letter or symbol on it (B, I, a turn arrow): the usual padding would leave no room for it */
+QPushButton[compact="true"] { padding: 0px; min-width: 0px; }
 QPushButton[caption="true"] {
     background: transparent; border: none; border-radius: @radius_smpx; padding: 0; min-height: 0;
 }

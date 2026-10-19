@@ -19,8 +19,9 @@ EFAS now does all of that, with these differences, on purpose:
 
 ## The watermarks folder
 
-Markers live in a **watermarks folder** in EFAS's data folder (`~/.EFAS/watermarks`, or whatever your data folder is). Three samples come with EFAS and are listed with "sample" after their names:
+Markers live in a **watermarks folder** in EFAS's data folder (`~/.EFAS/watermarks`, or whatever your data folder is). Four samples come with EFAS and are listed with "sample" after their names:
 
+- `efas-film-credit.svg`: the EFAS film credit: the film and its ISO in bold, a short rule, the camera and lens, and the date and *Edited with EFAS Negative Inversion Software* in small letters. Everything comes from the Roll Card and the frame.
 - `simple-text.svg`: one line of text in the colour and font you choose.
 - `copyright-line.svg`: `(c) 2024 Your Name`: the year of the frame (this year if the frame has no date) and your text.
 - `film-frame-info.svg`: two lines from the Roll Card: the film and its ISO, and the camera and lens. A part with nothing to show is left out.
@@ -30,6 +31,17 @@ Markers live in a **watermarks folder** in EFAS's data folder (`~/.EFAS/watermar
 Because a marker is chosen **by name**, a preset or a file that uses `signature.svg` works on any computer that has a file of that name in its watermarks folder. A marker chosen before this existed was chosen by its whole path; that still works where the file is. A marker that is not there is shown as *Missing* and is not drawn; put a file of that name in the folder and press Reload.
 
 SVG files can be drawn in any editor (Inkscape, say). The SVG's own size sets the shape of the marker: leave room for the longest text it will have, since text outside the drawing is cut off. Qt's SVG renderer draws it, which covers shapes, paths, gradients and basic text; very new SVG features may not appear.
+
+## Example presets
+
+The built-in presets (Presets > **Built-in Presets** > **Watermarks (EFAS Examples)**) are ready-made watermarks that write the picture's own details, to apply as they are or to learn from. Each sets the whole watermark: it turns off the canister and the camera and lens text and sets one marker, with its position, size and colour.
+
+- **Film credit, bottom left, light** and **dark**: the `efas-film-credit.svg` marker in white or black.
+- **Film and camera line, bottom centre**: `film-frame-info.svg`, two quiet lines.
+- **Copyright line, bottom right**: `copyright-line.svg` with the example name `Your Name`; change it in the marker's **Text** box.
+- **Text with the roll and frame, top left**: the Text mark with variables in it (the roll's name, the frame's number and the file name), as an example of variables outside an SVG.
+
+Fill in the **Roll Card** first (film, ISO, camera, lens, dates): that is where the words come from. A preset that uses a sample marker works on any computer, because the samples come with EFAS. Apply one, then press **Variables...** to see what the picture will say, and change the Text, Colour, Size or Position in the Watermark tab as you like. **Save Current...** in the Presets module keeps your version as one of your own presets.
 
 ## The controls
 

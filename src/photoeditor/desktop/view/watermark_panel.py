@@ -174,6 +174,7 @@ def _style_button(text: str, tip: str, bold: bool = False, italic: bool = False)
     button = QPushButton(text)
     button.setCheckable(True)
     button.setFixedWidth(30)
+    button.setProperty("compact", True)   # the theme's padding would leave no room for the letter
     button.setToolTip(tip)
     font = button.font()
     font.setBold(bold)
