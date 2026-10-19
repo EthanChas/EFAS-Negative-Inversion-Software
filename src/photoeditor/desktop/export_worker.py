@@ -18,6 +18,7 @@ from ..features.metadata import store as metadata_store
 from ..features.metadata.export import embed_into_file
 from ..features.metadata.models import MetadataConfig
 from ..features.metadata.roll import RollCard, compose
+from ..features.metadata.source_exif import read_exif_from_file
 from ..features.watermark import variables as wm_variables
 from ..features.watermark.marks import Marks
 from ..features.browse.logic import list_images_in_folder
@@ -191,7 +192,7 @@ def _edits_for(path: str, conn, preview, state: dict | None = None) -> tuple:
     extra: dict = {}
     marks = Marks.from_dict(saved.get("marks"))
     if marks.has_logo() or marks.has_text():   # only a photo with a watermark needs its variables ($(CAMERA), $(EXIF.YEAR)...): the roll is listed for its frame number
-        extra["wm_vars"] = tuple(sorted(wm_variables.build(path, load_metadata(path, conn, None, saved), app_version=photoeditor.__version__).items()))
+        extra["wm_vars"] = tuple(sorted(wm_variables.build(path, load_metadata(path, conn, None, saved), app_version=photoeditor.__version__, source_exif=read_exif_from_file(path)).items()))
     params = EditParams.from_dict(
         {**saved, "roll_camera": roll.camera.strip(), "roll_lens": roll.lens.strip(), "film_base": base, "source_raw": is_raw(path), **extra}
     )

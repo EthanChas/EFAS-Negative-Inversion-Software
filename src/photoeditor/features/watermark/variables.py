@@ -47,9 +47,16 @@ def _matching(text: str, start: int) -> int:
 
 
 def _lookup(variables: Mapping[str, str], name: str) -> str:
+    """The value of a name: as written, then in capitals, then with the underscores darktable also accepts read as dots ($(EXIF_FOCAL_LENGTH) is $(EXIF.FOCAL.LENGTH)), then in any case
+    (so $(Xmp.dc.creator) and $(XMP.DC.CREATOR) are the same)."""
     value = variables.get(name)
     if value is None:
         value = variables.get(name.upper())
+    if value is None:
+        value = variables.get(name.upper().replace("_", "."))
+    if value is None:
+        key = name.casefold()
+        value = next((v for k, v in variables.items() if k.casefold() == key or k.casefold() == key.replace("_", ".")), None)
     return str(value)[:MAX_VALUE] if value is not None else ""
 
 
@@ -147,6 +154,19 @@ def uses(text: str, name: str) -> bool:
 _DATE_KEYS = ("YEAR", "YEAR.SHORT", "MONTH", "MONTH.LONG", "MONTH.SHORT", "DAY", "HOUR", "MINUTE", "DATE.REGIONAL", "TIME.REGIONAL")
 
 
+def _source_text(source_exif: dict | None, name: str) -> str:
+    """The Artist or Copyright text of the scan's own EXIF (what the camera was set to write, the photographer's name, usually); "" when it has none."""
+    try:
+        import piexif
+
+        tag = {"Artist": piexif.ImageIFD.Artist, "Copyright": piexif.ImageIFD.Copyright}[name]
+        raw = (source_exif or {}).get("0th", {}).get(tag)
+        text = raw.decode("utf-8", "replace") if isinstance(raw, bytes) else str(raw or "")
+        return text.replace("\x00", "").strip()
+    except Exception:
+        return ""
+
+
 def _date_parts(text: str) -> dict[str, str]:
     """The pieces of a capture date ("2024", "2024-03", "2024-03-09", "2024-03-09 14:30"); the ones it does not know are there but empty, so the list of variables shows them all."""
     cd = parse_capture_date(text or "")
@@ -176,12 +196,32 @@ def _date_parts(text: str) -> dict[str, str]:
     return out
 
 
-def build(path: str, meta: MetadataConfig, now: dt.datetime | None = None, app_version: str = "") -> dict[str, str]:
+_F_NUMBER = re.compile(r"f\s*/?\s*(\d+(?:\.\d+)?)", re.IGNORECASE)
+_SHUTTER = re.compile(r"(\d+\s*/\s*\d+|\d+(?:\.\d+)?)\s*(?:s|sec|\")?(?![\d/.])")
+
+
+def _shutter_and_aperture(text: str) -> tuple[str, str]:
+    """From what the Roll Card's Exposure box holds ("1/125 f/8", "f/2.8 1/60", "2s"): (the shutter speed as written, the f-number as a number); "" for a part that is not there."""
+    text = (text or "").strip()
+    found = _F_NUMBER.search(text)
+    aperture = found.group(1) if found else ""
+    rest = _F_NUMBER.sub(" ", text)
+    shutter = _SHUTTER.search(rest)
+    return (re.sub(r"\s+", "", shutter.group(1)) if shutter else ""), aperture
+
+
+def _number(value: float | None) -> str:
+    return f"{value:g}" if value else ""
+
+
+def build(path: str, meta: MetadataConfig, now: dt.datetime | None = None, app_version: str = "", source_exif: dict | None = None) -> dict[str, str]:
     """The variables for one photo: its file, today's date, the film frame's details (the Roll Card laid over the frame's own: `meta` is what Metadata.compose gives) and EFAS itself.
 
     The camera, lens and ISO are the film camera's - what the Roll Card holds - since the scan's own EXIF says nothing about the film. They answer to darktable's names too
     ($(EXIF.MAKER), $(EXIF.MODEL), $(EXIF.LENS), $(EXIF.ISO), $(EXIF.FOCAL.LENGTH)), so an SVG written for darktable shows the film camera here. $(FILE.FOLDER) is the folder's
-    name, not its whole path, so a watermark does not carry the layout of your disk."""
+    name, not its whole path, so a watermark does not carry the layout of your disk. As in darktable, $(EXIF.FOCAL.LENGTH), $(EXIF.APERTURE), $(EXIF.EXPOSURE) and $(EXIF.ISO) are just the number
+    (the units are the SVG's to write); $(FOCAL.LENGTH), $(APERTURE) and $(SHUTTER) are the same with their units. $(Xmp.dc.creator) and $(Xmp.dc.rights) (and ARTIST, COPYRIGHT) are the Artist and
+    Copyright of the scan's own EXIF, given as `source_exif`."""
     now = now or dt.datetime.now()
     folder = os.path.basename(os.path.dirname(path)) if path else ""
     stem, ext = os.path.splitext(os.path.basename(path)) if path else ("", "")
@@ -189,6 +229,9 @@ def build(path: str, meta: MetadataConfig, now: dt.datetime | None = None, app_v
     lens = " ".join(p for p in (meta.lens_make.strip(), meta.lens_model.strip()) if p)
     film = meta.film.strip()
     iso = str(meta.film_iso) if meta.film_iso else ""
+    shutter, f_number = _shutter_and_aperture(meta.exposure_override)
+    aperture = _number(meta.max_aperture) or f_number
+    creator, rights = _source_text(source_exif, "Artist"), _source_text(source_exif, "Copyright")
     v: dict[str, str] = {
         "FILE.NAME": stem, "FILE.EXTENSION": ext.lstrip("."), "FILE.FOLDER": folder,
         "YEAR": str(now.year), "YEAR.SHORT": f"{now.year % 100:02d}", "MONTH": str(now.month), "MONTH.LONG": calendar.month_name[now.month], "MONTH.SHORT": calendar.month_abbr[now.month],
@@ -198,7 +241,10 @@ def build(path: str, meta: MetadataConfig, now: dt.datetime | None = None, app_v
         "FILM": film, "FILM.ISO": iso, "FILM.MAKER": meta.film_manufacturer.strip(), "FILM.TYPE": meta.film_color_type.strip(), "FILM.FORMAT": meta.format.strip(),
         "CAMERA": camera, "EXIF.MAKER": meta.camera_make.strip(), "MAKER": meta.camera_make.strip(), "EXIF.MODEL": meta.camera_model.strip(), "MODEL": meta.camera_model.strip(),
         "LENS": lens, "EXIF.LENS": lens, "EXIF.ISO": iso,
-        "EXIF.FOCAL.LENGTH": f"{meta.focal_length_mm:g} mm" if meta.focal_length_mm else "", "EXIF.APERTURE": f"f/{meta.max_aperture:g}" if meta.max_aperture else "",
+        "EXIF.FOCAL.LENGTH": _number(meta.focal_length_mm), "EXIF.APERTURE": aperture, "EXIF.EXPOSURE": shutter,   # as darktable gives them: the numbers only, so "$(EXIF_FOCAL_LENGTH)mm f/$(EXIF_APERTURE)" works
+        "FOCAL.LENGTH": f"{meta.focal_length_mm:g} mm" if meta.focal_length_mm else "", "APERTURE": f"f/{aperture}" if aperture else "", "SHUTTER": f"{shutter} s" if shutter else "",
+        "EXPOSURE": meta.exposure_override.strip(), "DATE": now.strftime("%Y-%m-%d"), "EXIF.DATE": meta.capture_date.strip(),
+        "Xmp.dc.creator": creator, "CREATOR": creator, "ARTIST": creator, "Xmp.dc.rights": rights, "RIGHTS": rights, "COPYRIGHT": rights,
         "FRAME": str(meta.capture_frame) if meta.capture_frame is not None else "", "NOTE": meta.note.strip(),
         "PUSH.PULL": PUSH_PULL_LABELS.get(meta.push_pull, "") if meta.push_pull else "",
         "LOCATION.CITY": meta.location_city.strip(), "LOCATION.STATE": meta.location_state.strip(), "LOCATION.COUNTRY": meta.location_country.strip(),

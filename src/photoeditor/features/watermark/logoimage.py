@@ -15,7 +15,8 @@ from . import variables
 LOGO_EXTENSIONS = (".svg", ".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tif", ".tiff")
 DIALOG_FILTER = "Markers (*.svg *.png *.jpg *.jpeg *.webp *.bmp *.tif *.tiff);;SVG (*.svg);;Images (*.png *.jpg *.jpeg *.webp *.bmp *.tif *.tiff)"
 MAX_SVG_BYTES = 5_000_000
-MAX_SIDE = 4096
+FULL_SPRITE_PIXELS = 12_000_000   # a marker (after its turn) with more pixels than this is not drawn whole: only the part that is on the picture is (marker_window)
+MAX_DRAWN_SIDE = 2_000_000    # a marker is never drawn bigger than this many pixels along its longer side
 _FALLBACK_SIZE = 512
 _app = None
 
@@ -72,10 +73,25 @@ def _svg_renderer(path: str):
     return _renderer_from_text(read_svg(path))
 
 
+def _natural_size(renderer) -> tuple[float, float]:
+    """The drawing's own width and height, exactly where Qt's whole-number size would round them (a strip that is 100 by 5.5 is not 100 by 5): the viewBox's size when it is the same shape as
+    the size the file states (to within that rounding), otherwise the stated size."""
+    base, box = renderer.defaultSize(), renderer.viewBoxF()
+    stated = base.width() > 0 and base.height() > 0
+    boxed = box.width() > 0 and box.height() > 0
+    if stated and boxed:
+        tolerance = 0.5 / base.width() + 0.5 / base.height() + 1e-6
+        same_shape = abs((box.width() / box.height()) / (base.width() / base.height()) - 1.0) <= tolerance
+        return (float(box.width()), float(box.height())) if same_shape else (float(base.width()), float(base.height()))
+    if boxed:
+        return float(box.width()), float(box.height())
+    return (float(base.width()), float(base.height())) if stated else (float(_FALLBACK_SIZE), float(_FALLBACK_SIZE))
+
+
 def svg_aspect(path: str) -> float:
     """Width over height of an SVG's drawing."""
-    size = _svg_renderer(path).defaultSize()
-    return size.width() / size.height() if size.width() > 0 and size.height() > 0 else 1.0
+    width, height = _natural_size(_svg_renderer(path))
+    return width / height
 
 
 def svg_variables(path: str) -> set[str]:
@@ -119,9 +135,8 @@ def svg_font_family(font: str) -> str:
 
 
 @lru_cache(maxsize=32)
-def _svg_size(text: str) -> tuple[int, int]:
-    base = _renderer_from_text(text).defaultSize()
-    return (base.width(), base.height()) if base.width() > 0 and base.height() > 0 else (_FALLBACK_SIZE, _FALLBACK_SIZE)
+def _svg_size(text: str) -> tuple[float, float]:
+    return _natural_size(_renderer_from_text(text))
 
 
 @lru_cache(maxsize=8)
@@ -131,7 +146,7 @@ def _svg_sprite(text: str, long_side: int) -> tuple[np.ndarray, np.ndarray]:
 
     renderer = _renderer_from_text(text)
     bw, bh = _svg_size(text)
-    k = min(long_side, MAX_SIDE) / max(bw, bh)
+    k = long_side / max(bw, bh)
     w, h = max(1, round(bw * k)), max(1, round(bh * k))
     image = QImage(w, h, QImage.Format.Format_RGBA8888_Premultiplied)
     image.fill(Qt.GlobalColor.transparent)
@@ -168,7 +183,7 @@ def _raster_size(path: str) -> tuple[int, int]:
         return im.size
 
 
-def _long_side(width: int, height: int, mode: str, px: int) -> int:
+def _long_side(width: float, height: float, mode: str, px: int) -> int:
     """The marker's longer side in pixels, from the size asked for: `px` is that longer side itself ("long"), or the width or the height the marker is to have."""
     longer = max(width, height)
     if mode == "width":
@@ -192,6 +207,87 @@ def marker_sprite(path: str, mode: str, px: int, opacity: float, svg_variables_:
         width, height = _raster_size(path)
         rgb, alpha = _raster_sprite(path, os.path.getmtime(path), max(4, _long_side(width, height, mode, px)))
     return rgb * np.float32(opacity), alpha * np.float32(opacity)
+
+
+def natural_size(path: str, svg_variables_: Mapping[str, str] | None = None) -> tuple[float, float]:
+    """The marker's own width and height (an SVG after its variables are filled in)."""
+    if is_svg(path):
+        text = read_svg(path)
+        if svg_variables_ is not None and "$(" in text:
+            text = variables.expand(text, svg_variables_, variables.xml_escape)
+        return _svg_size(text)
+    width, height = _raster_size(path)
+    return float(width), float(height)
+
+
+def drawn_size(natural: tuple[float, float], mode: str, px: int) -> tuple[int, int]:
+    """(width, height) in pixels of a marker of this natural size asked for in this way (see marker_sprite), as whole pixels."""
+    width, height = natural
+    k = min(_long_side(width, height, mode, max(4, int(px))), MAX_DRAWN_SIDE) / max(width, height)
+    return max(1, round(width * k)), max(1, round(height * k))
+
+
+def turned_size(width: int, height: int, degrees: float) -> tuple[int, int]:
+    """The size of the box round a width by height marker turned clockwise by `degrees`."""
+    import math
+
+    rad = math.radians(degrees)
+    c, s = abs(math.cos(rad)), abs(math.sin(rad))
+    return int(math.ceil(width * c + height * s - 1e-9)), int(math.ceil(width * s + height * c - 1e-9))
+
+
+@lru_cache(maxsize=2)
+def _raster_source(path: str, mtime: float) -> np.ndarray:
+    from PIL import Image
+
+    with Image.open(path) as im:
+        rgba = np.asarray(im.convert("RGBA"), dtype=np.float32).copy()
+    rgba[:, :, :3] *= rgba[:, :, 3:4] / 255.0
+    return rgba
+
+
+def marker_window(path: str, svg_variables_: Mapping[str, str] | None, size: tuple[int, int], degrees: float, centre: tuple[float, float], window: tuple[int, int, int, int],
+                  opacity: float) -> tuple[np.ndarray, np.ndarray]:
+    """Only the part of a big marker that is on the picture, as (premultiplied RGB float32 0-255, alpha float32 0-1) the size of `window` (x0, y0, x1, y1 on the picture). The marker is
+    `size` (width, height) pixels, turned clockwise by `degrees` about `centre` (on the picture). Nothing bigger than the window is ever made, so a marker many times the size of the
+    picture costs no more than the picture does."""
+    import math
+
+    wx0, wy0, wx1, wy1 = window
+    ww, wh = wx1 - wx0, wy1 - wy0
+    width, height = size
+    if is_svg(path):
+        from PyQt6.QtCore import QRectF, Qt
+        from PyQt6.QtGui import QImage, QPainter
+
+        text = read_svg(path)
+        if svg_variables_ is not None and "$(" in text:
+            text = variables.expand(text, svg_variables_, variables.xml_escape)
+        renderer = _renderer_from_text(text)
+        image = QImage(ww, wh, QImage.Format.Format_RGBA8888_Premultiplied)
+        image.fill(Qt.GlobalColor.transparent)
+        painter = QPainter(image)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
+        painter.translate(centre[0] - wx0, centre[1] - wy0)
+        painter.rotate(degrees)
+        painter.translate(-width / 2.0, -height / 2.0)
+        renderer.render(painter, QRectF(0.0, 0.0, float(width), float(height)))
+        painter.end()
+        stride = image.bytesPerLine()
+        raw = np.frombuffer(image.constBits().asstring(stride * wh), dtype=np.uint8).reshape(wh, stride)[:, : ww * 4].reshape(wh, ww, 4)
+        arr = raw.astype(np.float32)
+    else:
+        import cv2
+
+        source = _raster_source(path, os.path.getmtime(path))
+        sh, sw = source.shape[:2]
+        sx, sy = width / sw, height / sh
+        c, s = math.cos(math.radians(degrees)), math.sin(math.radians(degrees))
+        matrix = np.array([[c * sx, -s * sy, centre[0] - wx0 - (c * width / 2.0 - s * height / 2.0)],
+                           [s * sx, c * sy, centre[1] - wy0 - (s * width / 2.0 + c * height / 2.0)]], dtype=np.float64)
+        arr = cv2.warpAffine(source, matrix, (ww, wh), flags=cv2.INTER_LINEAR, borderMode=cv2.BORDER_CONSTANT, borderValue=(0, 0, 0, 0))
+    return np.ascontiguousarray(arr[:, :, :3]) * np.float32(opacity), np.ascontiguousarray(arr[:, :, 3] / 255.0) * np.float32(opacity)
 
 
 def logo_sprite(path: str, long_side: int, opacity: float) -> tuple[np.ndarray, np.ndarray]:

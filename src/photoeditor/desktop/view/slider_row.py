@@ -62,7 +62,10 @@ class SliderRow(QWidget):
         step: float = 0.01,
         parent: QWidget | None = None,
         label_width: int = 80,
+        spin_min: float | None = None,
+        spin_max: float | None = None,
     ):
+        """`spin_min` and `spin_max` let the box beside the slider take values beyond the slider's own ends (typed in); the slider then rests at its end."""
         super().__init__(parent)
         self._min = -value_range if min_value is None else min_value
         self._max = value_range if max_value is None else max_value
@@ -88,7 +91,7 @@ class SliderRow(QWidget):
         row.addWidget(self._slider, 1)
 
         self._spin = QDoubleSpinBox()
-        self._spin.setRange(self._min, self._max)
+        self._spin.setRange(self._min if spin_min is None else spin_min, self._max if spin_max is None else spin_max)
         self._spin.setSingleStep(step)
         self._spin.setDecimals(decimals)
         self._spin.setAlignment(Qt.AlignmentFlag.AlignRight)

@@ -3393,7 +3393,7 @@ class AppWindow(QMainWindow):
         if s.image_rgb is None:
             return
         h, w, b = wm_layout.unframe_shape(s.image_rgb.shape, s.border)
-        self.controller.edit_mark(name, (cx - b) / w, (cy - b) / h, ratio)
+        self.controller.edit_mark(name, (cx - b) / w, (cy - b) / h, ratio, (h, w))
         self._watermark_tool.set_marks(self.controller.state.marks)
         self._refresh_mark_boxes()
 

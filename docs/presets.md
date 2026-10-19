@@ -133,7 +133,7 @@ It has an on/off light, a reset button and module presets like the other modules
 
 ## The Watermarks (EFAS Examples) built-in presets
 
-Five examples of [watermarks](watermarks.md) that write the picture's own details (film, ISO, camera, lens, date, the roll's name, the frame's number) from the Roll Card and the frame through `$(NAME)` variables: a film credit in white or black, a film and camera line, a copyright line and a text mark with variables. They set the watermark only (the canister and the camera text are turned off, the tone and colour are left alone), and use the sample markers that come with EFAS, so they work on any computer. They are examples to apply, to learn from, or to copy to My Presets and change.
+Five examples of [watermarks](watermarks.md) that write the picture's own details (film, ISO, camera, lens, date, the roll's name, the frame's number) from the Roll Card and the frame through `$(NAME)` variables: a film credit in white or black (with the EFAS icon on its left), a film and camera line, a copyright line and a line of text with variables. They set the watermark only (the canister and the camera text are turned off, the tone and colour are left alone), and use the sample markers that come with EFAS, so they work on any computer. They are examples to apply, to learn from, or to copy to My Presets and change.
 
 ## The Film Stocks built-in presets
 

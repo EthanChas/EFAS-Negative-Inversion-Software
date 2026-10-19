@@ -1,4 +1,4 @@
-"""The Watermark tab and the picture: Custom positions, dragging and resizing marks with the mouse, independent camera/lens text, SVG/PNG logos."""
+"""The Watermark tab and the picture: dragging and resizing marks with the mouse, the marker's Move X and Move Y, independent camera/lens text, SVG/PNG markers, and a photo's old Text watermark."""
 import os
 import subprocess
 import sys
@@ -50,64 +50,104 @@ _SCRIPT = textwrap.dedent(r'''
     view = win._image_view
     s = c.state
 
-    # ---- text: a style change draws, and the Custom entry is greyed out until something is dragged
-    tool._mark_text.setPlainText("Hello film")
-    tool._emit_marks()
-    assert pump(lambda: s.marks.has_text()) and s.marks.text == "Hello film"
-    assert "camera" not in s.history[-1].description, s.history[-1].description
-    i = tool._text_position.findData(CUSTOM)
-    assert i >= 0 and not tool._text_position.model().item(i).isEnabled(), "Custom cannot be picked by hand"
+    # ---- the Text section is gone: a line of text is the simple-text marker. A style change draws, and the Custom entry is greyed out
+    assert not hasattr(tool, "_mark_text") and not hasattr(tool, "_text_position"), "no separate Text section"
+    names = [tool._marker_combo.itemData(i) for i in range(tool._marker_combo.count())]
+    tool._marker_combo.setCurrentIndex(names.index("simple-text.svg"))
+    tool._logo_text.setText("Hello film"); tool._logo_size.set_value(30); tool._logo_opacity.set_value(100); tool._emit_marks()
+    assert pump(lambda: s.marks.has_logo()) and s.marks.logo_text == "Hello film" and s.marks.logo_position == "bottom_left"
+    i = tool._logo_position.findData(CUSTOM)
+    assert i >= 0 and not tool._logo_position.model().item(i).isEnabled(), "Custom cannot be picked by hand"
     plain = s.image_rgb.copy()
-    tool._text_bold.setChecked(True)
-    tool._text_outline.set_value(60); tool._on_mark_slider(); tool._mark_settle.stop(); tool._emit_marks()
-    assert s.marks.text_bold and s.marks.text_outline > 0.5
+    tool._logo_bold.setChecked(True); tool._logo_rotation.set_value(0); tool._emit_marks()
+    assert s.marks.logo_bold
     assert pump(lambda: not np.array_equal(s.image_rgb, plain))
 
-    # ---- turn on drag editing: a box for the text
+    # ---- the drag switch is under the marker, and turns on a box for it
+    from photoeditor.desktop.view.watermark_panel import CanisterWatermarkPanel
+    layout_order = [tool._marker_combo, tool._logo_x, tool._logo_y, tool._edit_box]
+    ys = [w.mapTo(tool, w.rect().topLeft()).y() for w in layout_order]
+    assert ys == sorted(ys), ("the Move and resize box is under the marker's sliders", ys)
     tool._edit_box.setChecked(True)
     assert win._mark_editing
-    assert pump(lambda: "text" in view._label._mark_boxes), view._label._mark_boxes
-    x, y, w, h = view._label._mark_boxes["text"]
+    assert pump(lambda: "logo" in view._label._mark_boxes), view._label._mark_boxes
+    x, y, w, h = view._label._mark_boxes["logo"]
     k = view._label._scale
     assert k > 0
 
-    # ---- dragging the text with the mouse: its Position menu becomes Custom
+    # ---- dragging the marker with the mouse: its Move X and Move Y follow and the Position menu stays
     label = view._label
     start = QPoint(int((x + w / 2) * k), int((y + h / 2) * k))
-    end = QPoint(int((x + w / 2) * k) - int(150 * k), int((y + h / 2) * k) - int(200 * k))
+    end = QPoint(int((x + w / 2) * k) + int(150 * k), int((y + h / 2) * k) - int(200 * k))
     QTest.mousePress(label, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, start)
     QTest.mouseMove(label, QPoint((start.x() + end.x()) // 2, (start.y() + end.y()) // 2))
     QTest.mouseMove(label, end)
     QTest.mouseRelease(label, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, end)
     app.processEvents()
-    assert s.marks.text_position == CUSTOM, s.marks
-    assert abs(s.marks.text_x - ((x + w / 2) - 150) / 900) < 0.02 and abs(s.marks.text_y - ((y + h / 2) - 200) / 600) < 0.02, (s.marks.text_x, s.marks.text_y)
-    assert tool._text_position.currentData() == CUSTOM, "the drop-down now says Custom"
-    assert pump(lambda: abs(view._label._mark_boxes["text"][0] - (x - 150)) < 4), view._label._mark_boxes["text"]
-    assert any("moved" in e.description or "Watermark" in e.description for e in s.history[-1:]), s.history[-1].description
+    assert s.marks.logo_position == "bottom_left", "the Position menu is untouched"
+    assert abs(s.marks.logo_dx - (150 / 900)) < 0.02 and abs(s.marks.logo_dy - (-200 / 600)) < 0.02, (s.marks.logo_dx, s.marks.logo_dy)
+    assert abs(tool._logo_x.value() - s.marks.logo_dx * 100) < 0.2 and abs(tool._logo_y.value() - s.marks.logo_dy * 100) < 0.2, "the sliders show how far it was moved"
+    assert pump(lambda: abs(view._label._mark_boxes["logo"][0] - (x + 150)) < 4), view._label._mark_boxes["logo"]
+    assert any("Watermark" in e.description or "moved" in e.description for e in s.history[-1:]), s.history[-1].description
 
-    # ---- choosing a corner from the menu puts it back
-    tool._text_position.setCurrentIndex(tool._text_position.findData("top_left"))
-    assert s.marks.text_position == "top_left"
-    assert tool._text_position.model().item(tool._text_position.findData(CUSTOM)).isEnabled() is False
+    # ---- the X and Y sliders move it too, and zero puts it back
+    tool._logo_x.set_value(0); tool._logo_y.set_value(0); tool._emit_marks()
+    assert s.marks.logo_dx == 0 and s.marks.logo_dy == 0
+    assert pump(lambda: abs(view._label._mark_boxes["logo"][0] - x) < 4 and abs(view._label._mark_boxes["logo"][1] - y) < 4), view._label._mark_boxes["logo"]
+    tool._logo_x.set_value(20); tool._emit_marks()
+    assert abs(s.marks.logo_dx - 0.2) < 1e-6 and pump(lambda: abs(view._label._mark_boxes["logo"][0] - (x + 0.2 * 900)) < 4)
 
-    # ---- resizing with a corner handle scales the text
-    assert pump(lambda: view._label._mark_boxes["text"][0] < 100)
-    x, y, w, h = view._label._mark_boxes["text"]
-    before = s.marks.text_size
-    view._label._mark_sel = "text"
+    # ---- choosing a corner from the menu moves the anchor (the sliders' offset stays)
+    tool._logo_x.set_value(0); tool._emit_marks()
+    tool._logo_position.setCurrentIndex(tool._logo_position.findData("top_left"))
+    assert s.marks.logo_position == "top_left" and s.marks.logo_dx == 0
+    assert tool._logo_position.model().item(tool._logo_position.findData(CUSTOM)).isEnabled() is False
+
+    # ---- resizing with a corner handle scales the marker
+    assert pump(lambda: view._label._mark_boxes["logo"][0] < 100)
+    x, y, w, h = view._label._mark_boxes["logo"]
+    before = s.marks.logo_size
+    view._label._mark_sel = "logo"
     corner = QPoint(int((x + w) * k), int((y + h) * k))
     drag_to = QPoint(corner.x() + int(w * k), corner.y() + int(h * k))
     QTest.mousePress(label, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, corner)
     QTest.mouseMove(label, drag_to)
     QTest.mouseRelease(label, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, drag_to)
     app.processEvents()
-    assert s.marks.text_size > before * 1.7, (before, s.marks.text_size)
-    assert s.marks.text_position == CUSTOM
+    assert s.marks.logo_size > before * 1.5, (before, s.marks.logo_size)
+    assert s.marks.logo_position == "top_left"
+
+    # ---- the size has no limit: the slider ends at 500%, and the box beside it takes any size
+    assert tool._logo_size._slider.maximum() > 0 and abs(tool._logo_size._spin.maximum() - 10000.0) < 1e-6
+    tool._logo_size._spin.setValue(2500.0)
+    assert tool._logo_size.value() == 2500.0 and tool._logo_size._slider.value() == tool._logo_size._slider.maximum(), "the slider rests at its end"
+    tool._emit_marks()
+    assert s.marks.logo_size == 25.0
+    big = s.image_rgb.copy()
+    assert pump(lambda: "logo" in view._label._mark_boxes and view._label._mark_boxes["logo"][2] > 5000), view._label._mark_boxes.get("logo")
+    tool._logo_size.set_value(before * 100); tool._emit_marks()
 
     # ---- undo restores the old placement and the panel follows
     c.undo(); app.processEvents()
     assert tool.marks() == s.marks
+
+    # ---- a photo that still has a Text watermark from an earlier version: it is drawn, the panel says so, and it can be made a marker or removed
+    c.set_marks(Marks(text="Old words", text_size=0.05, text_color="#ff0000", text_position="top_left"))
+    assert pump(lambda: s.marks.has_text() and not s.marks.logo)
+    tool.set_marks(s.marks)   # (the panel follows a change made elsewhere, such as a preset, through the window)
+    assert tool._old_text.isVisibleTo(tool), ("note hidden", tool._old_text.text(), s.marks)
+    assert "Old words" in tool._old_text.text() and tool._old_text_convert.isEnabled(), (tool._old_text.text(), tool._old_text_convert.isEnabled(), s.marks.logo)
+    tool._old_text_convert.click()
+    assert s.marks.text == "" and s.marks.logo == "simple-text.svg" and s.marks.logo_text == "Old words" and s.marks.logo_color == "#ff0000" and s.marks.logo_position == "top_left"
+    assert not tool._old_text.isVisibleTo(tool) and tool._marker_combo.currentData() == "simple-text.svg"
+    c.set_marks(Marks(text="Other words", logo="simple-text.svg"))
+    assert pump(lambda: s.marks.has_text())
+    tool.set_marks(s.marks)
+    assert tool._old_text.isVisibleTo(tool) and not tool._old_text_convert.isEnabled(), "a photo has one marker: choose None first"
+    tool._old_text_remove.click()
+    assert s.marks.text == "" and s.marks.logo == "simple-text.svg" and not tool._old_text.isVisibleTo(tool)
+    c.set_marks(Marks())
+    assert pump(lambda: not s.marks.has_logo())
 
     # ---- camera and lens on their own, no canister
     assert s.wm_film == "off"
@@ -162,9 +202,7 @@ _SCRIPT = textwrap.dedent(r'''
     from photoeditor.features.watermark import library
     assert s.marks.logo == "logo.svg" and os.path.isfile(os.path.join(library.user_dir(), "logo.svg")), "Add... copies the file into the watermarks folder and uses it by name"
     assert "SVG" in tool._logo_name.text() and tool._marker_combo.currentData() == "logo.svg"
-    assert pump(lambda: "logo" in view._label._mark_boxes)
-    lx, ly, lw, lh = view._label._mark_boxes["logo"]
-    assert abs(lw / lh - 2.0) < 0.05, "the box keeps the SVG's shape"
+    assert pump(lambda: "logo" in view._label._mark_boxes and abs(view._label._mark_boxes["logo"][2] / view._label._mark_boxes["logo"][3] - 2.0) < 0.05), ("the box keeps the SVG's shape", view._label._mark_boxes.get("logo"))
     png = os.path.join(work, "logo.png"); cv2.imwrite(png, np.full((50, 50, 4), 255, np.uint8))
     QFileDialog.getOpenFileName = staticmethod(lambda *a, **k: (png, ""))
     tool._choose_logo()
@@ -182,13 +220,13 @@ _SCRIPT = textwrap.dedent(r'''
 
     # ---- fonts: the list fills in, and a font file can be picked
     tool._start_font_scan()
-    assert pump(lambda: tool._text_font.count() > 3, 60.0), tool._text_font.count()
-    fam = tool._text_font.itemData(1)
+    assert pump(lambda: tool._logo_font.count() > 3, 60.0), tool._logo_font.count()
+    fam = tool._logo_font.itemData(1)
     assert fam is not None
-    tool._text_font.set_value(fam)
-    assert tool._text_font.value() == fam
-    tool._text_font.set_value("C:/some/where/Custom.ttf")
-    assert tool._text_font.currentText() == "Custom.ttf" and tool._text_font.value() == "C:/some/where/Custom.ttf"
+    tool._logo_font.set_value(fam)
+    assert tool._logo_font.value() == fam
+    tool._logo_font.set_value("C:/some/where/Custom.ttf")
+    assert tool._logo_font.currentText() == "Custom.ttf" and tool._logo_font.value() == "C:/some/where/Custom.ttf"
 
     # ---- editing off: no boxes
     tool._edit_box.setChecked(False)

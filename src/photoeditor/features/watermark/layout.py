@@ -30,7 +30,7 @@ def _clamp(value: float, low: float, high: float) -> float:
     return max(low, min(high, value))
 
 
-def edit(marks: Marks, name: str, cx: float, cy: float, ratio: float = 1.0, canister_size: str = "medium") -> Marks:
+def edit(marks: Marks, name: str, cx: float, cy: float, ratio: float = 1.0, canister_size: str = "medium", shape=None, variables=None) -> Marks:
     """The marks after a watermark was dragged so its centre is at (cx, cy) - fractions of the picture - and resized by `ratio` (1 = unchanged).
 
     The mark's position menu becomes Custom, and the canister's menus too (its size is remembered as a custom one)."""
@@ -40,7 +40,14 @@ def edit(marks: Marks, name: str, cx: float, cy: float, ratio: float = 1.0, cani
     if name == "text":
         return dataclasses.replace(marks, text_position=CUSTOM, text_x=cx, text_y=cy, text_size=_clamp(marks.text_size * ratio, *TEXT_SIZE_RANGE))
     if name == "logo":
-        return dataclasses.replace(marks, logo_position=CUSTOM, logo_x=cx, logo_y=cy, logo_size=_clamp(marks.logo_size * ratio, *LOGO_SIZE_RANGE))
+        size = _clamp(marks.logo_size * ratio, *LOGO_SIZE_RANGE)
+        if shape is not None:   # the marker stays where its Position menu puts it and is moved from there: the X and Y sliders show how far
+            home = next((p for p in mark_parts(shape, dataclasses.replace(marks, logo_size=size, logo_dx=0.0, logo_dy=0.0), variables=variables) if p.name == "logo"), None)
+            if home is not None:
+                ih, iw = shape[:2]
+                x, y, w, h = home.box
+                return dataclasses.replace(marks, logo_size=size, logo_dx=_clamp(cx - (x + w / 2) / iw, -1.0, 1.0), logo_dy=_clamp(cy - (y + h / 2) / ih, -1.0, 1.0))
+        return dataclasses.replace(marks, logo_position=CUSTOM, logo_x=cx, logo_y=cy, logo_size=size, logo_dx=0.0, logo_dy=0.0)
     if name == "info":
         return dataclasses.replace(marks, info_position=CUSTOM, info_x=cx, info_y=cy, info_size=_clamp(marks.info_size * ratio, *INFO_SIZE_RANGE))
     if name == "canister":

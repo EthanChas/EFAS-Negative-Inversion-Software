@@ -198,3 +198,146 @@ def test_the_example_watermark_presets_are_complete_and_draw_the_pictures_own_de
         assert not np.array_equal(a, GREY), name
         if "Film" in name:   # the film and camera ones; the copyright line is the frame's year, and the last one the roll's name and the file's
             assert not np.array_equal(a, b), f"{name}: a different film and camera write different words"
+
+
+def test_a_darktable_style_exif_strip_fills_in_every_part(folder):
+    """The shape of the strips a darktable user wrote: a white bar, a title from the text, the date and gear on the left, the settings in the middle and the author on the right,
+    all in darktable's own spellings ($(EXIF_FOCAL_LENGTH), $(EXIF.DATE), $(Xmp.dc.creator))."""
+    from photoeditor.features.metadata.models import MetadataConfig
+
+    strip = ('<svg xmlns="http://www.w3.org/2000/svg" width="100" height="5.5" viewBox="0 0 100 5.5"><rect width="100" height="5.5" fill="#FFFFFF"/>'
+             '<text x="50" y="2" font-size="1.3" fill="#404040" text-anchor="middle">$(WATERMARK_TEXT)</text>'
+             '<text x="2" y="4.2" font-size="0.7" fill="#505050">$(EXIF.DATE) - $(EXIF.MODEL) - $(EXIF.LENS)</text>'
+             '<text x="50" y="4.2" font-size="0.7" fill="#505050" text-anchor="middle">$(EXIF_FOCAL_LENGTH)mm f/$(EXIF_APERTURE) $(EXIF_EXPOSURE)s ISO$(EXIF_ISO)</text>'
+             '<text x="98" y="4.2" font-size="0.7" fill="#505050" text-anchor="end">$(Xmp.dc.creator)</text></svg>')
+    svg = _write(_user("strip.svg"), strip)
+    base = dict(camera_model="K1000", lens_model="SMC 50mm f/2", focal_length_mm=50.0, max_aperture=2.0, film_iso=400, exposure_override="1/125", capture_date="2024-03-09")
+
+    def ink(exif=None, **changes):
+        v = V.build("a/b.jpg", MetadataConfig(**{**base, **changes}), source_exif=exif)
+        rgb, alpha = logoimage.marker_sprite(svg, "width", 1800, 1.0, marker_variables(Marks(logo_text="Lion", logo_color="#404040"), v))
+        return (rgb[..., 0] < 200).astype(np.uint8)   # the dark letters on the white bar
+
+    whole = ink({"0th": {315: b"Ethan"}})
+    h, w = whole.shape
+    assert w == 1800 and abs(h - 99) <= 1, "the bar keeps its shape: 100 by 5.5"
+    right, middle, left = whole[:, int(w * 0.80):], whole[:, int(w * 0.40):int(w * 0.60), ], whole[:, :int(w * 0.30)]
+    assert right.sum() > 0 and not np.array_equal(ink(None), whole), "the author on the right is the scan's own Artist"
+    assert not np.array_equal(ink({"0th": {315: b"Ethan"}}, exposure_override="1/500"), whole), "the shutter in the middle comes from the Exposure box"
+    assert not np.array_equal(ink({"0th": {315: b"Ethan"}}, focal_length_mm=85.0), whole) and not np.array_equal(ink({"0th": {315: b"Ethan"}}, max_aperture=1.4), whole)
+    assert not np.array_equal(ink({"0th": {315: b"Ethan"}}, capture_date="1999"), whole), "the date on the left"
+    assert not np.array_equal(ink({"0th": {315: b"Ethan"}}, camera_model="FM2"), whole)
+    assert left.sum() > 0 and middle.sum() > 0
+
+
+def test_an_svg_with_a_fractional_size_or_a_viewbox_of_another_shape_keeps_its_shape(folder):
+    def aspect(svg_text):
+        return logoimage.svg_aspect(_write(_user("shape.svg"), svg_text))
+    assert abs(aspect('<svg xmlns="http://www.w3.org/2000/svg" width="100" height="5.5" viewBox="0 0 100 5.5"/>') - 100 / 5.5) < 1e-6, "not rounded to 100 by 5"
+    assert abs(aspect('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 331 130" width="331" height="130"/>') - 331 / 130) < 1e-6
+    assert abs(aspect('<svg xmlns="http://www.w3.org/2000/svg" width="200" height="100" viewBox="0 0 50 50"/>') - 2.0) < 1e-6, "the size the file states, as a browser shows it"
+    assert abs(aspect('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 10"/>') - 4.0) < 1e-6, "a viewBox and no size"
+    sprite = logoimage.marker_sprite(_write(_user("shape.svg"), '<svg xmlns="http://www.w3.org/2000/svg" width="100" height="5.5" viewBox="0 0 100 5.5"><rect width="100" height="5.5" fill="#f00"/></svg>'), "width", 1000, 1.0)
+    assert sprite[0].shape[:2] == (55, 1000) and sprite[1].min() > 0.99, "drawn to fill its whole rectangle"
+
+
+# ------------------------------------------------------------ moving a marker: Move X and Move Y, dragging, and the old Text mark
+def test_a_marker_is_moved_from_where_its_position_puts_it(folder):
+    _write(_user("box.svg"), SVG_BOX)
+    base = Marks(logo="box.svg", logo_size=0.3, logo_opacity=1.0, logo_position="bottom_left")
+    x0, y0, w0, h0 = mark_parts(GREY.shape, base)[0].box
+    moved = mark_parts(GREY.shape, Marks(**{**base.to_dict(), "logo_dx": 0.1, "logo_dy": -0.2}))[0].box
+    assert moved == (x0 + 90, y0 - 120, w0, h0), "a tenth of the width to the right, a fifth of the height up"
+    custom = Marks(**{**base.to_dict(), "logo_position": "custom", "logo_x": 0.5, "logo_y": 0.5, "logo_dx": 0.1})
+    box = mark_parts(GREY.shape, custom)[0].box
+    assert abs((box[0] + box[2] / 2) - (450 + 90)) <= 1, "from the dragged-to spot of an earlier version too"
+    assert Marks.from_dict({"logo_dx": 5, "logo_dy": -5}).logo_dx == 1.0 and Marks.from_dict({"logo_dy": -5}).logo_dy == -1.0
+    assert Marks().to_dict() == {} and Marks(logo_dx=0.25).to_dict() == {"logo_dx": 0.25}
+
+
+def test_dragging_a_marker_changes_its_offsets_and_keeps_its_position(folder):
+    from photoeditor.features.watermark import layout
+
+    _write(_user("box.svg"), SVG_BOX)
+    m = Marks(logo="box.svg", logo_size=0.3, logo_opacity=1.0, logo_position="bottom_left")
+    shape = GREY.shape
+    x, y, w, h = mark_parts(shape, m)[0].box
+    cx, cy = (x + w / 2) / 900, (y + h / 2) / 600
+    same = layout.edit(m, "logo", cx, cy, 1.0, shape=shape)
+    assert same.logo_position == "bottom_left" and abs(same.logo_dx) < 0.002 and abs(same.logo_dy) < 0.002, "dropped where it is: no offset"
+    dragged = layout.edit(m, "logo", cx + 0.2, cy - 0.3, 1.0, shape=shape)
+    assert dragged.logo_position == "bottom_left" and abs(dragged.logo_dx - 0.2) < 0.002 and abs(dragged.logo_dy + 0.3) < 0.002
+    nx, ny, nw, nh = mark_parts(shape, dragged)[0].box
+    assert abs((nx + nw / 2) / 900 - (cx + 0.2)) < 0.003 and abs((ny + nh / 2) / 600 - (cy - 0.3)) < 0.003, "the marker is where it was dropped"
+    bigger = layout.edit(m, "logo", cx, cy, 2.0, shape=shape)
+    assert abs(bigger.logo_size - 0.6) < 1e-9 and bigger.logo_position == "bottom_left"
+    old_way = layout.edit(m, "logo", 0.4, 0.6, 1.0)
+    assert old_way.logo_position == "custom" and (old_way.logo_x, old_way.logo_y) == (0.4, 0.6) and old_way.logo_dx == 0 == old_way.logo_dy, "without the picture's shape: the earlier behaviour"
+    edge = layout.edit(m, "logo", 5.0, -5.0, 1.0, shape=shape)
+    assert 0 < edge.logo_dx <= 1 and -1 <= edge.logo_dy < 0, "the centre cannot be dragged off the picture"
+
+
+def test_an_old_text_watermark_can_be_made_a_marker(folder):
+    from photoeditor.features.watermark.marks import TEXT_MARKER, text_as_marker
+
+    old = Marks(text="(c) Me\nline two", text_size=0.04, text_opacity=0.7, text_color="#ff0000", text_font="Arial", text_bold=True, text_italic=True, text_position="top_right", text_rotation=15.0)
+    new = text_as_marker(old)
+    assert new.text == "" and not new.has_text() and new.logo == TEXT_MARKER == "simple-text.svg" and new.has_logo()
+    assert new.logo_text == "(c) Me line two" and new.logo_color == "#ff0000" and new.logo_font == "Arial" and new.logo_bold and new.logo_italic
+    assert new.logo_position == "top_right" and new.logo_opacity == 0.7 and new.logo_rotation == 15.0 and new.logo_scale_on == "short"
+    old_height = mark_parts(GREY.shape, old)[0].box[3]
+    new_height = mark_parts(GREY.shape, new)[0].box[3]
+    assert 0.4 < new_height / old_height < 2.5, "about as tall as it was (one line, though)"
+    assert abs(text_as_marker(Marks(text="x", text_size=0.15)).logo_size - 1.98) < 1e-9 and text_as_marker(Marks(text="x", text_size=0.0001)).logo_size == 0.01, "kept inside the marker's size range"
+
+
+
+# ------------------------------------------------------------ the size has no limit
+def test_the_markers_size_has_no_practical_limit():
+    from photoeditor.features.watermark.marks import LOGO_SIZE_RANGE, LOGO_SIZE_SLIDER
+    assert LOGO_SIZE_SLIDER == (0.01, 5.0) and LOGO_SIZE_RANGE == (0.01, 100.0), "the slider goes to 500%, the box beside it to 10000%"
+    assert Marks.from_dict({"logo_size": 3.0}).logo_size == 3.0 and Marks.from_dict({"logo_size": 50}).logo_size == 50.0, "far beyond the old 80%"
+    assert Marks.from_dict({"logo_size": 1e9}).logo_size == 100.0 and Marks.from_dict({"logo_size": 0}).logo_size == 0.01
+
+
+def test_a_marker_many_times_the_picture_is_drawn_without_a_picture_that_size(folder):
+    import time
+    _write(_user("box.svg"), SVG_BOX)   # 2:1, solid green
+    huge = Marks(logo="box.svg", logo_size=40.0, logo_opacity=1.0, logo_position="center")   # 4000% of the shorter side: 24000 by 12000 pixels on a 900 by 600 picture
+    began = time.time()
+    part = mark_parts(GREY.shape, huge)[0]
+    out = apply_marks(GREY, huge)
+    assert time.time() - began < 10, "only the part on the picture is made"
+    assert part.alpha.shape[0] <= 600 and part.alpha.shape[1] <= 900, "the piece drawn is no bigger than the picture"
+    assert part.box[2] == 24000 and part.box[3] == 12000 and part.box[0] == (900 - 24000) // 2 and part.box[1] == (600 - 12000) // 2, ("its box is the whole marker, running off the picture", part.box)
+    assert (out[..., 1].astype(int) - out[..., 0].astype(int) > 200).all(), "it covers the whole picture in its green"
+    gone = Marks(logo="box.svg", logo_size=0.5, logo_opacity=1.0, logo_position="center", logo_dx=1.0)   # moved a whole picture width to the right: all of it is off the picture
+    assert np.array_equal(apply_marks(GREY, gone), GREY), "a marker moved wholly off the picture draws nothing"
+
+
+def test_the_part_of_a_big_marker_that_is_drawn_matches_the_whole_one(folder, monkeypatch):
+    """The same marker drawn whole and drawn as a window of itself (forced here with a tiny limit) must look the same, turned or not, SVG or picture."""
+    import cv2
+    _write(_user("box.svg"), SVG_BOX.replace('<rect width="200" height="100" fill="#00ff00"/>', '<rect width="200" height="100" fill="#00ff00"/><circle cx="50" cy="50" r="30" fill="#0000ff"/>'))
+    picture = np.zeros((60, 100, 4), np.uint8); picture[..., 3] = 255; picture[:30, :50, 0] = 255; picture[30:, 50:, 2] = 255
+    cv2.imwrite(_user("pic.png"), cv2.cvtColor(picture, cv2.COLOR_RGBA2BGRA))
+    normal_limit = logoimage.FULL_SPRITE_PIXELS
+    for name in ("box.svg", "pic.png"):
+        for degrees in (0.0, 30.0, 90.0):
+            m = Marks(logo=name, logo_size=0.5, logo_opacity=0.9, logo_position="center", logo_rotation=degrees, logo_dx=0.05)
+            whole = apply_marks(GREY, m).astype(int)
+            monkeypatch.setattr(logoimage, "FULL_SPRITE_PIXELS", 100)
+            windowed_part = mark_parts(GREY.shape, m)[0]
+            windowed = apply_marks(GREY, m).astype(int)
+            monkeypatch.setattr(logoimage, "FULL_SPRITE_PIXELS", normal_limit)   # (monkeypatch.undo() would also put the data folder back)
+            assert windowed_part.whole is not None, "the window path was taken"
+            assert abs(windowed - whole).mean() < 1.5 and (abs(windowed - whole) > 60).mean() < 0.01, (name, degrees, abs(windowed - whole).mean())
+            assert mark_parts(GREY.shape, m)[0].box[2:] == windowed_part.box[2:] or abs(mark_parts(GREY.shape, m)[0].box[2] - windowed_part.box[2]) <= 1, "the same box"
+
+
+def test_a_picture_marker_many_times_the_picture_covers_it(folder):
+    import cv2
+    os.makedirs(library.user_dir(), exist_ok=True)
+    assert cv2.imwrite(_user("white.png"), np.full((20, 20, 4), 255, np.uint8))
+    out = apply_marks(GREY, Marks(logo="white.png", logo_size=30.0, logo_opacity=1.0, logo_position="center", logo_rotation=45.0))
+    assert out.min() >= 254, "a turned square many times the picture is white all over"

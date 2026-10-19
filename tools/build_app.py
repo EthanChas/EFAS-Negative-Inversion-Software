@@ -12,6 +12,7 @@ import sys
 
 NAME = "EFAS Negative Inversion Software"
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+ICON = os.path.join(ROOT, "src", "photoeditor", "assets", "icon", "efas.ico")
 EXCLUDE = ("torch", "transformers", "tensorflow", "scipy", "numba", "matplotlib", "pandas", "tkinter", "sklearn", "sympy", "onnx")
 
 
@@ -19,6 +20,8 @@ def command() -> list[str]:
     cmd = [sys.executable, "-m", "PyInstaller", "--noconfirm", "--windowed", "--name", NAME, "--paths", "src",
            "--add-data", f"src/photoeditor/assets{os.pathsep}photoeditor/assets", "--hidden-import", "onnxruntime", "--hidden-import", "lupa.lua54", "--collect-all", "lupa", "--collect-all", "wgpu"]
     cmd.append("--onedir" if sys.platform == "darwin" else "--onefile")
+    if sys.platform.startswith("win"):   # without this the .exe carries PyInstaller's stock icon: the pinned taskbar shortcut, File Explorer and the start-up show that, and only the running window shows ours
+        cmd += ["--icon", ICON]
     for module in EXCLUDE:
         cmd += ["--exclude-module", module]
     return cmd + ["run_app.py"]

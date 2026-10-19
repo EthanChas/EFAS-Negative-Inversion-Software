@@ -41,6 +41,7 @@ from ..features.flatfield.processor import reference_from_file
 from ..features.lookpresets import module_store
 from ..features.lookpresets import builtin as builtin_presets
 from ..features.lookpresets import share as preset_share
+from ..features.metadata.source_exif import read_exif_from_file
 from ..features.watermark import variables as wm_variables
 from ..features.lookpresets import store as look_store
 from ..features.presettree import logic as preset_tree
@@ -1082,9 +1083,9 @@ class AppController(QObject):
             parts.append("camera/lens text settings")
         self._log("Watermark: " + (", ".join(parts) or "settings changed") if marks != base or before != base else "Watermark cleared")
 
-    def edit_mark(self, name: str, cx: float, cy: float, ratio: float = 1.0) -> None:
-        """A watermark was dragged on the picture so its centre is at (cx, cy) - fractions of the picture - and sized by `ratio`."""
-        self.set_marks(wm_layout.edit(self.state.marks, name, cx, cy, ratio, self.state.wm_size))
+    def edit_mark(self, name: str, cx: float, cy: float, ratio: float = 1.0, shape=None) -> None:
+        """A watermark was dragged on the picture so its centre is at (cx, cy) - fractions of the picture (of this (height, width) shape, before any border) - and sized by `ratio`."""
+        self.set_marks(wm_layout.edit(self.state.marks, name, cx, cy, ratio, self.state.wm_size, shape, dict(self.state.wm_vars)))
 
     def set_metadata(self, config: MetadataConfig) -> None:
         """This frame's own details (date, place, note...), written into its exports."""
@@ -1107,7 +1108,8 @@ class AppController(QObject):
 
     def watermark_variables(self) -> dict[str, str]:
         """What $(NAME) means in a watermark on the open photo: its file, today, the film frame (the Roll Card laid over its own details) and EFAS."""
-        return wm_variables.build(self.state.image_path or "", self.effective_metadata(), app_version=__version__)
+        path = self.state.image_path or ""
+        return wm_variables.build(path, self.effective_metadata(), app_version=__version__, source_exif=read_exif_from_file(path) if path else None)
 
     def _refresh_watermark_variables(self) -> bool:
         """Keep state.wm_vars up to date with the open photo; True when it changed (a watermark that uses a variable must then be drawn again)."""

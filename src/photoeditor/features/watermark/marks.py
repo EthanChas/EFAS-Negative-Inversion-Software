@@ -19,7 +19,8 @@ DEFAULT_TEXT_POSITION = "bottom_right"
 DEFAULT_LOGO_POSITION = "bottom_left"
 DEFAULT_INFO_POSITION = "bottom_left"
 TEXT_SIZE_RANGE = (0.01, 0.15)
-LOGO_SIZE_RANGE = (0.03, 0.80)
+LOGO_SIZE_RANGE = (0.01, 100.0)   # what a marker's size may be: from 1% to 10000% of what it is a share of (see Scale on) - far more than anyone needs, so it is never in the way
+LOGO_SIZE_SLIDER = (0.01, 5.0)    # what the slider covers (1% to 500%); the box beside it takes any size in the range above
 INFO_SIZE_RANGE = (0.01, 0.10)
 CANISTER_SIZE_RANGE = (0.05, 0.95)
 LINE_SPACING_RANGE = (0.0, 1.0)
@@ -95,6 +96,8 @@ class Marks:
     logo_x: float = 0.15
     logo_y: float = 0.9
     logo_rotation: float = 0.0
+    logo_dx: float = 0.0   # how far the marker is moved from where its Position puts it, as a share of the picture's width (dragging it on the picture, or the X slider)
+    logo_dy: float = 0.0   # ... and of its height (the Y slider)
     logo_scale_on: str = logoimage.DEFAULT_SCALE_ON   # what the size is a share of (logoimage.SCALE_ON)
     # what an SVG marker takes for its $(WATERMARK_TEXT), $(WATERMARK_COLOR), $(WATERMARK_FONT_FAMILY), $(WATERMARK_FONT_STYLE) and $(WATERMARK_FONT_WEIGHT) (darktable's variables)
     logo_text: str = ""
@@ -184,7 +187,7 @@ class Marks:
 _RANGES = {
     "text_size": TEXT_SIZE_RANGE, "text_opacity": (0.0, 1.0), "text_line_spacing": LINE_SPACING_RANGE, "text_letter_spacing": LETTER_SPACING_RANGE,
     "text_rotation": ROTATION_RANGE, "text_outline": OUTLINE_RANGE, "text_x": (0.0, 1.0), "text_y": (0.0, 1.0),
-    "logo_size": LOGO_SIZE_RANGE, "logo_opacity": (0.0, 1.0), "logo_x": (0.0, 1.0), "logo_y": (0.0, 1.0), "logo_rotation": ROTATION_RANGE,
+    "logo_size": LOGO_SIZE_RANGE, "logo_opacity": (0.0, 1.0), "logo_x": (0.0, 1.0), "logo_y": (0.0, 1.0), "logo_rotation": ROTATION_RANGE, "logo_dx": (-1.0, 1.0), "logo_dy": (-1.0, 1.0),
     "canister_x": (-1.0, 1.0), "canister_y": (-1.0, 1.0), "canister_size": (0.0, CANISTER_SIZE_RANGE[1]),
     "info_size": INFO_SIZE_RANGE, "info_opacity": (0.0, 1.0), "info_x": (0.0, 1.0), "info_y": (0.0, 1.0),
 }
@@ -343,6 +346,42 @@ def _logo_request(marks: Marks, iw: int, ih: int) -> tuple[str, int]:
     return "long", max(4, round(min(iw, ih) * marks.logo_size))
 
 
+TEXT_MARKER = "simple-text.svg"   # the sample marker that writes a line of text
+
+
+def text_as_marker(marks: Marks) -> Marks:
+    """The old Text mark rewritten as the simple-text marker (an approximation: one line, its letters about as tall, the same colour, font, place and turn), so the text can be kept and edited
+    in the Marker section; the text mark itself is cleared."""
+    size = max(LOGO_SIZE_RANGE[0], min(LOGO_SIZE_RANGE[1], marks.text_size * 13.2))   # that marker's letters are 76 of its 1000 units
+    return dataclasses.replace(
+        marks, text="", logo=TEXT_MARKER, logo_text=" ".join(marks.text.split())[:MARKER_TEXT_MAX], logo_color=marks.text_color, logo_font=marks.text_font, logo_bold=marks.text_bold,
+        logo_italic=marks.text_italic, logo_size=size, logo_opacity=marks.text_opacity, logo_position=marks.text_position, logo_x=marks.text_x, logo_y=marks.text_y,
+        logo_rotation=marks.text_rotation, logo_scale_on="short", logo_dx=0.0, logo_dy=0.0,
+    )
+
+
+def _logo_part(marker: str, marks: Marks, iw: int, ih: int, margin: int, svg_vars: Mapping[str, str]) -> Part:
+    """The marker as a part of the watermark: drawn whole when it is a reasonable size; when it is many times the picture (the size has no limit) only the part on the picture is drawn, and
+    the part still says where the whole marker is, so it can be dragged and its box shown."""
+    mode, px = _logo_request(marks, iw, ih)
+    width, height = logoimage.drawn_size(logoimage.natural_size(marker, svg_vars), mode, px)
+    box_w, box_h = logoimage.turned_size(width, height, marks.logo_rotation) if marks.logo_rotation else (width, height)
+    if box_w * box_h <= logoimage.FULL_SPRITE_PIXELS:
+        rgb, alpha = logoimage.marker_sprite(marker, mode, px, marks.logo_opacity, svg_vars)
+        if marks.logo_rotation:
+            rgb, alpha = _rotate(rgb, alpha, marks.logo_rotation)
+        x, y = _where(marks.logo_position, marks.logo_x, marks.logo_y, iw, ih, alpha.shape[1], alpha.shape[0], margin)
+        return Part("logo", rgb, alpha, x + round(marks.logo_dx * iw), y + round(marks.logo_dy * ih))
+    x, y = _where(marks.logo_position, marks.logo_x, marks.logo_y, iw, ih, box_w, box_h, margin)
+    x, y = x + round(marks.logo_dx * iw), y + round(marks.logo_dy * ih)
+    x0, y0, x1, y1 = max(0, x), max(0, y), min(iw, x + box_w), min(ih, y + box_h)
+    if x1 <= x0 or y1 <= y0:   # all of it is off the picture
+        rgb, alpha = np.zeros((1, 1, 3), np.float32), np.zeros((1, 1), np.float32)
+        return Part("logo", rgb, alpha, max(0, min(iw - 1, x0)), max(0, min(ih - 1, y0)), (x, y, box_w, box_h))
+    rgb, alpha = logoimage.marker_window(marker, svg_vars, (width, height), marks.logo_rotation, (x + box_w / 2.0, y + box_h / 2.0), (x0, y0, x1, y1), marks.logo_opacity)
+    return Part("logo", rgb, alpha, x0, y0, (x, y, box_w, box_h))
+
+
 def mark_parts(shape, marks: Marks, info: bool = False, camera: str = "", lens: str = "", canister_on: bool = False, variables: Mapping[str, str] | None = None) -> list[Part]:
     """The logo ("logo"), the text ("text") and the camera/lens text on its own ("info"), laid out on a picture of this shape. `variables` are the photo's $(NAME) values (wmvars.build)."""
     ih, iw = shape[:2]
@@ -352,15 +391,9 @@ def mark_parts(shape, marks: Marks, info: bool = False, camera: str = "", lens: 
     marker = library.resolve(marks.logo)
     if marker is not None:
         try:
-            mode, px = _logo_request(marks, iw, ih)
-            rgb, alpha = logoimage.marker_sprite(marker, mode, px, marks.logo_opacity, marker_variables(marks, variables))
-            if marks.logo_rotation:
-                rgb, alpha = _rotate(rgb, alpha, marks.logo_rotation)
+            parts.append(_logo_part(marker, marks, iw, ih, margin, marker_variables(marks, variables)))
         except Exception:
-            rgb = alpha = None
-        if alpha is not None:
-            x, y = _where(marks.logo_position, marks.logo_x, marks.logo_y, iw, ih, alpha.shape[1], alpha.shape[0], margin)
-            parts.append(Part("logo", rgb, alpha, x, y))
+            pass
     text = wmvars.expand(marks.text, variables or {}) if marks.has_text() else ""
     if text.strip():
         align = _auto_align(marks.text_position) if marks.text_align == "auto" else marks.text_align

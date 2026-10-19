@@ -125,11 +125,12 @@ class Part:
     alpha: np.ndarray = field(compare=False, repr=False)
     x: int
     y: int
+    whole: tuple[int, int, int, int] | None = field(default=None, compare=False)   # (x, y, width, height) of a piece that is bigger than the picture: only the part on the picture is drawn
 
     @property
     def box(self) -> tuple[int, int, int, int]:
-        """(x, y, width, height) of the piece."""
-        return self.x, self.y, self.alpha.shape[1], self.alpha.shape[0]
+        """(x, y, width, height) of the piece (the whole of it, even where it runs off the picture)."""
+        return self.whole if self.whole is not None else (self.x, self.y, self.alpha.shape[1], self.alpha.shape[0])
 
 
 def long_side_fraction(size: str, custom_size: float = 0.0) -> float:

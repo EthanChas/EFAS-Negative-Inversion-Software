@@ -1,6 +1,6 @@
 # Watermarks: markers, SVG files and variables
 
-The **Watermark** tab (Watermark and Finishing) puts four kinds of mark on the finished picture: a film **canister**, **camera and lens** text, a block of **text**, and a **marker** (an SVG or a picture). They are drawn at the very end, so they are in every export and have no effect on the histogram or any measurement.
+The **Watermark** tab (Watermark and Finishing) puts three kinds of mark on the finished picture: a film **canister**, **camera and lens** text, and a **marker** (an SVG or a picture). They are drawn at the very end, so they are in every export and have no effect on the histogram or any measurement.
 
 This page is about the **marker** and the **variables**, which work the way darktable's watermark module works, so an SVG written for darktable can be used here.
 
@@ -14,14 +14,15 @@ EFAS now does all of that, with these differences, on purpose:
 - **A value is never read for variables again.** A film called `$(FILE.NAME)` shows that text; it does not become the file name.
 - **The camera, lens and ISO are the film camera's.** `$(EXIF.MAKER)`, `$(EXIF.MODEL)`, `$(EXIF.LENS)` and `$(EXIF.ISO)` give the camera, lens and film speed of the **Roll Card** and the frame's own details (the scan's own Exif says nothing about the film), and the film-scanner names are there as well (`$(FILM)`, `$(ROLL.NAME)`, ...). So a darktable SVG that writes the camera writes the film camera here.
 - **`$(FILE.FOLDER)` is the folder's name,** not its whole path, so a watermark does not tell people how your disk is laid out.
-- The marker has its **own** Text, Colour and Font, separate from the Text mark's, so one picture can carry a text mark and an SVG marker with different words.
-- Not carried over: darktable's tag, rating, colour label and `Xmp.dc.*` variables, and its "advanced" two-step scale options. The four **Scale on** choices below cover the cases people use.
+- The marker has its **own** Text, Colour and Font. There is no separate Text section any more: a line of text is the `simple-text.svg` sample marker. A photo that was given a Text watermark by an earlier version still shows it, and the Marker section then offers **Make it a Marker** (the same words, size, colour, font and place, as one line) or **Remove It**.
+- **Your old darktable SVGs open as they are.** The names darktable accepts in its own SVGs work here: the underscore spellings (`$(EXIF_ISO)`, `$(EXIF_FOCAL_LENGTH)`, `$(EXIF_APERTURE)`, `$(EXIF_EXPOSURE)`, `$(EXIF_YEAR)`...) are read as the dotted names, `$(EXIF.FOCAL.LENGTH)`, `$(EXIF.APERTURE)`, `$(EXIF.EXPOSURE)` and `$(EXIF.ISO)` are the number only (as in darktable, so `$(EXIF_FOCAL_LENGTH)mm f/$(EXIF_APERTURE)` reads `50mm f/2`), `$(EXIF.DATE)` is the frame's date, and `$(Xmp.dc.creator)` and `$(Xmp.dc.rights)` are the Artist and Copyright of the scan's own Exif. Copy the files into your watermarks folder (**Add...**, or the folder itself) and they are in the list. A name EFAS does not know comes out empty. (darktable leaves some of those as literal text, and matches names in exact case; EFAS ignores case.)
+- Not carried over: darktable's tag, rating, colour label and the other `Xmp.dc.*` variables, and its "advanced" two-step scale options. The four **Scale on** choices below cover the cases people use.
 
 ## The watermarks folder
 
 Markers live in a **watermarks folder** in EFAS's data folder (`~/.EFAS/watermarks`, or whatever your data folder is). Four samples come with EFAS and are listed with "sample" after their names:
 
-- `efas-film-credit.svg`: the EFAS film credit: the film and its ISO in bold, a short rule, the camera and lens, and the date and *Edited with EFAS Negative Inversion Software* in small letters. Everything comes from the Roll Card and the frame.
+- `efas-film-credit.svg`: the EFAS film credit: the EFAS icon on the left, then the film and its ISO in bold, a short rule, the camera and lens, and the date and *Edited with EFAS Negative Inversion Software* in small letters. Everything but the icon comes from the Roll Card and the frame. The icon is inside the file (a small picture), so the marker still works when you copy it to another computer.
 - `simple-text.svg`: one line of text in the colour and font you choose.
 - `copyright-line.svg`: `(c) 2024 Your Name`: the year of the frame (this year if the frame has no date) and your text.
 - `film-frame-info.svg`: two lines from the Roll Card: the film and its ISO, and the camera and lens. A part with nothing to show is left out.
@@ -39,7 +40,7 @@ The built-in presets (Presets > **Built-in Presets** > **Watermarks (EFAS Exampl
 - **Film credit, bottom left, light** and **dark**: the `efas-film-credit.svg` marker in white or black.
 - **Film and camera line, bottom centre**: `film-frame-info.svg`, two quiet lines.
 - **Copyright line, bottom right**: `copyright-line.svg` with the example name `Your Name`; change it in the marker's **Text** box.
-- **Text with the roll and frame, top left**: the Text mark with variables in it (the roll's name, the frame's number and the file name), as an example of variables outside an SVG.
+- **Roll and frame line, top left**: `simple-text.svg` with variables in its Text (the roll's name, the frame's number and the file name).
 
 Fill in the **Roll Card** first (film, ISO, camera, lens, dates): that is where the words come from. A preset that uses a sample marker works on any computer, because the samples come with EFAS. Apply one, then press **Variables...** to see what the picture will say, and change the Text, Colour, Size or Position in the Watermark tab as you like. **Save Current...** in the Presets module keeps your version as one of your own presets.
 
@@ -50,12 +51,14 @@ Which of **Text**, **Colour** and **Font** can be used depends on the marker: th
 - **Text:** up to 511 characters. It may hold variables: `(c) $(EXIF.YEAR) $(CAMERA)`.
 - **Font, B, I:** a font installed on this computer (or a font file) with bold and italic.
 - **Color:** white, black or any colour.
-- **Size** and **Scale on:** what the size is a percentage of. **Shorter side** (the default) is the marker's longer side against the picture's shorter side, so it looks the same in portrait and landscape. **Longer side** is against the picture's longer side. **Width** and **Height** are the marker's own width or height against the picture's, which is how to keep the height of a line of text constant.
+- **Size** and **Scale on:** the size has no practical limit. The slider covers 1% to 500%, and the box beside it takes any size from 1% to 10000%, so a strip can be made as wide as the picture (**Width**, 100%) or a marker many times bigger than the picture. A marker bigger than the picture is drawn only where it is on the picture, so a huge size costs no more than the picture does. Scale on says what the size is a percentage of. **Shorter side** (the default) is the marker's longer side against the picture's shorter side, so it looks the same in portrait and landscape. **Longer side** is against the picture's longer side. **Width** and **Height** are the marker's own width or height against the picture's, which is how to keep the height of a line of text constant.
 - **Opacity** and **Rotate** (clockwise degrees; the box turns with it).
-- **Position:** nine places and **Custom**, which appears once you drag the marker on the picture (tick **Move and resize on the picture**).
+- **Position:** nine places (and **Custom**, for a marker placed by an earlier version).
+- **Move X** and **Move Y:** move the marker from its Position, as a percentage of the picture's width and height (right and down are plus), from -100 to 100.
+- **Move and resize on the picture** (under the sliders): tick it, then drag the marker with the mouse to move it, and drag a corner to resize it. The Position stays, and **Move X** and **Move Y** show how far you moved it, so the sliders and the mouse do the same thing. It works for the canister and the camera and lens text as well.
 - **Variables...** lists every variable with its value for the open photo; double-click a row to copy its name.
 
-The Text mark (not only the marker) understands variables too.
+The marker's **Text** understands variables too, as in `(c) $(EXIF.YEAR) $(CAMERA)`.
 
 ## Variables
 
@@ -65,8 +68,9 @@ Put a name in `$( )`: `$(CAMERA)`. The names are not case-sensitive. A name with
 |---|---|
 | The file | `FILE.NAME` (without the extension), `FILE.EXTENSION`, `FILE.FOLDER` (the folder's name) |
 | Today (the preview's time when the photo was opened; the export's own time when it is exported) | `YEAR`, `YEAR.SHORT`, `MONTH`, `MONTH.LONG`, `MONTH.SHORT`, `DAY`, `HOUR`, `MINUTE`, `SECOND` |
-| The frame's date (from its details or the Roll Card's dates) | `EXIF.YEAR`, `EXIF.YEAR.SHORT`, `EXIF.MONTH`, `EXIF.MONTH.LONG`, `EXIF.MONTH.SHORT`, `EXIF.DAY`, `EXIF.HOUR`, `EXIF.MINUTE`, `EXIF.DATE.REGIONAL`, `EXIF.TIME.REGIONAL` |
-| The film camera | `CAMERA` (make and model), `EXIF.MAKER` or `MAKER`, `EXIF.MODEL` or `MODEL`, `LENS` or `EXIF.LENS`, `EXIF.ISO`, `EXIF.FOCAL.LENGTH`, `EXIF.APERTURE` |
+| The frame's date (from its details or the Roll Card's dates) | `EXIF.DATE` (as written: `2024-03-09`, `2024-03-09 14:30` or just `2024`), `DATE` (today, `2026-10-19`), `EXIF.YEAR`, `EXIF.YEAR.SHORT`, `EXIF.MONTH`, `EXIF.MONTH.LONG`, `EXIF.MONTH.SHORT`, `EXIF.DAY`, `EXIF.HOUR`, `EXIF.MINUTE`, `EXIF.DATE.REGIONAL`, `EXIF.TIME.REGIONAL` |
+| The film camera | `CAMERA` (make and model), `EXIF.MAKER` or `MAKER`, `EXIF.MODEL` or `MODEL`, `LENS` or `EXIF.LENS`, and as numbers only, like darktable: `EXIF.ISO`, `EXIF.FOCAL.LENGTH`, `EXIF.APERTURE`, `EXIF.EXPOSURE` (the shutter, from the Roll Card's Exposure box: `1/125 f/8` gives `1/125` and `8`). With their units: `FOCAL.LENGTH` (`50 mm`), `APERTURE` (`f/8`), `SHUTTER` (`1/125 s`); and `EXPOSURE`, the Exposure box as it was written |
+| The scan's own Exif | `Xmp.dc.creator` (also `CREATOR`, `ARTIST`) and `Xmp.dc.rights` (also `RIGHTS`, `COPYRIGHT`): the Artist and Copyright the scanning camera wrote into the file |
 | The film and the roll | `FILM`, `FILM.ISO`, `FILM.MAKER`, `FILM.TYPE`, `FILM.FORMAT`, `ROLL.NAME` (the Roll Card's name, else the folder's), `ROLL.FILM`, `ROLL.ISO`, `ROLL.FORMAT`, `ROLL.CAMERA`, `ROLL.LENS`, `ROLL.DEVELOPER`, `ROLL.SCANNED_WITH`, `PUSH.PULL`, `FRAME`, `NOTE` |
 | Place | `LOCATION.CITY`, `LOCATION.STATE`, `LOCATION.COUNTRY` |
 | EFAS | `EFAS.NAME`, `EFAS.VERSION` |
