@@ -24,6 +24,32 @@ The **Organise** button beside the search box, and a right-click on a folder, a 
 
 Folders that were made on purpose are kept in the same file as the presets (`look-presets.json` in the data folder, under `folders`), so a backup or a move of the data folder keeps them.
 
+## Sharing presets (Export and Import)
+
+Presets can be given to other people as a file and taken in from one. Under the list are **Export...** and **Import...**.
+
+- **Export...** offers the **selected preset or folder** (a folder takes what is in it, folders inside it and the empty folders you made on purpose) or **All My Presets and Module Presets**. You choose where the file goes; its name ends in `.efaspresets` (it is plain JSON, so it can be read in a text editor). The same entries are in the right-click menu: **Export Preset...** on a preset, **Export Folder...** on a folder.
+- A module's own presets (the little **Presets** menu in a module's header) can be exported too: **Export this module's presets...** writes just that module's, and **Import presets...** is in the same menu.
+- **Import...** (also in the right-click menu of empty space in the list) reads a file, says what is in it, and adds the presets to **My Presets** and to the modules' presets. A file may hold both kinds. Nothing is added until you confirm. The folders in the file are made if you do not have them.
+- **A name you already use.** If some presets in the file have names you already have, you are asked what to do with them: **Keep Both** (the default) adds the new one beside yours with ` (imported)` on its name (` (imported 2)` if that is taken too), **Replace Mine** puts the new one in the place of yours, **Skip Those** leaves them out, and **Cancel** adds nothing. Nothing of yours is changed unless you choose Replace Mine.
+
+**What goes in the file.** The look a preset holds: tone, colour, film type, sharpening, watermark and the other settings of [the Presets module](#my-presets-and-built-in-presets), and the values of module presets. **Not** the photo, its crop, rotation or repairs (a preset never has those), and no date, name or account.
+
+**Things that are left out or changed, and said so.** A preset can refer to something on your computer that other people do not have. A **watermark logo** is a picture file, so its path is never written (the rest of the watermark is); a **film profile you made yourself** is replaced by the generic profile. After an export EFAS lists what was left out. A watermark that has **text** in it (a copyright line, say) is shared with the preset, because it is part of the look: the export and the import both say so, since the text is drawn on every picture the preset is put on. Look at a preset's watermark before you share it, and before you use one somebody sent.
+
+**A file from someone else is checked, not trusted.** Every value is read against the setting it belongs to: a number must be a number and is pulled into the setting's range (an exposure of 9999 becomes the largest the slider allows), a choice must be one of the setting's choices, text is cut short, a curve must be a short list of points, and anything EFAS does not know is dropped. A preset that holds nothing usable is left out and counted. A file that is not a presets file, is far too big (over 8 MB), or was made by a newer EFAS than yours is refused with a message and nothing changes; a file with more than 1000 presets is read as far as the 1000th. The values are only ever used as numbers, text and choices: a presets file cannot run anything.
+
+The format (`features/lookpresets/share.py`, tested in `tests/test_preset_share.py`):
+
+```
+{"format": "efas-presets", "version": 1, "made_by": "EFAS Negative Inversion Software 0.9.0",
+ "look_presets": [{"name": "Film/Mine", "look": {"exposure_ev": 0.5, ...}}],
+ "folders": ["Film/Empty"],
+ "module_presets": {"exposure": [{"name": "Push a stop", "values": {"exposure_ev": 1.0}}]}}
+```
+
+Export presets (the file formats and sizes of the Export panel), camera and lens presets and film profiles are separate lists and are not part of this file.
+
 ## Folders
 
 A name with slashes is a path: **B&W/Number 1** is the preset *Number 1* inside the folder *B&W*, like the nesting of tags. A folder exists because a name runs through it; there are no empty folders to look after.

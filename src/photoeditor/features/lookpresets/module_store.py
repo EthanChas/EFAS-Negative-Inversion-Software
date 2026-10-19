@@ -47,6 +47,11 @@ def _save_all(data: dict[str, list[dict[str, Any]]]) -> None:
         pass
 
 
+def all_presets() -> dict[str, list[dict[str, Any]]]:
+    """Every module's presets: {module id: [{"name", "values"}]}, in the order made (what exporting reads)."""
+    return _load_all()
+
+
 def names(module: str) -> list[str]:
     return [p["name"] for p in _load_all().get(module, [])]
 

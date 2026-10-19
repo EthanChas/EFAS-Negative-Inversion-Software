@@ -106,6 +106,7 @@ from .uninstall_dialog import UninstallDialog
 from .advanced_preset_dialog import AdvancedPresetDialog
 from .ai_dust_panel import AiDustPanel
 from .look_presets_panel import LookPresetsPanel
+from .preset_sharing import PresetSharing
 from .error_marks_panel import ErrorMarksPanel
 from .dividers import insert_before_headings
 from ...features.errormarks import logic as error_marks_logic
@@ -510,7 +511,8 @@ class AppWindow(QMainWindow):
         self.controller.flag_changed.connect(lambda path, flag: self._lighttable.update_item(library_query.norm(path), flag=flag))
         self.controller.history_changed.connect(self._mark_lighttable_edited)
 
-        self._module_menus = ModuleMenus(self.controller, self)
+        self._preset_sharing = PresetSharing(self.controller, self)
+        self._module_menus = ModuleMenus(self.controller, self, self._preset_sharing)
         for key, panel in (
             ("exposure", self._exposure_tool), ("contrast", self._contrast_tool), ("printresponse", self._print_response_tool), ("lablook", self._lab_look_tool), ("colormixer", self._color_mixer_tool), ("colortoning", self._color_toning_tool), ("edgebleed", self._edge_tool), ("edgecolor", self._edge_color_tool), ("tonecurve", self._curve_tool),
             ("shadows_highlights", self._shadows_highlights_tool), ("color", self._color_tool), ("sharpening", self._sharpening_tool),
@@ -954,6 +956,8 @@ class AppWindow(QMainWindow):
         self._presets_panel.remove_empty_folders_requested.connect(self.controller.remove_empty_look_folders)
         self._presets_panel.copy_builtin_folder_requested.connect(self._on_copy_builtin_folder)
         self._presets_panel.sort_changed.connect(lambda mode: app_settings.save({"preset_sort": mode}))
+        self._presets_panel.export_requested.connect(lambda kind, target: self._preset_sharing.export_presets(self._presets_panel, kind, target))
+        self._presets_panel.import_requested.connect(lambda: self._preset_sharing.import_presets(self._presets_panel))
         self._presets_panel.save_requested.connect(self.controller.save_look_preset)
         self._presets_panel.apply_requested.connect(self.controller.apply_look_preset)
         self._presets_panel.apply_folder_requested.connect(self._on_apply_preset_to_folder)

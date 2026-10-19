@@ -9,9 +9,10 @@ from .collapsible_panel import CollapsiblePanel
 class ModuleMenus(QObject):
     """The Reset and Presets buttons in a module's header, darktable-style."""
 
-    def __init__(self, controller: AppController, parent: QWidget | None = None):
+    def __init__(self, controller: AppController, parent: QWidget | None = None, sharing=None):
         super().__init__(parent)
         self._controller = controller
+        self._sharing = sharing   # exports and imports presets as files (PresetSharing); without it the menu has no such entries
         self._panels: dict[str, CollapsiblePanel] = {}
 
     def attach(self, panel: CollapsiblePanel, key: str) -> None:
@@ -57,6 +58,12 @@ class ModuleMenus(QObject):
             delete = menu.addMenu("Delete preset")
             for name in names:
                 delete.addAction(name).triggered.connect(lambda _c=False, n=name: self._delete(panel, key, n))
+        if self._sharing is not None:
+            menu.addSeparator()
+            export = menu.addAction("Export this module's presets...")
+            export.setEnabled(bool(names))
+            export.triggered.connect(lambda _c=False: self._sharing.export_presets(panel, "module", key))
+            menu.addAction("Import presets...").triggered.connect(lambda _c=False: self._sharing.import_presets(panel))
         button = panel.presets_button
         menu.exec(button.mapToGlobal(button.rect().bottomLeft()))
 

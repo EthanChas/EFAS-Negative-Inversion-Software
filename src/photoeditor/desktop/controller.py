@@ -8,6 +8,7 @@ import numpy as np
 
 from PyQt6.QtCore import QCoreApplication, QObject, pyqtSignal
 
+from .. import __version__
 from ..features.aidust import logic as aidust
 from ..features.browse.logic import list_images_in_folder
 from ..features.geometry.autocrop import AUTO_STRAIGHTEN_MAX, AUTO_STRAIGHTEN_MIN, detect_frame
@@ -39,6 +40,7 @@ from ..features.flatfield.logic import apply_flatfield, gain_from_map, gain_toke
 from ..features.flatfield.processor import reference_from_file
 from ..features.lookpresets import module_store
 from ..features.lookpresets import builtin as builtin_presets
+from ..features.lookpresets import share as preset_share
 from ..features.lookpresets import store as look_store
 from ..features.presettree import logic as preset_tree
 from ..features.lookpresets.modules import PANEL_MODULES, SWITCHABLE, panel_defaults, panel_fields
@@ -107,6 +109,8 @@ from . import curve_engine
 
 
 BW_SATURATION = -1.0
+
+_IMPORT_COUNTER = {"new": "added", "renamed": "renamed", "replaced": "replaced"}   # which count of an ImportResult a planned preset adds to
 
 LOOK_FIELDS = (
     "exposure_ev", "tone_curve_points", "tone_curve_red", "tone_curve_green", "tone_curve_blue", "negative_inverted", "saturation", "temperature", "tint", "shadows", "highlights",
@@ -3430,6 +3434,89 @@ class AppController(QObject):
         if copied:
             self.notice.emit(f"Copied {copied} preset{'s' if copied != 1 else ''} from '{folder}' to My Presets")
         return copied
+
+    # ------------------------------------------------------------ sharing presets as a file
+    def preset_share_scope(self, kind: str, target: str = "") -> tuple[list[str], list[str], list[str]]:
+        """What an export of this kind takes: (names of My Presets, ids of modules whose presets all go, folders made on purpose). `kind` is "all" (everything of both kinds), "folder"
+        (a folder of My Presets and what is in it), "preset" (one of My Presets) or "module" (every preset of module `target`)."""
+        names, folders = look_store.names(), look_store.folders()
+        if kind == "all":
+            return names, [k for k, items in module_store.all_presets().items() if items], folders
+        if kind == "folder":
+            return preset_tree.in_folder(names, target), [], [f for f in folders if preset_tree.is_inside(f, target)]
+        if kind == "preset":
+            return [n for n in names if n.casefold() == preset_tree.clean_path(target).casefold()], [], []
+        if kind == "module":
+            return [], [target] if module_store.names(target) else [], []
+        return [], [], []
+
+    def export_presets(self, path: str, kind: str, target: str = "") -> preset_share.Pack:
+        """Write presets to a file other people can import (see features/lookpresets/share.py). OSError when the file cannot be written. The Pack says what went in and what was
+        left out (a watermark logo's path, a film profile of your own), so the person can be told."""
+        names, modules, folders = self.preset_share_scope(kind, target)
+        looks = [{"name": n, "look": look_store.get(n)} for n in names]
+        everything = module_store.all_presets()
+        pack = preset_share.build_pack(looks, folders, {k: everything.get(k, []) for k in modules}, f"EFAS Negative Inversion Software {__version__}")
+        if not pack.count():
+            raise preset_share.ShareError("There are no presets to export.")
+        tmp = path + ".tmp"
+        try:
+            with open(tmp, "w", encoding="utf-8") as f:
+                f.write(preset_share.dumps(pack))
+            os.replace(tmp, path)
+        except OSError:
+            try:
+                os.remove(tmp)
+            except OSError:
+                pass
+            raise
+        self.notice.emit(f"Exported {pack.describe()} to {os.path.basename(path)}")
+        return pack
+
+    def read_preset_file(self, path: str) -> preset_share.Pack:
+        """The presets in a file somebody shared, cleaned and checked. ShareError (with a message for the person) when it cannot be used, OSError when it cannot be read."""
+        with open(path, "rb") as f:
+            data = f.read(preset_share.MAX_BYTES + 1)
+        return preset_share.loads(data)
+
+    def preset_import_conflicts(self, pack: preset_share.Pack) -> int:
+        """How many presets in the pack have a name that is already taken (among My Presets, or among that module's presets)."""
+        found = preset_share.count_conflicts(look_store.names(), [p["name"] for p in pack.looks])
+        for module, items in pack.modules.items():
+            found += preset_share.count_conflicts(module_store.names(module), [p["name"] for p in items])
+        return found
+
+    def import_presets(self, pack: preset_share.Pack, policy: str = preset_share.KEEP_BOTH) -> preset_share.ImportResult:
+        """Add a pack's presets to My Presets and the modules' presets. A name that is already taken: kept next to yours with " (imported)" added (the default), replaced, or skipped."""
+        result = preset_share.ImportResult()
+        plan, skipped = preset_share.plan_names(look_store.names(), [(p["name"], p["look"]) for p in pack.looks], policy)
+        result.skipped += skipped
+        for item in plan:
+            if look_store.save_preset(item.final, copy.deepcopy(item.payload)) is None:
+                continue
+            setattr(result, _IMPORT_COUNTER[item.action], getattr(result, _IMPORT_COUNTER[item.action]) + 1)
+        have = {f.casefold() for f in preset_tree.folder_paths(look_store.names(), look_store.folders())}
+        new_folders = [f for f in pack.folders if f.casefold() not in have]
+        if new_folders:
+            look_store.set_folders([*look_store.folders(), *new_folders])
+            result.folders = len(new_folders)
+        for module, items in pack.modules.items():
+            plan, skipped = preset_share.plan_names(module_store.names(module), [(p["name"], p["values"]) for p in items], policy)
+            result.skipped += skipped
+            changed = False
+            for item in plan:
+                if module_store.save_preset(module, item.final, copy.deepcopy(item.payload)) is None:
+                    continue
+                changed = True
+                setattr(result, _IMPORT_COUNTER[item.action], getattr(result, _IMPORT_COUNTER[item.action]) + 1)
+            if changed:
+                result.modules.append(module)
+        if result.total() or result.folders:
+            self.look_presets_changed.emit("")
+        for module in result.modules:
+            self.module_presets_changed.emit(module)
+        self.notice.emit(result.summary())
+        return result
 
     def apply_look_preset_to_folder(self, name: str) -> int:
         look = look_store.get(name)

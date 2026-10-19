@@ -242,15 +242,15 @@ _SCRIPT = textwrap.dedent(r'''
     # the right-click menus, including empty space, and the built-in list
     menus.clear()
     panel._context_menu("root", "", None); panel._context_menu("folder", "F", None); panel._context_menu("preset", "F/b", None)
-    assert menus[0] == ["New Folder...", "Open All Folders", "Close All Folders"], menus[0]
+    assert menus[0] == ["New Folder...", "Import Presets...", "Open All Folders", "Close All Folders"], menus[0]
     assert menus[1][1] == "New Subfolder..." and "Remove Folder, Keep Its Presets..." in menus[1] and "Move Folder to..." in menus[1]
-    assert menus[2] == ["Apply", "Rename or Move...", "Move to...", "Duplicate", "Delete"]
+    assert menus[2] == ["Apply", "Rename or Move...", "Move to...", "Duplicate", "Export Preset...", "Delete"]
     seen_root = []; tree.context_requested.connect(lambda kind, target, where: seen_root.append((kind, target)))
     tree._on_context(QPoint(-5, -5)); assert seen_root[-1] == ("root", "")
     panel.show_builtin(True); menus.clear()
     assert not tree.dragEnabled(), "the built-in list cannot be reorganised"
     panel._context_menu("folder", "Scanners (EFAS Original)", None); panel._context_menu("root", "", None)
-    assert menus[0] == ["Open All Folders Below", "Copy Folder to My Presets"] and menus[1] == ["Open All Folders", "Close All Folders"], menus
+    assert menus[0] == ["Open All Folders Below", "Copy Folder to My Presets"] and menus[1] == ["Import Presets...", "Open All Folders", "Close All Folders"], menus
     panel._fill_organise_menu(); texts = [a.text() for a in panel._organise_menu.actions() if a.text()]
     assert texts[0] == "Copy Folder to My Presets" and "New Folder..." not in texts and "Order Inside Folders" in texts
 

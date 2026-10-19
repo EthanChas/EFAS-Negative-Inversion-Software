@@ -141,8 +141,8 @@ _SCRIPT = textwrap.dedent(r'''
     menus = []
     QMenu.exec = lambda self, *a: menus.append([x.text() for x in self.actions() if x.text()])
     panel._context_menu("folder", "B&W", None); panel._context_menu("preset", "B&W/Number 1", None)
-    assert menus[0] == ["Save Current Look Here...", "New Subfolder...", "Rename Folder...", "Move Folder to...", "Remove Folder, Keep Its Presets...", "Delete Folder and Its Presets..."], menus[0]
-    assert menus[1] == ["Apply", "Rename or Move...", "Move to...", "Duplicate", "Delete"], menus[1]
+    assert menus[0] == ["Save Current Look Here...", "New Subfolder...", "Rename Folder...", "Move Folder to...", "Export Folder...", "Remove Folder, Keep Its Presets...", "Delete Folder and Its Presets..."], menus[0]
+    assert menus[1] == ["Apply", "Rename or Move...", "Move to...", "Duplicate", "Export Preset...", "Delete"], menus[1]
 
     # rename or move a preset, rename a whole folder, refuse a clash, delete a folder
     answers = ["Film/B&W/Number One"]

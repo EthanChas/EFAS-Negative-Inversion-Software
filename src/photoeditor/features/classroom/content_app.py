@@ -271,6 +271,12 @@ A long list is easier to use when it is sorted into folders. **Organise**, besid
 
 To get rid of a folder you have two choices. **Remove Folder, Keep Its Presets** takes the folder away and moves what was in it up one level, adding " copy" to a name that is already taken so nothing is lost. **Delete Folder and Its Presets** removes both, and asks first. **Remove Empty Folders** tidies up the folders that have nothing in them.
 
+## Sharing presets
+
+Presets can be handed to someone else. **Export...**, under the list, saves the selected preset or folder, or all of My Presets and the module presets, to a `.efaspresets` file, and **Import...** adds the presets from a file somebody gave you. If a name in the file is already one of yours you are asked: **Keep Both** adds the new one with " (imported)" on its name and is the safe default, **Replace Mine** puts it in the place of yours, and **Skip Those** leaves it out. Nothing of yours changes unless you choose to replace.
+
+A preset can point at something only your computer has, so a watermark logo's file path and a film profile you made yourself are left out of the file, and EFAS tells you. A watermark with text in it is shared, because it is part of the look, so look at it before you send a preset or use one you were sent. A file from someone else is checked rather than trusted: every value is held to its setting's range, anything EFAS does not know is dropped, and a file that is not a presets file, or is from a newer EFAS than yours, is refused with a message.
+
 ## Module presets
 
 Individual modules can keep **their own presets** too, saved sets of just that module's sliders (see [[modules-basics]]). A module preset is what you want when you like one tool's setting but not the whole look.

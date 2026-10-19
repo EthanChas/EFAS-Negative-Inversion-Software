@@ -54,6 +54,8 @@ class LookPresetsPanel(CollapsiblePanel):
     remove_empty_folders_requested = pyqtSignal()
     copy_builtin_folder_requested = pyqtSignal(str)  # every built-in preset in this folder, to My Presets
     sort_changed = pyqtSignal(str)  # "made", "az" or "za": how the presets inside each folder are ordered
+    export_requested = pyqtSignal(str, str)  # what to export to a file ("all", "folder" or "preset") and which folder or preset
+    import_requested = pyqtSignal()
 
     def __init__(self, parent: QWidget | None = None):
         super().__init__(
@@ -163,6 +165,20 @@ class LookPresetsPanel(CollapsiblePanel):
         row2.addWidget(self._delete_btn)
         body.addLayout(row2)
 
+        row3 = QHBoxLayout()
+        row3.setSpacing(THEME.space_sm)
+        self._export_btn = QPushButton("Export...")
+        self._export_btn.setToolTip("Save presets to a file you can give to someone (the selected preset or folder, or all of My Presets and the module presets)")
+        self._export_menu = QMenu(self._export_btn)
+        self._export_menu.aboutToShow.connect(self._fill_export_menu)
+        self._export_btn.setMenu(self._export_menu)
+        self._import_btn = QPushButton("Import...")
+        self._import_btn.setToolTip("Add the presets from a file someone gave you to My Presets. A name you already have is kept next to the new one, unless you choose otherwise")
+        self._import_btn.clicked.connect(self.import_requested)
+        row3.addWidget(self._export_btn, 1)
+        row3.addWidget(self._import_btn, 1)
+        body.addLayout(row3)
+
         self._copy_btn = QPushButton("Copy to My Presets")
         self._copy_btn.setToolTip("Make your own copy of the selected built-in preset, to edit or rename")
         self._copy_btn.clicked.connect(self._copy)
@@ -256,6 +272,7 @@ class LookPresetsPanel(CollapsiblePanel):
         for widget in (self._advanced_btn, self._save_btn, self._delete_btn):
             widget.setVisible(not builtin)
         self._copy_btn.setVisible(builtin)
+        self._export_btn.setVisible(not builtin)
         self._delete_btn.setEnabled(picked)
         self._advanced_btn.setEnabled(picked)
         self._save_btn.setEnabled(self._has_photo)
@@ -333,6 +350,7 @@ class LookPresetsPanel(CollapsiblePanel):
                 menu.addAction("Rename or Move...", lambda: self._rename(target))
                 menu.addAction("Move to...", lambda: self._move_selected())
                 menu.addAction("Duplicate", lambda: self._duplicate())
+                menu.addAction("Export Preset...", lambda: self.export_requested.emit("preset", target))
                 menu.addAction("Delete", lambda: self._delete())
         elif kind == "folder":
             if not builtin:
@@ -342,6 +360,7 @@ class LookPresetsPanel(CollapsiblePanel):
                 menu.addAction("New Subfolder...", lambda: self._new_folder(target))
                 menu.addAction("Rename Folder...", lambda: self._rename_folder(target))
                 menu.addAction("Move Folder to...", lambda: self._move_selected())
+                menu.addAction("Export Folder...", lambda: self.export_requested.emit("folder", target))
                 menu.addAction("Remove Folder, Keep Its Presets...", lambda: self._remove_folder(target))
                 menu.addAction("Delete Folder and Its Presets...", lambda: self._delete_folder(target))
             else:
@@ -350,6 +369,7 @@ class LookPresetsPanel(CollapsiblePanel):
         else:   # empty space in the list
             if not builtin:
                 menu.addAction("New Folder...", lambda: self._new_folder(""))
+            menu.addAction("Import Presets...", lambda: self.import_requested.emit())
             menu.addAction("Open All Folders", lambda: self._tree.expandAll())
             menu.addAction("Close All Folders", lambda: self._tree.collapseAll())
         menu.exec(where)
@@ -393,6 +413,19 @@ class LookPresetsPanel(CollapsiblePanel):
     def _choose_sort(self, mode: str) -> None:
         self.set_sort(mode)
         self.sort_changed.emit(self._sort)
+
+    def _fill_export_menu(self) -> None:
+        """The Export menu, made fresh each time it opens: the selected preset or folder, or everything."""
+        menu = self._export_menu
+        menu.clear()
+        name, folder = self.selected(), self._tree.current_folder_row()
+        if name is not None:
+            menu.addAction("Export the Selected Preset...", lambda: self.export_requested.emit("preset", name))
+        elif folder:
+            menu.addAction("Export the Selected Folder...", lambda: self.export_requested.emit("folder", folder))
+        else:
+            menu.addAction("Select a preset or a folder to export it").setEnabled(False)
+        menu.addAction("Export All My Presets and Module Presets...", lambda: self.export_requested.emit("all", ""))
 
     def _fill_organise_menu(self) -> None:
         """The Organise menu, made fresh each time it opens so that what it offers fits what is selected."""
