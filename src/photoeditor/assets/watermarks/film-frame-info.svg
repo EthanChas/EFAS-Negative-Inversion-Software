@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Two lines from the Roll Card and the frame: the film (with its ISO) and the camera (with its lens). A part with nothing to show is left out. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="190" viewBox="0 0 1000 190">
+  <g font-family="$(WATERMARK_FONT_FAMILY)" font-weight="$(WATERMARK_FONT_WEIGHT)" font-style="$(WATERMARK_FONT_STYLE)" fill="$(WATERMARK_COLOR)" text-anchor="middle">
+    <text x="500" y="76" font-size="66">$(FILM)$(EXIF.ISO+ - ISO $(EXIF.ISO))</text>
+    <text x="500" y="156" font-size="50">$(CAMERA)$(LENS+ - $(LENS))</text>
+  </g>
+</svg>

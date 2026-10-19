@@ -141,3 +141,12 @@ def test_a_file_of_only_folders_makes_the_folders_and_says_so():
     assert S.ImportResult(folders=2).summary() == "Made 2 folders; there were no presets to import"
     assert S.ImportResult(added=1, renamed=1).summary() == "Imported 2 presets (1 kept next to yours with ' (imported)' added)"
     assert S.ImportResult(skipped=3).summary() == "Nothing was imported (3 skipped, the names were already there)"
+
+
+def test_a_marker_from_the_watermarks_folder_is_shared_by_name_only():
+    notes: set[str] = set()
+    cleaned = S.clean_look({"marks": {"logo": "signature.svg", "logo_text": "(c) Me", "logo_color": "black", "logo_scale_on": "width", "logo_rotation": 400}}, notes)
+    assert cleaned["marks"] == {"logo": "signature.svg", "logo_text": "(c) Me", "logo_color": "black", "logo_scale_on": "width", "logo_rotation": 180.0}
+    assert len(notes) == 1 and "signature.svg" in next(iter(notes)) and "not in the file" in next(iter(notes))
+    for bad in ("../x.svg", "sub/x.svg", "C:/x.svg", "x.txt"):
+        assert "logo" not in S.clean_look({"marks": {"logo": bad, "text": "hi"}})["marks"], bad

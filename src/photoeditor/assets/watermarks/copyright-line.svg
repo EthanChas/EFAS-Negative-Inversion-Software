@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- "(c) 2024 Your Name": the year of the frame (or this year when the frame has no date) and the Text of the Marker section. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="100" viewBox="0 0 900 100">
+  <text x="450" y="70" text-anchor="middle" font-size="64"
+        font-family="$(WATERMARK_FONT_FAMILY)" font-weight="$(WATERMARK_FONT_WEIGHT)" font-style="$(WATERMARK_FONT_STYLE)"
+        fill="$(WATERMARK_COLOR)">(c) $(EXIF.YEAR-$(YEAR)) $(WATERMARK_TEXT)</text>
+</svg>

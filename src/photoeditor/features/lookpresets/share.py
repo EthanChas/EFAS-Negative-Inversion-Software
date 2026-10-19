@@ -90,10 +90,15 @@ def _usable(spec: FieldSpec, value: Any) -> Any:
 def _clean_marks(raw: Any, notes: set[str]) -> dict[str, Any] | None:
     if not isinstance(raw, dict):
         return None
+    from ..watermark import library
     from ..watermark.marks import Marks   # (needs numpy and the font code: only loaded when a preset has a watermark)
-    if raw.get("logo"):
+    logo = raw.get("logo")
+    keep = logo if isinstance(logo, str) and library.is_name(logo) else ""   # a marker from the watermarks folder is named, not pointed at: that is safe to share
+    if logo and not keep:
         notes.add("a watermark logo is a picture file on one computer, so it is not shared; the preset's other watermark settings are")
-    data = Marks.from_dict({k: v for k, v in raw.items() if k != "logo"}).to_dict()
+    elif keep:
+        notes.add(f"a preset uses the watermark marker {keep}, which is not in the file: it is drawn only on a computer whose watermarks folder has a file of that name")
+    data = Marks.from_dict({**{k: v for k, v in raw.items() if k != "logo"}, "logo": keep}).to_dict()
     if str(data.get("text", "")).strip():
         notes.add("a preset has a watermark with text in it, which is drawn on the pictures the preset is put on, so look at it before sharing or using it")
     return data

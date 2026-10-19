@@ -5,11 +5,12 @@ import math
 import re
 from dataclasses import dataclass
 from functools import lru_cache
-from typing import Any
+from typing import Any, Mapping
 
 import numpy as np
 
-from . import fonts, logoimage
+from . import fonts, library, logoimage
+from . import variables as wmvars
 from .logic import CREDIT, MARGIN, POSITIONS, Part, _blend
 
 CUSTOM = "custom"
@@ -30,6 +31,7 @@ ALIGNS = {"auto": "Automatic", "left": "Left", "center": "Centre", "right": "Rig
 _HEX = re.compile(r"^#[0-9a-fA-F]{6}$")
 _OUTLINE_SHARE = 0.12  # an outline of 1.0 is this share of the letter height thick
 TEXT_MAX = 300
+MARKER_TEXT_MAX = 511    # the text an SVG marker takes (darktable's limit too)
 
 
 def _num(value: Any, low: float, high: float, default: float) -> float:
@@ -92,6 +94,14 @@ class Marks:
     logo_position: str = DEFAULT_LOGO_POSITION
     logo_x: float = 0.15
     logo_y: float = 0.9
+    logo_rotation: float = 0.0
+    logo_scale_on: str = logoimage.DEFAULT_SCALE_ON   # what the size is a share of (logoimage.SCALE_ON)
+    # what an SVG marker takes for its $(WATERMARK_TEXT), $(WATERMARK_COLOR), $(WATERMARK_FONT_FAMILY), $(WATERMARK_FONT_STYLE) and $(WATERMARK_FONT_WEIGHT) (darktable's variables)
+    logo_text: str = ""
+    logo_color: str = "white"
+    logo_font: str = ""
+    logo_bold: bool = False
+    logo_italic: bool = False
     # the canister, once it has been dragged or resized on the picture (-1 / 0 = still where its menus put it)
     canister_x: float = -1.0
     canister_y: float = -1.0
@@ -113,7 +123,7 @@ class Marks:
         return bool(self.text.strip())
 
     def has_logo(self) -> bool:
-        return logoimage.usable(self.logo)
+        return library.resolve(self.logo) is not None
 
     def has_custom_canister(self) -> bool:
         return self.canister_x >= 0 and self.canister_y >= 0
@@ -155,7 +165,11 @@ class Marks:
                 kw[name] = _choice(raw, ALIGNS, default)
             elif name == "text":
                 kw[name] = _text(raw, TEXT_MAX)
-            elif name in ("logo", "text_font", "info_font"):
+            elif name == "logo_text":
+                kw[name] = _text(raw, MARKER_TEXT_MAX)
+            elif name == "logo_scale_on":
+                kw[name] = _choice(raw, logoimage.SCALE_ON, default)
+            elif name in ("logo", "text_font", "info_font", "logo_font"):
                 kw[name] = _text(raw, 260)
             elif isinstance(default, bool):
                 kw[name] = bool(raw) if raw is not None else default
@@ -170,12 +184,12 @@ class Marks:
 _RANGES = {
     "text_size": TEXT_SIZE_RANGE, "text_opacity": (0.0, 1.0), "text_line_spacing": LINE_SPACING_RANGE, "text_letter_spacing": LETTER_SPACING_RANGE,
     "text_rotation": ROTATION_RANGE, "text_outline": OUTLINE_RANGE, "text_x": (0.0, 1.0), "text_y": (0.0, 1.0),
-    "logo_size": LOGO_SIZE_RANGE, "logo_opacity": (0.0, 1.0), "logo_x": (0.0, 1.0), "logo_y": (0.0, 1.0),
+    "logo_size": LOGO_SIZE_RANGE, "logo_opacity": (0.0, 1.0), "logo_x": (0.0, 1.0), "logo_y": (0.0, 1.0), "logo_rotation": ROTATION_RANGE,
     "canister_x": (-1.0, 1.0), "canister_y": (-1.0, 1.0), "canister_size": (0.0, CANISTER_SIZE_RANGE[1]),
     "info_size": INFO_SIZE_RANGE, "info_opacity": (0.0, 1.0), "info_x": (0.0, 1.0), "info_y": (0.0, 1.0),
 }
 _PLACE_FIELDS = ("text_position", "logo_position", "info_position")
-_COLOR_FIELDS = ("text_color", "info_color")
+_COLOR_FIELDS = ("text_color", "info_color", "logo_color")
 
 
 @dataclass(frozen=True)
@@ -303,24 +317,55 @@ def _auto_align(position: str) -> str:
     return {"left": "left", "right": "right"}.get(horiz, "center")
 
 
-def mark_parts(shape, marks: Marks, info: bool = False, camera: str = "", lens: str = "", canister_on: bool = False) -> list[Part]:
-    """The logo ("logo"), the text ("text") and the camera/lens text on its own ("info"), laid out on a picture of this shape."""
+def marker_variables(marks: Marks, variables: Mapping[str, str] | None = None) -> dict[str, str]:
+    """What an SVG marker is drawn with: the photo's variables, and the marker's own text, colour and font as darktable's $(WATERMARK_...) variables. The text may hold variables of its
+    own ("(c) $(EXIF.YEAR) $(CAMERA)"); they are filled in here, once, so what an SVG gets is plain text."""
+    base = dict(variables or {})
+    r, g, b = color_rgb(marks.logo_color)
+    base.update({
+        "WATERMARK_TEXT": wmvars.expand(marks.logo_text, base),
+        "WATERMARK_COLOR": f"#{r:02x}{g:02x}{b:02x}",
+        "WATERMARK_FONT_FAMILY": logoimage.svg_font_family(marks.logo_font),
+        "WATERMARK_FONT_STYLE": "italic" if marks.logo_italic else "normal",
+        "WATERMARK_FONT_WEIGHT": "700" if marks.logo_bold else "400",
+    })
+    return base
+
+
+def _logo_request(marks: Marks, iw: int, ih: int) -> tuple[str, int]:
+    """(how the size is read, the pixels) for the marker - see logoimage.SCALE_ON."""
+    if marks.logo_scale_on == "long":
+        return "long", max(4, round(max(iw, ih) * marks.logo_size))
+    if marks.logo_scale_on == "width":
+        return "width", max(4, round(iw * marks.logo_size))
+    if marks.logo_scale_on == "height":
+        return "height", max(4, round(ih * marks.logo_size))
+    return "long", max(4, round(min(iw, ih) * marks.logo_size))
+
+
+def mark_parts(shape, marks: Marks, info: bool = False, camera: str = "", lens: str = "", canister_on: bool = False, variables: Mapping[str, str] | None = None) -> list[Part]:
+    """The logo ("logo"), the text ("text") and the camera/lens text on its own ("info"), laid out on a picture of this shape. `variables` are the photo's $(NAME) values (wmvars.build)."""
     ih, iw = shape[:2]
     short = min(ih, iw)
     margin = round(short * MARGIN)
     parts: list[Part] = []
-    if marks.has_logo():
+    marker = library.resolve(marks.logo)
+    if marker is not None:
         try:
-            rgb, alpha = logoimage.logo_sprite(marks.logo, max(4, round(short * marks.logo_size)), marks.logo_opacity)
+            mode, px = _logo_request(marks, iw, ih)
+            rgb, alpha = logoimage.marker_sprite(marker, mode, px, marks.logo_opacity, marker_variables(marks, variables))
+            if marks.logo_rotation:
+                rgb, alpha = _rotate(rgb, alpha, marks.logo_rotation)
         except Exception:
             rgb = alpha = None
         if alpha is not None:
             x, y = _where(marks.logo_position, marks.logo_x, marks.logo_y, iw, ih, alpha.shape[1], alpha.shape[0], margin)
             parts.append(Part("logo", rgb, alpha, x, y))
-    if marks.has_text():
+    text = wmvars.expand(marks.text, variables or {}) if marks.has_text() else ""
+    if text.strip():
         align = _auto_align(marks.text_position) if marks.text_align == "auto" else marks.text_align
         rgb, alpha = text_sprite(TextSpec(
-            marks.text.strip(), max(6, round(short * marks.text_size)), marks.text_font, marks.text_bold, marks.text_italic, marks.text_color,
+            text.strip(), max(6, round(short * marks.text_size)), marks.text_font, marks.text_bold, marks.text_italic, marks.text_color,
             marks.text_opacity, marks.text_shadow, align, marks.text_line_spacing, marks.text_letter_spacing, marks.text_rotation, marks.text_outline,
         ))
         x, y = _where(marks.text_position, marks.text_x, marks.text_y, iw, ih, alpha.shape[1], alpha.shape[0], margin)
@@ -336,9 +381,9 @@ def mark_parts(shape, marks: Marks, info: bool = False, camera: str = "", lens: 
     return parts
 
 
-def apply_marks(image: np.ndarray, marks: Marks, info: bool = False, camera: str = "", lens: str = "", canister_on: bool = False) -> np.ndarray:
+def apply_marks(image: np.ndarray, marks: Marks, info: bool = False, camera: str = "", lens: str = "", canister_on: bool = False, variables: Mapping[str, str] | None = None) -> np.ndarray:
     """uint8 RGB in, uint8 RGB out (the input is never modified): the logo, then the text, then the camera/lens text."""
-    parts = mark_parts(image.shape, marks, info, camera, lens, canister_on)
+    parts = mark_parts(image.shape, marks, info, camera, lens, canister_on, variables)
     if not parts:
         return image
     out = image.copy()

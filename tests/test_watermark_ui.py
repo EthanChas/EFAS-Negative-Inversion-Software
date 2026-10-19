@@ -159,18 +159,20 @@ _SCRIPT = textwrap.dedent(r'''
     from PyQt6.QtWidgets import QFileDialog
     QFileDialog.getOpenFileName = staticmethod(lambda *a, **k: (svg, ""))
     tool._choose_logo()
-    assert s.marks.logo == svg and "SVG" in tool._logo_name.text()
+    from photoeditor.features.watermark import library
+    assert s.marks.logo == "logo.svg" and os.path.isfile(os.path.join(library.user_dir(), "logo.svg")), "Add... copies the file into the watermarks folder and uses it by name"
+    assert "SVG" in tool._logo_name.text() and tool._marker_combo.currentData() == "logo.svg"
     assert pump(lambda: "logo" in view._label._mark_boxes)
     lx, ly, lw, lh = view._label._mark_boxes["logo"]
     assert abs(lw / lh - 2.0) < 0.05, "the box keeps the SVG's shape"
     png = os.path.join(work, "logo.png"); cv2.imwrite(png, np.full((50, 50, 4), 255, np.uint8))
     QFileDialog.getOpenFileName = staticmethod(lambda *a, **k: (png, ""))
     tool._choose_logo()
-    assert s.marks.logo == png
+    assert s.marks.logo == "logo.png"
     bad = os.path.join(work, "bad.svg"); open(bad, "w").write("<svg")
     QFileDialog.getOpenFileName = staticmethod(lambda *a, **k: (bad, ""))
     tool._choose_logo()
-    assert s.marks.logo == png, "an unreadable SVG is refused"
+    assert s.marks.logo == "logo.png" and not os.path.exists(os.path.join(library.user_dir(), "bad.svg")), "an unreadable SVG is refused, and is not copied"
 
     # ---- saved and restored with the photo
     c._save_edit_state()

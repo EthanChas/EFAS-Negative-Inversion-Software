@@ -306,6 +306,7 @@ class AppState:
     curve_white: tuple | None = None
     roll_camera: str = ""
     roll_lens: str = ""
+    wm_vars: tuple = ()   # the photo's watermark variables as ((name, value), ...): what $(NAME) in a watermark text or SVG marker means (features/watermark/variables.py)
     show_detections: bool = False
     overlay_rgba: np.ndarray | None = None
     show_shadow_clip: bool = False

@@ -106,6 +106,7 @@ from .uninstall_dialog import UninstallDialog
 from .advanced_preset_dialog import AdvancedPresetDialog
 from .ai_dust_panel import AiDustPanel
 from .look_presets_panel import LookPresetsPanel
+from .watermark_variables_dialog import WatermarkVariablesDialog
 from .preset_sharing import PresetSharing
 from .error_marks_panel import ErrorMarksPanel
 from .dividers import insert_before_headings
@@ -1486,6 +1487,7 @@ class AppWindow(QMainWindow):
         self._watermark_tool.marks_changed.connect(self.controller.set_marks)
         self._mark_editing = False
         self._watermark_tool.edit_on_picture_toggled.connect(self._on_mark_editing_toggled)
+        self._watermark_tool.variables_requested.connect(self._show_watermark_variables)
         self._image_view.mark_edited.connect(self._on_mark_edited)
         watermark_content = QWidget()
         watermark_col = QVBoxLayout(watermark_content)
@@ -3368,6 +3370,12 @@ class AppWindow(QMainWindow):
         self._mark_editing = on
         self._refresh_mark_boxes()
 
+    def _show_watermark_variables(self) -> None:
+        """The list of $(NAME) variables for the open photo (the Variables... button of the Watermark tab)."""
+        values = self.controller.watermark_variables()
+        dialog = WatermarkVariablesDialog(values, self)
+        dialog.exec()
+
     def _refresh_mark_boxes(self) -> None:
         """Frame the watermarks that can be dragged (when Move and resize on the picture is on), in the displayed picture's pixels."""
         s = self.controller.state
@@ -3376,7 +3384,7 @@ class AppWindow(QMainWindow):
             return
         h, w, b = wm_layout.unframe_shape(s.image_rgb.shape, s.border)
         canister = {"film": s.wm_film, "texture": s.wm_texture, "size": s.wm_size, "position": s.wm_position} if watermark_active(s.wm_film) else None
-        found = wm_layout.boxes((h, w), canister, s.marks, s.wm_info, s.wm_camera or s.roll_camera, s.wm_lens or s.roll_lens)
+        found = wm_layout.boxes((h, w), canister, s.marks, s.wm_info, s.wm_camera or s.roll_camera, s.wm_lens or s.roll_lens, dict(s.wm_vars))
         self._image_view.set_mark_boxes({name: (x + b, y + b, bw, bh) for name, (x, y, bw, bh) in found.items()}, wm_layout.LABELS)
 
     def _on_mark_edited(self, name: str, cx: float, cy: float, ratio: float) -> None:

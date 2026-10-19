@@ -29,7 +29,7 @@ NOTE: A vignette *fixes* nothing. If your corners are dark because of uneven sca
 The finishing touches are applied before any watermark: see [[watermark-module]].
 """, keywords=("vignette", "border", "frame", "corners", "finishing", "print", "white border", "darken corners"), module="Finishing", see=("watermark-module", "flat-field-module")),
 
-    Lesson("watermark-module", "finish", "Watermark: canister, text and logo", "Understand the four kinds of mark, how they position themselves, and how they become part of the exported picture.",
+    Lesson("watermark-module", "finish", "Watermark: canister, text and marker", "Understand the four kinds of mark, how they position themselves, and how they become part of the exported picture.",
            r"""
 A **watermark** in EFAS is anything added to the finished picture that is *not* part of the photograph: a stamp, a caption, a copyright line, a logo. There are four kinds, and they can be combined. Everything you place here is **part of the finished image**, so it is in exports too. Because it is added at the very end, it does not affect the histogram or any measurement.
 
@@ -41,7 +41,9 @@ A **watermark** in EFAS is anything added to the finished picture that is *not* 
 
 **Text** is any words you type: a copyright line, your name, a caption; several lines are fine. Choose a **font** (any font installed on the computer, or a font file), **bold** or *italic*, a **colour** and an **Opacity**. **More text options** opens alignment, **line gap**, letter **spacing**, **rotation**, an **outline** and a **shadow**, which help make text readable over a busy part of the picture.
 
-**Logo** adds your own mark: an **SVG**, which stays perfectly sharp at any size, or a picture such as a **PNG** with a transparent background.
+**Marker** adds your own mark: an **SVG**, which stays perfectly sharp at any size, or a picture such as a **PNG** with a transparent background. Markers are files in a **watermarks folder** and are chosen by name from a list: **Add...** copies a file into the folder, **Open Folder** shows it, **Reload** looks again, and three samples come with EFAS. A preset that uses a marker remembers its name, so it works on any computer that has a file of that name.
+
+An SVG can be a **template**, the way darktable's watermarks are. Where it has `$(WATERMARK_TEXT)`, `$(WATERMARK_COLOR)` or the font variables, EFAS fills them in from the marker's own **Text**, **Colour** and **Font**, and the general variables work too: `$(CAMERA)`, `$(EXIF.YEAR)`, `$(FILM)`, `$(FILE.NAME)` and more, taken from the Roll Card and the frame. So one file can write `(c) 2024 Your Name` or the film and camera of every frame in a roll. **Variables...** lists every name with its value for the open photo, and the Text mark understands them too. The camera, lens and ISO are the film camera's, from the Roll Card ([[roll-card-lesson]]). Text and quotes in a value cannot break the SVG, because everything put into it is made safe first. **Scale on** chooses what the size is a share of: the picture's shorter side (the same look in portrait and landscape), its longer side, or the marker's width or height against the picture's, and **Rotate** turns the marker. See [[watermark-variables]] for the details.
 
 ## Placing the marks
 
@@ -50,7 +52,26 @@ Each mark has a **Position** menu. For finer control, tick **Move and resize on 
 ## Using it
 
 Keep a watermark **small and quiet** if it is a credit: bottom corner, modest size, modest opacity. A large stamp over the middle of a picture ruins it. For a copyright line that is meant to deter copying, remember that a mark in a corner can simply be cropped off; one that is part of the picture is harder to remove but also more intrusive. If you export a picture for printing, think about whether you want a mark on it at all, since a watermark is baked into the exported pixels and cannot be removed later (your original, as always, is untouched).
-""", keywords=("watermark", "canister", "text", "logo", "copyright", "camera", "lens", "signature", "svg", "png", "stamp", "credit"), module="Watermark", see=("roll-card-lesson", "exporting")),
+""", keywords=("watermark", "canister", "text", "logo", "marker", "copyright", "camera", "lens", "signature", "svg", "png", "stamp", "credit"), module="Watermark", see=("watermark-variables", "roll-card-lesson", "exporting")),
+
+    Lesson("watermark-variables", "finish", "Watermark variables and SVG templates", "Write a watermark once that fills in the film, camera, year or file name of every picture, the way darktable's watermarks do.",
+           r"""
+A watermark can write something different on every picture without you typing it each time. In the **Text** mark, in the marker's **Text** and inside an **SVG** marker, anything written as `$(NAME)` is replaced by what that name means for the picture: `(c) $(EXIF.YEAR) $(CAMERA)` becomes `(c) 1987 Pentax K1000`. This is the same idea, and the same `$(...)` writing, that darktable's watermark module uses, so an SVG made for darktable works here.
+
+## What the names mean
+
+**Variables...** in the Watermark tab lists every name with its value for the open photo, and a double-click copies one. The file gives `FILE.NAME` (without the extension), `FILE.EXTENSION` and `FILE.FOLDER` (the folder's name, not its whole path). Today's date gives `YEAR`, `MONTH`, `DAY` and the like. The frame's own date gives `EXIF.YEAR`, `EXIF.MONTH.LONG` and the rest of the `EXIF.` dates. The film and roll give `FILM`, `FILM.ISO`, `ROLL.NAME`, `ROLL.DEVELOPER`, `FRAME` and more, and the film camera gives `CAMERA`, `LENS` and `EXIF.ISO`. These come from the **Roll Card** ([[roll-card-lesson]]) and the frame's details, because the scan's own camera says nothing about the film. Inside an SVG marker there are five more, which EFAS fills in from the marker's own Text, Colour and Font: `WATERMARK_TEXT`, `WATERMARK_COLOR`, `WATERMARK_FONT_FAMILY`, `WATERMARK_FONT_STYLE` and `WATERMARK_FONT_WEIGHT`. A name that has nothing to give is empty, and a name EFAS does not know is empty too.
+
+## Shaping a value
+
+A few small additions after the name change how it comes out. A minus sign gives a default for an empty value, so `$(FILM-no film)` writes `no film` when the roll has no film, and the default may be another variable: `$(EXIF.YEAR-$(YEAR))`. A plus sign gives something to show only when the value is there, so `$(LENS+ - $(LENS))` writes a dash and the lens, or nothing. A colon cuts a piece out: `$(CAMERA:0:8)` is the first eight letters and `$(CAMERA:-4)` the last four. `^^` makes capitals and `,,` small letters (a single `^` or `,` does only the first letter), and `/old/new` swaps the first `old` for `new`, or every one with `//old/new`. Pieces are plain text, not patterns.
+
+## Writing an SVG template
+
+Draw the SVG in any editor and put the variables where the changing words go, for example `<text fill="$(WATERMARK_COLOR)">$(WATERMARK_TEXT)</text>`. Leave room in the drawing for the longest text, since text outside it is cut off. Put the file in the **watermarks folder** (the Marker section's **Open Folder** opens it) and press **Reload**. EFAS reads the file as text, fills in the variables and then draws it, so everything stays sharp at any size. Every value is made safe for XML on its way in, so a quote or an ampersand in a film name cannot break the file, and a value that looks like a variable is only text. Three samples come with EFAS: a line of text, a copyright line and a film and camera line.
+
+TIP: A preset that uses a marker remembers its name, not the file, so before you send a preset to someone, give them the SVG too and tell them to put it in their watermarks folder.
+""", keywords=("variables", "template", "darktable", "watermark", "svg", "marker", "$(", "exif", "camera", "film", "year", "file name"), module="Watermark", see=("watermark-module", "roll-card-lesson")),
 
     Lesson("exporting", "finish", "Exporting: presets, scopes and names", "Understand how the Export panel turns your edits into files: presets, what gets exported, where it goes, and what it is called.",
            r"""

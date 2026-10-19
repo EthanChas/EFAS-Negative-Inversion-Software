@@ -9,7 +9,7 @@ EDITABLE = ("canister", "logo", "text", "info")
 LABELS = {"canister": "Canister", "logo": "Logo", "text": "Text", "info": "Camera and lens"}
 
 
-def boxes(shape, canister: dict | None, marks: Marks, info: bool = False, camera: str = "", lens: str = "") -> dict[str, tuple[int, int, int, int]]:
+def boxes(shape, canister: dict | None, marks: Marks, info: bool = False, camera: str = "", lens: str = "", variables=None) -> dict[str, tuple[int, int, int, int]]:
     """(x, y, width, height) of every watermark that is showing, on a picture of this (cropped, before any border) shape.
 
     `canister` is {"film", "texture", "size", "position"} or None when the canister is off. The camera/lens text beside a canister moves with it
@@ -21,7 +21,7 @@ def boxes(shape, canister: dict | None, marks: Marks, info: bool = False, camera
         for part in canister_parts(shape, canister["film"], canister["texture"], canister["size"], canister["position"], info, camera, lens, custom, marks.canister_size):
             if part.name == "canister":
                 out["canister"] = part.box
-    for part in mark_parts(shape, marks, info, camera, lens, on):
+    for part in mark_parts(shape, marks, info, camera, lens, on, variables):
         out[part.name] = part.box
     return out
 

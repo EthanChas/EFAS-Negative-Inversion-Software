@@ -3,7 +3,8 @@ import os
 import threading
 
 from PyQt6.QtCore import QStringListModel, Qt, QTimer, pyqtSignal
-from PyQt6.QtGui import QColor, QFont, QIcon, QPixmap
+from PyQt6.QtCore import QUrl
+from PyQt6.QtGui import QColor, QDesktopServices, QFont, QIcon, QPixmap
 from PyQt6.QtWidgets import (
     QCheckBox,
     QColorDialog,
@@ -21,7 +22,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from ...features.watermark import fonts, logoimage
+from ...features.watermark import fonts, library, logoimage
 from ...features.watermark.logic import (
     DEFAULT_POSITION,
     DEFAULT_SIZE,
@@ -42,6 +43,7 @@ from ...features.watermark.marks import (
     LETTER_SPACING_RANGE,
     LINE_SPACING_RANGE,
     LOGO_SIZE_RANGE,
+    MARKER_TEXT_MAX,
     OUTLINE_RANGE,
     PLACES,
     ROTATION_RANGE,
@@ -186,6 +188,7 @@ class CanisterWatermarkPanel(CollapsiblePanel):
     changed = pyqtSignal(str, str, str, str, bool, str, str)
     marks_changed = pyqtSignal(object)
     edit_on_picture_toggled = pyqtSignal(bool)
+    variables_requested = pyqtSignal()   # show the list of $(NAME) variables for the open photo
     _fonts_ready = pyqtSignal(object)
 
     def __init__(self, parent: QWidget | None = None):
@@ -199,7 +202,9 @@ class CanisterWatermarkPanel(CollapsiblePanel):
                 "without one, or with Next to the canister turned off, they are a block of their own with their own position, size, colour and font.\n\n"
                 "Text: any words you type (a copyright, your name), several lines are fine. Pick a font, bold or italic, any colour; More text "
                 "options adds alignment, line and letter spacing, rotation and an outline.\n\n"
-                "Logo: an SVG (stays sharp at any size) or a picture such as a PNG with a transparent background.\n\n"
+                "Marker: an SVG (stays sharp at any size) or a picture such as a PNG with a transparent background, chosen from your watermarks folder (Add... puts a file there). "
+                "An SVG can hold $(WATERMARK_TEXT), $(WATERMARK_COLOR) and font variables, filled in from the Text, Colour and Font here, and $(CAMERA), $(EXIF.YEAR) and the other "
+                "variables of the photo (Variables... lists them), the way darktable's watermarks do.\n\n"
                 "Move and resize on the picture: tick it, then drag a mark to move it and drag a corner to resize it. The mark's Position menu "
                 "switches to Custom as soon as you move it; pick a position from the menu to put it back."
             ),
@@ -382,27 +387,64 @@ class CanisterWatermarkPanel(CollapsiblePanel):
         self._text_shadow = self._check(extra_layout, "Shadow", "A faint shadow behind the letters so they stay readable on bright or dark parts of the picture.")
 
     def _build_logo(self, body) -> None:
-        body.addWidget(self._subtitle("LOGO"))
-        logo_row = QHBoxLayout()
-        self._logo_btn = QPushButton("Choose Logo...")
-        self._logo_btn.setToolTip("Pick an SVG (stays sharp at any size) or a picture - a PNG with a transparent background works best.")
+        body.addWidget(self._subtitle("MARKER (SVG OR PICTURE)"))
+        row = QHBoxLayout()
+        self._marker_combo = QComboBox()
+        self._marker_combo.setToolTip("A file from your watermarks folder: an SVG (stays sharp at any size) or a picture such as a PNG with a transparent background. "
+                                      "Add... puts a file there; a file you drop into the folder yourself shows after Reload.")
+        self._marker_combo.currentIndexChanged.connect(self._on_marker_picked)
+        row.addWidget(self._marker_combo, 1)
+        self._marker_reload = QPushButton("Reload")
+        self._marker_reload.setToolTip("Look in the watermarks folder again for new files")
+        self._marker_reload.clicked.connect(lambda _c=False: self._refresh_markers())
+        row.addWidget(self._marker_reload)
+        body.addLayout(row)
+        buttons = QHBoxLayout()
+        self._logo_btn = QPushButton("Add...")
+        self._logo_btn.setToolTip("Choose an SVG or a picture; a copy goes into your watermarks folder so a preset can name it")
         self._logo_btn.clicked.connect(self._choose_logo)
-        logo_row.addWidget(self._logo_btn, 1)
-        self._logo_clear = QPushButton("Remove")
-        self._logo_clear.clicked.connect(self._clear_logo)
-        logo_row.addWidget(self._logo_clear)
-        body.addLayout(logo_row)
+        buttons.addWidget(self._logo_btn, 1)
+        self._marker_folder = QPushButton("Open Folder")
+        self._marker_folder.setToolTip("Open your watermarks folder, to add, rename or delete markers")
+        self._marker_folder.clicked.connect(self._open_marker_folder)
+        buttons.addWidget(self._marker_folder, 1)
+        self._variables_btn = QPushButton("Variables...")
+        self._variables_btn.setToolTip("The $(NAME) variables a watermark text or an SVG marker can use, with their values for this photo")
+        self._variables_btn.clicked.connect(self.variables_requested)
+        buttons.addWidget(self._variables_btn, 1)
+        body.addLayout(buttons)
         self._logo_name = QLabel("")
         self._logo_name.setProperty("role", "hint")
+        self._logo_name.setWordWrap(True)
         body.addWidget(self._logo_name)
+        self._logo_text = QLineEdit()
+        self._logo_text.setPlaceholderText("Text for the marker, e.g. (c) $(EXIF.YEAR) Your Name")
+        self._logo_text.setMaxLength(MARKER_TEXT_MAX)
+        self._logo_text.setToolTip("The words an SVG marker writes where it has $(WATERMARK_TEXT). Variables such as $(CAMERA) or $(EXIF.YEAR) work here too (Variables... lists them).")
+        self._logo_text.textEdited.connect(self._on_mark_slider)
+        self._labeled(body, "Text", self._logo_text)
+        self._logo_font, self._logo_bold, self._logo_italic = self._font_row(body, "The font an SVG marker writes its text in ($(WATERMARK_FONT_FAMILY), $(WATERMARK_FONT_STYLE), $(WATERMARK_FONT_WEIGHT)).")
+        self._logo_color = ColorCombo()
+        self._logo_color.setToolTip("The colour an SVG marker uses where it has $(WATERMARK_COLOR).")
+        self._logo_color.value_changed.connect(self._emit_marks)
+        self._labeled(body, "Color", self._logo_color)
         self._logo_size = self._slider(body, "Size", LOGO_SIZE_RANGE[0] * 100, LOGO_SIZE_RANGE[1] * 100, Marks().logo_size * 100, 0, 1,
-                                       "The logo's longer side, as a percentage of the picture's shorter side.")
-        self._logo_opacity = self._slider(body, "Opacity", 0, 100, Marks().logo_opacity * 100, 0, 5, "How see-through the logo is.")
+                                       "The marker's size as a percentage of the picture (see Scale on).")
+        self._logo_scale_on = self._add_row(body, "Scale on", [(label, key) for key, label in logoimage.SCALE_ON.items()],
+                                            "What the size is a percentage of. Shorter side: the marker's longer side against the picture's shorter side (the same look in portrait and landscape). "
+                                            "Longer side: against the picture's longer side. Width, Height: the marker's own width or height against the picture's.", self._emit_marks)
+        self._logo_opacity = self._slider(body, "Opacity", 0, 100, Marks().logo_opacity * 100, 0, 5, "How see-through the marker is.")
+        self._logo_rotation = self._slider(body, "Rotate", ROTATION_RANGE[0], ROTATION_RANGE[1], 0, 0, 1, "Turn the marker clockwise, in degrees.")
         self._logo_position = self._add_row(body, "Position", [(label, key) for key, label in PLACES.items()],
-                                            "Where the logo sits on the picture. Custom appears once you move it on the picture.", self._emit_marks)
+                                            "Where the marker sits on the picture. Custom appears once you move it on the picture.", self._emit_marks)
         self._logo_path = ""
-
-    # ---- fonts ----------------------------------------------------------------------------------------------------------------------
+        self._listed = None   # the markers found in the watermarks folders at the last look
+        self._marker_style_widgets = {
+            "WATERMARK_TEXT": [self._logo_text],
+            "WATERMARK_COLOR": [self._logo_color],
+            "WATERMARK_FONT_FAMILY": [self._logo_font, self._logo_bold, self._logo_italic],
+        }
+        self._refresh_markers()
 
     def _start_font_scan(self) -> None:
         def work() -> None:
@@ -418,7 +460,7 @@ class CanisterWatermarkPanel(CollapsiblePanel):
         threading.Thread(target=work, daemon=True).start()
 
     def _apply_families(self, families) -> None:
-        for combo in (self._text_font, self._info_font):
+        for combo in (self._text_font, self._info_font, self._logo_font):
             combo.populate(list(families))
 
     # ---- the marks ------------------------------------------------------------------------------------------------------------------
@@ -432,6 +474,8 @@ class CanisterWatermarkPanel(CollapsiblePanel):
             text_align=self._text_align.currentData(), text_line_spacing=_share(self._text_line_spacing),
             text_letter_spacing=_share(self._text_letter_spacing), text_rotation=round(float(self._text_rotation.value()), 2), text_outline=_share(self._text_outline),
             logo=self._logo_path, logo_size=_share(self._logo_size), logo_opacity=_share(self._logo_opacity), logo_position=self._logo_position.currentData(),
+            logo_rotation=round(float(self._logo_rotation.value()), 2), logo_scale_on=self._logo_scale_on.currentData(), logo_text=self._logo_text.text().strip()[:MARKER_TEXT_MAX],
+            logo_color=self._logo_color.value(), logo_font=self._logo_font.value(), logo_bold=self._logo_bold.isChecked(), logo_italic=self._logo_italic.isChecked(),
             info_beside=self._info_beside.isChecked(), info_credit=self._info_credit.isChecked(), info_position=self._info_position.currentData(),
             info_size=_share(self._info_size), info_color=self._info_color.value(), info_font=self._info_font.value(), info_bold=self._info_bold.isChecked(),
         )
@@ -442,7 +486,8 @@ class CanisterWatermarkPanel(CollapsiblePanel):
         self._base = marks
         widgets = (self._mark_text, self._text_size, self._text_opacity, self._text_position, self._text_shadow, self._text_bold, self._text_italic, self._text_align,
                    self._text_line_spacing, self._text_letter_spacing, self._text_rotation, self._text_outline, self._logo_size, self._logo_opacity,
-                   self._logo_position, self._info_beside, self._info_credit, self._info_position, self._info_size, self._info_bold)
+                   self._logo_position, self._info_beside, self._info_credit, self._info_position, self._info_size, self._info_bold,
+                   self._logo_rotation, self._logo_scale_on, self._logo_text, self._logo_bold, self._logo_italic)
         for w in widgets:
             w.blockSignals(True)
         self._mark_text.setPlainText(marks.text)
@@ -460,6 +505,11 @@ class CanisterWatermarkPanel(CollapsiblePanel):
         self._logo_size.set_value(marks.logo_size * 100)
         self._logo_opacity.set_value(marks.logo_opacity * 100)
         self._logo_position.setCurrentIndex(max(0, self._logo_position.findData(marks.logo_position)))
+        self._logo_rotation.set_value(marks.logo_rotation)
+        self._logo_scale_on.setCurrentIndex(max(0, self._logo_scale_on.findData(marks.logo_scale_on)))
+        self._logo_text.setText(marks.logo_text)
+        self._logo_bold.setChecked(marks.logo_bold)
+        self._logo_italic.setChecked(marks.logo_italic)
         self._info_beside.setChecked(marks.info_beside)
         self._info_credit.setChecked(marks.info_credit)
         self._info_position.setCurrentIndex(max(0, self._info_position.findData(marks.info_position)))
@@ -471,8 +521,10 @@ class CanisterWatermarkPanel(CollapsiblePanel):
         self._text_font.set_value(marks.text_font)
         self._info_color.set_value(marks.info_color)
         self._info_font.set_value(marks.info_font)
+        self._logo_color.set_value(marks.logo_color)
+        self._logo_font.set_value(marks.logo_font)
         self._logo_path = marks.logo
-        self._show_logo_name()
+        self._refresh_markers(rescan=False)
         self._apply_canister_custom()
         self._sync_custom_items()
         self._sync_enabled()
@@ -492,33 +544,78 @@ class CanisterWatermarkPanel(CollapsiblePanel):
             combo.setCurrentIndex(max(0, combo.findData(CUSTOM if custom else last)))
             combo.blockSignals(False)
 
+    def _refresh_markers(self, select: str | None = None, rescan: bool = True) -> None:
+        """Fill the Marker list from the watermarks folders (and keep the marker chosen, whether or not it is in them). `rescan` False reuses the last look at the folders."""
+        ref = self._logo_path if select is None else select
+        if rescan or self._listed is None:
+            self._listed = library.list_markers()
+        combo = self._marker_combo
+        combo.blockSignals(True)
+        combo.clear()
+        combo.addItem("None", "")
+        for marker in self._listed:
+            combo.addItem(marker.label(), marker.name)
+        if ref and combo.findData(ref) < 0:
+            where = library.resolve(ref)
+            combo.addItem(f"{os.path.basename(ref)} (file)" if where else f"Missing: {os.path.basename(ref)}", ref)
+        combo.setCurrentIndex(max(0, combo.findData(ref)))
+        combo.blockSignals(False)
+        self._logo_path = ref
+        self._show_logo_name()
+
     def _show_logo_name(self) -> None:
+        """Say what the chosen marker is, and switch on the controls it can use (an SVG that has no $(WATERMARK_TEXT) has no use for a Text box)."""
+        used: set[str] = set()
         if not self._logo_path:
-            self._logo_name.setText("No logo chosen.")
-        elif not os.path.isfile(self._logo_path):
-            self._logo_name.setText(f"Missing: {os.path.basename(self._logo_path)}")
+            self._logo_name.setText("No marker chosen.")
         else:
-            kind = "SVG" if logoimage.is_svg(self._logo_path) else "picture"
-            self._logo_name.setText(f"{os.path.basename(self._logo_path)} ({kind})")
-        self._logo_clear.setEnabled(bool(self._logo_path))
+            path = library.resolve(self._logo_path)
+            if path is None:
+                self._logo_name.setText(f"Missing: {os.path.basename(self._logo_path)}. Put a file of that name in your watermarks folder (Open Folder) and press Reload.")
+            elif logoimage.is_svg(path):
+                used = logoimage.svg_variables(path)
+                self._logo_name.setText("SVG marker. " + self._uses_text(used))
+            else:
+                self._logo_name.setText("Picture marker: its own colours are used.")
+        for name, widgets in self._marker_style_widgets.items():
+            on = name in used or (name == "WATERMARK_FONT_FAMILY" and bool(used & {"WATERMARK_FONT_STYLE", "WATERMARK_FONT_WEIGHT"}))
+            for w in widgets:
+                w.setEnabled(on)
+
+    @staticmethod
+    def _uses_text(used: set[str]) -> str:
+        names = {"WATERMARK_TEXT": "text", "WATERMARK_COLOR": "colour", "WATERMARK_FONT_FAMILY": "font"}
+        found = [label for key, label in names.items() if key in used]
+        return f"It takes its {', '.join(found)} from the controls below." if found else "It has its own text and colours."
+
+    def _on_marker_picked(self, _index: int) -> None:
+        self._logo_path = self._marker_combo.currentData() or ""
+        self._show_logo_name()
+        self._emit_marks()
 
     def _choose_logo(self) -> None:
-        start = os.path.dirname(self._logo_path) if self._logo_path else ""
-        path, _filter = QFileDialog.getOpenFileName(self, "Choose a Logo", start, logoimage.DIALOG_FILTER)
+        """Add...: copy a file into the watermarks folder and use it."""
+        path, _filter = QFileDialog.getOpenFileName(self, "Add a Marker", "", logoimage.DIALOG_FILTER)
         if not path:
             return
         problem = logoimage.check(path)
         if problem:
-            QMessageBox.warning(self, "Logo", problem)
+            QMessageBox.warning(self, "Marker", problem)
             return
-        self._logo_path = path
-        self._show_logo_name()
+        here = {os.path.normcase(os.path.abspath(d)) for d in (library.user_dir(), library.bundled_dir())}
+        if os.path.normcase(os.path.abspath(os.path.dirname(path))) in here:
+            name = os.path.basename(path)   # it is in a watermarks folder already
+        else:
+            try:
+                name = library.add(path)
+            except (OSError, ValueError) as exc:
+                QMessageBox.warning(self, "Marker", str(exc) or "That file could not be added.")
+                return
+        self._refresh_markers(name)
         self._emit_marks()
 
-    def _clear_logo(self) -> None:
-        self._logo_path = ""
-        self._show_logo_name()
-        self._emit_marks()
+    def _open_marker_folder(self) -> None:
+        QDesktopServices.openUrl(QUrl.fromLocalFile(library.user_dir(create=True)))
 
     def _on_mark_slider(self, *_args) -> None:
         self._mark_settle.start()

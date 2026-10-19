@@ -41,6 +41,7 @@ from ..features.flatfield.processor import reference_from_file
 from ..features.lookpresets import module_store
 from ..features.lookpresets import builtin as builtin_presets
 from ..features.lookpresets import share as preset_share
+from ..features.watermark import variables as wm_variables
 from ..features.lookpresets import store as look_store
 from ..features.presettree import logic as preset_tree
 from ..features.lookpresets.modules import PANEL_MODULES, SWITCHABLE, panel_defaults, panel_fields
@@ -1090,6 +1091,8 @@ class AppController(QObject):
         if self.state.image_path is None or config == self.state.metadata:
             return
         self.state.metadata = config
+        if self._refresh_watermark_variables() and (self.state.marks.has_logo() or self.state.marks.has_text()):
+            self._settle()
         self._save_edit_state()
 
     def _load_roll(self, path: str) -> None:
@@ -1099,7 +1102,20 @@ class AppController(QObject):
     def _apply_roll(self, card: RollCard) -> None:
         self.state.roll = card
         self.state.roll_camera, self.state.roll_lens = card.camera.strip(), card.lens.strip()
+        self._refresh_watermark_variables()
         self.roll_changed.emit()
+
+    def watermark_variables(self) -> dict[str, str]:
+        """What $(NAME) means in a watermark on the open photo: its file, today, the film frame (the Roll Card laid over its own details) and EFAS."""
+        return wm_variables.build(self.state.image_path or "", self.effective_metadata(), app_version=__version__)
+
+    def _refresh_watermark_variables(self) -> bool:
+        """Keep state.wm_vars up to date with the open photo; True when it changed (a watermark that uses a variable must then be drawn again)."""
+        values = tuple(sorted(self.watermark_variables().items())) if self.state.image_path else ()
+        if values == self.state.wm_vars:
+            return False
+        self.state.wm_vars = values
+        return True
 
     def set_roll(self, card: RollCard) -> None:
         """Save the Roll Card for the open photo's folder: every photo in it inherits it, now and at export."""
@@ -1107,9 +1123,11 @@ class AppController(QObject):
         if path is None or card == self.state.roll:
             return
         before = (self.state.roll_camera, self.state.roll_lens)
+        before_vars = self.state.wm_vars
         edit_store.set_folder_roll(self._db, edit_store.folder_key(path), card.to_dict())
         self._apply_roll(card)
-        if self.state.wm_info and before != (self.state.roll_camera, self.state.roll_lens):
+        if (self.state.wm_info and before != (self.state.roll_camera, self.state.roll_lens)) or (
+                self.state.marks.has_logo() or self.state.marks.has_text()) and self.state.wm_vars != before_vars:
             self._settle()
 
     def other_rolls(self) -> list[tuple[str, RollCard]]:

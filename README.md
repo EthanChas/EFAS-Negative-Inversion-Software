@@ -68,7 +68,7 @@ Open a negative (RAW, TIFF, PNG or JPEG), invert it, balance the colour and tone
 - **Geometry**: crop with guides, straighten tool, automatic crop by border gradient, **Four-Corner Straighten** (click the four corners of the photo and the Angle and Keystone are set to make them a true rectangle, then cropped, in one undoable step), keystone correction with an automatic suggestion from straight lines
 - **Crop Roll** can make every crop the same size, each centred where its own border was found
 - **Finishing**: vignette and borders
-- **Watermarks**: a 3D film canister, camera and lens text (with or without the canister), styled text in any installed font or font file, and your own SVG or PNG logo. Drag any of them on the picture to move or resize them
+- **Watermarks**: a 3D film canister, camera and lens text (with or without the canister), styled text in any installed font or font file, and your own SVG or PNG markers from a watermarks folder. Markers work the way darktable's watermark module does: an SVG can be a template with `$(WATERMARK_TEXT)`, `$(WATERMARK_COLOR)` and font variables filled in from the tab, and `$(CAMERA)`, `$(EXIF.YEAR)`, `$(FILM)`, `$(FILE.NAME)` and many more from the Roll Card and the frame (Variables... lists them; the same variables work in the text mark), with Scale on (shorter or longer side, width, height) and Rotate. Drag any of them on the picture to move or resize them. See [docs/watermarks.md](docs/watermarks.md)
 
 </details>
 

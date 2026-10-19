@@ -202,6 +202,7 @@ class EditParams:
     keystone_v: float = 0.0
     keystone_h: float = 0.0
     dust_excluded: tuple = ()
+    wm_vars: tuple = ()   # ((name, value), ...): the watermark variables of this photo (hashable, so a change of any draws the watermark again)
 
     @classmethod
     def from_dict(cls, d: dict) -> "EditParams":
@@ -334,6 +335,7 @@ class EditParams:
             keystone_v=float(getattr(s, "keystone_v", 0.0)),
             keystone_h=float(getattr(s, "keystone_h", 0.0)),
             dust_excluded=tuple((float(p[0]), float(p[1])) for p in getattr(s, "dust_excluded", ())),
+            wm_vars=tuple((str(k), str(v)) for k, v in (getattr(s, "wm_vars", None) or ())),
         )
 
 
@@ -792,7 +794,7 @@ class Renderer:
                     (params.marks.canister_x, params.marks.canister_y) if params.marks.has_custom_canister() else None, params.marks.canister_size,
                 )
             if params.marks.wanted(params.wm_info, params.wm_camera, params.wm_lens, watermark_active(params.wm_film)):
-                image = apply_marks(image, params.marks, params.wm_info, params.wm_camera, params.wm_lens, watermark_active(params.wm_film))
+                image = apply_marks(image, params.marks, params.wm_info, params.wm_camera, params.wm_lens, watermark_active(params.wm_film), dict(params.wm_vars))
             if edge_logic.mask_active(edge_values):
                 image = edge_logic.apply_edge_mask(image, params.edge_mask, params.edge_feather, params.edge_mask_color)
             if params.border > 0:

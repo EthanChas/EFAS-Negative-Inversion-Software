@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- A line of text for a watermark. The Text, Colour and Font of the Marker section fill in the WATERMARK variables below; the picture is 1000 x 120, so keep the text short or
+     make a wider copy of this file. Variables such as CAMERA or EXIF.YEAR work in the Text too (Variables... lists them). -->
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="120" viewBox="0 0 1000 120">
+  <text x="500" y="84" text-anchor="middle" font-size="76"
+        font-family="$(WATERMARK_FONT_FAMILY)" font-weight="$(WATERMARK_FONT_WEIGHT)" font-style="$(WATERMARK_FONT_STYLE)"
+        fill="$(WATERMARK_COLOR)">$(WATERMARK_TEXT)</text>
+</svg>
