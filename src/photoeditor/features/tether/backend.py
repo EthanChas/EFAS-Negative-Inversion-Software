@@ -7,6 +7,8 @@ everything without a camera) are interchangeable, and another make could be adde
 from dataclasses import dataclass, field
 from typing import Callable, Protocol
 
+from .exposure import ExposureState
+
 NameFor = Callable[[str], str]   # the file name the camera gave a file -> the name to save it under
 
 
@@ -26,6 +28,7 @@ class Capabilities:
     """What the camera can do just now, asked of it and not assumed. `notes` says why a thing is off, so a button that does nothing can explain itself."""
 
     focus_drive: bool = False
+    exposure: bool = False
     notes: dict = field(default_factory=dict)
 
     def note(self, name: str) -> str:
@@ -52,6 +55,12 @@ class CameraBackend(Protocol):
 
     def focus(self, direction: str, size: int = 2, steps: int = 1) -> None:
         """Drive the lens "near" or "far": `size` 1 (finest) to 3 (coarsest), `steps` times. One step can be smaller than the picture's own noise, so a move you can see takes several."""
+
+    def exposure(self) -> ExposureState | None:
+        """The ISO, aperture, shutter speed and compensation the camera is set to, and the values it will take just now (features/tether/exposure.py). None when it cannot say."""
+
+    def set_exposure(self, key: str, code: int) -> None:
+        """Set one of "iso", "av", "tv", "comp" to a code from `exposure().choices`. Raises TetherError, saying why (a dial on a mode that sets it itself, say), when the camera will not."""
 
     def shoot(self, folder: str, name_for: NameFor, settle_s: float = 1.0) -> list[str]:
         """Wait `settle_s` seconds (for the rig to stop shaking), release the shutter without focusing, and save every file it makes into `folder` under the names `name_for` gives

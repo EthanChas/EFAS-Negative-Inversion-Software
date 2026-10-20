@@ -15,8 +15,9 @@ import numpy as np
 from ..focuspeaking import logic as peaking
 from ..negative import printengine as engine
 
-WORK_WIDTH = 800          # the positive and the picture shown are made at most this wide
-PEAK_WIDTH = 528          # peaking is worked out at most this wide, and stretched over the picture
+WORK_WIDTH = 1280         # the positive and the picture shown are made at most this wide (a Canon live picture is 960 to 1620 wide: the narrower are kept whole, and the conversion keeps up with 30 pictures a second)
+PEAK_WIDTH = 960          # peaking is worked out at most this wide, and stretched over the picture
+METER_WIDTH = 800         # the conversion's table is made from a picture this wide (as it always was) and applied to the full one, so the colours do not change with the size shown
 PEAK_EVERY = 3            # peaking is worked out for one frame in this many and kept for the others: focus changes slowly, and it is the dearest step
 RELEARN_S = 0.6           # how long a conversion table is reused before it is made again from a newer picture
 NOISE_FLOOR = 6.0         # edge strength (grey levels per pixel) below this counts for nothing
@@ -24,6 +25,11 @@ CLIP_LEVEL = 250          # a camera value this high is blown out
 LOUPE_PIXELS = 96         # the side of the camera-pixel square the loupe enlarges
 LOUPE_SCALE = 4
 SETTINGS = engine.Settings(transfer="srgb")   # the camera's live picture is an ordinary sRGB JPEG
+
+
+_DENSITY_OF_VALUE = engine.density_table(np.dtype(np.uint8), SETTINGS.transfer).astype(np.float32)   # the density of each of the 256 values of an 8-bit colour
+_MIX = engine.mixing_matrix(SETTINGS.unmix_matrix, SETTINGS.unmix_strength).astype(np.float32)           # the dyes' crosstalk taken out
+_MIXES = not np.allclose(_MIX, np.eye(3), atol=1e-6)
 
 
 @dataclass(frozen=True)
@@ -102,7 +108,7 @@ def corner_sharpness(rgb: np.ndarray, size: float = 0.18) -> dict:
 
 def clipped_percent(rgb: np.ndarray) -> dict:
     """The per cent of the picture at or above the blown-out level, in each colour."""
-    return {c: float((rgb[..., i] >= CLIP_LEVEL).mean() * 100.0) for i, c in enumerate("RGB")}
+    return {c: cv2.countNonZero(cv2.compare(np.ascontiguousarray(rgb[..., i]), CLIP_LEVEL - 1, cv2.CMP_GT)) * 100.0 / (rgb.shape[0] * rgb.shape[1]) for i, c in enumerate("RGB")}
 
 
 def sample_colour(rgb: np.ndarray, x: float, y: float, radius: int = 5) -> tuple:
@@ -122,11 +128,15 @@ class Pipeline:
         self._lut_at = 0.0
         self._peak = None          # (the sensitivity it was made for, the size of the picture, where it marks, the colour of each mark)
         self._peak_age = 0
+        self._lut8 = None          # (the table it was made from, that table rounded to 8 bits)
 
-    def _table(self, codes: np.ndarray, view: View):
+    def _table(self, small: np.ndarray, view: View):
         base = tuple(round(v) for v in view.base_rgb) if view.base_rgb else None
         now = time.monotonic()
         if self._lut is None or base != self._lut_key or now - self._lut_at > RELEARN_S:
+            w = small.shape[1]
+            meter = small if w <= METER_WIDTH else cv2.resize(small, (METER_WIDTH, round(small.shape[0] * METER_WIDTH / w)), interpolation=cv2.INTER_AREA)
+            codes = engine.density_codes(meter, SETTINGS)
             dens = engine.base_density(base, SETTINGS, 255.0) if base else None
             h, w = codes.shape[:2]
             middle = codes[int(h * 0.2):int(h * 0.8), int(w * 0.15):int(w * 0.85)]   # metered on the middle: the edges are the holder, the clear film and the sprocket holes, not the picture
@@ -148,8 +158,22 @@ class Pipeline:
         return LiveFrame(np.ascontiguousarray(shown), rgb, sharpness(rgb, view.region), clipped_percent(rgb))
 
     def _positive(self, small: np.ndarray, view: View) -> np.ndarray:
-        codes = engine.density_codes(small, SETTINGS)
-        return engine.apply_lut(codes, self._table(codes, view))
+        """The conversion of a whole live picture. The same two steps as engine.density_codes and engine.apply_lut (to within one density code in 13000 and one level in 255), written with
+        OpenCV's lookup and matrix routines and an 8-bit table, which is about twice as fast: it has to be done for every picture, 30 a second."""
+        lut = self._table(small, view)
+        if self._lut8 is None or self._lut8[0] is not lut:
+            self._lut8 = (lut, np.clip(np.rint(lut), 0, 255).astype(np.uint8))
+        density = cv2.LUT(small, _DENSITY_OF_VALUE)
+        if _MIXES:
+            density = cv2.transform(density, _MIX)
+        density *= engine.DENSITY_SCALE
+        density += 0.5
+        np.clip(density, 0, 65535, out=density)
+        codes = density.astype(np.uint16)
+        out = np.empty(codes.shape, dtype=np.uint8)
+        for c in range(3):
+            np.take(self._lut8[1][c], codes[..., c], out=out[..., c])
+        return out
 
     def _with_peaking(self, shown: np.ndarray, small: np.ndarray, sensitivity: float) -> np.ndarray:
         level = round(max(0.0, min(1.0, float(sensitivity))), 3)

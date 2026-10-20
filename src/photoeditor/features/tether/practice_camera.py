@@ -12,6 +12,7 @@ import cv2
 import numpy as np
 
 from ..negative import filmsim
+from . import exposure as ex
 from .backend import CameraInfo, Capabilities, NameFor, TetherError
 from .naming import unique_path
 
@@ -20,6 +21,8 @@ BEST = 140                     # the lens position that is in focus
 RANGE = (0, 300)               # the lens positions there are
 STEP = {1: 1, 2: 4, 3: 12}     # how far a step of each size moves the lens
 BLUR_PER_STEP = 0.1            # pixels of blur for each lens position out of focus
+DEFAULTS = {"iso": 0x48, "av": 0x38, "tv": 0x68, "comp": 0}   # ISO 100, f/8, 1/60 s: the picture as it always was
+REFERENCE_STOPS = ex.stops_of("iso", 0x48) + ex.stops_of("av", 0x38) + ex.stops_of("tv", 0x68)
 
 
 def _scene(width: int, height: int) -> np.ndarray:
@@ -85,6 +88,8 @@ class PracticeCamera:
         self._last_step = -1
         self._frame: bytes | None = None
         self._grain = 0.0
+        self._settings = dict(DEFAULTS)
+        self._tones: dict[float, np.ndarray] = {}
 
     @property
     def info(self) -> CameraInfo:
@@ -92,7 +97,7 @@ class PracticeCamera:
 
     @property
     def capabilities(self) -> Capabilities:
-        return Capabilities(focus_drive=True)
+        return Capabilities(focus_drive=True, exposure=True)
 
     @property
     def position(self) -> int:
@@ -106,6 +111,35 @@ class PracticeCamera:
 
     def close(self) -> None:
         self._opened = False
+
+    # ------------------------------------------------------------ exposure: the picture gets brighter with more light, and clips
+    def exposure(self) -> ex.ExposureState:
+        with self._lock:
+            values = dict(self._settings)
+        choices = {"iso": tuple(ex.third_codes(0x40, 0x80)), "av": tuple(ex.third_codes(0x10, 0x58)), "tv": tuple(ex.third_codes(0x10, 0x98)), "comp": ()}   # manual: compensation is not offered
+        return ex.ExposureState("M", values, choices)
+
+    def set_exposure(self, key: str, code: int) -> None:
+        state = self.exposure()
+        if key not in state.choices or int(code) not in state.choices[key]:
+            raise TetherError(f"The practice camera does not offer {ex.TITLES.get(key, key)} {code}.")
+        with self._lock:
+            self._settings[key] = int(code)
+            self._frame = None   # the next live picture shows the new exposure
+
+    def _gain_stops(self) -> float:
+        s = self._settings
+        return round((ex.stops_of("iso", s["iso"]) + ex.stops_of("av", s["av"]) + ex.stops_of("tv", s["tv"]) - REFERENCE_STOPS) * 8) / 8
+
+    def _exposed(self, rgb: np.ndarray) -> np.ndarray:
+        """The negative as the sensor would see it with more or less light: the light is scaled in linear terms and the brightest values clip."""
+        gain = self._gain_stops()
+        if gain == 0.0:
+            return rgb
+        if gain not in self._tones:
+            lin = (np.arange(256) / 255.0) ** 2.2 * 2.0 ** gain
+            self._tones[gain] = np.round(np.clip(lin, 0.0, 1.0) ** (1 / 2.2) * 255.0).astype(np.uint8)
+        return self._tones[gain][rgb]
 
     def _blur_of(self, rgb: np.ndarray, sigma: float) -> np.ndarray:
         return rgb if sigma < 0.15 else cv2.GaussianBlur(rgb, (0, 0), sigma)
@@ -124,7 +158,7 @@ class PracticeCamera:
         step = int(time.monotonic() / self._interval)
         with self._lock:
             if step != self._last_step or self._frame is None:
-                noisy = self._picture().astype(np.int16) + self._rng.normal(0, 1.2, FRAME[::-1] + (1,)).astype(np.int16)
+                noisy = self._exposed(self._picture()).astype(np.int16) + self._rng.normal(0, 1.2, FRAME[::-1] + (1,)).astype(np.int16)
                 self._frame = _jpeg(np.clip(noisy, 0, 255).astype(np.uint8), 85)
                 self._last_step = step
             return step, self._frame
@@ -147,7 +181,7 @@ class PracticeCamera:
             sharp = self._sharp
             sigma = abs(self._pos - BEST) * BLUR_PER_STEP * 2
         big = cv2.resize(sharp, (FRAME[0] * 2, FRAME[1] * 2), interpolation=cv2.INTER_CUBIC)
-        big = self._blur_of(big, sigma)
+        big = self._exposed(self._blur_of(big, sigma))
         saved = []
         number = int(time.time() * 1000) % 10000
         for camera_name, data in ((f"IMG_{number:04d}.JPG", _jpeg(big, 95)), (f"IMG_{number:04d}.TIF", self._tiff(big))):

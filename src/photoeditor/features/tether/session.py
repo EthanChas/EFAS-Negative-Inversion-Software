@@ -4,9 +4,11 @@ The window asks this for the next live picture (made from the camera's newest fr
 It also keeps the sharpness readings: the latest, the best seen so far (to find the sharpest spot by going past it and coming back) and a short history."""
 
 import threading
+import time
 from collections import deque
 from dataclasses import replace
 
+from . import exposure as ex
 from . import liveview, naming
 from .backend import CameraBackend, TetherError
 
@@ -93,6 +95,56 @@ class TetherSession:
             raise ValueError(f"coarseness is one of {', '.join(FOCUS_MOVES)}, not {coarseness!r}")
         size, steps = FOCUS_MOVES[coarseness]
         self.backend.focus(direction, size, steps)
+
+    # ------------------------------------------------------------ exposure
+    def exposure(self) -> ex.ExposureState | None:
+        return self.backend.exposure()
+
+    def set_exposure(self, key: str, code: int) -> None:
+        self.backend.set_exposure(key, int(code))
+
+    def _level_after(self, after_seq: int, settle_s: float, timeout_s: float = 4.0) -> tuple[int, float | None]:
+        """(the number of the newest frame, its metered level) once the camera has shown a few new pictures after a change (a live picture lags the setting by a few frames)."""
+        start = time.monotonic()
+        seq = after_seq
+        while time.monotonic() - start < timeout_s:
+            seq, jpeg = self.backend.live_frame()
+            if jpeg is not None and seq >= after_seq + 3 and time.monotonic() - start >= settle_s:
+                rgb = liveview.decode(jpeg)
+                if rgb is not None:
+                    return seq, ex.metered_level(rgb)
+            time.sleep(0.01)
+        return seq, None
+
+    def auto_exposure(self, settle_s: float = 0.3, say=None) -> ex.AutoResult:
+        """Set the shutter speed so the film's brightest colour sits just short of clipping (see features/tether/exposure.py). It reads the live picture, moves the shutter by the number of
+        stops that picture is off by, and reads again, up to six times. `say(text)` is told how it is going. Never raises for a picture that cannot be improved: it says why in the result."""
+        state = self.backend.exposure()
+        if state is None or "tv" not in state.values:
+            return ex.AutoResult(False, "This camera does not report its exposure to the computer.")
+        if not state.can_set("tv"):
+            return ex.AutoResult(False, f"The camera is in {state.mode} mode, which sets the shutter speed itself. Turn its mode dial to M (manual), or to Tv, and try again.")
+        seq, level = self._level_after(-3, 0.0)
+        for round_no in range(1, ex.MAX_ROUNDS + 1):
+            if level is None:
+                return ex.AutoResult(False, "No live picture to measure: check the camera is showing one.", round_no - 1)
+            stops = ex.stops_to_target(level)
+            code = state.values["tv"]
+            if abs(stops) < ex.TOLERANCE_STOPS and level < ex.CLIP_VALUE:
+                return ex.AutoResult(True, f"Exposure is right: {ex.label('tv', code)} at ISO {ex.label('iso', state.values.get('iso', 0))}, {ex.label('av', state.values.get('av', 0))}.", round_no - 1)
+            new = ex.next_shutter(code, stops, state.choices["tv"])
+            if new is None and not ex.at_limit(code, stops, state.choices["tv"]) and level < ex.CLIP_VALUE:
+                return ex.AutoResult(True, f"As close as the shutter's steps allow: {ex.label('tv', code)} at ISO {ex.label('iso', state.values.get('iso', 0))}, {ex.label('av', state.values.get('av', 0))}.", round_no - 1)
+            if new is None:
+                where = "slowest" if stops > 0 else "fastest"
+                other = "a higher ISO or a wider aperture" if stops > 0 else "a lower ISO or a smaller aperture"
+                return ex.AutoResult(False, f"The shutter is at its {where} ({ex.label('tv', code)}) and the picture is still {'dark' if stops > 0 else 'too bright'}: try {other}.", round_no - 1)
+            if say is not None:
+                say(f"Round {round_no}: {ex.label('tv', code)} to {ex.label('tv', new)} ({stops:+.1f} stops wanted)")
+            self.backend.set_exposure("tv", new)
+            state = self.backend.exposure() or state
+            seq, level = self._level_after(seq, settle_s)
+        return ex.AutoResult(False, "It got close but did not settle: the picture may be changing (the light, or the film moving). Try again.", ex.MAX_ROUNDS)
 
     def next_frame_number(self) -> int:
         return naming.next_frame(self.folder, self.prefix)

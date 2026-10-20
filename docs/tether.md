@@ -31,6 +31,22 @@ The practice camera needs none of this: it is a made-up negative with a lens tha
 **Camera.** Practice camera or Canon camera, the folder of the SDK, and Connect. When connected it shows the camera's name and lens, and says why the lens cannot be driven if it cannot
 (no lens, or the lens on manual focus).
 
+**Picture and zoom.** The window opens wide (up to 1640 by 940, and no bigger than your screen) and the live picture is shown at the camera's own size, up to 1280 pixels wide (a Canon live
+picture is 960 to 1620 wide, so most are shown whole); it is shrunk with area averaging when the window is smaller, and shown as square pixels when you zoom in a lot, so you can judge them. The
+**Zoom** slider under the picture goes from 100% (the whole picture fitted to the window) to 800%; the mouse wheel zooms about the pointer, dragging moves the zoomed picture, **Fit** (or the key `0`) goes back, and a
+plain click still measures sharpness where you click. The zoom is software: it enlarges what the camera sends. The conversion's table is still worked out from a picture 800 wide, so the colours do not
+change with the size shown.
+
+**Exposure.** The camera's mode, and its **ISO**, **Aperture**, **Shutter speed** and **Exposure compensation**, read from the camera (and read again every few seconds, so a turned dial shows). Each
+box lists only what the camera will take just now, in thirds of a stop: with the mode dial on **M** (manual) ISO, aperture and shutter speed can be set from the window; on Av or Tv the camera sets one of
+them itself and its box is greyed, and the panel says to turn the dial to M. **Auto exposure** (it needs M or Tv) meters the film in the live picture, leaving out the black holder and the bare light of
+the sprocket holes, finds the brightest colour of the film (the clear base between and around the frames, which is the brightest film on a negative), and moves the **shutter speed** until that sits
+just short of clipping (a live-picture value of about 235 of 255, within about a sixth of a stop), reading again after every change because the live picture lags a few frames behind. The base is
+what is kept from clipping because the conversion needs its colour to take out the orange mask; the picture, being denser, then comes out as bright as it can without losing the base. The aperture and ISO
+are left alone: on a copy stand the aperture is the lens's sharp one and the ISO the quiet one. If the shutter reaches the end of its range it says so and which other setting to change. The
+practice camera has the same controls: its picture gets brighter with more light and clips, so auto exposure can be tried without a camera. Written against Canon's property codes (each code is an eighth
+of a stop) and a stand-in, not yet tried on a real body.
+
 **View.** *Show as a positive* uses EFAS's own Modern conversion (the same as in the editor), so you judge focus on what you will see; a plain flip would keep the orange mask and come out
 cyan. The conversion is metered on the middle of the picture and re-made about twice a second. *Pick the Clear Film*, then click a patch of clear film between frames, and the conversion
 knows the film's orange; *Forget* goes back to working it out. *Focus peaking* marks what is in focus in colour (blue sharp, green sharper, yellow very sharp, red the sharpest); the
@@ -68,12 +84,12 @@ Light** ([scanning-and-export-guide.md](scanning-and-export-guide.md)) reads the
 
 ## Not available
 
-Camera-side zoom of the live picture (EDSDK does not offer it on all bodies; the loupe is software), setting the exposure from the computer, electronic shutter selection, and other makes.
+Camera-side zoom of the live picture (EDSDK does not offer it on all bodies; the zoom and the loupe are software, so they enlarge the pixels the camera sends and show no more detail than they hold), exposure compensation in auto exposure, exposure from the computer on a body whose dial is not on M, electronic shutter selection, and other makes.
 
 ## Where it is in the code
 
 `features/tether/`: `backend.py` (what a camera must be), `edsdk_api.py` (Canon's SDK from ctypes: the constants, structures and declared signatures), `edsdk_camera.py` (the Canon
-backend: one thread owns the SDK and pumps its Windows messages, pulls live pictures, drives the lens, shoots and downloads), `practice_camera.py`, `liveview.py` (decode, positive, peaking,
+backend: one thread owns the SDK and pumps its Windows messages, pulls live pictures, drives the lens, shoots and downloads), `practice_camera.py`, `exposure.py` (the camera's exposure codes as words, and the auto exposure arithmetic), `liveview.py` (decode, positive, peaking,
 sharpness), `naming.py`, `session.py`. `desktop/tether_worker.py` and `desktop/view/tether_window.py` are the window.
 
 The approach (a camera thread that owns the SDK, live pictures pulled and converted on the computer, a sharpness meter, a settle time before a non-autofocus shutter, a numbered roll) follows

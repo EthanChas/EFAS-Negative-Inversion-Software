@@ -43,7 +43,9 @@ class FakeEdsdk:
         self.cameras, self.lens, self.af_mode, self.busy_sets, self.not_ready = cameras, lens, af_mode, busy_sets, not_ready
         self.shutter_refused, self.drive_error, self.announce_twice, self.fail_download = shutter_refused, drive_error, announce_twice, set(fail_download)
         self.shot_items = items if items is not None else [("IMG_0042.CR3", b"RAW" * 100, 1111), ("IMG_0042.JPG", b"JPG" * 50, 1111)]
-        self.props = {api.PROP_EVF_OUTPUT_DEVICE: api.EVF_OUTPUT_TFT, api.PROP_LENS_STATUS: lens, api.PROP_AF_MODE: af_mode}
+        self.props = {api.PROP_EVF_OUTPUT_DEVICE: api.EVF_OUTPUT_TFT, api.PROP_LENS_STATUS: lens, api.PROP_AF_MODE: af_mode,
+                      api.PROP_AE_MODE: 3, api.PROP_ISO: 0x48, api.PROP_AV: 0x38, api.PROP_TV: 0x68, api.PROP_EXPOSURE_COMP: 0}
+        self.descs = {api.PROP_ISO: [0x48, 0x50, 0x58], api.PROP_AV: [0x38, 0x30], api.PROP_TV: [0x68, 0x60, 0x58], api.PROP_EXPOSURE_COMP: []}   # what each property will take just now
         self.calls, self.released, self.commands = [], [], []
         self.handler = None
         self._next = 5000
@@ -98,6 +100,14 @@ class FakeEdsdk:
             put(data, self.props[prop])
         else:
             return 0x0000200A
+        return 0
+
+    def EdsGetPropertyDesc(self, ref, prop, p):
+        desc = p._obj
+        codes = self.descs.get(prop, [])
+        desc.numElements = len(codes)
+        for i, code in enumerate(codes):
+            desc.propDesc[i] = code
         return 0
 
     def EdsSetPropertyData(self, ref, prop, param, size, data):
@@ -454,3 +464,28 @@ def test_errors_say_what_happened_and_what_to_do():
     assert "COMM_DISCONNECTED" in str(err) and "USB cable" in str(err) and err.code == 0xC1
     assert name_of(0x1234) == "UNKNOWN_0x00001234" and name_of(0x81) == "DEVICE_BUSY"
     assert all(code in __import__("photoeditor.features.tether.edsdk_errors", fromlist=["NAMES"]).NAMES for code in HINTS if code != 0)
+
+
+# ---------------------------------------------------------------- exposure
+def test_exposure_is_read_from_the_camera_and_set_only_to_what_it_offers(quick):
+    fake = FakeEdsdk()
+    camera = opened(fake)
+    try:
+        assert camera.capabilities.exposure
+        state = camera.exposure()
+        assert state.mode == "M" and state.values == {"iso": 0x48, "av": 0x38, "tv": 0x68, "comp": 0}, state
+        assert state.choices["tv"] == (0x68, 0x60, 0x58) and state.can_set("tv") and not state.can_set("comp"), "a property the camera will not change offers nothing"
+        camera.set_exposure("tv", 0x60)
+        assert ("set", api.PROP_TV, 0x60) in fake.calls and camera.exposure().values["tv"] == 0x60
+        with pytest.raises(TetherError, match="will not take"):
+            camera.set_exposure("tv", 0x20)
+        fake.props[api.PROP_AE_MODE] = 2    # the dial is on Av: the camera sets the shutter itself and offers no choice
+        fake.descs[api.PROP_TV] = []
+        assert camera.exposure().mode == "Av"
+        with pytest.raises(TetherError, match="Av mode.*dial to M"):
+            camera.set_exposure("tv", 0x60)
+        with pytest.raises(ValueError):
+            camera.set_exposure("flash", 1)
+    finally:
+        camera.close()
+    assert camera.exposure() is None, "closed: nothing to ask"

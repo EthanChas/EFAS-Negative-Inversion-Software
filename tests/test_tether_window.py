@@ -36,7 +36,7 @@ _SCRIPT = textwrap.dedent(r'''
             time.sleep(0.01)
         raise AssertionError("timed out waiting for " + what)
     def idle(w):
-        until(lambda: not any(j is not None and j.isRunning() for j in (w._job, w._focus_job)), what="the camera jobs")
+        until(lambda: not any(j is not None and j.isRunning() for j in (w._job, w._focus_job, w._exposure_job, w._auto_job)), what="the camera jobs")
 
     w = tw.TetherWindow(None, start_folder=roll)
     w.show()
@@ -93,7 +93,7 @@ _SCRIPT = textwrap.dedent(r'''
     w._image_hovered(-1.0, -1.0); assert w.image._loupe is None
     w.loupe_check.setChecked(False)
     shortcuts = {sc.key().toString(): sc for sc in w.findChildren(QShortcut)}
-    assert {"Space", "I", "P", "L", "Left", "Right", "Shift+Left", "Shift+Right", "Alt+Left", "Alt+Right"} <= set(shortcuts), sorted(shortcuts)
+    assert {"Space", "0", "I", "P", "L", "Left", "Right", "Shift+Left", "Shift+Right", "Alt+Left", "Alt+Right"} <= set(shortcuts), sorted(shortcuts)
     shortcuts["I"].activated.emit(); assert not w.positive_check.isChecked() and not session.view.positive
     shortcuts["I"].activated.emit(); assert w.positive_check.isChecked()
     shortcuts["P"].activated.emit(); assert session.view.peaking
@@ -118,6 +118,62 @@ _SCRIPT = textwrap.dedent(r'''
     w._image_clicked(0.25, 0.4)
     assert session.view.region[:2] == (0.25, 0.4) and session.best == 0.0
     w.measure_centre(); assert session.view.region[:2] == (0.5, 0.5)
+
+    # --- the zoom: the slider and the picture agree; the wheel's zoom keeps the point under the pointer; a drag moves the picture and a click still measures
+    from PyQt6.QtCore import QPoint, QPointF
+    from PyQt6.QtTest import QTest
+    img = w.image
+    assert img.zoom == 1.0 and w.zoom_slider.value() == 100 and w.zoom_label.text() == "100%" and img.width() >= 700, (img.width(), img.height())
+    w.zoom_slider.setValue(400); assert img.zoom == 4.0 and w.zoom_label.text() == "400%"
+    img.set_zoom(2.0); assert w.zoom_slider.value() == 200 and w.zoom_label.text() == "200%"
+    w.zoom_slider.setValue(100); assert img.zoom == 1.0 and img._centre == (0.5, 0.5)
+    t0 = img._target(); x_on_screen = t0.left() + 0.8 * t0.width()
+    img.set_zoom(3.0, about=(0.8, 0.5)); t1 = img._target()
+    assert abs((t1.left() + 0.8 * t1.width()) - x_on_screen) < 1.5, "the point under the pointer stays under it"
+    assert img._target().width() > img.width() and img._centre[0] > 0.5
+    before = img._centre
+    QTest.mousePress(img, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, QPoint(300, 200))
+    QTest.mouseMove(img, QPoint(220, 200))
+    QTest.mouseRelease(img, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, QPoint(220, 200))
+    assert img._centre[0] > before[0], "dragging the picture left shows more of its right"
+    region = session.view.region
+    assert session.view.region == region, "a drag does not measure"
+    QTest.mouseClick(img, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, QPoint(400, 250))
+    assert session.view.region[:2] != region[:2], "a click measures where it lands"
+    img.set_zoom(8.0); img.set_zoom(1.0); assert img._centre == (0.5, 0.5), "back to the whole picture"
+    w.measure_centre(); w.zoom_slider.setValue(100)
+    shortcuts["0"].activated.emit(); assert img.zoom == 1.0
+
+    # --- the camera's exposure: shown, set from the window, and found automatically
+    until(lambda: w.exposure_combos["tv"].count() > 0, what="the exposure settings")
+    assert "M mode" in w.mode_label.text() and w.exposure_combos["tv"].currentText() == "1/60 s" and w.exposure_combos["iso"].currentText() == "100" and w.exposure_combos["av"].currentText() == "f/8"
+    assert w.exposure_combos["tv"].isEnabled() and not w.exposure_combos["comp"].isEnabled() and w.auto_button.isEnabled()
+    combo = w.exposure_combos["tv"]
+    combo.setCurrentIndex(combo.findText("1/30 s")); w.set_exposure_from_box("tv")
+    until(lambda: camera.exposure().values["tv"] == 0x60, what="the shutter speed to reach the camera")
+    until(lambda: not (w._exposure_job and w._exposure_job.isRunning()), what="the exposure job")
+    camera.set_exposure("tv", 0x48)                      # 1/4 s: far too bright
+    w.auto_button.click(); assert not w.auto_button.isEnabled() and w.exposure_note.text() == "Measuring..."
+    until(lambda: w.auto_button.isEnabled(), 30.0, "auto exposure to finish")
+    assert "Exposure is right" in w.exposure_note.text() or "As close as" in w.exposure_note.text(), w.exposure_note.text()
+    until(lambda: w.exposure_combos["tv"].currentData() == camera.exposure().values["tv"], what="the box to show the new shutter speed")
+    assert camera.exposure().values["tv"] != 0x48
+    w.exposure_combos["tv"].setCurrentIndex(0); w.set_exposure_from_box("tv"); idle(w); pump(0.3)   # (a stand-in refusal is shown, not raised)
+    session.set_exposure = lambda key, code: (_ for _ in ()).throw(TetherError("refused: test"))
+    w.set_exposure_from_box("tv"); until(lambda: "refused: test" in w.exposure_note.text(), what="the refusal to be shown")
+    del session.set_exposure
+    # a slow reading still running when a setting is chosen must not be dropped mid-run (a QThread let go while it runs aborts the whole program)
+    real_read = session.exposure
+    session.exposure = lambda: (time.sleep(0.6), real_read())[1]
+    w._exposure_timer.stop(); idle(w); w.refresh_exposure()
+    first = w._exposure_job
+    assert first is not None and first.isRunning()
+    combo.setCurrentIndex(combo.findText("1/60 s")); w.set_exposure_from_box("tv")
+    assert first in w._alive or not first.isRunning(), "the slow reading is kept until it finishes"
+    until(lambda: not w._alive, 15.0, "the exposure jobs to finish")
+    del session.exposure
+    w._exposure_timer.start()
+    camera.set_exposure("tv", 0x68); camera.set_exposure("iso", 0x48); pump(0.3)   # back to the picture the rest of this test was written for
 
     # --- sampling the clear film
     w.base_button.setChecked(True); w.arm_base_pick()

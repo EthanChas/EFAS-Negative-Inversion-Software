@@ -10,7 +10,7 @@ import os
 import time
 from collections import deque
 
-from PyQt6.QtCore import QPointF, QRectF, Qt, pyqtSignal
+from PyQt6.QtCore import QPointF, QRectF, QSize, Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QColor, QFont, QImage, QKeySequence, QPainter, QPen, QShortcut
 from PyQt6.QtWidgets import (
     QApplication, QCheckBox, QComboBox, QDialog, QDoubleSpinBox, QFileDialog, QGridLayout, QGroupBox, QHBoxLayout, QLabel, QLineEdit, QListWidget, QListWidgetItem,
@@ -21,7 +21,7 @@ from ...features.focuspeaking import logic as peaking
 from ...features.lightcheck.capture import RAW_EXTS
 from ...features.open_image.logic import SUPPORTED_EXTS
 from ...features.settings import logic as app_settings
-from ...features.tether import edsdk_api, liveview, naming
+from ...features.tether import edsdk_api, exposure, liveview, naming
 from ...features.tether.session import CAMERAS, TetherSession, make_backend
 from ...theme.tokens import THEME
 from ..tether_worker import JobWorker, LiveWorker
@@ -49,14 +49,18 @@ def primary_file(paths: list[str]) -> str:
 
 
 class LiveImage(QWidget):
-    """The live picture, fitted to the window, with the sharpness region drawn on it, warnings, and (when asked) a loupe."""
+    """The live picture, fitted to the window or zoomed (wheel, the slider, drag to move), with the sharpness region drawn on it, warnings, and (when asked) a loupe."""
 
     clicked = pyqtSignal(float, float)    # where, as fractions of the picture
     hovered = pyqtSignal(float, float)    # the same, as the mouse moves; (-1, -1) once it leaves
+    zoom_changed = pyqtSignal(float)      # 1.0 is the whole picture fitted to the window
+
+    ZOOM_MAX = 8.0
+    _DRAG_PIXELS = 4   # a press that moves less than this is a click (it measures there); more is a drag (it moves the picture)
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setMinimumSize(560, 380)
+        self.setMinimumSize(760, 500)
         self.setMouseTracking(True)
         self.setCursor(Qt.CursorShape.CrossCursor)
         self._image: QImage | None = None
@@ -65,6 +69,14 @@ class LiveImage(QWidget):
         self._info = ""
         self._warning = ""
         self._loupe: QImage | None = None
+        self._zoom = 1.0
+        self._centre = (0.5, 0.5)      # the part of the picture in the middle of the window, as fractions of it
+        self._press: QPointF | None = None
+        self._dragging = False
+
+    @property
+    def zoom(self) -> float:
+        return self._zoom
 
     def set_message(self, text: str) -> None:
         self._image, self._message = None, text
@@ -84,12 +96,55 @@ class LiveImage(QWidget):
             self._loupe = QImage(rgb.data, w, h, 3 * w, QImage.Format.Format_RGB888).copy()
         self.update()
 
+    # ------------------------------------------------------------ zoom and the part shown
+    def set_zoom(self, zoom: float, about: tuple | None = None) -> None:
+        """Zoom to `zoom` (1 fits the whole picture, up to ZOOM_MAX), keeping the point `about` (fractions of the picture) where it is on screen; the middle when not given."""
+        zoom = max(1.0, min(self.ZOOM_MAX, float(zoom)))
+        if zoom == self._zoom:
+            return
+        if about is not None and self._image is not None and zoom > 1.0:
+            ax, ay = about
+            fx, fy = self._screen_offset(ax, ay)   # where that point is on screen now, as fractions of the window from its middle
+            self._zoom = zoom
+            self._centre = (ax - fx / self._scale_x(), ay - fy / self._scale_y())
+        else:
+            self._zoom = zoom
+        self._clamp_centre()
+        self.zoom_changed.emit(self._zoom)
+        self.update()
+
+    def _fit_scale(self) -> float:
+        return min(self.width() / self._image.width(), self.height() / self._image.height()) if self._image is not None else 1.0
+
+    def _scale_x(self) -> float:
+        """The picture's width on screen, in windows widths, per whole picture (so a distance in window widths over this is a distance in picture fractions)."""
+        return self._image.width() * self._fit_scale() * self._zoom / max(1, self.width())
+
+    def _scale_y(self) -> float:
+        return self._image.height() * self._fit_scale() * self._zoom / max(1, self.height())
+
+    def _screen_offset(self, fx: float, fy: float) -> tuple[float, float]:
+        """Where the picture point (fx, fy) is, as a distance from the window's middle in window widths and heights."""
+        return (fx - self._centre[0]) * self._scale_x(), (fy - self._centre[1]) * self._scale_y()
+
+    def _clamp_centre(self) -> None:
+        if self._image is None:
+            self._centre = (0.5, 0.5)
+            return
+        cx, cy = self._centre
+        out = []
+        for c, scale in ((cx, self._scale_x()), (cy, self._scale_y())):
+            half = 0.5 / scale if scale > 1.0 else 0.0   # a picture bigger than the window can slide until its edge meets the window's
+            out.append(0.5 if scale <= 1.0 else min(max(c, half), 1.0 - half))
+        self._centre = (out[0], out[1])
+
     def _target(self) -> QRectF:
+        """Where the whole picture is, in window coordinates (larger than the window when zoomed)."""
         if self._image is None:
             return QRectF(self.rect())
-        scale = min(self.width() / self._image.width(), self.height() / self._image.height())
-        w, h = self._image.width() * scale, self._image.height() * scale
-        return QRectF((self.width() - w) / 2, (self.height() - h) / 2, w, h)
+        s = self._fit_scale() * self._zoom
+        w, h = self._image.width() * s, self._image.height() * s
+        return QRectF(self.width() / 2 - self._centre[0] * w, self.height() / 2 - self._centre[1] * h, w, h)
 
     def _fractions(self, pos: QPointF):
         t = self._target()
@@ -97,17 +152,47 @@ class LiveImage(QWidget):
             return None
         return (pos.x() - t.left()) / t.width(), (pos.y() - t.top()) / t.height()
 
+    def resizeEvent(self, event) -> None:
+        self._clamp_centre()
+        super().resizeEvent(event)
+
+    def wheelEvent(self, event) -> None:
+        if self._image is None:
+            return
+        steps = event.angleDelta().y() / 120.0
+        if steps:
+            self.set_zoom(self._zoom * (1.25 ** steps), self._fractions(event.position()))
+        event.accept()
+
+    def mousePressEvent(self, event) -> None:
+        if event.button() == Qt.MouseButton.LeftButton:
+            self._press, self._dragging = event.position(), False
+
     def mouseMoveEvent(self, event) -> None:
+        if self._press is not None and self._image is not None and self._zoom > 1.0 and (event.buttons() & Qt.MouseButton.LeftButton):
+            delta = event.position() - self._press
+            if self._dragging or abs(delta.x()) + abs(delta.y()) >= self._DRAG_PIXELS:
+                self._dragging = True
+                self.setCursor(Qt.CursorShape.ClosedHandCursor)
+                self._centre = (self._centre[0] - delta.x() / self.width() / self._scale_x(), self._centre[1] - delta.y() / self.height() / self._scale_y())
+                self._press = event.position()
+                self._clamp_centre()
+                self.update()
+                return
         f = self._fractions(event.position())
         self.hovered.emit(*(f if f else (-1.0, -1.0)))
 
+    def mouseReleaseEvent(self, event) -> None:
+        if event.button() != Qt.MouseButton.LeftButton or self._press is None:
+            return
+        dragged, self._press, self._dragging = self._dragging, None, False
+        self.setCursor(Qt.CursorShape.CrossCursor)
+        f = self._fractions(event.position())
+        if f and not dragged:
+            self.clicked.emit(*f)
+
     def leaveEvent(self, _event) -> None:
         self.hovered.emit(-1.0, -1.0)
-
-    def mousePressEvent(self, event) -> None:
-        f = self._fractions(event.position())
-        if f and event.button() == Qt.MouseButton.LeftButton:
-            self.clicked.emit(*f)
 
     def paintEvent(self, _event) -> None:
         p = QPainter(self)
@@ -118,8 +203,21 @@ class LiveImage(QWidget):
             p.drawText(QRectF(self.rect()).adjusted(30, 0, -30, 0), Qt.AlignmentFlag.AlignCenter | Qt.TextFlag.TextWordWrap, self._message)
             return
         t = self._target()
+        view = t.intersected(QRectF(self.rect()))
+        scale = t.width() / self._image.width()   # screen pixels per picture pixel
+        ratio = self.devicePixelRatioF()
+        src = QRectF((view.left() - t.left()) / scale, (view.top() - t.top()) / scale, view.width() / scale, view.height() / scale)
+        if scale * ratio < 0.7:
+            # shrinking by a lot: Qt's plain smooth drawing skips pixels and shimmers, so the picture is first scaled down properly (area-averaged) to the size it is drawn at
+            size = QSize(max(1, round(t.width() * ratio)), max(1, round(t.height() * ratio)))
+            shown = self._image.scaled(size, Qt.AspectRatioMode.IgnoreAspectRatio, Qt.TransformationMode.SmoothTransformation)
+            shown.setDevicePixelRatio(ratio)
+            p.drawImage(view, shown, QRectF((view.left() - t.left()) * ratio, (view.top() - t.top()) * ratio, view.width() * ratio, view.height() * ratio))
+        else:
+            p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, scale * ratio < 4.0)   # zoomed in a lot, the picture's own pixels are shown as squares, to be judged
+            p.drawImage(view, self._image, src)
         p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
-        p.drawImage(t, self._image)
+        p.setClipRect(QRectF(self.rect()))
         if self._region is not None:
             x0, y0, x1, y1 = self._region
             box = QRectF(t.left() + x0 * t.width(), t.top() + y0 * t.height(), (x1 - x0) * t.width(), (y1 - y0) * t.height())
@@ -127,13 +225,14 @@ class LiveImage(QWidget):
             p.drawRect(box)
         p.setFont(QFont(THEME.font_family, 9))
         p.setPen(QColor(235, 235, 235))
-        p.drawText(QRectF(t.left() + 8, t.top() + 6, t.width() - 16, 18), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, self._info)
+        zoom = f"   {self._zoom * 100:.0f}%" if self._zoom > 1.0 else ""
+        p.drawText(QRectF(8, 6, self.width() - 16, 18), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, self._info + zoom)
         if self._warning:
             p.setPen(QColor(THEME.status_critical))
-            p.drawText(QRectF(t.left() + 8, t.top() + 6, t.width() - 16, 18), Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter, self._warning)
+            p.drawText(QRectF(8, 6, self.width() - 16, 18), Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter, self._warning)
         if self._loupe is not None:
-            size = min(260, int(t.width() * 0.4), int(t.height() * 0.6))
-            box = QRectF(t.right() - size - 8, t.bottom() - size - 8, size, size)
+            size = min(300, int(self.width() * 0.34), int(self.height() * 0.5))
+            box = QRectF(self.width() - size - 8, self.height() - size - 8, size, size)
             p.drawImage(box, self._loupe)
             p.setPen(QPen(QColor(235, 235, 235), 1.5))
             p.drawRect(box)
@@ -171,13 +270,15 @@ class Sparkline(QWidget):
 class TetherWindow(QDialog):
     """The tether window. `factory(kind, sdk_folder)` makes the camera backend (a test gives a stand-in)."""
 
+    _auto_say = pyqtSignal(str)         # progress from auto exposure, which runs off the window's thread
     captured = pyqtSignal(list)         # the paths a shot saved
     open_requested = pyqtSignal(str)    # a picture to open in the editor
 
     def __init__(self, parent=None, factory=make_backend, start_folder: str = ""):
         super().__init__(parent)
         self.setWindowTitle("Canon Tether and Live View")
-        self.resize(1180, 760)
+        area = QApplication.primaryScreen().availableGeometry() if QApplication.primaryScreen() is not None else None
+        self.resize(min(1640, (area.width() - 40) if area else 1640), min(940, (area.height() - 60) if area else 940))   # wide, so the picture has room
         self._factory = factory
         self.session: TetherSession | None = None
         self._live: LiveWorker | None = None
@@ -187,10 +288,17 @@ class TetherWindow(QDialog):
         self._seen = deque(maxlen=30)
         self._state = "off"
         self._hover = (-1.0, -1.0)
+        self._alive: set = set()   # exposure jobs that are running: a QThread dropped while it runs aborts the program, so each is held until it finishes
+        self._exposure_job: JobWorker | None = None
+        self._auto_job: JobWorker | None = None
+        self._exposure_timer = QTimer(self)
+        self._exposure_timer.setInterval(2500)
+        self._exposure_timer.timeout.connect(self.refresh_exposure)
         self._peek_from: bool | None = None   # the positive check's state before N was held
         self._live_buttons: list[QPushButton] = []   # the buttons that only work while the camera is live
         self._building = True
         self._build(start_folder)
+        self._auto_say.connect(lambda text: self.exposure_note.setText(text))
         self._building = False
         self._set_state("off")
 
@@ -202,6 +310,20 @@ class TetherWindow(QDialog):
         self.image.clicked.connect(self._image_clicked)
         self.image.hovered.connect(self._image_hovered)
         left.addWidget(self.image, 1)
+        zoom_row = QHBoxLayout()   # under the picture: how much of it to see
+        zoom_row.addWidget(QLabel("Zoom"))
+        self.zoom_slider = QSlider(Qt.Orientation.Horizontal)
+        self.zoom_slider.setRange(100, int(LiveImage.ZOOM_MAX * 100))
+        self.zoom_slider.setValue(100)
+        self.zoom_slider.setToolTip("Zoom the live picture: 100% fits it to the window. The mouse wheel zooms where the pointer is; drag the picture to move it; a click still measures sharpness there")
+        self.zoom_slider.valueChanged.connect(lambda v: self.image.set_zoom(v / 100.0))
+        zoom_row.addWidget(self.zoom_slider, 1)
+        self.zoom_label = QLabel("100%")
+        self.zoom_label.setMinimumWidth(48)
+        zoom_row.addWidget(self.zoom_label)
+        zoom_row.addWidget(self._button("Fit", "Show the whole picture (0)", lambda: self.zoom_slider.setValue(100)))
+        left.addLayout(zoom_row)
+        self.image.zoom_changed.connect(self._zoom_changed)
         bar = QHBoxLayout()   # under the picture, where it is always in reach: the shutter, and what happened to the last shot
         self.capture_button = self._button("Capture (Space)", "Wait, release the shutter without focusing (focus stays where you put it), and save what the camera makes", self.capture)
         self.capture_button.setMinimumSize(190, 40)
@@ -217,6 +339,7 @@ class TetherWindow(QDialog):
         col = QVBoxLayout(side)
         col.setContentsMargins(0, 0, 4, 0)
         col.addWidget(self._camera_box())
+        col.addWidget(self._exposure_box())
         col.addWidget(self._capture_box(start_folder))
         col.addWidget(self._focus_box())
         col.addWidget(self._view_box())
@@ -227,7 +350,7 @@ class TetherWindow(QDialog):
         scroll.setFixedWidth(384)
         scroll.setFrameShape(QScrollArea.Shape.NoFrame)
         root.addWidget(scroll)
-        for key, action in (("Space", self.capture), ("I", lambda: self.positive_check.toggle()), ("P", lambda: self.peaking_check.toggle()), ("L", lambda: self.loupe_check.toggle()),
+        for key, action in (("Space", self.capture), ("0", lambda: self.zoom_slider.setValue(100)), ("I", lambda: self.positive_check.toggle()), ("P", lambda: self.peaking_check.toggle()), ("L", lambda: self.loupe_check.toggle()),
                             ("Left", lambda: self.focus("near", "fine")), ("Right", lambda: self.focus("far", "fine")),
                             ("Shift+Left", lambda: self.focus("near", "medium")), ("Shift+Right", lambda: self.focus("far", "medium")),
                             ("Alt+Left", lambda: self.focus("near", "coarse")), ("Alt+Right", lambda: self.focus("far", "coarse"))):
@@ -271,6 +394,29 @@ class TetherWindow(QDialog):
         lay.addWidget(self.camera_info)
         self.camera_note = _hint("")
         lay.addWidget(self.camera_note)
+        return box
+
+    def _exposure_box(self) -> QGroupBox:
+        box = QGroupBox("Exposure")
+        lay = QVBoxLayout(box)
+        self.mode_label = _hint("")
+        lay.addWidget(self.mode_label)
+        grid = QGridLayout()
+        self.exposure_combos: dict[str, QComboBox] = {}
+        for row, key in enumerate(exposure.KEYS):
+            grid.addWidget(QLabel(exposure.TITLES[key]), row, 0)
+            combo = QComboBox()
+            combo.setEnabled(False)
+            combo.activated.connect(lambda _i, k=key: self.set_exposure_from_box(k))
+            self.exposure_combos[key] = combo
+            grid.addWidget(combo, row, 1)
+        lay.addLayout(grid)
+        self.auto_button = self._button("Auto exposure", "Set the shutter speed so the film's brightest colour is as bright as it can be without clipping (the camera's mode dial must be on M or Tv). It uses the "
+                                        "live picture, so the film must be in place and lit", self.auto_exposure)
+        self._live_buttons.append(self.auto_button)
+        lay.addWidget(self.auto_button)
+        self.exposure_note = _hint("")
+        lay.addWidget(self.exposure_note)
         return box
 
     def _view_box(self) -> QGroupBox:
@@ -401,6 +547,88 @@ class TetherWindow(QDialog):
         return box
 
     # ------------------------------------------------------------ state
+    def _zoom_changed(self, zoom: float) -> None:
+        value = round(zoom * 100)
+        self.zoom_label.setText(f"{value}%")
+        if self.zoom_slider.value() != value:
+            self.zoom_slider.blockSignals(True)
+            self.zoom_slider.setValue(value)
+            self.zoom_slider.blockSignals(False)
+
+    # ------------------------------------------------------------ the camera's exposure
+    def refresh_exposure(self) -> None:
+        """Ask the camera what it is set to now (a dial may have been turned) and show it. One question at a time."""
+        session = self.session
+        if session is None or self._state not in ("live", "busy") or (self._exposure_job is not None and self._exposure_job.isRunning()):
+            return
+        job = JobWorker(session.exposure)
+        job.done.connect(self._show_exposure)
+        job.failed.connect(lambda _m: None)   # a missed reading is not worth a message: the next one comes in a moment
+        self._start_exposure_job(job)
+
+    def _start_exposure_job(self, job: JobWorker) -> None:
+        self._exposure_job = job
+        self._alive.add(job)
+        job.finished.connect(lambda j=job: self._alive.discard(j))
+        job.start()
+
+    def _show_exposure(self, state) -> None:
+        if state is None or self.session is None:
+            return
+        self.mode_label.setText(f"The camera is in {state.mode} mode." + ("" if state.can_set("tv") else " Turn its dial to M to set the shutter speed and aperture from here."))
+        for key, combo in self.exposure_combos.items():
+            current, choices = state.values.get(key), state.choices.get(key, ())
+            if combo.view().isVisible():
+                continue   # do not change a list the person has open
+            combo.blockSignals(True)
+            combo.clear()
+            offered = list(choices)
+            if current is not None and current not in offered:
+                offered.append(current)
+            for code in sorted(offered, key=lambda c: (exposure.signed8(c) if key == "comp" else (c if key != "tv" else -c))):
+                combo.addItem(exposure.label(key, code), code)
+            if current is not None:
+                combo.setCurrentIndex(max(0, combo.findData(current)))
+            combo.setEnabled(bool(choices))
+            combo.blockSignals(False)
+
+    def set_exposure_from_box(self, key: str) -> None:
+        session, combo = self.session, self.exposure_combos[key]
+        if session is None or self._state != "live" or combo.currentData() is None:
+            return
+        code = int(combo.currentData())
+        job = JobWorker(lambda: session.set_exposure(key, code))
+        job.done.connect(lambda _r: self.refresh_exposure())
+        job.failed.connect(self._exposure_failed)
+        self._start_exposure_job(job)
+
+    def _exposure_failed(self, message: str) -> None:
+        self.exposure_note.setText(message)
+        self.refresh_exposure()
+
+    def auto_exposure(self) -> None:
+        session = self.session
+        if session is None or self._state != "live" or (self._auto_job is not None and self._auto_job.isRunning()):
+            return
+        self.auto_button.setEnabled(False)
+        self.exposure_note.setText("Measuring...")
+        job = JobWorker(lambda: session.auto_exposure(say=lambda text: self._auto_say.emit(text)))
+        job.done.connect(self._auto_done)
+        job.failed.connect(self._auto_failed)
+        self._auto_job = job
+        self._alive.add(job)
+        job.finished.connect(lambda j=job: self._alive.discard(j))
+        job.start()
+
+    def _auto_done(self, result) -> None:
+        self.auto_button.setEnabled(self._state == "live")
+        self.exposure_note.setText(result.message)
+        self.refresh_exposure()
+
+    def _auto_failed(self, message: str) -> None:
+        self.auto_button.setEnabled(self._state == "live")
+        self.exposure_note.setText(message)
+
     def _set_state(self, state: str) -> None:
         self._state = state
         live, busy = state == "live", state == "busy"
@@ -420,6 +648,12 @@ class TetherWindow(QDialog):
             self.camera_info.setText("")
             self.camera_note.setText("")
             self.focus_note.setText("")
+            self._exposure_timer.stop()
+            self.mode_label.setText("")
+            self.exposure_note.setText("")
+            for combo in self.exposure_combos.values():
+                combo.clear()
+                combo.setEnabled(False)
 
     def _camera_kind_changed(self) -> None:
         if not self._building:
@@ -494,6 +728,10 @@ class TetherWindow(QDialog):
         self._live.start()
         self.image.set_message("Waiting for the first live picture...")
         self._set_state("live")
+        self._exposure_timer.start()
+        self.exposure_note.setText("" if caps.exposure else "This camera does not report its exposure to the computer.")
+        self.auto_button.setEnabled(caps.exposure)
+        self.refresh_exposure()
 
     def _connect_failed(self, message: str) -> None:
         self.session = None
@@ -530,6 +768,7 @@ class TetherWindow(QDialog):
 
     def closeEvent(self, event) -> None:
         self._save_settings()
+        self._exposure_timer.stop()
         self._stop_live()
         if self.session is not None:
             QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
@@ -540,7 +779,7 @@ class TetherWindow(QDialog):
             finally:
                 QApplication.restoreOverrideCursor()
             self.session = None
-        for job in (self._job, self._focus_job):
+        for job in (self._job, self._focus_job, self._exposure_job, self._auto_job, *list(self._alive)):
             if job is not None:
                 job.wait(10000)
         super().closeEvent(event)

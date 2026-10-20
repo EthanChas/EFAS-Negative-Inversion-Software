@@ -107,12 +107,12 @@ def test_the_positive_is_not_the_cyan_flip_and_the_negative_is_left_as_it_came()
     pipe = liveview.Pipeline()
     negative = pipe.process(jpeg, liveview.View(positive=False))
     positive = pipe.process(jpeg, liveview.View(positive=True))
-    assert negative.image.shape == (533, 800, 3) and negative.rgb.shape == (640, 960, 3), "shown at most 800 wide; the camera's own picture is kept whole"
-    mean_neg, mean_pos = negative.image[200:300, 300:500].reshape(-1, 3).mean(0), positive.image[200:300, 300:500].reshape(-1, 3).mean(0)
+    assert negative.image.shape == (640, 960, 3) and negative.rgb.shape == (640, 960, 3), "a picture narrower than 1920 is shown whole, not shrunk"
+    mean_neg, mean_pos = negative.image[240:360, 360:600].reshape(-1, 3).mean(0), positive.image[240:360, 360:600].reshape(-1, 3).mean(0)
     assert mean_neg[0] > mean_neg[2] + 15, "the negative is orange: red well above blue"
     assert abs(mean_pos[0] - mean_pos[2]) < abs(mean_neg[0] - mean_neg[2]) / 2, "the orange mask is gone in the positive"
     flip = 255 - negative.image.astype(int)
-    assert flip[200:300, 300:500, 2].mean() > flip[200:300, 300:500, 0].mean() + 15, "a plain flip is cyan-blue, which is what the conversion is there to avoid"
+    assert flip[240:360, 360:600, 2].mean() > flip[240:360, 360:600, 0].mean() + 15, "a plain flip is cyan-blue, which is what the conversion is there to avoid"
     clean = pipe.process(jpeg, liveview.View(positive=True, base_rgb=(235, 150, 100)))
     assert clean is not None and not np.array_equal(clean.image, positive.image), "a sampled clear-film colour changes the conversion"
 
@@ -312,3 +312,104 @@ def test_peaking_sensitivity_marks_more_when_it_is_higher():
         share[s] = float((peak != plain).any(axis=-1).mean())
     assert share[1.0] >= share[0.5] >= share[0.0] and share[1.0] > share[0.0], share
     assert peaking.scale_for_sensitivity(0.5) == 1.0 and peaking.scale_for_sensitivity(1.0) == 0.5 and peaking.scale_for_sensitivity(0.0) == 2.0
+
+
+# ---------------------------------------------------------------- exposure
+def test_exposure_codes_are_named_the_way_a_camera_names_them():
+    from photoeditor.features.tether import exposure as ex
+
+    assert [ex.label("iso", c) for c in (0x00, 0x48, 0x50, 0x68, 0x78)] == ["Auto", "100", "200", "1600", "6400"]
+    assert [ex.label("av", c) for c in (0x08, 0x20, 0x30, 0x38, 0x58)] == ["f/1", "f/2.8", "f/5.6", "f/8", "f/32"]
+    assert [ex.label("tv", c) for c in (0x0C, 0x10, 0x28, 0x38, 0x40, 0x48, 0x68, 0x98)] == ["Bulb", "30 s", "4 s", "1 s", "0.5 s", "1/4 s", "1/60 s", "1/4000 s"]
+    assert [ex.label("comp", c) for c in (0, 3, 5, 8, 0xFD, 0xF8)] == ["0", "+1/3", "+2/3", "+1", "-1/3", "-1"]
+    assert ex.third_codes(0x38, 0x48) == [56, 59, 61, 64, 67, 69, 72], "thirds of a stop are at 0, 3 and 5 eighths"
+    assert ex.stops_of("tv", 0x68) == -6 and ex.stops_of("av", 0x38) == -6 and ex.stops_of("iso", 0x68) == 4 and len(ex.comp_codes()) == 19
+
+
+def test_auto_exposure_arithmetic():
+    from photoeditor.features.tether import exposure as ex
+
+    assert abs(ex.stops_to_target(ex.TARGET)) < 1e-9 and ex.stops_to_target(120) > 0 and ex.stops_to_target(250) < 0
+    assert ex.stops_to_target(255) == -1.5 and ex.stops_to_target(2) == ex.MAX_ROUND_STOPS, "a clipped picture is only told to come down; a black one is capped"
+    choices = ex.third_codes(0x10, 0x98)
+    assert ex.next_shutter(0x68, 1.0, choices) == 0x60, "a stop more light is a shutter 8 codes slower"
+    assert ex.next_shutter(0x68, -1.0, choices) == 0x70 and ex.next_shutter(0x68, 0.0, choices) is None
+    assert ex.next_shutter(0x10, 2.0, choices) is None, "already at the slowest it offers"
+    assert ex.next_shutter(0x68, 1.0, (ex.TV_BULB, 0x68)) is None, "Bulb is never chosen for a shot"
+    assert ex.next_shutter(0x68, 1.0, ()) is None
+    assert ex.at_limit(0x10, 1.0, choices) and not ex.at_limit(0x68, 1.0, choices) and ex.at_limit(0x98, -1.0, choices) and ex.at_limit(0x68, 1.0, (0x68,))
+
+
+def _practice_session():
+    from photoeditor.features.tether.session import TetherSession
+
+    camera = practice_camera.PracticeCamera()
+    session = TetherSession(camera, "unused")
+    session.open()
+    camera._pos = practice_camera.BEST
+    return session, camera
+
+
+def test_the_practice_camera_gets_brighter_with_more_light_and_clips():
+    from photoeditor.features.tether import exposure as ex
+
+    session, camera = _practice_session()
+    try:
+        def level():
+            time.sleep(0.12)
+            return ex.metered_level(liveview.decode(camera.live_frame()[1]))
+
+        state = session.exposure()
+        assert state.mode == "M" and state.values["tv"] == 0x68 and state.can_set("tv") and not state.can_set("comp")
+        base = level()
+        camera.set_exposure("tv", 0x60); more = level()
+        camera.set_exposure("tv", 0x70); less = level()
+        camera.set_exposure("tv", 0x20); clipped = level()
+        assert less < base < more and clipped >= 250, (less, base, more, clipped)
+        camera.set_exposure("tv", 0x68); camera.set_exposure("iso", 0x50); iso = level()
+        assert iso > base, "a higher ISO is more light too"
+        with pytest.raises(TetherError):
+            camera.set_exposure("tv", 0x01)
+        with pytest.raises(TetherError):
+            camera.set_exposure("comp", 3)
+    finally:
+        session.close()
+
+
+def test_auto_exposure_finds_the_shutter_from_too_bright_and_from_too_dark():
+    from photoeditor.features.tether import exposure as ex
+
+    session, camera = _practice_session()
+    try:
+        told = []
+        for start in (0x48, 0x98):   # 1/4 s is far too bright, 1/4000 s far too dark
+            camera.set_exposure("tv", start)
+            result = session.auto_exposure(settle_s=0.12, say=told.append)
+            assert result.ok and ("Exposure is right" in result.message or "As close as" in result.message) and 1 <= result.rounds <= ex.MAX_ROUNDS, result
+            time.sleep(0.15)
+            level = ex.metered_level(liveview.decode(camera.live_frame()[1]))
+            assert abs(ex.stops_to_target(level)) < 0.4, (start, level)
+            assert camera.exposure().values["tv"] != start
+        assert told and told[0].startswith("Round 1:")
+        again = session.auto_exposure(settle_s=0.12)
+        assert again.ok and again.rounds == 0, "already right: nothing is changed"
+    finally:
+        session.close()
+
+
+def test_auto_exposure_says_why_when_it_cannot():
+    from photoeditor.features.tether import exposure as ex
+
+    session, camera = _practice_session()
+    try:
+        real = camera.exposure()
+        camera.exposure = lambda: ex.ExposureState("Av", real.values, {**real.choices, "tv": ()})
+        result = session.auto_exposure(settle_s=0.1)
+        assert not result.ok and "Av mode" in result.message and "dial to M" in result.message
+        camera.exposure = lambda: ex.ExposureState("M", real.values, {**real.choices, "tv": (0x68,)})   # the shutter has nowhere to go
+        result = session.auto_exposure(settle_s=0.1)
+        assert not result.ok and ("slowest" in result.message or "fastest" in result.message) and "ISO" in result.message, result
+        camera.exposure = lambda: None
+        assert not session.auto_exposure(settle_s=0.1).ok
+    finally:
+        session.close()

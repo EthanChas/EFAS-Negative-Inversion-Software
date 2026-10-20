@@ -18,6 +18,7 @@ from concurrent.futures import Future
 from ctypes import byref, c_char, c_uint32, c_uint64, c_void_p
 
 from . import edsdk_api as api
+from . import exposure as ex
 from .backend import CameraInfo, Capabilities, NameFor, TetherError
 from .naming import unique_path
 from .edsdk_errors import EDS_ERR_DEVICE_BUSY, EDS_ERR_OBJECT_NOTREADY, EDS_ERR_OK, EDS_ERR_PTP_DEVICE_BUSY, EdsError, check, name_of
@@ -121,6 +122,16 @@ class EdsdkCamera:
         if not self._caps.focus_drive:
             raise TetherError("This lens cannot be focused from the computer. " + self._caps.note("focus_drive"))
         self._submit(lambda: self._drive_lens(direction, size, steps), "focus")
+
+    def exposure(self) -> ex.ExposureState | None:
+        if self._thread is None or not self._thread.is_alive():
+            return None
+        return self._submit(self._read_exposure, "read the exposure")
+
+    def set_exposure(self, key: str, code: int) -> None:
+        if key not in self._EXPOSURE_PROPS:
+            raise ValueError(f"key is one of {', '.join(self._EXPOSURE_PROPS)}, not {key!r}")
+        self._submit(lambda: self._write_exposure(key, int(code)), "set the " + ex.TITLES[key].lower())
 
     def shoot(self, folder: str, name_for: NameFor, settle_s: float = 1.0) -> list[str]:
         return self._submit(lambda: self._shoot(folder, name_for, max(0.0, float(settle_s))), "shoot", SHOOT_TIMEOUT_S)
@@ -274,6 +285,28 @@ class EdsdkCamera:
         data = c_uint32(value)
         check(f"EdsSetPropertyData({label})", self._retry_busy(lambda: self._dll.EdsSetPropertyData(self._camera, prop, 0, ctypes.sizeof(data), byref(data))))
 
+    _EXPOSURE_PROPS = {"iso": api.PROP_ISO, "av": api.PROP_AV, "tv": api.PROP_TV, "comp": api.PROP_EXPOSURE_COMP}
+
+    def _choices_of(self, prop: int) -> tuple[int, ...]:
+        """The codes the camera will take for a property just now: empty when it will not take a change (the dial is on a mode that sets it itself)."""
+        desc = api.PropertyDesc()
+        if self._dll.EdsGetPropertyDesc(self._camera, prop, byref(desc)) != EDS_ERR_OK or desc.numElements <= 0:
+            return ()
+        return tuple(int(desc.propDesc[i]) & 0xFFFFFFFF for i in range(min(desc.numElements, 128)))
+
+    def _read_exposure(self) -> ex.ExposureState:
+        values = {key: self._read_number(prop) for key, prop in self._EXPOSURE_PROPS.items()}
+        choices = {key: self._choices_of(prop) for key, prop in self._EXPOSURE_PROPS.items()}
+        return ex.ExposureState(ex.mode_name(self._read_number(api.PROP_AE_MODE)), {k: v for k, v in values.items() if v is not None}, choices)
+
+    def _write_exposure(self, key: str, code: int) -> None:
+        state = self._read_exposure()
+        if code not in state.choices.get(key, ()):
+            why = (f"The camera is in {state.mode} mode, which sets the {ex.TITLES[key].lower()} itself. Turn its mode dial to M (manual) to set it from here."
+                   if not state.choices.get(key) else f"The camera will not take {ex.label(key, code)} for the {ex.TITLES[key].lower()} just now.")
+            raise TetherError(why)
+        self._write_number(self._EXPOSURE_PROPS[key], code, ex.TITLES[key])
+
     def _detect(self) -> None:
         """Ask the body what it can do just now. A lens in manual focus, or no lens, cannot be driven from the computer."""
         notes: dict[str, str] = {}
@@ -285,7 +318,7 @@ class EdsdkCamera:
         elif af == api.AF_MODE_MANUAL:
             focus = False
             notes["focus_drive"] = "The lens is set to manual focus. Move its AF/MF switch to AF to focus from the computer, or focus by hand."
-        self._caps = Capabilities(focus_drive=focus, notes=notes)
+        self._caps = Capabilities(focus_drive=focus, exposure=self._read_number(api.PROP_TV) is not None, notes=notes)
 
     # ------------------------------------------------------------ live view and focus
     def _live_view(self, on: bool) -> None:
