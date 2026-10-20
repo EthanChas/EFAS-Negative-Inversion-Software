@@ -33,13 +33,14 @@ The practice camera needs none of this: it is a made-up negative with a lens tha
 
 **View.** *Show as a positive* uses EFAS's own Modern conversion (the same as in the editor), so you judge focus on what you will see; a plain flip would keep the orange mask and come out
 cyan. The conversion is metered on the middle of the picture and re-made about twice a second. *Pick the Clear Film*, then click a patch of clear film between frames, and the conversion
-knows the film's orange; *Forget* goes back to working it out. *Focus peaking* marks what is in focus in colour (blue sharp, green sharper, yellow very sharp, red the sharpest) and you choose
-the weakest level it marks. The *loupe* enlarges the area under the mouse four times, from the camera's own pixels and not the smaller picture on screen. A red warning appears on the picture
+knows the film's orange; *Forget* goes back to working it out. *Focus peaking* marks what is in focus in colour (blue sharp, green sharper, yellow very sharp, red the sharpest); the
+*Peaking sensitivity* slider decides how much is marked (100% marks every sharp spot, 0% only the very sharpest). Holding **N** shows the other of positive and negative for as long as it is held
+(the quick invert preview; **I** switches for good). The *loupe* enlarges the area under the mouse four times, from the camera's own pixels and not the smaller picture on screen. A red warning appears on the picture
 when more than half a per cent of a colour is blown out: with film the clear border between frames should be bright but not blown out.
 
 **Focus.** Nearer and Farther, each in coarse, medium and fine steps. One step of the lens can be smaller than the picture's own noise, so a press sends several; the counts (fine 1, medium
-5, coarse 15) suit a macro lens on a copy stand and are a starting point for others. The keys are Left and Right (medium), Shift for fine, Ctrl for coarse. The **sharpness meter** shows a
-number that rises as focus improves, the best so far, and a short history: go past the sharpest spot and back, and the meter peaks there. It is relative: it depends on the subject, the
+5, coarse 15) suit a macro lens on a copy stand and are a starting point for others. The keys are Left and Right (fine), with Shift for medium and Alt for coarse. The **sharpness meter** shows a
+number that rises as focus improves, the best so far, and a short history, and a **grade** in words against the best so far (Sharpest within 3% of it, Sharp, Nearly there, Soft, Blurred): go past the sharpest spot and back, and the meter peaks there. It is relative: it depends on the subject, the
 light and the size of the region, so it means something within one focusing session and nowhere else. It measures a square in the middle; click the picture to measure where you click,
 *Centre* to go back, *Reset Best* to start the best-so-far over. **Corners** measures the middle and each corner and says if a corner is a lot softer: on a copy stand that means the camera is
 not parallel to the film (or the lens is soft at its edge).

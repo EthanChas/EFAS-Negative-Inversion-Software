@@ -58,7 +58,7 @@ class TetherSession:
             return self._view
 
     def set_view(self, **changes) -> liveview.View:
-        """Change what is shown (positive, peaking, peaking_level, base_rgb, region). A new region starts the best-sharpness reading over."""
+        """Change what is shown (positive, peaking, peaking_sensitivity, base_rgb, region). A new region starts the best-sharpness reading over."""
         with self._lock:
             old = self._view
             self._view = replace(old, **changes)

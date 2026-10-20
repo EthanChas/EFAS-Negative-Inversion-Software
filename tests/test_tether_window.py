@@ -12,7 +12,8 @@ _SCRIPT = textwrap.dedent(r'''
     import os, sys, tempfile, time
     os.environ["QT_QPA_PLATFORM"] = "offscreen"
     os.environ["PHOTOEDITOR_DATA_DIR"] = tempfile.mkdtemp()
-    from PyQt6.QtGui import QShortcut
+    from PyQt6.QtCore import QEvent, Qt
+    from PyQt6.QtGui import QKeyEvent, QShortcut
     from PyQt6.QtWidgets import QApplication
     from photoeditor.features.settings import logic as S
     S.save({"scan_quality": False})
@@ -73,15 +74,26 @@ _SCRIPT = textwrap.dedent(r'''
     # --- the view controls reach the picture
     w.positive_check.setChecked(False); assert not session.view.positive
     w.peaking_check.setChecked(True); assert session.view.peaking
-    w.peaking_combo.setCurrentIndex(3); assert session.view.peaking_level == 3
-    w.peaking_combo.setCurrentIndex(0); w.peaking_check.setChecked(False); w.positive_check.setChecked(True)
+    w.peaking_slider.setValue(100); assert session.view.peaking_sensitivity == 1.0 and w.peaking_value.text() == "100%"
+    w.peaking_slider.setValue(20); assert session.view.peaking_sensitivity == 0.2
+    w.peaking_check.setChecked(False); w.positive_check.setChecked(True)
+    # N held shows the other view, and letting go puts it back
+    w.keyPressEvent(QKeyEvent(QEvent.Type.KeyPress, Qt.Key.Key_N, Qt.KeyboardModifier.NoModifier))
+    assert not session.view.positive and not w.positive_check.isChecked()
+    w.keyPressEvent(QKeyEvent(QEvent.Type.KeyPress, Qt.Key.Key_N, Qt.KeyboardModifier.NoModifier))   # (a repeat does not undo it)
+    w.keyReleaseEvent(QKeyEvent(QEvent.Type.KeyRelease, Qt.Key.Key_N, Qt.KeyboardModifier.NoModifier))
+    assert session.view.positive and w.positive_check.isChecked()
+    w.positive_check.setChecked(False)   # already a negative: N shows the positive for a moment
+    w.keyPressEvent(QKeyEvent(QEvent.Type.KeyPress, Qt.Key.Key_N, Qt.KeyboardModifier.NoModifier)); assert session.view.positive
+    w.keyReleaseEvent(QKeyEvent(QEvent.Type.KeyRelease, Qt.Key.Key_N, Qt.KeyboardModifier.NoModifier)); assert not session.view.positive
+    w.positive_check.setChecked(True)
     w.loupe_check.setChecked(True)
     w._image_hovered(0.5, 0.5)
     assert w.image._loupe is not None and w.image._loupe.width() == 384
     w._image_hovered(-1.0, -1.0); assert w.image._loupe is None
     w.loupe_check.setChecked(False)
     shortcuts = {sc.key().toString(): sc for sc in w.findChildren(QShortcut)}
-    assert {"Space", "I", "P", "L", "Left", "Right", "Shift+Left", "Shift+Right", "Ctrl+Left", "Ctrl+Right"} <= set(shortcuts), sorted(shortcuts)
+    assert {"Space", "I", "P", "L", "Left", "Right", "Shift+Left", "Shift+Right", "Alt+Left", "Alt+Right"} <= set(shortcuts), sorted(shortcuts)
     shortcuts["I"].activated.emit(); assert not w.positive_check.isChecked() and not session.view.positive
     shortcuts["I"].activated.emit(); assert w.positive_check.isChecked()
     shortcuts["P"].activated.emit(); assert session.view.peaking
@@ -95,11 +107,11 @@ _SCRIPT = textwrap.dedent(r'''
         w.focus("far", "medium"); idle(w); pump(0.15)
     assert camera.position > start
     until(lambda: session.latest > 5 * max(blurred, 0.05), what="a sharper picture")
-    assert session.best >= session.latest > 0 and "Sharpness" in w.sharp_label.text() and w.sharp_bar.value() > 50
+    assert session.best >= session.latest > 0 and "Sharpness" in w.sharp_label.text() and w.sharp_bar.value() > 50 and w.grade_label.text().split("  ")[0] in ("Sharpest", "Sharp", "Nearly there", "Soft", "Blurred")
     before = camera.position
     shortcuts["Right"].activated.emit(); idle(w)
     assert camera.position > before, "the Right key drives the lens farther"
-    shortcuts["Left"].activated.emit(); idle(w); shortcuts["Shift+Left"].activated.emit(); idle(w); shortcuts["Ctrl+Left"].activated.emit(); idle(w)
+    shortcuts["Left"].activated.emit(); idle(w); shortcuts["Shift+Left"].activated.emit(); idle(w); shortcuts["Alt+Left"].activated.emit(); idle(w)
     assert camera.position < before
     w.focus("far", "fine"); idle(w)
     # a click on the picture measures sharpness there; Centre goes back

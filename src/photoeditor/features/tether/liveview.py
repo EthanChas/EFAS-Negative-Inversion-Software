@@ -32,7 +32,7 @@ class View:
 
     positive: bool = True
     peaking: bool = False
-    peaking_level: int = 1                      # 0 blue ... 3 red: the weakest level of sharpness that is marked
+    peaking_sensitivity: float = 0.5            # 0 marks only the very sharpest, 1 marks every sharp spot (focuspeaking.scale_for_sensitivity)
     base_rgb: tuple | None = None               # the colour of the clear film as the camera shows it, when it was sampled
     region: tuple = (0.5, 0.5, 0.25)            # where sharpness is measured: centre x, centre y, side (all as fractions of the picture)
 
@@ -81,6 +81,18 @@ def sharpness(rgb: np.ndarray, region: tuple | None = None) -> float:
     return float((gated ** 2).mean() / 10.0)
 
 
+GRADES = ((0.97, "Sharpest"), (0.85, "Sharp"), (0.6, "Nearly there"), (0.3, "Soft"), (0.0, "Blurred"))
+
+
+def grade(latest: float, best: float) -> tuple[str, float]:
+    """(a word for how sharp the picture is, and the share 0 to 1 of the best seen so far). Sharpness only means something against itself, so the grade is against the best reading of
+    the session: Sharpest (within 3%), Sharp, Nearly there, Soft, Blurred. With no reading yet there is nothing to grade against."""
+    if best <= 1e-9:
+        return "", 0.0
+    share = max(0.0, min(1.0, latest / best))
+    return next(word for floor, word in GRADES if share >= floor), share
+
+
 def corner_sharpness(rgb: np.ndarray, size: float = 0.18) -> dict:
     """Sharpness at the middle and in each corner. A camera that is not parallel to the film shows corners that differ from each other."""
     inset = size / 2 + 0.02
@@ -108,7 +120,7 @@ class Pipeline:
         self._lut = None
         self._lut_key = None
         self._lut_at = 0.0
-        self._peak = None          # (the level it was made for, the size of the picture, where it marks, the colour of each mark)
+        self._peak = None          # (the sensitivity it was made for, the size of the picture, where it marks, the colour of each mark)
         self._peak_age = 0
 
     def _table(self, codes: np.ndarray, view: View):
@@ -130,7 +142,7 @@ class Pipeline:
         small = rgb if w <= WORK_WIDTH else cv2.resize(rgb, (WORK_WIDTH, round(h * WORK_WIDTH / w)), interpolation=cv2.INTER_AREA)
         shown = self._positive(small, view) if view.positive else small
         if view.peaking:
-            shown = self._with_peaking(shown, small, view.peaking_level)
+            shown = self._with_peaking(shown, small, view.peaking_sensitivity)
         else:
             self._peak = None
         return LiveFrame(np.ascontiguousarray(shown), rgb, sharpness(rgb, view.region), clipped_percent(rgb))
@@ -139,15 +151,15 @@ class Pipeline:
         codes = engine.density_codes(small, SETTINGS)
         return engine.apply_lut(codes, self._table(codes, view))
 
-    def _with_peaking(self, shown: np.ndarray, small: np.ndarray, level: int) -> np.ndarray:
-        level = max(0, min(3, int(level)))
+    def _with_peaking(self, shown: np.ndarray, small: np.ndarray, sensitivity: float) -> np.ndarray:
+        level = round(max(0.0, min(1.0, float(sensitivity))), 3)
         h, w = small.shape[:2]
         size = (shown.shape[1], shown.shape[0])
         stale = self._peak is None or self._peak[0] != level or self._peak[1] != size or self._peak_age >= PEAK_EVERY
         if stale:
             k = min(1.0, PEAK_WIDTH / w)
             peak_src = small if k >= 1.0 else cv2.resize(small, (round(w * k), round(h * k)), interpolation=cv2.INTER_AREA)
-            overlay = peaking.overlay_from_levels(peaking.level_map(peak_src), level)
+            overlay = peaking.overlay_from_levels(peaking.level_map(peak_src, peaking.scale_for_sensitivity(level)), 0)
             if overlay is None:
                 self._peak, self._peak_age = (level, size, None, None), 0
             else:

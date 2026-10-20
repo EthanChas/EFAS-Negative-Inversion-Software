@@ -45,23 +45,28 @@ def sharpness_map(rgb: np.ndarray) -> np.ndarray:
     return _gradient(smooth, 1) - FAR_WEIGHT * (_gradient(smooth, 2) - FAR_OFFSET)
 
 
-def thresholds(measure: np.ndarray) -> Optional[tuple[float, ...]]:
+def scale_for_sensitivity(sensitivity: float) -> float:
+    """How far to scale the four thresholds for a sensitivity from 0 to 1: 0.5 leaves them as they are, 1 halves them (more is marked), 0 doubles them (only the very sharpest)."""
+    return 2.0 ** (1.0 - 2.0 * max(0.0, min(1.0, float(sensitivity))))
+
+
+def thresholds(measure: np.ndarray, scale: float = 1.0) -> Optional[tuple[float, ...]]:
     mean = float(measure.mean())
     deviation = float(np.abs(measure - mean).mean())
     if deviation < 1e-7:
         return None
-    return tuple(mean + k * deviation for k in SIGMA_LEVELS)
+    return tuple(mean + k * scale * deviation for k in SIGMA_LEVELS)
 
 
-def level_map(rgb: np.ndarray) -> Optional[np.ndarray]:
-    """How sharp each spot is, as a uint8 map: 0 nothing, 1 blue, 2 green, 3 yellow, 4 red."""
+def level_map(rgb: np.ndarray, scale: float = 1.0) -> Optional[np.ndarray]:
+    """How sharp each spot is, as a uint8 map: 0 nothing, 1 blue, 2 green, 3 yellow, 4 red. `scale` (see scale_for_sensitivity) moves all four thresholds together."""
     h, w = rgb.shape[:2]
     if min(h, w) < 16:
         return None
     k = min(1.0, WORK_MAX / max(h, w))
     small = cv2.resize(rgb, (max(16, round(w * k)), max(16, round(h * k))), interpolation=cv2.INTER_AREA) if k < 1.0 else rgb
     measure = sharpness_map(small)
-    levels = thresholds(measure)
+    levels = thresholds(measure, scale)
     if levels is None:
         return None
     sh, sw = small.shape[:2]

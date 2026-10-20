@@ -126,7 +126,7 @@ def test_peaking_marks_the_sharp_picture_and_not_the_blurred_one():
         camera._pos, camera._frame = pos, None
         _seq, jpeg = camera.live_frame()
         plain = liveview.Pipeline().process(jpeg, liveview.View(positive=True, peaking=False)).image   # each from its own pipeline, so both make their table from this picture
-        peak = liveview.Pipeline().process(jpeg, liveview.View(positive=True, peaking=True, peaking_level=0)).image
+        peak = liveview.Pipeline().process(jpeg, liveview.View(positive=True, peaking=True, peaking_sensitivity=0.5)).image
         marked[name] = float((peak != plain).any(axis=-1).mean())
     assert marked["sharp"] > 0.01 and marked["blurred"] < marked["sharp"] / 5, marked
 
@@ -289,3 +289,26 @@ def test_the_backend_factory_gives_the_practice_camera_or_a_canon_one_without_to
     assert isinstance(make_backend("practice"), practice_camera.PracticeCamera)
     canon = make_backend("canon", "C:/nowhere")
     assert type(canon).__name__ == "EdsdkCamera" and canon.info.model == "(not connected)"
+
+
+def test_the_sharpness_grade_is_against_the_best_so_far():
+    assert liveview.grade(5.0, 0.0) == ("", 0.0), "nothing to grade against yet"
+    assert liveview.grade(10.0, 10.0)[0] == "Sharpest" and liveview.grade(9.0, 10.0)[0] == "Sharp"
+    assert liveview.grade(7.0, 10.0)[0] == "Nearly there" and liveview.grade(4.0, 10.0)[0] == "Soft" and liveview.grade(1.0, 10.0)[0] == "Blurred"
+    assert liveview.grade(12.0, 10.0)[1] == 1.0, "never above 100%"
+
+
+def test_peaking_sensitivity_marks_more_when_it_is_higher():
+    from photoeditor.features.focuspeaking import logic as peaking
+
+    camera = practice_camera.PracticeCamera()
+    camera.open()
+    camera._pos, camera._frame = practice_camera.BEST, None
+    _seq, jpeg = camera.live_frame()
+    plain = liveview.Pipeline().process(jpeg, liveview.View(positive=True)).image
+    share = {}
+    for s in (0.0, 0.5, 1.0):
+        peak = liveview.Pipeline().process(jpeg, liveview.View(positive=True, peaking=True, peaking_sensitivity=s)).image
+        share[s] = float((peak != plain).any(axis=-1).mean())
+    assert share[1.0] >= share[0.5] >= share[0.0] and share[1.0] > share[0.0], share
+    assert peaking.scale_for_sensitivity(0.5) == 1.0 and peaking.scale_for_sensitivity(1.0) == 0.5 and peaking.scale_for_sensitivity(0.0) == 2.0

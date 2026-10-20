@@ -14,7 +14,7 @@ from PyQt6.QtCore import QPointF, QRectF, Qt, pyqtSignal
 from PyQt6.QtGui import QColor, QFont, QImage, QKeySequence, QPainter, QPen, QShortcut
 from PyQt6.QtWidgets import (
     QApplication, QCheckBox, QComboBox, QDialog, QDoubleSpinBox, QFileDialog, QGridLayout, QGroupBox, QHBoxLayout, QLabel, QLineEdit, QListWidget, QListWidgetItem,
-    QMessageBox, QProgressBar, QPushButton, QScrollArea, QVBoxLayout, QWidget,
+    QMessageBox, QProgressBar, QPushButton, QScrollArea, QSlider, QVBoxLayout, QWidget,
 )
 
 from ...features.focuspeaking import logic as peaking
@@ -27,7 +27,8 @@ from ...theme.tokens import THEME
 from ..tether_worker import JobWorker, LiveWorker
 
 _CLIP_WARN = 0.5   # per cent of the picture blown out before it is warned about
-_LEVEL_WORDS = ("blue and up (every sharp spot)", "green and up", "yellow and up", "red only (the sharpest)")
+_GRADE_COLOURS = {"Sharpest": "#4caf50", "Sharp": "#8bc34a", "Nearly there": "#ffc107", "Soft": "#ff9800", "Blurred": "#f44336"}
+_PEEK_KEY = Qt.Key.Key_N   # held: show the other of positive and negative until it is let go
 _STATES = ("off", "connecting", "live", "busy", "closing")
 
 
@@ -186,6 +187,7 @@ class TetherWindow(QDialog):
         self._seen = deque(maxlen=30)
         self._state = "off"
         self._hover = (-1.0, -1.0)
+        self._peek_from: bool | None = None   # the positive check's state before N was held
         self._live_buttons: list[QPushButton] = []   # the buttons that only work while the camera is live
         self._building = True
         self._build(start_folder)
@@ -226,9 +228,9 @@ class TetherWindow(QDialog):
         scroll.setFrameShape(QScrollArea.Shape.NoFrame)
         root.addWidget(scroll)
         for key, action in (("Space", self.capture), ("I", lambda: self.positive_check.toggle()), ("P", lambda: self.peaking_check.toggle()), ("L", lambda: self.loupe_check.toggle()),
-                            ("Left", lambda: self.focus("near", "medium")), ("Right", lambda: self.focus("far", "medium")),
-                            ("Shift+Left", lambda: self.focus("near", "fine")), ("Shift+Right", lambda: self.focus("far", "fine")),
-                            ("Ctrl+Left", lambda: self.focus("near", "coarse")), ("Ctrl+Right", lambda: self.focus("far", "coarse"))):
+                            ("Left", lambda: self.focus("near", "fine")), ("Right", lambda: self.focus("far", "fine")),
+                            ("Shift+Left", lambda: self.focus("near", "medium")), ("Shift+Right", lambda: self.focus("far", "medium")),
+                            ("Alt+Left", lambda: self.focus("near", "coarse")), ("Alt+Right", lambda: self.focus("far", "coarse"))):
             QShortcut(QKeySequence(key), self, activated=action)
 
     def _button(self, text: str, tip: str, slot) -> QPushButton:
@@ -274,7 +276,7 @@ class TetherWindow(QDialog):
     def _view_box(self) -> QGroupBox:
         box = QGroupBox("View")
         lay = QVBoxLayout(box)
-        self.positive_check = QCheckBox("Show as a positive (I)")
+        self.positive_check = QCheckBox("Show as a positive (I; hold N to peek at the negative)")
         self.positive_check.setChecked(True)
         self.positive_check.setToolTip("EFAS's own Modern conversion turns the negative into a picture as you focus, so you judge focus on what you will see")
         self.positive_check.toggled.connect(self._view_changed)
@@ -293,23 +295,32 @@ class TetherWindow(QDialog):
         self.peaking_check.setToolTip("Marks what is in focus in colour, from blue (sharp) to red (sharpest), the way a camera's own peaking does")
         self.peaking_check.toggled.connect(self._view_changed)
         lay.addWidget(self.peaking_check)
-        self.peaking_combo = QComboBox()
-        for n, words in enumerate(_LEVEL_WORDS):
-            self.peaking_combo.addItem(f"Mark {words}", n)
-        self.peaking_combo.setCurrentIndex(1)
-        self.peaking_combo.currentIndexChanged.connect(self._view_changed)
-        lay.addWidget(self.peaking_combo)
-        self.loupe_check = QCheckBox("Loupe (L): enlarge what the mouse is over")
+        sens = QHBoxLayout()
+        sens.addWidget(QLabel("Peaking sensitivity"))
+        self.peaking_value = QLabel("50%")
+        self.peaking_value.setMinimumWidth(40)
+        self.peaking_value.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        sens.addStretch(1)
+        sens.addWidget(self.peaking_value)
+        lay.addLayout(sens)
+        self.peaking_slider = QSlider(Qt.Orientation.Horizontal)
+        self.peaking_slider.setRange(0, 100)
+        self.peaking_slider.setValue(50)
+        self.peaking_slider.setToolTip("100% marks every sharp spot, 0% only the very sharpest")
+        self.peaking_slider.valueChanged.connect(lambda v: (self.peaking_value.setText(f"{v}%"), self._view_changed()))
+        lay.addWidget(self.peaking_slider)
+        self.loupe_check = QCheckBox("Loupe (L): enlarge what the mouse is over")   # drawn bottom right, with the picture's own pixels
         self.loupe_check.setToolTip("Four times the camera's own pixels round the mouse, not the smaller picture shown")
         self.loupe_check.toggled.connect(self._loupe_toggled)
         lay.addWidget(self.loupe_check)
         return box
 
     def _focus_box(self) -> QGroupBox:
-        box = QGroupBox("Focus")
+        box = QGroupBox("Focus drive")
         lay = QVBoxLayout(box)
+        lay.addWidget(_hint("\u2190 \u2192  fine  \u00b7  Shift  medium  \u00b7  Alt  coarse"))
         grid = QGridLayout()
-        keys = {"coarse": "Ctrl+", "medium": "", "fine": "Shift+"}
+        keys = {"coarse": "Alt+", "medium": "Shift+", "fine": ""}
         for row, (direction, order) in enumerate((("near", ("coarse", "medium", "fine")), ("far", ("fine", "medium", "coarse")))):
             grid.addWidget(QLabel("Nearer" if direction == "near" else "Farther"), row, 0)
             for c, name in enumerate(order, start=1):
@@ -323,6 +334,9 @@ class TetherWindow(QDialog):
         self.sharp_label = QLabel("Sharpness: -")
         self.sharp_label.setStyleSheet("font-weight: bold; font-size: 13px;")
         lay.addWidget(self.sharp_label)
+        self.grade_label = QLabel("")
+        self.grade_label.setStyleSheet("font-weight: bold; font-size: 15px;")
+        lay.addWidget(self.grade_label)
         self.sharp_bar = QProgressBar()
         self.sharp_bar.setRange(0, 100)
         self.sharp_bar.setFormat("%p% of the best so far")
@@ -339,7 +353,7 @@ class TetherWindow(QDialog):
         lay.addLayout(row)
         self.corner_label = _hint("")
         lay.addWidget(self.corner_label)
-        lay.addWidget(_hint("Left and Right drive the lens (Shift for fine, Ctrl for coarse). Go past the sharpest spot and back: the meter peaks there. Click the picture to measure sharpness where you click."))
+        lay.addWidget(_hint("Left and Right drive the lens (fine; Shift for medium, Alt for coarse). Go past the sharpest spot and back: the meter peaks there. Click the picture to measure sharpness where you click."))
         return box
 
     def _capture_box(self, start_folder: str) -> QGroupBox:
@@ -396,7 +410,7 @@ class TetherWindow(QDialog):
         self.sdk_widget.setVisible(self.camera_combo.currentData() == "canon")
         self.connect_button.setText({"off": "Connect", "connecting": "Connecting...", "live": "Disconnect", "busy": "Disconnect", "closing": "Disconnecting..."}[state])
         self.connect_button.setEnabled(state in ("off", "live"))
-        for w in (self.positive_check, self.base_button, self.peaking_check, self.peaking_combo, self.loupe_check):
+        for w in (self.positive_check, self.base_button, self.peaking_check, self.peaking_slider, self.loupe_check):
             w.setEnabled(can_use)
         for b in self._live_buttons:
             b.setEnabled(live)
@@ -559,10 +573,37 @@ class TetherWindow(QDialog):
         if session is not None:
             best = max(session.best, 1e-9)
             self.sharp_label.setText(f"Sharpness: {frame.sharpness:.2f}     best {session.best:.2f}")
+            word, share = liveview.grade(frame.sharpness, session.best)
+            self.grade_label.setText(f"{word}  ({share * 100:.0f}% of the best)" if word else "")
+            self.grade_label.setStyleSheet(f"font-weight: bold; font-size: 15px; color: {_GRADE_COLOURS.get(word, THEME.text_primary)};")
             self.sharp_bar.setValue(int(min(100, 100 * frame.sharpness / best)))
             self.spark.set_values(session.history, session.best)
         if self.loupe_check.isChecked() and self._hover[0] >= 0 and session is not None:
             self.image.set_loupe(session.pipeline.loupe(frame, *self._hover, session.view))
+
+    # ------------------------------------------------------------ N: a quick look at the other view
+    def keyPressEvent(self, event) -> None:
+        if event.key() == _PEEK_KEY and not event.modifiers() and not event.isAutoRepeat() and self.positive_check.isEnabled():
+            if self._peek_from is None:
+                self._peek_from = self.positive_check.isChecked()
+                self.positive_check.setChecked(not self._peek_from)
+            return
+        super().keyPressEvent(event)
+
+    def keyReleaseEvent(self, event) -> None:
+        if event.key() == _PEEK_KEY and not event.isAutoRepeat():
+            self._end_peek()
+            return
+        super().keyReleaseEvent(event)
+
+    def _end_peek(self) -> None:
+        if self._peek_from is not None:
+            was, self._peek_from = self._peek_from, None
+            self.positive_check.setChecked(was)
+
+    def focusOutEvent(self, event) -> None:
+        self._end_peek()   # the release would go to another window
+        super().focusOutEvent(event)
 
     def _view_changed(self, *_args) -> None:
         if not self._building:
@@ -570,7 +611,7 @@ class TetherWindow(QDialog):
 
     def _apply_view(self) -> None:
         if self.session is not None:
-            self.session.set_view(positive=self.positive_check.isChecked(), peaking=self.peaking_check.isChecked(), peaking_level=self.peaking_combo.currentData())
+            self.session.set_view(positive=self.positive_check.isChecked(), peaking=self.peaking_check.isChecked(), peaking_sensitivity=self.peaking_slider.value() / 100.0)
 
     def _loupe_toggled(self, on: bool) -> None:
         if not on:
