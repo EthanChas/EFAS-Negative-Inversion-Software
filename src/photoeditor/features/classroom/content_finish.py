@@ -52,6 +52,25 @@ Each mark has a **Position** menu. For finer control the marker has **Move X** a
 Keep a watermark **small and quiet** if it is a credit: bottom corner, modest size, modest opacity. A large stamp over the middle of a picture ruins it. For a copyright line that is meant to deter copying, remember that a mark in a corner can simply be cropped off; one that is part of the picture is harder to remove but also more intrusive. If you export a picture for printing, think about whether you want a mark on it at all, since a watermark is baked into the exported pixels and cannot be removed later (your original, as always, is untouched).
 """, keywords=("watermark", "canister", "text", "logo", "marker", "copyright", "camera", "lens", "signature", "svg", "png", "stamp", "credit"), module="Watermark", see=("watermark-variables", "roll-card-lesson", "exporting")),
 
+    Lesson("halation-module", "finish", "Halation: a simulated glow", "Understand what halation is, why a film scan already has it, and what the module's sliders do if you add more.",
+           r"""
+**Halation** is the soft red-orange glow round bright highlights that film makes: light goes through the emulsion, bounces off the back of the film and exposes it a second time. Because it happens in the film, **your scan of a negative already contains its own halation**. The Halation module (Color tab, under Edge Color) therefore does not recover anything; it makes a **simulated** extra glow, for a stronger look or for a scan whose capture lost some. It is off at **Amount** 0, and nothing in EFAS turns it on for you.
+
+## The sliders
+
+**Amount** is how strong the glow is. **Radius** is how far it spreads, as a share of the picture's shorter side, so the glow looks the same on a preview and on a full-size export. **Threshold** is how bright a part must be to glow: lower lets more of the picture glow, and above the brightest part nothing does. **Warmth** goes from a neutral glow (0) to the red-orange of film's halation (1).
+
+## How it works
+
+It takes the picture's highlights, blurs them, tints them and screens the result over the picture, so it can only brighten. It works on the finished, cropped picture, after Edge Color and before the vignette. Like the other modules it is saved with the photo, can be part of a preset, can be switched off with its power light and is undone with Ctrl+Z.
+
+## When it is worth using
+
+Halation shows most round small, very bright things on a dark ground: street lights at night, a lit window, the sun through leaves, a bright sky behind a branch. In those pictures a little glow can bring back the bloom a film stock without an anti-halation layer would have made. In an evenly lit daytime picture there is little over the threshold, so it has almost nothing to work on, and a high Amount only makes the highlights look dirty.
+
+TIP: Be honest about it. A glow you add is a look you chose, not something the film did; keep it small, and compare with the highlights at 100% with the module off, so you know what the scan already had.
+""", keywords=("halation", "glow", "bloom", "highlights", "red", "film look", "simulated"), module="Halation", see=("watermark-module", "lab-look-module")),
+
     Lesson("watermark-variables", "finish", "Watermark variables and SVG templates", "Write a watermark once that fills in the film, camera, year or file name of every picture, the way darktable's watermarks do.",
            r"""
 A watermark can write something different on every picture without you typing it each time. In the **Text** mark, in the marker's **Text** and inside an **SVG** marker, anything written as `$(NAME)` is replaced by what that name means for the picture: `(c) $(EXIF.YEAR) $(CAMERA)` becomes `(c) 1987 Pentax K1000`. This is the same idea, and the same `$(...)` writing, that darktable's watermark module uses, so an SVG made for darktable works here.

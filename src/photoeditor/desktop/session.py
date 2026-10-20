@@ -119,6 +119,10 @@ class HistoryEntry:
     ec_light: float = 0.0
     ec_size: float = 0.5
     ec_shape: float = 0.0
+    hal_amount: float = 0.0
+    hal_radius: float = 0.4
+    hal_threshold: float = 0.7
+    hal_warmth: float = 0.8
     keystone_v: float = 0.0
     keystone_h: float = 0.0
     metering: Metering = field(default_factory=Metering)
@@ -278,6 +282,10 @@ class AppState:
     ec_light: float = 0.0
     ec_size: float = 0.5
     ec_shape: float = 0.0
+    hal_amount: float = 0.0
+    hal_radius: float = 0.4
+    hal_threshold: float = 0.7
+    hal_warmth: float = 0.8
     vignette: float = 0.0
     vignette_size: float = 0.5
     border: float = 0.0

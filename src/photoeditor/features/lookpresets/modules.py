@@ -12,6 +12,7 @@ from ..negative.logic import FILM_TYPE_LABELS, FILM_TYPES
 from ..colormix import logic as color_mix
 from ..edgebleed import logic as edge_bleed
 from ..edgecolor import logic as edge_color
+from ..halation import logic as halation
 from ..lablook import logic as lab_look
 from ..printresponse import logic as print_response
 from ..sharpening.logic import DEFAULT_METHOD, METHOD_LABELS, SharpenMethod
@@ -74,6 +75,12 @@ MODULES: tuple[ModuleSpec, ...] = (
         FieldSpec("ec_size", "Edge size", "float", edge_color.DEFAULTS["ec_size"], *edge_color.SIZE_RANGE),
         FieldSpec("ec_shape", "Edge shape", "float", 0.0, 0.0, 1.0),
     )),
+    ModuleSpec("halation", "Halation", (
+        FieldSpec("hal_amount", "Halation amount", "float", 0.0, 0.0, 1.0),
+        FieldSpec("hal_radius", "Halation radius", "float", halation.DEFAULTS["hal_radius"], 0.0, 1.0),
+        FieldSpec("hal_threshold", "Halation threshold", "float", halation.DEFAULTS["hal_threshold"], *halation.THRESHOLD_RANGE),
+        FieldSpec("hal_warmth", "Halation warmth", "float", halation.DEFAULTS["hal_warmth"], 0.0, 1.0),
+    )),
     ModuleSpec("edgebleed", "Edge bleed", (
         FieldSpec("edge_holder", "Fill holder and sprockets", "float", 0.0, 0.0, 1.0),
         FieldSpec("edge_bleed", "Bleed repair strength", "float", 0.0, 0.0, 1.0),
@@ -132,6 +139,7 @@ PANEL_MODULES: dict[str, tuple[str, tuple[str, ...]]] = {
     "colortoning": ("Color Toning", ("colortoning",)),
     "edgebleed": ("Edge Bleed", ("edgebleed",)),
     "edgecolor": ("Edge Color", ("edgecolor",)),
+    "halation": ("Halation", ("halation",)),
     "tonecurve": ("Tone Curve", ("tonecurve",)),
     "shadows_highlights": ("Shadows & Highlights", ("shadows_highlights",)),
     "color": ("Color", ("whitebalance", "color")),

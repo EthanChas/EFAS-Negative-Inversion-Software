@@ -494,6 +494,23 @@ The live picture is shown as a **positive**, converted by the same Modern conver
 **Capture** waits a moment for the rig to stop shaking, since vibration is the commonest cause of a soft scan, then releases the shutter without focusing, so focus cannot change between frames. Each picture is saved as your name and a frame number, and a RAW and its JPEG share the number. Each can open in the editor straight away, and the roll folder can be a hotstack ([[hotstack-lesson]]). The RAW files this makes are exactly what **Check My Scanning Light** reads ([[check-your-light]]).
 """, keywords=("tether", "tethered", "canon", "live view", "focus", "sharpness", "peaking", "loupe", "edsdk", "shutter", "practice camera", "copy stand", "remote"), see=("scanning-tethered", "scanning-exposure", "hotstack-lesson", "check-your-light")),
 
+    Lesson("grain-report", "scan", "The Grain Report", "Measure the film's real grain, learn whether your capture resolves it, and see whether your sharpening and denoise keep it.",
+           r"""
+EFAS never adds grain: a scan of film already has its own, and adding more would invent texture the film did not have. What it can do is **measure** the grain that is there. **Extra > Grain Report...** does that for the open photo and changes nothing.
+
+## What your capture resolves
+
+Film grain is a texture a few to a few tens of micrometres across. A scan whose pixels are about as big as the grain, or whose focus is soft, cannot show it, and what looks like grain is then mostly **sensor noise**. The report picks flat, mid-tone patches of the scan, takes out the slow variation under them and measures what is left: how **strong** it is, as a percentage of the brightness (per channel for a colour scan), and how **wide** it is in pixels, as the distance at which it stops resembling itself. Under one pixel wide the grain is **not resolved**; from two pixels up it is **resolved**; in between it is partly resolved. Each verdict comes with advice: a closer capture, your lens's sharpest aperture, careful focus and a low ISO resolve more. With the Roll Card's format set to 35mm it also says how much film one pixel covers.
+
+The report states its limits: the camera's demosaicing makes noise about a pixel wide even when the film's grain is much finer, and it measures only the patches it picked.
+
+## Whether your edits keep it
+
+It then converts the same patches at the scan's own resolution with your **Sharpening**, **Chroma Denoise** and **Local Contrast**, and with them off, and compares the fine texture. The answer is in words: the edits keep it, remove some percentage of it, or raise it, which means sharpening is making the grain and the noise stronger, naming the module that did most. The first patch is shown at 100% both ways so you can see it.
+
+TIP: Scan at the base ISO and the lens's sharpest aperture before blaming the film. If the report says the grain is not resolved, no amount of sharpening will find it.
+""", keywords=("grain", "noise", "resolve", "resolution", "sharpening", "denoise", "scan quality", "iso", "focus", "report"), see=("scan-quality-check", "sharpening-module", "scanning-exposure")),
+
     Lesson("scan-quality-check", "scan", "The scan quality check", "Learn what EFAS measures to rate a scan, and how to read its verdict.",
            r"""
 When you open a RAW scan, EFAS reads the file a second time in the background and gives you a plain-words verdict in the **Convert** tab, under **Scan quality**. It uses the same measurements as the Advanced mode (the film base, how much headroom there is before the sensor clips, and the amount of noise in the densest parts of the negative) and puts them in terms of **stops**, so you know exactly what to change.

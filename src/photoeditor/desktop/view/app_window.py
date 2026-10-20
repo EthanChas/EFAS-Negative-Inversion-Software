@@ -43,6 +43,8 @@ from .color_mixer_panel import ColorMixerToolPanel
 from .color_toning_panel import ColorToningToolPanel
 from .edge_bleed_panel import EdgeBleedPanel
 from .edge_color_panel import EdgeColorPanel
+from .grain_report_dialog import GrainReportDialog
+from .halation_panel import HalationPanel
 from .module_search import ModuleSearch
 from .classroom_view import ClassroomView
 from .slideshow_view import SlideshowView
@@ -515,7 +517,7 @@ class AppWindow(QMainWindow):
         self._preset_sharing = PresetSharing(self.controller, self)
         self._module_menus = ModuleMenus(self.controller, self, self._preset_sharing)
         for key, panel in (
-            ("exposure", self._exposure_tool), ("contrast", self._contrast_tool), ("printresponse", self._print_response_tool), ("lablook", self._lab_look_tool), ("colormixer", self._color_mixer_tool), ("colortoning", self._color_toning_tool), ("edgebleed", self._edge_tool), ("edgecolor", self._edge_color_tool), ("tonecurve", self._curve_tool),
+            ("exposure", self._exposure_tool), ("contrast", self._contrast_tool), ("printresponse", self._print_response_tool), ("lablook", self._lab_look_tool), ("colormixer", self._color_mixer_tool), ("colortoning", self._color_toning_tool), ("edgebleed", self._edge_tool), ("edgecolor", self._edge_color_tool), ("halation", self._halation_tool), ("tonecurve", self._curve_tool),
             ("shadows_highlights", self._shadows_highlights_tool), ("color", self._color_tool), ("sharpening", self._sharpening_tool),
             ("localcontrast", self._local_contrast_tool), ("denoise", self._denoise_tool), ("negative", self._negative_tool),
             ("watermark", self._watermark_tool), ("finishing", self._finishing_tool),
@@ -818,6 +820,10 @@ class AppWindow(QMainWindow):
         self._light_check_action.setToolTip("Measure whether the light you scan film with is steady and even, and whether a roll was scanned consistently under it, from RAW photos taken with your scanning camera")
         self._light_check_action.triggered.connect(lambda _c=False: self.show_light_check())
         extra_menu.addAction(self._light_check_action)
+        self._grain_report_action = QAction("Grain Report...", self)
+        self._grain_report_action.setToolTip("Measure the open photo's grain: how strong it is, whether your capture resolves it, and whether your sharpening and denoise keep it. Changes nothing")
+        self._grain_report_action.triggered.connect(lambda _c=False: self.show_grain_report())
+        extra_menu.addAction(self._grain_report_action)
         self._tether_action = QAction("Canon Tether and Live View...", self)
         self._tether_action.setToolTip("See a Canon camera's live picture in EFAS (as a positive, with focus peaking and a loupe), focus its lens from the computer with a sharpness meter, and take pictures into a roll folder")
         self._tether_action.triggered.connect(lambda _c=False: self.show_tether())
@@ -1240,6 +1246,10 @@ class AppWindow(QMainWindow):
         self._edge_color_tool.preview_requested.connect(self.controller.preview_edge_color)
         self._edge_color_tool.auto_requested.connect(self._on_edge_color_auto)
 
+        self._halation_tool = HalationPanel()
+        self._halation_tool.changed.connect(self.controller.set_halation)
+        self._halation_tool.preview_requested.connect(self.controller.preview_halation)
+
         self._curve_tool = ToneCurveToolPanel()
         self._curve_tool.curve_changed.connect(self.controller.set_tone_curve)
         self._curve_tool.preview_requested.connect(self.controller.preview_tone_curve)
@@ -1473,7 +1483,7 @@ class AppWindow(QMainWindow):
             return SlideOutPanel(scroll), col
 
         # Color: white balance and saturation, the colour mixer, then the lab's look (the last word on colour)
-        self._color_panel, color_col = new_tab([self._color_tool, self._color_mixer_tool, self._color_toning_tool, self._lab_look_tool, self._edge_color_tool])
+        self._color_panel, color_col = new_tab([self._color_tool, self._color_mixer_tool, self._color_toning_tool, self._lab_look_tool, self._edge_color_tool, self._halation_tool])
         tool_row.addWidget(self._color_panel, 0)
         # Detail, in the order the picture is made: chroma noise, local contrast, sharpening last
         self._detail_panel, detail_col = new_tab([self._denoise_tool, self._local_contrast_tool, self._sharpening_tool])
@@ -2751,6 +2761,18 @@ class AppWindow(QMainWindow):
         if os.path.isfile(path):
             self.open_folder(os.path.dirname(path), prefer=path)
 
+    def show_grain_report(self) -> None:
+        """Extra > Grain Report: measure the open photo's grain at the scan's own resolution (features/grain). It changes nothing."""
+        QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+        try:
+            report = self.controller.grain_report()
+        finally:
+            QApplication.restoreOverrideCursor()
+        dialog = GrainReportDialog(report, self)
+        dialog.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, True)
+        self._grain_report = dialog
+        dialog.show()
+
     def show_light_check(self) -> None:
         """Extra > Check My Scanning Light: the bare-light check and the film-scan check (features/lightcheck). It reads RAW photos and changes nothing."""
         existing = getattr(self, "_light_check", None)
@@ -3095,6 +3117,8 @@ class AppWindow(QMainWindow):
         self._edge_tool.show_status(self.controller.edge_bleed_info()["text"])
         self._edge_color_tool.reset()
         self._edge_color_tool.set_values(self.controller._ec_values())
+        self._halation_tool.reset()
+        self._halation_tool.set_values(self.controller._hal_values())
         self._watermark_tool.set_values(
             state.wm_film, state.wm_texture, state.wm_size, state.wm_position, state.wm_info, state.wm_camera, state.wm_lens
         )
@@ -3693,6 +3717,7 @@ class AppWindow(QMainWindow):
         self._color_toning_tool.set_values(self.controller._toning_values())
         self._edge_tool.set_values(self.controller._edge_values())
         self._edge_color_tool.set_values(self.controller._ec_values())
+        self._halation_tool.set_values(self.controller._hal_values())
         self._watermark_tool.set_values(
             state.wm_film, state.wm_texture, state.wm_size, state.wm_position, state.wm_info, state.wm_camera, state.wm_lens
         )

@@ -52,6 +52,7 @@ from ..features.lut.logic import (
 )
 from ..features.edgebleed import logic as edge_logic
 from ..features.edgecolor import logic as ec_logic
+from ..features.halation import logic as hal_logic
 from ..features.flatfield.logic import apply_flatfield
 from ..features.negative.logic import (
     analysis_region,
@@ -189,6 +190,10 @@ class EditParams:
     ec_light: float = 0.0
     ec_size: float = 0.5
     ec_shape: float = 0.0
+    hal_amount: float = 0.0
+    hal_radius: float = 0.4
+    hal_threshold: float = 0.7
+    hal_warmth: float = 0.8
     vignette: float = 0.0
     vignette_size: float = 0.5
     border: float = 0.0
@@ -322,6 +327,10 @@ class EditParams:
             ec_light=float(getattr(s, "ec_light", 0.0)),
             ec_size=float(getattr(s, "ec_size", 0.5)),
             ec_shape=float(getattr(s, "ec_shape", 0.0)),
+            hal_amount=float(getattr(s, "hal_amount", 0.0)),
+            hal_radius=float(getattr(s, "hal_radius", 0.4)),
+            hal_threshold=float(getattr(s, "hal_threshold", 0.7)),
+            hal_warmth=float(getattr(s, "hal_warmth", 0.8)),
             vignette=float(getattr(s, "vignette", 0.0)),
             vignette_size=float(getattr(s, "vignette_size", 0.5)),
             border=float(getattr(s, "border", 0.0)),
@@ -655,6 +664,8 @@ class Renderer:
             edge_values = {k: getattr(params, k) for k in edge_logic.KEYS}
             ec_values = {k: getattr(params, k) for k in ec_logic.KEYS}
             ec_active = not ec_logic.is_neutral(ec_values)
+            hal_values = {k: getattr(params, k) for k in hal_logic.KEYS}
+            hal_active = not hal_logic.is_neutral(hal_values)
             if source.dtype == np.uint16:
                 source16 = source
                 source = self._as_uint8(source, token)
@@ -695,7 +706,7 @@ class Renderer:
             color_active = not color_is_neutral(color_values, color_response)
             mixing = bool(params.shadows or params.highlights or params.saturation or denoise or local or camera_matrix or color_active)
             wide = pixels16 is not None
-            keeps_16 = not (ec_active or params.sharpen_amount or params.vignette or watermark_active(params.wm_film) or params.border > 0
+            keeps_16 = not (ec_active or hal_active or params.sharpen_amount or params.vignette or watermark_active(params.wm_film) or params.border > 0
                             or params.marks.wanted(params.wm_info, params.wm_camera, params.wm_lens, watermark_active(params.wm_film)))   # nothing after the colour stages needs 8 bits
             deep_ok = deep and wide and keeps_16
             hold_16 = wide and self.wide_mixing and (gpu_pipeline.wide_ok() or not gpu_pipeline.usable(frame.shape))   # the picture stays 16-bit through the mixing stages
@@ -785,6 +796,8 @@ class Renderer:
                 overlay_rgba = self._build_overlay(retouched, params, base_width, base_hw)
             if ec_active:   # the edges' colour and brightness, on the finished and cropped picture, before the vignette
                 image = ec_logic.apply_edge_color(image, ec_values)
+            if hal_active:   # a simulated glow round the brightest parts, on the finished and cropped picture (see features/halation)
+                image = hal_logic.apply_halation(image, hal_values)
             if params.vignette:
                 lit = gpu_pipeline.vignette(image, params.vignette, params.vignette_size)
                 image = lit if lit is not None else apply_vignette(image, params.vignette, params.vignette_size)
