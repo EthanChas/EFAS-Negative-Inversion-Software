@@ -287,9 +287,9 @@ It works on the **cropped** picture, so **crop off the film's border first**. Th
 """, keywords=("edge color", "flash", "green edges", "fluorescent", "tungsten", "cast", "corners", "vignette", "orange edges", "auto match"), module="Edge Color", see=("recipe-flat-light", "flat-field-module")),
 
     # ------------------------------------------------------------------ Detail
-    Lesson("detail-overview", "detail", "Detail: noise, texture and sharpness", "Understand what the three detail tools do to a picture's fine structure, and why they are used in a particular order.",
+    Lesson("detail-overview", "detail", "Detail: noise, texture and sharpness", "Understand what the detail tools do to a picture's fine structure, and why they are used in a particular order.",
            r"""
-The three tools in the **Detail** tab all work on a picture's *fine structure*, and they pull in different directions, which is why the order matters. **Chroma Denoise** removes something: the coloured speckle of grain. **Local Contrast** adds something: texture, by stretching contrast within small areas. **Sharpening** adds something else: crispness along edges. Remove first, add second, sharpen last, so that adding and sharpening do not amplify what you have just removed.
+The tools in the **Detail** tab all work on a picture's *fine structure*, and they pull in different directions, which is why the order matters. **Chroma Denoise** removes something: the coloured speckle of grain. **Local Contrast** adds something: texture, by stretching contrast within small areas. **Sharpening** adds something else: crispness along edges. **Grain Sharpening** does the same for the film's own grain, at the grain's size. Remove first, add second, sharpen last, so that adding and sharpening do not amplify what you have just removed.
 
 ## The reasoning
 
@@ -372,4 +372,23 @@ Every digital picture is a little soft: the sensor, the lens and the conversion 
 
 Sharpen **last**, after tone and colour, and judge at **100%**. Bright halos along high-contrast edges mean it is too much: reduce Amount or Radius. If the grain is becoming the subject, raise Masking, or switch to Wavelet. The export panel has its own **output sharpening**, a final touch for the size and format of the finished file, so avoid doing the same job twice ([[export-formats]]).
 """, keywords=("sharpen", "unsharp mask", "usm", "deconvolution", "wavelet", "surface blur", "halo", "radius", "masking", "amount", "richardson lucy"), module="Sharpening", see=("focus-and-sharpness", "export-formats")),
+
+    Lesson("grain-sharpening-module", "detail", "Grain Sharpening", "Understand what it does to the film's grain, what Amount, Size and Midtones change, and why it is judged at 100%.",
+           r"""
+A camera scan of a negative often records the grain soft. The grain is a texture only a pixel or two wide, and the lens, the sensor's own filter and the demosaicing each blur it a little. **Grain Sharpening** makes the grain that is already in the scan crisper. It does not add grain: where the scan shows a flat grey there is nothing to sharpen, and it cannot show detail the capture did not record.
+
+## How it works
+
+EFAS takes the **lightness** of the picture and separates the narrow band of texture at the size of the grain: what is left between a blur a little narrower than the grain and one a little wider. It raises the contrast of that band and puts it back, so the grain gets crisper and a touch narrower, and nothing larger changes. The picture's own tones and edges are the job of Sharpening, which this leaves alone. Colour is never touched, because only the lightness is changed. The boost to any one pixel is eased off past a small limit, so a hard edge is not given a halo.
+
+## The controls
+
+**Amount** is how much crisper the grain is made: 0 is off, and a full Amount raises the grain's contrast to roughly two and a half times what it was. **Size** is the width of the grain in *scan* pixels. **Match My Grain** measures it for you, the same way the Grain Report does, and sets Size to the number; for most camera scans it is between one and two. A Size that is too large treats broader texture as grain and starts to look like Local Contrast. **Midtones** is 0 to treat every tone alike and 1 to leave the deepest shadows and the highlights as they were, which is usually kinder to the shadows, where sensor noise sits.
+
+## Judge it at 100%
+
+Size is measured in pixels of the scan, and the editing preview is the scan made smaller, so on the fitted preview the grain is under a pixel and nothing shows. Zoom to 100% (and switch **HQ** on), or look at the export, which is made from the scan itself. The Grain Report counts this module among the ones it compares, and with it on tells you the grain is *crisper*, not that sharpening is too strong.
+
+TIP: Use Grain Sharpening for the grain and Sharpening for the picture. If the Grain Report says your capture does not resolve the grain, no setting here will find it; a closer capture or a sharper aperture will.
+""", keywords=("grain", "grain sharpening", "sharpen grain", "crisp", "texture", "film grain", "match my grain", "size", "midtones"), module="Grain Sharpening", see=("sharpening-module", "grain-report", "detail-overview")),
 ]

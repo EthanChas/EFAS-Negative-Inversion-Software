@@ -8,12 +8,14 @@ from ...theme.tokens import THEME
 
 FLAG_ROLE = Qt.ItemDataRole.UserRole + 1
 RATING_ROLE = Qt.ItemDataRole.UserRole + 2
+OPEN_ROLE = Qt.ItemDataRole.UserRole + 3   # the photo that is open in the editor: marked even when it is not part of a selection
 _FLAG_TINTS = {
     "rejected": QColor(220, 40, 40, 115),
     "keeper": QColor(70, 200, 100, 60),
 }
 _BORDER_WIDTH_SELECTED = 3
 _BORDER_WIDTH_HOVER = 1
+_BORDER_WIDTH_OPEN = 2   # the open photo when it is not selected: the accent colour, thinner
 _BORDER_WIDTH_DEFAULT = 1
 _STAR_PX = 9
 
@@ -61,6 +63,8 @@ class ThumbnailDelegate(QStyledItemDelegate):
         hover = bool(option.state & QStyle.StateFlag.State_MouseOver)
         if selected:
             color, width = THEME.accent_primary, _BORDER_WIDTH_SELECTED
+        elif index.data(OPEN_ROLE):
+            color, width = THEME.accent_primary, _BORDER_WIDTH_OPEN
         elif hover:
             color, width = THEME.text_muted, _BORDER_WIDTH_HOVER
         else:
@@ -72,4 +76,7 @@ class ThumbnailDelegate(QStyledItemDelegate):
         painter.setBrush(Qt.BrushStyle.NoBrush)
         half = width // 2
         painter.drawRect(option.rect.adjusted(half, half, -half - 1, -half - 1))
+        if selected and index.data(OPEN_ROLE):   # the open photo among several selected: a light frame just inside the accent one tells it apart
+            painter.setPen(QPen(QColor(255, 255, 255, 230), 1))
+            painter.drawRect(option.rect.adjusted(width + 1, width + 1, -width - 2, -width - 2))
         painter.restore()

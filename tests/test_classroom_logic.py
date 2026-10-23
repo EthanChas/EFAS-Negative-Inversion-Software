@@ -59,7 +59,7 @@ def test_the_course_covers_every_module_of_the_editor():
     modules = {lesson.module for lesson in COURSE.lessons if lesson.module}
     for title in ("Exposure", "Contrast", "Shadows & Highlights", "Tone Curve", "Print Response", "Crop & Rotate", "Dust & Scratches", "AI Dust Detection", "Error marking", "Negative",
                   "Flat Field", "Edge Bleed", "Finishing", "Watermark", "Tags", "Color", "Color Mixer", "Color Toning", "Lab Look", "Edge Color", "Chroma Denoise", "Local Contrast",
-                  "Sharpening", "Roll", "Presets", "Export", "History", "Snapshots", "Versions", "Library"):
+                  "Sharpening", "Grain Sharpening", "Roll", "Presets", "Export", "History", "Snapshots", "Versions", "Library"):
         assert title in modules, title
 
 
@@ -156,7 +156,7 @@ def test_a_title_beats_a_keyword_and_a_keyword_beats_the_text():
     hits = L.search(COURSE.lessons, COURSE.section_map(), "grain")
     scores = [h.score for h in hits]
     assert scores == sorted(scores), "best first"
-    assert hits[0].lesson.id in ("iso-and-noise", "film-speed-and-grain") and hits[0].score <= 1, "a title that has the word comes before a lesson that only mentions it"
+    assert hits[0].lesson.id in ("iso-and-noise", "film-speed-and-grain", "grain-sharpening-module", "grain-report") and hits[0].score <= 1, "a title that has the word comes before a lesson that only mentions it"
     assert any(h.score >= 3 for h in hits), "and the lessons that only mention it come later"
 
 

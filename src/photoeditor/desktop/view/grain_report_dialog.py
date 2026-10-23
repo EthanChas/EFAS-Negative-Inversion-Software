@@ -79,7 +79,7 @@ class GrainReportDialog(QDialog):
 
     @staticmethod
     def edits_word(report: dict) -> tuple[str, str]:
-        """(kept / removing / boosting / off, a short sentence) for what the edits do to the grain."""
+        """(kept / crisper / removing / boosting / off, a short sentence) for what the edits do to the grain."""
         effect = report.get("effect")
         if effect is None or not report.get("effect_text"):
             return "off", "No sharpening, denoise or local contrast is on, so your edits leave the grain alone." if effect is not None else "Not measured for this photo."
@@ -88,6 +88,9 @@ class GrainReportDialog(QDialog):
             return "kept", f"Your edits keep the grain ({r:.2f}x: 1.00 is untouched)."
         if r < grain.KEEP_BAND[0]:
             return "removing", f"Your edits are removing about {round((1.0 - r) * 100)}% of the grain ({r:.2f}x)."
+        top = grain.top_module(effect)
+        if top is not None and top[0] == grain.GRAIN_MODULE:
+            return "crisper", f"Grain Sharpening is making the grain crisper ({r:.2f}x), as it is meant to."
         return "boosting", f"Your edits are boosting the grain and noise ({r:.2f}x): sharpening is too strong."
 
     @classmethod
@@ -98,7 +101,7 @@ class GrainReportDialog(QDialog):
         reading = report["reading"]
         if not reading.patches:
             return f"<h3>{report['name']}</h3><p><b>Nothing to measure.</b> {' '.join(reading.notes)}</p>"
-        colours = {"kept": THEME.status_success, "off": THEME.text_secondary, "removing": THEME.status_warning, "boosting": THEME.status_warning}
+        colours = {"kept": THEME.status_success, "crisper": THEME.status_success, "off": THEME.text_secondary, "removing": THEME.status_warning, "boosting": THEME.status_warning}
         word, sentence = cls.edits_word(report)
         verdict_colour = {"resolved": THEME.status_success, "partly resolved": THEME.status_warning, "not resolved": THEME.status_warning}[report["verdict"]]
         return (f"<h3>{report['name']}</h3>"

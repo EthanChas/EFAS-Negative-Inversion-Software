@@ -11,12 +11,11 @@ import sqlite3
 from PyQt6.QtWidgets import QFileDialog, QInputDialog, QLineEdit, QMessageBox
 
 from ...features import session as session_store
-from ...features.browse.processor import load_edited_thumbnail
 from ...features.library import folders as folder_ops
 from ...features.library import removal as photo_removal
 from ...features.livefolder import filing as live_filing
 from ...features.settings import logic as app_settings
-from ..paths import app_data_dir, thumbnail_cache_dir
+from ..paths import app_data_dir
 from .removal_dialogs import confirm_delete_folder
 
 
@@ -195,17 +194,16 @@ class LibraryFolderActions:
         open_path = c.state.image_path
         if open_path and norm(open_path) in {norm(p) for p in todo}:
             c._save_edit_state()
-        cache = thumbnail_cache_dir()
         moved: dict[str, str] = {}
         failed: list[str] = []
         for src in todo:
-            thumbnail = load_edited_thumbnail(cache, src)
+            thumbnail, plain = c.photo_thumbnails(src)
             try:
                 final = live_filing.move_photo(src, os.path.join(into, os.path.basename(src)))
             except OSError:
                 failed.append(src)
                 continue
-            c.relocate_photo(src, final, thumbnail)
+            c.relocate_photo(src, final, thumbnail, plain)
             moved[norm(src)] = final
         w._live_session = [p for p in w._live_session if norm(p) not in moved]
         w._live_aside = [p for p in w._live_aside if norm(p) not in moved]
@@ -219,6 +217,7 @@ class LibraryFolderActions:
         for panel in self._panels():
             panel.rebuild()
         w._lighttable_reload_rows()
+        w.refresh_thumbnails(list(moved.values()))
         message = f"Moved {len(moved)} photo{'s' if len(moved) != 1 else ''} into \"{_name(into)}\". Their edits, ratings and tags went with them."
         if failed:
             message += f" {len(failed)} could not be moved and stay where they were."

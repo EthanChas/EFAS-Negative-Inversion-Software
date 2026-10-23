@@ -1,6 +1,6 @@
 from PyQt6.QtCore import QEventLoop, QThread, pyqtSignal
 
-from ..features.browse.processor import get_or_make_thumbnail_bytes
+from ..features.browse.processor import get_thumbnail_with_retry
 
 
 class ThumbnailLoader(QThread):
@@ -18,7 +18,7 @@ class ThumbnailLoader(QThread):
 
     def run(self) -> None:
         for path in self.paths:
-            self.thumb_ready.emit(path, get_or_make_thumbnail_bytes(self.cache_dir, path))
+            self.thumb_ready.emit(path, get_thumbnail_with_retry(self.cache_dir, path))
 
 
 class _CallWorker(QThread):

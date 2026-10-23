@@ -52,6 +52,7 @@ from ..features.lut.logic import (
 )
 from ..features.edgebleed import logic as edge_logic
 from ..features.edgecolor import logic as ec_logic
+from ..features.grainsharp import logic as gs_logic
 from ..features.halation import logic as hal_logic
 from ..features.flatfield.logic import apply_flatfield
 from ..features.negative.logic import (
@@ -194,6 +195,10 @@ class EditParams:
     hal_radius: float = 0.4
     hal_threshold: float = 0.7
     hal_warmth: float = 0.8
+    gs_amount: float = 0.0
+    gs_size: float = 1.2
+    gs_midtones: float = 0.5
+    scan_width: int = 0   # the width of the original scan this picture is made from (0: the picture is the scan), so a grain size in scan pixels can be turned into this picture's pixels
     vignette: float = 0.0
     vignette_size: float = 0.5
     border: float = 0.0
@@ -331,6 +336,10 @@ class EditParams:
             hal_radius=float(getattr(s, "hal_radius", 0.4)),
             hal_threshold=float(getattr(s, "hal_threshold", 0.7)),
             hal_warmth=float(getattr(s, "hal_warmth", 0.8)),
+            gs_amount=float(getattr(s, "gs_amount", 0.0)),
+            gs_size=float(getattr(s, "gs_size", 1.2)),
+            gs_midtones=float(getattr(s, "gs_midtones", 0.5)),
+            scan_width=int(getattr(getattr(s, "original_rgb", None), "shape", (0, 0))[1] or 0),
             vignette=float(getattr(s, "vignette", 0.0)),
             vignette_size=float(getattr(s, "vignette_size", 0.5)),
             border=float(getattr(s, "border", 0.0)),
@@ -666,6 +675,8 @@ class Renderer:
             ec_active = not ec_logic.is_neutral(ec_values)
             hal_values = {k: getattr(params, k) for k in hal_logic.KEYS}
             hal_active = not hal_logic.is_neutral(hal_values)
+            gs_values = {k: getattr(params, k) for k in gs_logic.KEYS}
+            gs_active = not gs_logic.is_neutral(gs_values)
             if source.dtype == np.uint16:
                 source16 = source
                 source = self._as_uint8(source, token)
@@ -706,7 +717,7 @@ class Renderer:
             color_active = not color_is_neutral(color_values, color_response)
             mixing = bool(params.shadows or params.highlights or params.saturation or denoise or local or camera_matrix or color_active)
             wide = pixels16 is not None
-            keeps_16 = not (ec_active or hal_active or params.sharpen_amount or params.vignette or watermark_active(params.wm_film) or params.border > 0
+            keeps_16 = not (ec_active or hal_active or gs_active or params.sharpen_amount or params.vignette or watermark_active(params.wm_film) or params.border > 0
                             or params.marks.wanted(params.wm_info, params.wm_camera, params.wm_lens, watermark_active(params.wm_film)))   # nothing after the colour stages needs 8 bits
             deep_ok = deep and wide and keeps_16
             hold_16 = wide and self.wide_mixing and (gpu_pipeline.wide_ok() or not gpu_pipeline.usable(frame.shape))   # the picture stays 16-bit through the mixing stages
@@ -787,6 +798,9 @@ class Renderer:
                 pixels = apply_sharpening(
                     pixels, params.sharpen_amount, params.sharpen_radius, params.sharpen_masking, params.sharpen_method
                 )
+
+            if gs_active and (live is None or gs_logic.LIVE in live):   # the grain, made crisper: its size is in scan pixels, so on a smaller preview of the scan it is a smaller number of this picture's
+                pixels = gs_logic.apply_grain_sharpening(pixels, gs_values, source.shape[1] / params.scan_width if params.scan_width else 1.0)
 
             image = apply_crop(pixels, rect)
             stats = compute_stats(image) if want_stats else None

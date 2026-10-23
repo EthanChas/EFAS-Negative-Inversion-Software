@@ -168,18 +168,30 @@ def detail_ratio(edited: list[np.ndarray], plain: list[np.ndarray]) -> float:
     return float(np.median(ratios)) if ratios else 1.0
 
 
+GRAIN_MODULE = "grain"   # the key of Grain Sharpening among the modules compared: raising the grain is what it is for
+
+
+def top_module(effect: DetailEffect) -> tuple[str, float] | None:
+    """(the module that moved the fine texture most, its ratio on its own), or None when no one stands out."""
+    if not effect.by_module:
+        return None
+    key = max(effect.by_module, key=lambda k: abs(np.log(max(effect.by_module[k], 1e-6))))
+    m = effect.by_module[key]
+    return (key, m) if abs(np.log(max(m, 1e-6))) > 0.05 else None
+
+
 def effect_sentence(effect: DetailEffect, names: dict[str, str]) -> str:
     """What the edits did to the fine texture, in words, naming the module that did most when one stands out."""
     r = effect.ratio
+    top = top_module(effect)
+    if r > KEEP_BAND[1] and top is not None and top[0] == GRAIN_MODULE:
+        return f"Your edits raise the fine texture to {r:.2f} times the unedited conversion's, mostly {names.get(GRAIN_MODULE, GRAIN_MODULE)} ({top[1]:.2f}x on its own): the grain is crisper, which is what it is for."
     if KEEP_BAND[0] <= r <= KEEP_BAND[1]:
         head = f"Your edits keep the fine grain texture (it is {r:.2f} times the unedited conversion's)."
     elif r < KEEP_BAND[0]:
         head = f"Your edits remove about {round((1.0 - r) * 100)}% of the fine grain texture (it is {r:.2f} times the unedited conversion's)."
     else:
         head = f"Your edits raise the fine texture to {r:.2f} times the unedited conversion's: sharpening is making the grain (and the noise) stronger."
-    if effect.by_module:
-        key = max(effect.by_module, key=lambda k: abs(np.log(max(effect.by_module[k], 1e-6))))
-        m = effect.by_module[key]
-        if abs(np.log(max(m, 1e-6))) > 0.05:
-            head += f" Most of that is {names.get(key, key)} ({m:.2f}x on its own)."
+    if top is not None:
+        head += f" Most of that is {names.get(top[0], top[0])} ({top[1]:.2f}x on its own)."
     return head

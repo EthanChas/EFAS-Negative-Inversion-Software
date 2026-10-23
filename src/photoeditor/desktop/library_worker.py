@@ -5,7 +5,7 @@ from collections import OrderedDict
 from PyQt6.QtCore import QObject, QRunnable, QThread, QThreadPool, pyqtSignal
 from PyQt6.QtGui import QImage, QPixmap
 
-from ..features.browse.processor import get_or_make_thumbnail_bytes
+from ..features.browse.processor import get_thumbnail_with_retry
 from ..features.library.index import LibraryIndex
 
 
@@ -47,7 +47,7 @@ class _ThumbTask(QRunnable):
         self._path, self._cache_dir, self._signals = path, cache_dir, signals
 
     def run(self) -> None:
-        data = get_or_make_thumbnail_bytes(self._cache_dir, self._path)
+        data = get_thumbnail_with_retry(self._cache_dir, self._path)
         image = QImage.fromData(data) if data else QImage()
         self._signals.ready.emit(self._path, image)
 

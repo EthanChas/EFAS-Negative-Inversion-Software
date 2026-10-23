@@ -43,7 +43,9 @@ from .color_mixer_panel import ColorMixerToolPanel
 from .color_toning_panel import ColorToningToolPanel
 from .edge_bleed_panel import EdgeBleedPanel
 from .edge_color_panel import EdgeColorPanel
+from ...features.grainsharp import logic as gs_logic
 from .grain_report_dialog import GrainReportDialog
+from .grainsharp_panel import GrainSharpeningPanel
 from .halation_panel import HalationPanel
 from .module_search import ModuleSearch
 from .classroom_view import ClassroomView
@@ -80,13 +82,13 @@ from ...features import gpu as gpu_config
 from ...features.gpu import pipeline as gpu_pipeline
 from ...features.livefolder import filing as live_filing
 from ...features.livefolder import logic as live_logic
-from ...features.browse.processor import load_edited_thumbnail
 from ...features.focuspeaking.logic import overlay_from_levels
 from ...features.whitebalance.logic import range_overlay, range_share
 from ...features.contactsheet.logic import SheetOptions
 from ...features.metadata.roll import RollCard
 from .roll_card_panel import RollCardTab
 from .watermark_panel import CanisterWatermarkPanel
+from . import wheel_guard
 from .color_tool_panel import ColorToolPanel
 from .crop_tool_panel import CropToolPanel
 from .debug_mode import DebugController
@@ -380,6 +382,7 @@ class AppWindow(QMainWindow):
         ensure_data_ready()
         super().__init__()
         module_style.STYLE.apply(app_settings.load())
+        wheel_guard.install()   # the wheel changes a slider, number box or drop-down only once it has been clicked
         _live_windows.add(self)
         self.setWindowFlag(Qt.WindowType.FramelessWindowHint)
         self.setWindowTitle(APP_NAME)
@@ -518,7 +521,7 @@ class AppWindow(QMainWindow):
         self._module_menus = ModuleMenus(self.controller, self, self._preset_sharing)
         for key, panel in (
             ("exposure", self._exposure_tool), ("contrast", self._contrast_tool), ("printresponse", self._print_response_tool), ("lablook", self._lab_look_tool), ("colormixer", self._color_mixer_tool), ("colortoning", self._color_toning_tool), ("edgebleed", self._edge_tool), ("edgecolor", self._edge_color_tool), ("halation", self._halation_tool), ("tonecurve", self._curve_tool),
-            ("shadows_highlights", self._shadows_highlights_tool), ("color", self._color_tool), ("sharpening", self._sharpening_tool),
+            ("shadows_highlights", self._shadows_highlights_tool), ("color", self._color_tool), ("sharpening", self._sharpening_tool), ("grainsharp", self._grainsharp_tool),
             ("localcontrast", self._local_contrast_tool), ("denoise", self._denoise_tool), ("negative", self._negative_tool),
             ("watermark", self._watermark_tool), ("finishing", self._finishing_tool),
         ):
@@ -540,6 +543,10 @@ class AppWindow(QMainWindow):
         self.controller.roll_undo_changed.connect(self._refresh_roll_undo)
         self._bulk_worker = None
         self._filmstrip.delete_requested.connect(self.delete_photos)
+        self._filmstrip.rate_requested.connect(self._on_lighttable_rate)
+        self._filmstrip.flag_requested.connect(self._on_lighttable_flag)
+        self._filmstrip.paste_requested.connect(lambda paths: self._lighttable_paste(paths))
+        self._filmstrip.set_paste_filter(lambda: self.controller._copied_look is not None)
         self._filmstrip.move_requested.connect(self._folder_actions.move_photos)
         self.controller.flag_changed.connect(self._filmstrip.set_flag)
         self.controller.rating_changed.connect(self._filmstrip.set_rating)
@@ -1386,6 +1393,11 @@ class AppWindow(QMainWindow):
         self._denoise_tool.changed.connect(self.controller.set_chroma_denoise)
         self._denoise_tool.preview_requested.connect(self.controller.preview_chroma_denoise)
 
+        self._grainsharp_tool = GrainSharpeningPanel()
+        self._grainsharp_tool.changed.connect(self.controller.set_grain_sharpening)
+        self._grainsharp_tool.preview_requested.connect(self.controller.preview_grain_sharpening)
+        self._grainsharp_tool.match_requested.connect(self.match_grain_size)
+
         self._dust_tool = DustToolPanel()
         self._dust_tool.changed.connect(
             lambda auto, threshold, size, sensitivity: self.controller.set_dust(auto, threshold, int(round(size)), sensitivity)
@@ -1486,7 +1498,7 @@ class AppWindow(QMainWindow):
         self._color_panel, color_col = new_tab([self._color_tool, self._color_mixer_tool, self._color_toning_tool, self._lab_look_tool, self._edge_color_tool, self._halation_tool])
         tool_row.addWidget(self._color_panel, 0)
         # Detail, in the order the picture is made: chroma noise, local contrast, sharpening last
-        self._detail_panel, detail_col = new_tab([self._denoise_tool, self._local_contrast_tool, self._sharpening_tool])
+        self._detail_panel, detail_col = new_tab([self._denoise_tool, self._local_contrast_tool, self._sharpening_tool, self._grainsharp_tool])
         tool_row.addWidget(self._detail_panel, 0)
 
         self._finishing_tool = FinishingPanel()
@@ -2347,17 +2359,16 @@ class AppWindow(QMainWindow):
         open_path = c.state.image_path
         if open_path and norm(open_path) in {norm(src) for src, _dst in plan}:
             c._save_edit_state()
-        cache = thumbnail_cache_dir()
         moved: dict[str, str] = {}
         failed: list[str] = []
         for src, dst in plan:
-            thumbnail = load_edited_thumbnail(cache, src)
+            thumbnail, plain = c.photo_thumbnails(src)
             try:
                 final = live_filing.move_photo(src, dst)
             except OSError:
                 failed.append(src)
                 continue
-            c.relocate_photo(src, final, thumbnail)
+            c.relocate_photo(src, final, thumbnail, plain)
             moved[norm(src)] = final
         self._live_session = [p for p in self._live_session if os.path.isfile(p) and norm(p) not in moved]
         self._live_aside = [p for p in self._live_aside if os.path.isfile(p) and norm(p) not in moved]
@@ -2365,6 +2376,7 @@ class AppWindow(QMainWindow):
         self._live.set_folders(self.hotstack_folders())   # watched again from what is there now
         self._sync_live_ui()
         self._lighttable_reload_rows()
+        self.refresh_thumbnails(list(moved.values()))
         self.lighttable_refresh()
         if open_path and norm(open_path) in moved:
             c.open_file(moved[norm(open_path)])   # the editor's open photo is at its new path now
@@ -2378,6 +2390,13 @@ class AppWindow(QMainWindow):
             message += f" {len(failed)} could not be moved and stay in the session."
         self._coord_label.setText(message)
         self._lighttable.set_index_status(message)
+
+    def refresh_thumbnails(self, paths: list[str]) -> None:
+        """Photos have just been moved or replaced: their tiles in the Workbench are asked for now (not when they first scroll into view, which may be a repaint away), and the editor's strip
+        reads them from the cache again, so a tile shows its photo without the photo having to be opened first."""
+        for path in paths:
+            self._lighttable.thumbnail_changed(path)
+        self._filmstrip.reload_tiles(paths)
 
     def _on_index_finished(self, added: int, changed: int, removed: int) -> None:
         self._index_worker = None
@@ -2761,6 +2780,23 @@ class AppWindow(QMainWindow):
         if os.path.isfile(path):
             self.open_folder(os.path.dirname(path), prefer=path)
 
+    def match_grain_size(self) -> None:
+        """Grain Sharpening > Match My Grain: set Size to the width the Grain Report measures in the open photo."""
+        if self.controller.state.original_rgb is None:
+            self._grainsharp_tool.set_note("Open a photo first.")
+            return
+        QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+        try:
+            width = self.controller.measured_grain_width()
+        finally:
+            QApplication.restoreOverrideCursor()
+        if width is None:
+            self._grainsharp_tool.set_note("No flat, mid-tone area to measure in this photo: set Size by eye.")
+            return
+        size = min(max(width, gs_logic.SIZE_RANGE[0]), gs_logic.SIZE_RANGE[1])
+        self._grainsharp_tool.apply_size(size)
+        self._grainsharp_tool.set_note(f"This photo's grain is about {width:.1f} px wide in the scan: Size set to {size:.1f}.")
+
     def show_grain_report(self) -> None:
         """Extra > Grain Report: measure the open photo's grain at the scan's own resolution (features/grain). It changes nothing."""
         QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
@@ -3119,6 +3155,9 @@ class AppWindow(QMainWindow):
         self._edge_color_tool.set_values(self.controller._ec_values())
         self._halation_tool.reset()
         self._halation_tool.set_values(self.controller._hal_values())
+        self._grainsharp_tool.reset()
+        self._grainsharp_tool.set_values(self.controller._gs_values())
+        self._grainsharp_tool.set_note("Judge it at 100% zoom: on the small preview the grain is under a pixel.")
         self._watermark_tool.set_values(
             state.wm_film, state.wm_texture, state.wm_size, state.wm_position, state.wm_info, state.wm_camera, state.wm_lens
         )
@@ -3485,6 +3524,10 @@ class AppWindow(QMainWindow):
     def run_photo_action(self, action: str) -> None:
         """What a key (by its action name, see desktop/keybinds.py) does to the open photo: flag, rate, fit, rotate, or step through the roll."""
         c = self.controller
+        chosen = self.strip_selection()
+        if chosen and (action.startswith("flag_") or action.startswith("rating_")):
+            self.mark_selection(action, chosen)   # several photos are selected in the strip: the key is for all of them
+            return
         if action == "flag_rejected":
             self.flag_and_advance("rejected")
         elif action == "flag_keeper":
@@ -3503,6 +3546,24 @@ class AppWindow(QMainWindow):
                 self.rotate_proof(-turn)
             else:
                 c.rotate(turn)
+
+    def strip_selection(self) -> list[str]:
+        """The photos selected in the editor's filmstrip, when there are several (the rating and flag keys then act on all of them); an empty list for none or one."""
+        if not self._filmstrip.isVisible():
+            return []
+        chosen = self._filmstrip.selected_paths()
+        return chosen if len(chosen) > 1 else []
+
+    def mark_selection(self, action: str, paths: list[str]) -> None:
+        """A flag or rating key with several photos selected in the strip: it sets the mark on all of them, or takes it off all of them when they already have it (as the key does for one photo)."""
+        if action.startswith("rating_"):
+            stars = int(action[-1])
+            have = self._filmstrip.ratings()
+            self._on_lighttable_rate(paths, 0 if stars and all(have.get(p, 0) == stars for p in paths) else stars)
+            return
+        flag = {"flag_rejected": "rejected", "flag_keeper": "keeper", "flag_clear": None}[action]
+        have = self._filmstrip.flags()
+        self._on_lighttable_flag(paths, None if flag is not None and all(have.get(p) == flag for p in paths) else flag)
 
     def step_roll(self, key) -> None:
         """Arrow keys: previous/next photo of the filmstrip as filtered; Home/End: its first/last."""
@@ -3718,6 +3779,7 @@ class AppWindow(QMainWindow):
         self._edge_tool.set_values(self.controller._edge_values())
         self._edge_color_tool.set_values(self.controller._ec_values())
         self._halation_tool.set_values(self.controller._hal_values())
+        self._grainsharp_tool.set_values(self.controller._gs_values())
         self._watermark_tool.set_values(
             state.wm_film, state.wm_texture, state.wm_size, state.wm_position, state.wm_info, state.wm_camera, state.wm_lens
         )

@@ -3,6 +3,7 @@ and the on-disk thumbnail cache, happen."""
 
 import io
 import os
+import time
 
 import numpy as np
 import rawpy
@@ -14,6 +15,8 @@ from ..open_image.logic import is_raw
 from .logic import thumbnail_cache_key
 
 _THUMB_QUALITY = 85
+THUMB_ATTEMPTS = 3        # a picture that cannot be read is tried this many times...
+THUMB_RETRY_WAIT_S = 0.6  # ...with this long between, before its tile is left blank
 _NEUTRAL = "_modern"   # a neutral thumbnail's file-name tag: they used to be made with the Original conversion, and those are not reused
 
 
@@ -127,6 +130,19 @@ def forget_edited_thumbnail(cache_dir: str, path: str) -> None:
         os.remove(_edited_cache_path(cache_dir, path))
     except OSError:
         pass
+
+
+def get_thumbnail_with_retry(cache_dir: str | None, path: str, max_dim: int = 200) -> bytes | None:
+    """get_or_make_thumbnail_bytes, trying again a moment later when the picture could not be read. A file that has only just been moved, copied or written is often still held by
+    something else for a second (the camera's software, a virus scan, the indexer) and cannot be opened yet; reading it once and giving up left its tile blank until the photo was opened.
+    Meant for a worker thread: it waits."""
+    for attempt in range(max(1, THUMB_ATTEMPTS)):
+        data = get_or_make_thumbnail_bytes(cache_dir, path, max_dim)
+        if data is not None or not os.path.isfile(path):
+            return data
+        if attempt + 1 < THUMB_ATTEMPTS:
+            time.sleep(THUMB_RETRY_WAIT_S)
+    return None
 
 
 def get_or_make_thumbnail_bytes(cache_dir: str | None, path: str, max_dim: int = 200) -> bytes | None:

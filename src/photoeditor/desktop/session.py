@@ -123,6 +123,9 @@ class HistoryEntry:
     hal_radius: float = 0.4
     hal_threshold: float = 0.7
     hal_warmth: float = 0.8
+    gs_amount: float = 0.0
+    gs_size: float = 1.2
+    gs_midtones: float = 0.5
     keystone_v: float = 0.0
     keystone_h: float = 0.0
     metering: Metering = field(default_factory=Metering)
@@ -286,6 +289,9 @@ class AppState:
     hal_radius: float = 0.4
     hal_threshold: float = 0.7
     hal_warmth: float = 0.8
+    gs_amount: float = 0.0
+    gs_size: float = 1.2
+    gs_midtones: float = 0.5
     vignette: float = 0.0
     vignette_size: float = 0.5
     border: float = 0.0

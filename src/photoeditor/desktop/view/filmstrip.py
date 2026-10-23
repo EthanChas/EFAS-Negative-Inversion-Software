@@ -3,13 +3,13 @@ import os
 import numpy as np
 from PyQt6.QtCore import QSize, Qt, pyqtSignal
 from PyQt6.QtGui import QIcon, QImage, QPixmap, QWheelEvent
-from PyQt6.QtWidgets import QComboBox, QHBoxLayout, QLabel, QListView, QListWidget, QListWidgetItem, QMenu, QProgressBar, QPushButton, QVBoxLayout, QWidget
+from PyQt6.QtWidgets import QAbstractItemView, QComboBox, QHBoxLayout, QLabel, QListView, QListWidget, QListWidgetItem, QMenu, QProgressBar, QPushButton, QVBoxLayout, QWidget
 
 from ...theme.tokens import THEME
 from ...features.browse.processor import load_cached_thumbnail, load_edited_thumbnail, save_edited_thumbnail
 from ..paths import thumbnail_cache_dir
 from ..workers import ThumbnailLoader
-from .thumbnail_delegate import FLAG_ROLE, RATING_ROLE, ThumbnailDelegate
+from .thumbnail_delegate import FLAG_ROLE, OPEN_ROLE, RATING_ROLE, ThumbnailDelegate
 
 _THUMB_SIZE = 90
 _STRIP_HEIGHT = 110
@@ -37,14 +37,24 @@ class _FilmstripList(QListWidget):
         hbar.setValue(hbar.value() - delta)
         event.accept()
 
+    release_modifiers = Qt.KeyboardModifier.NoModifier   # the keys held when the last click was let go: Shift and Ctrl build the selection and open nothing
+
+    def mouseReleaseEvent(self, event) -> None:
+        self.release_modifiers = event.modifiers()
+        super().mouseReleaseEvent(event)
+
 
 class Filmstrip(QWidget):
     """A darktable-style filmstrip along the bottom of the main editor -
     double-clicking a folder in the Library panel (above Masking) loads its
     images here instead of only opening the separate Import window, so you
     can flip between a roll's photos without leaving the single-image edit
-    view. Click a thumbnail to open it; the currently open image is shown
-    selected (see ThumbnailDelegate), tracked automatically as the file
+    view. Click a thumbnail to open it; Shift-click selects every photo from the
+    open one (or the last one clicked) to the one clicked, Ctrl-click adds or takes one
+    away, a drag round some tiles selects them, and Ctrl+A selects the whole strip: a
+    selection of several photos is what the right-click menu, and the rating and flag
+    keys, then act on, and it does not open any of them. The currently open image is
+    drawn with its own mark (see ThumbnailDelegate), tracked automatically as the file
     changes however it was opened (this strip, the Import window, File >
     Open Image...). Its thumbnail updates live from the actual edited
     pixels once an edit settles (see update_active_thumbnail) - not on
@@ -58,6 +68,9 @@ class Filmstrip(QWidget):
     retake_requested = pyqtSignal(str)
     delete_requested = pyqtSignal(list)
     move_requested = pyqtSignal(list)
+    rate_requested = pyqtSignal(list, int)
+    flag_requested = pyqtSignal(list, object)
+    paste_requested = pyqtSignal(list)
     crop_roll_requested = pyqtSignal()
     reset_crops_requested = pyqtSignal()
     undo_roll_requested = pyqtSignal()
@@ -103,6 +116,8 @@ class Filmstrip(QWidget):
         self._list.setViewMode(QListWidget.ViewMode.IconMode)
         self._list.setFlow(QListView.Flow.LeftToRight)
         self._list.setWrapping(False)
+        self._list.setMovement(QListView.Movement.Static)   # tiles are not dragged about: a drag selects
+        self._list.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         self._list.setIconSize(QSize(_THUMB_SIZE, _THUMB_SIZE))
         self._list.setSpacing(THEME.space_sm)
         self._list.setFixedHeight(self._strip_height())
@@ -114,6 +129,7 @@ class Filmstrip(QWidget):
         self._list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self._list.customContextMenuRequested.connect(self._on_context_menu)
         self._can_retake = lambda _path: False
+        self._can_paste = lambda: False
         layout.addWidget(self._list)
 
         self._loader: ThumbnailLoader | None = None
@@ -207,8 +223,24 @@ class Filmstrip(QWidget):
         if self.filter_mode() != "all":
             self._apply_filter()
         self._list.setCurrentItem(item)
+        self._mark_open()
         if item is not None:
             self._list.scrollToItem(item)
+
+    def _mark_open(self) -> None:
+        """The open photo has its own mark, whether or not it is part of the selection."""
+        for i in range(self._list.count()):
+            item = self._list.item(i)
+            item.setData(OPEN_ROLE, item.data(Qt.ItemDataRole.UserRole) == self._active_path)
+        self._list.viewport().update()
+
+    def selected_paths(self) -> list[str]:
+        """The photos selected in the strip, in the strip's order (the ones a filter hides are not counted)."""
+        return [self._list.item(i).data(Qt.ItemDataRole.UserRole) for i in range(self._list.count())
+                if self._list.item(i).isSelected() and not self._list.item(i).isHidden()]
+
+    def select_all_visible(self) -> None:
+        self._list.selectAll()
 
     def update_active_thumbnail(self, pixels: np.ndarray) -> None:
         """Refreshes the active path's tile icon from pixels (the live
@@ -232,6 +264,9 @@ class Filmstrip(QWidget):
 
     def flags(self) -> dict[str, str]:
         return dict(self._flags)
+
+    def ratings(self) -> dict[str, int]:
+        return dict(self._ratings)
 
     def set_flag(self, path: str, flag: str | None) -> None:
         """Marks a tile keeper (light green) / rejected (red) / neither."""
@@ -348,6 +383,10 @@ class Filmstrip(QWidget):
         self._update_count()
         self._refresh_visible()
 
+    def set_paste_filter(self, can_paste) -> None:
+        """`can_paste()` says whether there is a copied look to paste (the menu offers Paste Settings only then)."""
+        self._can_paste = can_paste
+
     def set_retake_filter(self, can_retake) -> None:
         """`can_retake(path)` says whether a photo may be retaken: only the ones in a hotstack folder get the Retake entry."""
         self._can_retake = can_retake
@@ -364,11 +403,41 @@ class Filmstrip(QWidget):
         menu.addAction(f"Delete {name} from Disk...", lambda: self.delete_requested.emit([path]))
         return menu
 
+    def build_selection_menu(self, paths: list[str]) -> QMenu:
+        """The right-click menu over a selection of several photos: what can be done to all of them at once."""
+        menu = QMenu(self)
+        n = len(paths)
+        label = f"{n} photos"
+        rate = menu.addMenu(f"Rate {label}")
+        for stars in range(1, 6):
+            rate.addAction("\u2605" * stars, lambda s=stars: self.rate_requested.emit(list(paths), s))
+        rate.addAction("No rating", lambda: self.rate_requested.emit(list(paths), 0))
+        flag = menu.addMenu(f"Flag {label}")
+        flag.addAction("Keeper", lambda: self.flag_requested.emit(list(paths), "keeper"))
+        flag.addAction("Rejected", lambda: self.flag_requested.emit(list(paths), "rejected"))
+        flag.addAction("Clear the flag", lambda: self.flag_requested.emit(list(paths), None))
+        paste = menu.addAction(f"Paste Settings to {label}", lambda: self.paste_requested.emit(list(paths)))
+        paste.setEnabled(bool(self._can_paste()))
+        menu.addSeparator()
+        menu.addAction(f"Remove {label} from Workbench", lambda: self.remove_requested.emit(list(paths)))
+        menu.addAction(f"Move {label} to Folder...", lambda: self.move_requested.emit(list(paths)))
+        menu.addAction(f"Delete {label} from Disk...", lambda: self.delete_requested.emit(list(paths)))
+        return menu
+
     def _on_context_menu(self, pos) -> None:
         item = self._list.itemAt(pos)
         path = item.data(Qt.ItemDataRole.UserRole) if item is not None else None
-        if path:
-            self.build_context_menu(path).exec(self._list.viewport().mapToGlobal(pos))
+        if not path:
+            return
+        selected = self.selected_paths()
+        if len(selected) > 1 and path in selected:
+            menu = self.build_selection_menu(selected)   # right-clicking a selected photo acts on the whole selection
+        else:
+            if not item.isSelected():
+                self._list.clearSelection()
+                item.setSelected(True)   # right-clicking another photo selects just that one, as in a file list
+            menu = self.build_context_menu(path)
+        menu.exec(self._list.viewport().mapToGlobal(pos))
 
     def list_widget(self) -> QListWidget:
         return self._list
@@ -389,6 +458,7 @@ class Filmstrip(QWidget):
         item.setData(Qt.ItemDataRole.UserRole, path)
         item.setData(FLAG_ROLE, self._flags.get(path))
         item.setData(RATING_ROLE, self._ratings.get(path, 0))
+        item.setData(OPEN_ROLE, path == self._active_path)
         if path == self._active_path and self._active_icon is not None:
             item.setIcon(self._active_icon)
         elif data:
@@ -402,6 +472,8 @@ class Filmstrip(QWidget):
         self._update_count()
 
     def _on_item_clicked(self, item: QListWidgetItem) -> None:
+        if self._list.release_modifiers & (Qt.KeyboardModifier.ShiftModifier | Qt.KeyboardModifier.ControlModifier):
+            return   # Shift and Ctrl-clicks build the selection; they do not open anything
         path = item.data(Qt.ItemDataRole.UserRole)
         if path:
             self.image_selected.emit(path)
