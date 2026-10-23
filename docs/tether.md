@@ -109,3 +109,13 @@ The light behind the film is never perfectly even, so the live picture is bright
 
 It only changes the preview (and the loupe, and the colour you pick for the clear film): the sharpness meter and the clipping warning measure the camera's own picture, and the shots the camera saves are corrected by the flat field in the editor, as before. It is of the whole picture, so it switches itself off while the camera's own zoom is on.
 
+## Tones from: why the edges can go white
+
+The positive is made with a tone table that EFAS works out from the picture about twice a second. Whatever the table was not worked out from, and is brighter than what it was, comes out white. Metered on the middle of the picture only (the old way, **Middle of the picture**), a frame with a dark middle and bright parts at the edges had those edges clipped to white, and the effect came and went as you changed frames and the middle changed. **Tones from** (View box) chooses:
+
+- **Whole picture (holder ignored)**, the default: nearly all of the picture, less the black holder (it sends almost no light) and anything already blown out (the clear film is clipped, so it says nothing about the film's density). Bright parts at the edges are inside the range.
+- **Middle of the picture**: the previous behaviour.
+- **Hold the current conversion**: the table is kept as it is, however the picture changes, until you pick one of the others. Put a typical frame in view first, then Hold, and every frame is shown with the same conversion.
+
+None of this touches the camera or the shots it saves; it is only how the live positive is drawn.
+

@@ -22,6 +22,8 @@ PEAK_EVERY = 3            # peaking is worked out for one frame in this many and
 RELEARN_S = 0.6           # how long a conversion table is reused before it is made again from a newer picture
 NOISE_FLOOR = 6.0         # edge strength (grey levels per pixel) below this counts for nothing
 CLIP_LEVEL = 250          # a camera value this high is blown out
+HOLDER_LEVEL = 12         # a pixel whose brightest colour is below this is the holder or black surround: it sends almost no light, so it says nothing about the film
+METERING = (("wide", "Whole picture (holder ignored)"), ("middle", "Middle of the picture"), ("hold", "Hold the current conversion"))
 LOUPE_PIXELS = 96         # the side of the camera-pixel square the loupe enlarges
 LOUPE_SCALE = 4
 SETTINGS = engine.Settings(transfer="srgb")   # the camera's live picture is an ordinary sRGB JPEG
@@ -42,6 +44,7 @@ class View:
     base_rgb: tuple | None = None               # the colour of the clear film as the camera shows it, when it was sampled
     region: tuple = (0.5, 0.5, 0.25)            # where sharpness is measured: centre x, centre y, side (all as fractions of the picture)
     flatfield: bool = True                      # even the picture out with the pipeline's flat field, when it has one
+    metering: str = "wide"                      # what the positive's tones are worked out from: "wide" (the whole picture less the holder and what is blown out), "middle", or "hold" (do not change them)
 
 
 @dataclass
@@ -127,6 +130,7 @@ class Pipeline:
         self._lut = None
         self._lut_key = None
         self._lut_at = 0.0
+        self._lut_mode = None
         self._peak = None          # (the sensitivity it was made for, the size of the picture, where it marks, the colour of each mark)
         self._peak_age = 0
         self._lut8 = None          # (the table it was made from, that table rounded to 8 bits)
@@ -168,18 +172,36 @@ class Pipeline:
         k = self._multiplier(flat, w, h)[int(min(max(y, 0.0), 1.0) * (h - 1)), int(min(max(x, 0.0), 1.0) * (w - 1))]
         return tuple(min(255.0, float(c) * float(m)) for c, m in zip(colour, k))
 
+    @staticmethod
+    def _metered(meter: np.ndarray, codes: np.ndarray, mode: str) -> np.ndarray:
+        """The density codes the tones are worked out from. "middle": the middle of the picture (the edges are the holder, the clear film and the sprocket holes). Otherwise: nearly the whole
+        picture, less what says nothing about the film: the holder (almost no light) and anything blown out (the clear film, which is clipped). What the tones were not worked out from and
+        is brighter than the rest comes out white, so the picture's edges are in."""
+        h, w = codes.shape[:2]
+        if mode != "middle":
+            my, mx = int(h * 0.03), int(w * 0.03)
+            part, raw = codes[my:h - my, mx:w - mx], meter[my:h - my, mx:w - mx]
+            brightest = raw.max(axis=2)
+            kept = part[(brightest > HOLDER_LEVEL) & (brightest < CLIP_LEVEL)]
+            if kept.shape[0] >= 500:
+                return kept[::max(1, kept.shape[0] // 60000)][None, :, :]
+        middle = codes[int(h * 0.2):int(h * 0.8), int(w * 0.15):int(w * 0.85)]
+        return engine.analysis_block(middle)
+
     def _table(self, small: np.ndarray, view: View):
         base = tuple(round(v) for v in view.base_rgb) if view.base_rgb else None
         now = time.monotonic()
-        if self._lut is None or base != self._lut_key or now - self._lut_at > RELEARN_S:
+        hold = view.metering == "hold"
+        stale = self._lut is None or base != self._lut_key or (not hold and (view.metering != self._lut_mode or now - self._lut_at > RELEARN_S))
+        if stale:
             w = small.shape[1]
             meter = small if w <= METER_WIDTH else cv2.resize(small, (METER_WIDTH, round(small.shape[0] * METER_WIDTH / w)), interpolation=cv2.INTER_AREA)
             codes = engine.density_codes(meter, SETTINGS)
             dens = engine.base_density(base, SETTINGS, 255.0) if base else None
-            h, w = codes.shape[:2]
-            middle = codes[int(h * 0.2):int(h * 0.8), int(w * 0.15):int(w * 0.85)]   # metered on the middle: the edges are the holder, the clear film and the sprocket holes, not the picture
-            self._lut = engine.build_lut(engine.analysis_block(middle), SETTINGS, dens)
+            self._lut = engine.build_lut(self._metered(meter, codes, "middle" if hold else view.metering), SETTINGS, dens)
             self._lut_key, self._lut_at = base, now
+        if stale or hold:
+            self._lut_mode = view.metering
         return self._lut
 
     def process(self, jpeg: bytes, view: View) -> LiveFrame | None:

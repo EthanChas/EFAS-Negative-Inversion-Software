@@ -500,6 +500,38 @@ def test_the_flat_field_has_no_rings_and_refuses_what_is_not_bare_light():
     assert uneven > flatprofile.MAX_UNEVEN, uneven
 
 
+def _negative_with_bright_edges(border=True):
+    """A negative as the camera shows it: a thin (bright) middle that prints dark, dense (dark) strips at both sides that print bright, and a black holder round it all."""
+    h, w = 640, 960
+    ys, xs = np.mgrid[0:h, 0:w]
+    wave = (0.8 + 0.2 * np.sin(xs / 37.0) * np.cos(ys / 29.0))[..., None]
+    img = (np.array([196, 120, 70]) * wave).astype(np.uint8)
+    img[:, :170] = (img[:, :170] * 0.32).astype(np.uint8)
+    img[:, -170:] = (img[:, -170:] * 0.32).astype(np.uint8)
+    if border:
+        img[:20] = img[-20:] = 2
+        img[:, :14] = img[:, -14:] = 2
+    return img
+
+
+def test_bright_parts_at_the_edges_are_not_clipped_to_white_by_the_conversion_and_it_can_be_held():
+    sides = lambda frame: float(frame.image[200:440, 40:150].mean())
+    frames = {mode: liveview.Pipeline().process(_jpeg(_negative_with_bright_edges()), liveview.View(metering=mode)) for mode in ("middle", "wide")}
+    print("sides", {k: sides(v) for k, v in frames.items()})
+    assert sides(frames["middle"]) > 250, "metered on the middle only, what is brighter at the sides is clipped to white"
+    assert sides(frames["wide"]) < 244, sides(frames["wide"])
+    plain = liveview.Pipeline().process(_jpeg(_negative_with_bright_edges(border=False)), liveview.View(metering="wide"))
+    assert abs(sides(frames["wide"]) - sides(plain)) < 12, "the black holder does not change what the picture is metered as"
+    pipeline = liveview.Pipeline()
+    pipeline.process(_jpeg(_negative_with_bright_edges()), liveview.View(metering="wide"))
+    first = pipeline._lut
+    pipeline._lut_at -= 5.0
+    pipeline.process(_jpeg(np.full((640, 960, 3), 90, np.uint8)), liveview.View(metering="hold"))
+    assert pipeline._lut is first, "held: another frame does not change the conversion"
+    pipeline.process(_jpeg(np.full((640, 960, 3), 90, np.uint8)), liveview.View(metering="wide"))
+    assert pipeline._lut is not first, "back to metering: it follows the picture again"
+
+
 def test_the_live_picture_is_no_longer_made_smaller_than_the_camera_sent_up_to_1620_wide():
     assert liveview.WORK_WIDTH >= 1620
     big = np.clip(np.random.default_rng(0).normal(128, 40, (1080, 1620, 3)), 0, 255).astype(np.uint8)

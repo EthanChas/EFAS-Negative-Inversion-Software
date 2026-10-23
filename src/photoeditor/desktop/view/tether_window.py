@@ -473,6 +473,16 @@ class TetherWindow(QDialog):
         self.positive_check.setToolTip("EFAS's own Modern conversion turns the negative into a picture as you focus, so you judge focus on what you will see")
         self.positive_check.toggled.connect(self._view_changed)
         lay.addWidget(self.positive_check)
+        meter = QHBoxLayout()
+        meter.addWidget(QLabel("Tones from"))
+        self.metering_combo = QComboBox()
+        for key, label in liveview.METERING:
+            self.metering_combo.addItem(label, key)
+        self.metering_combo.setToolTip("What the tones of the positive are worked out from, about twice a second. Whole picture: everything but the holder and what is blown out, so bright parts at the edges are not "
+                                       "clipped to white. Middle: only the middle of the picture. Hold: keep the conversion as it is while you change frames")
+        self.metering_combo.activated.connect(self._view_changed)
+        meter.addWidget(self.metering_combo, 1)
+        lay.addLayout(meter)
         row = QHBoxLayout()
         self.base_button = self._button("Pick the Clear Film", "Click this, then click a patch of clear film between frames: the conversion then knows the film's orange", self.arm_base_pick)
         self.base_button.setCheckable(True)
@@ -1009,7 +1019,7 @@ class TetherWindow(QDialog):
         if self.session is not None:
             flat = self.flat_check.isChecked() and self._flat_gain is not None
             self.session.set_view(positive=self.positive_check.isChecked(), peaking=self.peaking_check.isChecked(), peaking_sensitivity=self.peaking_slider.value() / 100.0,
-                                  flatfield=flat and self._camera_zoom_level == 1)
+                                  flatfield=flat and self._camera_zoom_level == 1, metering=self.metering_combo.currentData())
             if flat and self._camera_zoom_level > 1:
                 self.flat_label.setText("The flat field is off while the camera is zoomed in: it is of the whole picture.")
             elif self._flat_gain is not None and self._flat_frames is None:
