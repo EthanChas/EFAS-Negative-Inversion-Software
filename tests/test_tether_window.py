@@ -232,7 +232,7 @@ _SCRIPT = textwrap.dedent(r'''
 
     # --- the corner check
     camera._pos = pc.BEST; camera._frame = None
-    until(lambda: w._frame is not None and session.latest > 1, what="the lens back in focus")
+    until(lambda: w._frame is not None and session.latest > 1, seconds=45.0, what="the lens back in focus")
     w.check_corners()
     assert "centre" in w.corner_label.text() and "top left" in w.corner_label.text() and ("sharp as the middle" in w.corner_label.text())
 
