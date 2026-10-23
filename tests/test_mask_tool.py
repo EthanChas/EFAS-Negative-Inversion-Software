@@ -237,6 +237,30 @@ def test_a_path_is_made_node_by_node_and_finished_with_a_right_click_or_enter():
     assert {p.role for p in tool5.primitives()} >= {"preview", "node"}
 
 
+def test_shift_click_puts_a_sharp_node_while_drawing_a_path_and_in_retouch_the_source_moves_to_alt():
+    host, tool = _tool()
+    _path(host, tool, [(100, 80), (300, 80), (300, 220), (100, 220)], {0: ("shift",), 2: ("shift",)})
+    assert [n["state"] for n in host.ms.get(1).points] == [M.NODE_USER, M.NODE_NORMAL, M.NODE_USER, M.NODE_NORMAL], "Shift+click puts a sharp node, the first too"
+    assert "shift+click" in _hint_for_path(tool)
+    host2, tool2 = _tool()
+    tool2.begin_creation(M.PATH, "retouch", source=True, spots=True)
+    _click(tool2, 100, 80, mods=("shift",))
+    assert tool2.src_pos is None and len(tool2.creation.nodes) == 1 and tool2.creation.nodes[0]["state"] != M.NODE_NORMAL, "in Retouch a path's Shift+click is a corner, not the source"
+    _click(tool2, 150, 60, mods=("alt",))
+    assert tool2.src_pos == (150, 60) and tool2.src_type == "relative_temp" and len(tool2.creation.nodes) == 1, "Alt+click sets the source (and adds no node)"
+    _click(tool2, 160, 70, mods=("ctrl", "alt"))
+    assert tool2.src_type == "absolute" and tool2.src_pos == (160, 70)
+    host3, tool3 = _tool()
+    tool3.begin_creation(M.CIRCLE, "retouch", source=True, spots=True, continuous=True)
+    _click(tool3, 50, 50, mods=("shift",))
+    assert tool3.src_pos == (50, 50), "a circle keeps Shift+click for the source"
+
+
+def _hint_for_path(tool):
+    tool.begin_creation(M.PATH)
+    return tool.hint()
+
+
 def _edit_path(corners=((100, 80), (300, 80), (300, 220), (100, 220)), smooth=False):
     host, tool = _tool()
     nodes = [M.path_node(x / FW, y / FH, 0.05, smooth=smooth) for x, y in corners]
@@ -256,6 +280,7 @@ def test_a_path_node_is_dragged_toggled_and_removed():
     assert host.ms.get(form.id).points[1]["state"] == M.NODE_NORMAL, "a sharp node becomes smooth"
     _click(tool, 300, 80, mods=("ctrl",))
     assert host.ms.get(form.id).points[1]["state"] == M.NODE_USER and host.ms.get(form.id).points[1]["ctrl1"] == host.ms.get(form.id).points[1]["corner"]
+    assert _click(tool, 300, 80, mods=("shift",)) and host.ms.get(form.id).points[1]["state"] == M.NODE_NORMAL, "Shift+click switches a node too"
     tool.hover(300, 220)
     assert _click(tool, 300, 220, button="right")
     assert len(host.ms.get(form.id).points) == 3, "the node is gone"

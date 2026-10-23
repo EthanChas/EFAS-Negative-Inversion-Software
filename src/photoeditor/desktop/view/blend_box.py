@@ -15,7 +15,7 @@ SHAPE_ICONS = {M.CIRCLE: "mask-circle", M.ELLIPSE: "mask-ellipse", M.PATH: "mask
 _HINTS = {
     M.CIRCLE: "Draw a circle: click where it goes. Scroll sets its size, Shift+scroll its feather, Ctrl+scroll its opacity. Ctrl+click keeps drawing circles.",
     M.ELLIPSE: "Draw an ellipse: click where it goes. Scroll sets its size, Shift+scroll its feather, Ctrl+Shift+scroll turns it, Ctrl+scroll sets its opacity. Ctrl+click keeps drawing.",
-    M.PATH: "Draw a path: click to put smooth nodes, Ctrl+click for sharp ones, right-click (or Enter) to finish it. Shift+scroll sets its feather, Ctrl+scroll its opacity.",
+    M.PATH: "Draw a path: click to put smooth nodes, Shift+click (or Ctrl+click) for sharp ones, right-click (or Enter) to finish it. Shift+scroll sets its feather, Ctrl+scroll its opacity.",
     M.BRUSH: "Draw a brush stroke: press and drag; let go to finish. Scroll sets the size, Shift+scroll the hardness, Ctrl+scroll the density.",
     M.GRADIENT: "Draw a gradient: click and drag to set its line and direction. Scroll bends it, Shift+scroll sets how fast it ramps, Ctrl+scroll sets its opacity.",
 }

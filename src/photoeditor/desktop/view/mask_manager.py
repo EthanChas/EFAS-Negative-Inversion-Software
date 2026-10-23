@@ -73,7 +73,7 @@ class MaskManagerPanel(CollapsiblePanel):
         row = QHBoxLayout()
         row.setSpacing(THEME.space_sm)
         self._draw_buttons: dict[str, object] = {}
-        tips = {M.CIRCLE: "Draw a circle", M.ELLIPSE: "Draw an ellipse", M.PATH: "Draw a path (click: smooth node, Ctrl+click: sharp node, right-click or Enter: finish)",
+        tips = {M.CIRCLE: "Draw a circle", M.ELLIPSE: "Draw an ellipse", M.PATH: "Draw a path (click: smooth node, Shift+click: sharp node, right-click or Enter: finish)",
                 M.BRUSH: "Draw a brush stroke (press, drag, let go)", M.GRADIENT: "Draw a gradient (press and drag to set its direction)"}
         for kind in (M.BRUSH, M.CIRCLE, M.ELLIPSE, M.PATH, M.GRADIENT):
             b = tool_button(SHAPE_ICONS[kind], tips[kind])

@@ -429,7 +429,7 @@ Every adjustment normally acts on the whole picture. A **mask** limits it to par
 
 You draw a mask with five shapes. A **circle** and an **ellipse** are soft-edged blobs. A **path** is a closed curve through nodes you click. A **brush** is a stroke you paint. A **gradient** fades from one side to the other along a line. Each has a *feather*, the soft edge outside the shape: the mask is full inside and falls to nothing across the feather.
 
-Draw one with the buttons in the **Masks** panel on the left, or from a module's own **Mask** box (every module that works on the picture's tone, colour or detail has one at its foot). Scroll over a shape to change its **size**, Shift+scroll its **feather**, Ctrl+scroll its **opacity**. Drag a shape to move it, or its anchors to resize it. For a path, click for a smooth node and Ctrl+click for a sharp one, right-click or press Enter to finish and Esc to cancel; on an existing path, Ctrl+click a node to switch smooth and sharp, right-click a node to remove it, Ctrl+click a segment to add a node. Ctrl+click a shape button to keep drawing more of the same shape. Right-click a shape to delete it.
+Draw one with the buttons in the **Masks** panel on the left, or from a module's own **Mask** box (every module that works on the picture's tone, colour or detail has one at its foot). Scroll over a shape to change its **size**, Shift+scroll its **feather**, Ctrl+scroll its **opacity**. Drag a shape to move it, or its anchors to resize it. For a path, click for a smooth node and Shift+click (or Ctrl+click) for a sharp one, right-click or press Enter to finish and Esc to cancel; on an existing path, Shift+click (or Ctrl+click) a node to switch smooth and sharp, right-click a node to remove it, Ctrl+click a segment to add a node. Ctrl+click a shape button to keep drawing more of the same shape. Right-click a shape to delete it.
 
 ## A module's Mask box
 
@@ -454,7 +454,7 @@ Masks stay on the picture whether you crop, turn or straighten afterwards. A pic
 
 ## Drawing
 
-Pick the algorithm, then a shape (path, ellipse, circle, brush). For clone and heal a dashed copy of the shape and a line to it show the **source**: drag the dashed copy to where the shape should copy from. Shift+click before placing a shape sets the source of the shapes to come, kept the same distance from each; Ctrl+Shift+click sets one source for all. Click a shape to *pick* it: the Blur and Fill settings then change that shape, and Ctrl+click an algorithm changes a picked shape between clone and heal, or between blur and fill.
+Pick the algorithm, then a shape (path, ellipse, circle, brush). For clone and heal a dashed copy of the shape and a line to it show the **source**: drag the dashed copy to where the shape should copy from. Shift+click before placing a shape sets the source of the shapes to come, kept the same distance from each; Ctrl+Shift+click sets one source for all. (While you draw a path, Shift+click puts a sharp corner, so use Alt+click and Ctrl+Alt+click for the source.) Click a shape to *pick* it: the Blur and Fill settings then change that shape, and Ctrl+click an algorithm changes a picked shape between clone and heal, or between blur and fill.
 
 ## Wavelet scales
 

@@ -4,6 +4,7 @@ Retouch is darktable's retouch module (5.4) ported to EFAS, **alongside** the Du
 
 ## The panel (as darktable lays it out)
 
+- **sharp corners**: while you draw a path (smooth nodes by default), **Shift+click** puts a sharp corner (Ctrl+click does too); Shift+click on a node of a path you have drawn switches it between smooth and sharp. In Retouch, plain Shift+click used to set the clone source: while drawing a *path* that is now **Alt+click** (relative to each shape) and **Ctrl+Alt+click** (one spot for all); circles, ellipses and brushes keep Shift+click.
 - **retouch tools**: *shapes* (a count), the eye (show and edit the shapes of the current scale on the picture) and the shape buttons brush, path, ellipse, circle (Ctrl+click keeps drawing); *algorithms*: blur, fill, clone, heal (Ctrl+click changes the picked shape: clone and heal swap, blur and fill swap; Shift+click makes it the default).
 - **wavelet decompose**: labels for *scales*, *current* and *merge from*, then the scale bar, then the buttons: *display wavelet scale*, *paste* and *cut shapes*, *display masks*, and *temporarily switch off shapes*.
 - **preview single scale** (while a scale is displayed): the levels slider with its three markers and the *auto levels* button.

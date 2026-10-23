@@ -9,7 +9,7 @@ The mouse and keys are darktable's, shape by shape (its own hint texts):
   every shape   scroll: size   |   Shift+scroll: feather   |   Ctrl+scroll: opacity (in its group)   |   drag it: move it   |   right-click it: delete it
   circle        drag the anchor on the shape to resize, the one on the feather to change the feather
   ellipse       as the circle, an anchor on each radius; Ctrl+Shift+scroll or Ctrl+drag an anchor: rotate; Shift+click: feather added equally / in proportion
-  path          creation: click = smooth node, Ctrl+click = sharp node, right-click or Enter = finish, Esc = cancel.  Editing: drag a node; Ctrl+click a node: smooth/sharp; right-click a node:
+  path          creation: click = smooth node, Shift+click (or Ctrl+click) = sharp node, right-click or Enter = finish, Esc = cancel.  Editing: drag a node; Shift+click (or Ctrl+click) a node: smooth/sharp; right-click a node:
                 remove it; drag a handle (Ctrl+drag: keep it symmetric, Shift+drag: move only that handle; right-click: reset the curve); Ctrl+click a segment: add a node; drag a segment:
                 move it; right-click a segment: delete the path
   brush         creation: press, drag, let go.  Scroll: size, Shift+scroll: hardness, Ctrl+scroll: opacity.  Drag a node; Ctrl+click a segment: add a node; right-click a node: remove it
@@ -20,6 +20,7 @@ Ctrl while placing a shape keeps the tool armed to place the next one.
 
 Shapes for Retouch's clone and heal have a *source*: the spot they copy from, shown as a dashed copy of the shape joined to it by a line. A new one is placed with its source a little off (and
 dragged to where the pointer goes while the button is held); Shift+click first sets where the source of the next shapes is (kept relative to each shape), Ctrl+Shift+click sets one absolute spot.
+(While drawing a path Shift+click is a sharp node, so there the source is set with Alt+click, or Ctrl+Alt+click for an absolute spot.)
 Drag the dashed copy to move a source."""
 import copy
 import math
@@ -180,7 +181,7 @@ class MaskTool:
             return {
                 M.CIRCLE: "size: scroll, feather size: shift+scroll, opacity: ctrl+scroll. Click to place; ctrl+click keeps placing circles. Right-click or Esc to stop.",
                 M.ELLIPSE: "size: scroll, feather: shift+scroll, rotation: ctrl+shift+scroll, opacity: ctrl+scroll. Click to place; ctrl+click keeps placing.",
-                M.PATH: "add node: click, add sharp node: ctrl+click, " + ("finish path: right-click" if len(c.nodes) >= 3 else "cancel: right-click"),
+                M.PATH: "add node: click, add sharp node: shift+click, " + ("finish path: right-click" if len(c.nodes) >= 3 else "cancel: right-click"),
                 M.BRUSH: "size: scroll, hardness: shift+scroll, opacity: ctrl+scroll. Press and drag to paint the stroke.",
                 M.GRADIENT: "curvature: scroll, compression: shift+scroll, rotation: click+drag, opacity: ctrl+scroll.",
             }[c.kind]
@@ -191,7 +192,7 @@ class MaskTool:
         kind = form.type if form else ""
         if kind == M.PATH:
             if hit.part == "node":
-                return "move node: drag, remove node: right-click, switch smooth/sharp: ctrl+click"
+                return "move node: drag, remove node: right-click, switch smooth/sharp: shift+click"
             if hit.part == "handle":
                 return "node curvature: drag, force symmetry: ctrl+drag, move single handle: shift+drag, reset curvature: right-click"
             if hit.part == "segment":
@@ -429,7 +430,7 @@ class MaskTool:
             self.host.set_points(form.id, points, "Switched an ellipse's feathering mode")
             self.refresh()
             return True
-        if form.type in (M.PATH, M.BRUSH) and "ctrl" in mods:
+        if form.type in (M.PATH, M.BRUSH) and ("ctrl" in mods or (form.type == M.PATH and hit.part == "node" and "shift" in mods)):
             if hit.part == "node" and form.type == M.PATH:
                 self._toggle_node(form, hit.index)
                 return True
@@ -853,8 +854,9 @@ class MaskTool:
             return True
         if button != "left":
             return False
-        if c.source and "shift" in mods:
-            # Shift+click: where the source of the shapes to come is (relative to each shape), Ctrl+Shift+click: one spot for all
+        if c.source and (("shift" in mods and (c.kind != M.PATH or "ctrl" in mods)) or "alt" in mods):
+            # Shift+click: where the source of the shapes to come is (relative to each shape), Ctrl+Shift+click: one spot for all. A path's Shift+click is a sharp node, so there Alt+click is the
+            # relative source and Ctrl+Alt+click the absolute one
             self.src_type = "absolute" if "ctrl" in mods else "relative_temp"
             self.src_pos = (x, y)
             self.host.say("source set: " + ("absolute" if "ctrl" in mods else "relative to each shape"))
@@ -866,7 +868,7 @@ class MaskTool:
             return True
         if c.kind == M.PATH:
             nx, ny = self._norm(x, y)
-            sharp = "ctrl" in mods
+            sharp = "ctrl" in mods or "shift" in mods
             node = M.path_node(nx, ny, self.defaults[M.PATH]["border"], smooth=not sharp)
             if c.source and not c.nodes:
                 c.press = (x, y)          # the source of a path is worked out from where its first node is put

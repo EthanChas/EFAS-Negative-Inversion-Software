@@ -8,11 +8,11 @@ Masks limit a module to part of the picture. They are ported from darktable's (5
 | --- | --- | --- | --- | --- |
 | Circle | click | size | feather | opacity (in a group) |
 | Ellipse | click | size | feather | opacity; Ctrl+Shift+scroll turns it |
-| Path | click smooth nodes, Ctrl+click sharp ones, right-click or Enter to finish, Esc to cancel | (feather while drawing) | feather | opacity |
+| Path | click smooth nodes, Shift+click (or Ctrl+click) sharp ones, right-click or Enter to finish, Esc to cancel | (feather while drawing) | feather | opacity |
 | Brush | press, drag, let go | size | hardness | opacity |
 | Gradient | press and drag to set its direction | curvature | compression | opacity |
 
-Ctrl+click a shape button (or Ctrl while placing a circle, ellipse, brush or gradient) keeps the tool armed. Drag a shape to move it; drag its anchors to resize it (Ctrl+drag an ellipse anchor turns it, Shift+click an ellipse switches how its feather is measured). On a path: drag a node, drag a handle (Ctrl keeps it symmetric, Shift moves just that handle, right-click resets the curve), Ctrl+click a node to switch smooth and sharp, right-click a node to remove it, Ctrl+click a segment to add a node. Gradient: drag the arrow's tip to turn it, double-click to reset the curvature, Shift+click to switch linear and sigmoidal. Right-click a shape to delete it. The middle button pans while a mask is being drawn or edited.
+Ctrl+click a shape button (or Ctrl while placing a circle, ellipse, brush or gradient) keeps the tool armed. Drag a shape to move it; drag its anchors to resize it (Ctrl+drag an ellipse anchor turns it, Shift+click an ellipse switches how its feather is measured). On a path: drag a node, drag a handle (Ctrl keeps it symmetric, Shift moves just that handle, right-click resets the curve), Shift+click (or Ctrl+click) a node to switch smooth and sharp, right-click a node to remove it, Ctrl+click a segment to add a node. Gradient: drag the arrow's tip to turn it, double-click to reset the curvature, Shift+click to switch linear and sigmoidal. Right-click a shape to delete it. The middle button pans while a mask is being drawn or edited.
 
 Sizes are fractions of the scan's shorter side, and every shape is kept in the **untouched scan's frame**, so it stays on the same part of the picture when you crop, turn, flip or straighten.
 
