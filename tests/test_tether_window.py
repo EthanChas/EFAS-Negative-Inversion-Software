@@ -150,8 +150,13 @@ _SCRIPT = textwrap.dedent(r'''
     until(lambda: camera._zoom == 5, what="the camera to zoom")
     assert w.camera_zoom_buttons[5].isChecked() and not w.camera_zoom_buttons[1].isChecked()
     until(lambda: not any(j.isRunning() for j in list(w._alive)), what="the zoom job")
+    assert all(m.isEnabled() for m in w.camera_zoom_moves.values()), "zoomed: the arrows are on"
+    w.camera_zoom_move(1, 0)
+    until(lambda: camera._zoom_center[0] > 0.55, what="the camera to move its zoom frame")
+    until(lambda: not any(j.isRunning() for j in list(w._alive)), what="the move")
     w.camera_zoom(1)
     until(lambda: camera._zoom == 1, what="the camera to show the whole picture again")
+    assert not any(m.isEnabled() for m in w.camera_zoom_moves.values()), "whole picture: nothing to move"
     until(lambda: not any(j.isRunning() for j in list(w._alive)), what="the zoom job")
     # --- the camera's exposure: shown, set from the window, and found automatically
     until(lambda: w.exposure_combos["tv"].count() > 0, what="the exposure settings")

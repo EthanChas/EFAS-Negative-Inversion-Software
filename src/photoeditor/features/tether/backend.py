@@ -57,9 +57,10 @@ class CameraBackend(Protocol):
     def focus(self, direction: str, size: int = 2, steps: int = 1) -> None:
         """Drive the lens "near" or "far": `size` 1 (finest) to 3 (coarsest), `steps` times. One step can be smaller than the picture's own noise, so a move you can see takes several."""
 
-    def set_zoom(self, level: int) -> None:
-        """Zoom the camera's own live picture: 1 (all of it), 5 or 10 times. The picture stays the same size but shows the middle of the sensor, so a fifth or a tenth of the width is seen in
-        the pixels of the whole: real detail for judging focus and grain. Raises TetherError when the camera cannot."""
+    def set_zoom(self, level: int, center: tuple[float, float] | None = None) -> None:
+        """Zoom the camera's own live picture: 1 (all of it), 5 or 10 times. The picture stays the same size but shows part of the sensor, so a fifth or a tenth of the width is seen in
+        the pixels of the whole: real detail for judging focus and grain. `center` (fractions of the picture, (0.5, 0.5) the middle) says which part; None leaves it where the camera has it.
+        Raises TetherError, with the camera's own answer, when it will not."""
 
     def exposure(self) -> ExposureState | None:
         """The ISO, aperture, shutter speed and compensation the camera is set to, and the values it will take just now (features/tether/exposure.py). None when it cannot say."""

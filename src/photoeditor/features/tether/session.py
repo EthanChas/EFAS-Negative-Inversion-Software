@@ -96,9 +96,12 @@ class TetherSession:
         size, steps = FOCUS_MOVES[coarseness]
         self.backend.focus(direction, size, steps)
 
-    def set_zoom(self, level: int) -> None:
-        """Zoom the camera's own live picture (1, 5 or 10 times); what was the best sharpness so far is of a different picture now, so it starts over."""
-        self.backend.set_zoom(int(level))
+    def set_zoom(self, level: int, center: tuple[float, float] | None = None) -> None:
+        """Zoom the camera's own live picture (1, 5 or 10 times) on `center` (fractions of the picture); what was the best sharpness so far is of a different picture now, so it starts over."""
+        if center is None:
+            self.backend.set_zoom(int(level))
+        else:
+            self.backend.set_zoom(int(level), center)
         self.reset_best()
 
     # ------------------------------------------------------------ exposure

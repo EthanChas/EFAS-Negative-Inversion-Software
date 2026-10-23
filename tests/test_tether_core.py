@@ -431,6 +431,11 @@ def test_the_cameras_own_zoom_shows_the_middle_at_the_size_of_the_whole_picture(
     assert np.abs(liveview.decode(camera.live_frame()[1]).astype(int) - whole.astype(int)).mean() < 6, "Fit brings the whole picture back"
     with pytest.raises(ValueError):
         camera.set_zoom(3)
+    camera.set_zoom(5, (0.1, 0.5))
+    left = liveview.decode(camera.live_frame()[1])
+    side = cv2.resize(whole[h * 2 // 5:h * 3 // 5, 0:w // 5], (w, h), interpolation=cv2.INTER_CUBIC)
+    assert np.abs(left.astype(int) - side.astype(int)).mean() < 14, "moved to the left fifth"
+    camera.set_zoom(1)
     session = TetherSession(camera, str(tmp_path))
     session.open()
     session.best = 12.0

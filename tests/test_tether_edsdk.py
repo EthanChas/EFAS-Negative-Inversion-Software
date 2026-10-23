@@ -96,6 +96,8 @@ class FakeEdsdk:
             ctypes.memmove(data, b"Canon EOS R7\0", 13)
         elif prop == api.PROP_LENS_NAME:
             ctypes.memmove(data, b"RF100mm F2.8 L MACRO IS USM\0", 28)
+        elif prop == api.PROP_EVF_COORDINATE_SYSTEM and prop in self.props:
+            data._obj.width, data._obj.height = self.props[prop]
         elif prop in self.props:
             put(data, self.props[prop])
         else:
@@ -114,8 +116,10 @@ class FakeEdsdk:
         if self.busy_sets > 0:
             self.busy_sets -= 1
             return 0x00000081
-        self.props[prop] = data._obj.value
-        self.calls.append(("set", prop, data._obj.value))
+        obj = data._obj
+        value = obj.value if hasattr(obj, "value") else (obj.x, obj.y)
+        self.props[prop] = value
+        self.calls.append(("set", prop, value))
         return 0
 
     def EdsSetCapacity(self, cam, capacity):
@@ -508,12 +512,40 @@ def test_the_live_picture_can_be_zoomed_on_the_camera_to_5_and_10_times(quick):
         camera.close()
 
 
-def test_a_camera_without_live_view_zoom_says_so(quick):
-    fake = FakeEdsdk()
+def test_the_zoom_is_offered_even_when_the_body_does_not_answer_for_it_until_live_view_runs(quick):
+    fake = FakeEdsdk()      # (no Evf_Zoom property to read before live view: the buttons still work, the camera is simply asked)
     camera = opened(fake)
     try:
-        assert not camera.capabilities.zoom
-        with pytest.raises(TetherError):
+        assert camera.capabilities.zoom
+        camera.set_zoom(5)
+        assert fake.props[api.PROP_EVF_ZOOM] == 5
+    finally:
+        camera.close()
+
+
+def test_a_camera_that_refuses_the_zoom_says_what_it_answered(quick):
+    fake = FakeEdsdk()
+    original = fake.EdsSetPropertyData
+    fake.EdsSetPropertyData = lambda ref, prop, param, size, data: 0x0000A005 if prop == api.PROP_EVF_ZOOM else original(ref, prop, param, size, data)
+    camera = opened(fake)
+    try:
+        with pytest.raises(TetherError, match="Evf_Zoom.*OPERATION_REFUSED"):
             camera.set_zoom(5)
+    finally:
+        camera.close()
+
+
+def test_the_zoom_frame_can_be_moved_to_another_part_of_the_picture(quick):
+    fake = FakeEdsdk()
+    fake.props[api.PROP_EVF_ZOOM] = 1
+    fake.props[api.PROP_EVF_COORDINATE_SYSTEM] = (5000, 3000)
+    camera = opened(fake)
+    try:
+        camera.set_zoom(5, (0.5, 0.5))
+        assert fake.props[api.PROP_EVF_ZOOM_POSITION] == (2000, 1200), "a fifth of the picture, centred"
+        camera.set_zoom(5, (0.0, 1.0))
+        assert fake.props[api.PROP_EVF_ZOOM_POSITION] == (0, 2400), "held inside the picture"
+        camera.set_zoom(10, (0.95, 0.5))
+        assert fake.props[api.PROP_EVF_ZOOM_POSITION] == (4500, 1350)
     finally:
         camera.close()

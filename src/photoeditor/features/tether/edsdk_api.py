@@ -29,6 +29,8 @@ PROP_LENS_STATUS = 0x00000416
 PROP_EVF_OUTPUT_DEVICE = 0x00000500
 PROP_EVF_ZOOM = 0x00000507        # the camera's own live-view zoom: 1 (the whole picture), 5 or 10 times (the middle of the sensor, at the same picture size)
 EVF_ZOOMS = (1, 5, 10)
+PROP_EVF_ZOOM_POSITION = 0x00000508   # where the zoomed picture sits: the top-left corner of the zoom frame, in the live picture's own coordinates
+PROP_EVF_COORDINATE_SYSTEM = 0x00000540   # the size those coordinates are in
 
 # values
 EVF_OUTPUT_TFT = 1       # the live picture goes to the camera's own screen
@@ -67,6 +69,14 @@ class Capacity(ctypes.Structure):
     """The room the computer claims to have. The camera refuses to shoot unless it believes the destination has some."""
 
     _fields_ = [("numberOfFreeClusters", c_int32), ("bytesPerSector", c_int32), ("reset", c_int32)]
+
+
+class Point(ctypes.Structure):
+    _fields_ = [("x", c_int32), ("y", c_int32)]
+
+
+class Size(ctypes.Structure):
+    _fields_ = [("width", c_int32), ("height", c_int32)]
 
 
 class PropertyDesc(ctypes.Structure):

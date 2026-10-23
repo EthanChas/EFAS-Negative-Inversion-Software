@@ -336,6 +336,15 @@ class TetherWindow(QDialog):
             self.camera_zoom_buttons[level] = b
             self._live_buttons.append(b)
             camera_zoom.addWidget(b)
+        self.camera_zoom_moves: dict[str, QPushButton] = {}
+        self._camera_zoom_level, self._camera_zoom_center = 1, (0.5, 0.5)
+        for name, glyph, dx, dy in (("left", "\u2190", -1, 0), ("up", "\u2191", 0, -1), ("down", "\u2193", 0, 1), ("right", "\u2192", 1, 0)):
+            m = self._button(glyph, f"Move the camera's zoomed picture {name} (half of what you see): look at another part of the film", lambda _c=False, x=dx, y=dy: self.camera_zoom_move(x, y))
+            m.setEnabled(False)
+            m.setMaximumWidth(32)
+            self.camera_zoom_moves[name] = m
+            self._live_buttons.append(m)
+            camera_zoom.addWidget(m)
         self.camera_zoom_note = _hint("")
         camera_zoom.addWidget(self.camera_zoom_note, 1)
         left.addLayout(camera_zoom)
@@ -658,6 +667,7 @@ class TetherWindow(QDialog):
             w.setEnabled(can_use)
         for b in self._live_buttons:
             b.setEnabled(live)
+        self._sync_zoom_moves()
         self.capture_button.setEnabled(live)
         if state == "off":
             self.image.set_message("Connect a camera to see its live picture.")
@@ -748,6 +758,8 @@ class TetherWindow(QDialog):
             b.setChecked(level == 1)
             b.setEnabled(bool(caps.zoom) or level == 1)
         self.camera_zoom_note.setText("" if caps.zoom else "This camera does not send a zoomed live picture.")
+        self._camera_zoom_level, self._camera_zoom_center = 1, (0.5, 0.5)
+        self._sync_zoom_moves()
         self._exposure_timer.start()
         self.exposure_note.setText("" if caps.exposure else "This camera does not report its exposure to the computer.")
         self.auto_button.setEnabled(caps.exposure)
@@ -939,13 +951,40 @@ class TetherWindow(QDialog):
             return
         for n, b in self.camera_zoom_buttons.items():
             b.setChecked(n == level)
+        self._camera_zoom_level, self._camera_zoom_center = level, (0.5, 0.5)
+        self._sync_zoom_moves()
+        self._send_camera_zoom(level, (0.5, 0.5) if level > 1 else None)
+
+    def camera_zoom_move(self, dx: int, dy: int) -> None:
+        """Move the camera's zoomed picture by half of what is seen, so the next part of the film comes into view."""
+        level = self._camera_zoom_level
+        if self._state != "live" or self.session is None or level <= 1:
+            return
+        half = 0.5 / level
+        cx, cy = self._camera_zoom_center
+        self._camera_zoom_center = (min(max(cx + dx * half, half), 1 - half), min(max(cy + dy * half, half), 1 - half))
+        self._send_camera_zoom(level, self._camera_zoom_center)
+
+    def _sync_zoom_moves(self) -> None:
+        if not hasattr(self, "_camera_zoom_level"):
+            return
+        for m in self.camera_zoom_moves.values():
+            m.setEnabled(self._state == "live" and self._camera_zoom_level > 1)
+
+    def _send_camera_zoom(self, level: int, center) -> None:
         session = self.session
-        job = JobWorker(lambda: session.set_zoom(level))
+        job = JobWorker(lambda: session.set_zoom(level) if center is None else session.set_zoom(level, center))
         job.failed.connect(self._focus_failed)
-        job.failed.connect(lambda _m: [b.setChecked(n == 1) for n, b in self.camera_zoom_buttons.items()])
+        job.failed.connect(lambda _m: self._camera_zoom_refused())
         self._alive.add(job)
         job.finished.connect(lambda j=job: self._alive.discard(j))
         job.start()
+
+    def _camera_zoom_refused(self) -> None:
+        self._camera_zoom_level, self._camera_zoom_center = 1, (0.5, 0.5)
+        for n, b in self.camera_zoom_buttons.items():
+            b.setChecked(n == 1)
+        self._sync_zoom_moves()
 
     def _focus_failed(self, message: str) -> None:
         self.status.setStyleSheet(f"color: {THEME.status_critical};")

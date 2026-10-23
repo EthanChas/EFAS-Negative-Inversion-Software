@@ -123,13 +123,29 @@ class EdsdkCamera:
             raise TetherError("This lens cannot be focused from the computer. " + self._caps.note("focus_drive"))
         self._submit(lambda: self._drive_lens(direction, size, steps), "focus")
 
-    def set_zoom(self, level: int) -> None:
+    def set_zoom(self, level: int, center: tuple[float, float] | None = None) -> None:
         if int(level) not in api.EVF_ZOOMS:
             raise ValueError(f"level is one of {', '.join(str(z) for z in api.EVF_ZOOMS)}, not {level!r}")
         self._require_open()
-        if not self._caps.zoom:
-            raise TetherError("This camera does not offer a zoomed live picture to the computer. Zoom on the camera itself, or use the Zoom slider here, which only enlarges the pixels it has.")
-        self._submit(lambda: self._write_number(api.PROP_EVF_ZOOM, int(level), "Evf_Zoom"), "zoom the live picture")
+        self._submit(lambda: self._zoom_to(int(level), center), "zoom the live picture")
+
+    def _zoom_to(self, level: int, center: tuple[float, float] | None) -> None:
+        """Ask the camera for the zoom and say plainly what it answers: a body that will not zoom just now (it is not in live view, say) sends a refusal worth showing."""
+        self._write_number(api.PROP_EVF_ZOOM, level, "Evf_Zoom")
+        if level > 1 and center is not None:
+            self._move_zoom_frame(level, center)
+
+    def _move_zoom_frame(self, level: int, center: tuple[float, float]) -> None:
+        """Put the zoom frame (a fifth or a tenth of the picture) on `center`, fractions of the picture. Best effort: a body that will not move it keeps the middle."""
+        size = api.Size()
+        if self._dll.EdsGetPropertyData(self._camera, api.PROP_EVF_COORDINATE_SYSTEM, 0, ctypes.sizeof(size), byref(size)) != EDS_ERR_OK or size.width <= 0 or size.height <= 0:
+            log.info("The camera did not say the size of its live picture; the zoom frame stays where it is.")
+            return
+        frame_w, frame_h = size.width / level, size.height / level
+        point = api.Point(int(min(max(center[0] * size.width - frame_w / 2, 0), size.width - frame_w)), int(min(max(center[1] * size.height - frame_h / 2, 0), size.height - frame_h)))
+        code = self._retry_busy(lambda: self._dll.EdsSetPropertyData(self._camera, api.PROP_EVF_ZOOM_POSITION, 0, ctypes.sizeof(point), byref(point)))
+        if code != EDS_ERR_OK:
+            log.info("The camera would not move the zoom frame: %s", name_of(code))
 
     def exposure(self) -> ex.ExposureState | None:
         if self._thread is None or not self._thread.is_alive():
@@ -326,7 +342,8 @@ class EdsdkCamera:
         elif af == api.AF_MODE_MANUAL:
             focus = False
             notes["focus_drive"] = "The lens is set to manual focus. Move its AF/MF switch to AF to focus from the computer, or focus by hand."
-        self._caps = Capabilities(focus_drive=focus, exposure=self._read_number(api.PROP_TV) is not None, zoom=self._read_number(api.PROP_EVF_ZOOM) is not None, notes=notes)
+        # (the zoom is not asked about here: a body answers for Evf_Zoom only once live view is running, which is after this, and a "no" read too early switched the buttons off. It is simply tried.)
+        self._caps = Capabilities(focus_drive=focus, exposure=self._read_number(api.PROP_TV) is not None, zoom=True, notes=notes)
 
     # ------------------------------------------------------------ live view and focus
     def _live_view(self, on: bool) -> None:
