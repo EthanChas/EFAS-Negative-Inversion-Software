@@ -143,6 +143,7 @@ from ...features.library import duplicates as photo_duplicates
 from ...features import platform
 from ...features.library import removal as photo_removal
 from .roll_check_dialog import RollCheckDialog
+from .sharpness_dialog import SharpnessDialog
 from .rebate_dialog import RebateDialog
 from .characterization_dialog import CharacterizationDialog
 from .profile_dialogs import ABCompareDialog, ProfilesDialog, SetupsDialog
@@ -737,6 +738,11 @@ class AppWindow(QMainWindow):
         self._roll_check_action.setToolTip("Find frames of this folder that were scanned with a different light level or colour from the rest")
         self._roll_check_action.triggered.connect(self._on_roll_check)
         file_menu.addAction(self._roll_check_action)
+
+        self._grade_sharpness_action = QAction("Grade Sharpness...", self)
+        self._grade_sharpness_action.setToolTip("Grade how sharp each frame of this folder is (is what you focused on in focus?), mark the filmstrip with the scores and show where each was measured")
+        self._grade_sharpness_action.triggered.connect(self._on_grade_sharpness)
+        file_menu.addAction(self._grade_sharpness_action)
 
         import_action = QAction("Import Images...", self)
         import_action.triggered.connect(self._open_import_window)
@@ -1668,6 +1674,16 @@ class AppWindow(QMainWindow):
     def _on_roll_check(self) -> None:
         paths, reference = self.controller.roll_check_inputs()
         RollCheckDialog(paths, reference, self, controller=self.controller, on_changed=self._after_film_base_change).exec()
+
+    def _on_grade_sharpness(self) -> None:
+        """File > Grade Sharpness: grade the frames of the folder in the filmstrip (or, with none there, the open photo's folder); each grade is kept and shows on its tile."""
+        paths = self._filmstrip.paths() or self.controller.roll_check_inputs()[0]
+        if not paths:
+            self.statusBar().showMessage("Open a folder of photos first.", 4000)
+            return
+        dialog = SharpnessDialog(paths, self.controller._db, self, current=self.controller.state.image_path or "", on_graded=self._filmstrip.set_grade, open_frame=self.controller.open_file)
+        self._sharpness_dialog = dialog
+        dialog.exec()
 
     def _on_merge_scans(self) -> None:
         dlg = MergeDialog(self)
@@ -3299,7 +3315,7 @@ class AppWindow(QMainWindow):
         db = self.controller._db
         self._filmstrip_folder = folder
         self._filmstrip.load_folder(
-            paths, edit_store.get_flags(db, paths), edit_store.get_ratings(db, paths), edit_store.touched_paths(db, paths, DEFAULT_POINTS)
+            paths, edit_store.get_flags(db, paths), edit_store.get_ratings(db, paths), edit_store.touched_paths(db, paths, DEFAULT_POINTS), edit_store.get_sharpness_grades(db, paths)
         )
         self._library_panel.reveal(folder)
         self._refresh_roll_undo()

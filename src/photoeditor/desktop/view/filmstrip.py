@@ -9,7 +9,7 @@ from ...theme.tokens import THEME
 from ...features.browse.processor import load_cached_thumbnail, load_edited_thumbnail, save_edited_thumbnail
 from ..paths import thumbnail_cache_dir
 from ..workers import ThumbnailLoader
-from .thumbnail_delegate import FLAG_ROLE, OPEN_ROLE, RATING_ROLE, ThumbnailDelegate
+from .thumbnail_delegate import FLAG_ROLE, GRADE_ROLE, OPEN_ROLE, RATING_ROLE, ThumbnailDelegate
 
 _THUMB_SIZE = 90
 _STRIP_HEIGHT = 110
@@ -21,6 +21,7 @@ FILTERS = (
     ("rejected", "Rejected"),
     ("unedited", "Unedited"),
     ("rated", "Rated (1+ stars)"),
+    ("soft", "Soft or blurred (graded)"),
 )
 
 
@@ -138,6 +139,7 @@ class Filmstrip(QWidget):
         self._paths: list[str] = []
         self._flags: dict[str, str] = {}
         self._ratings: dict[str, int] = {}
+        self._grades: dict[str, tuple[str, float]] = {}    # the sharpness grade of each graded photo: (severity, score)
         self._edited: set[str] = set()
         self._panels_hidden = False
         self._in_editor = True   # the strip belongs to the editor: the window says when another view is showing (set_in_editor)
@@ -201,12 +203,13 @@ class Filmstrip(QWidget):
         self._refresh_visible()
 
     def load_folder(
-        self, paths: list[str], flags: dict[str, str] | None = None, ratings: dict[str, int] | None = None, edited: set[str] | None = None
+        self, paths: list[str], flags: dict[str, str] | None = None, ratings: dict[str, int] | None = None, edited: set[str] | None = None, grades: dict | None = None
     ) -> None:
         self._list.clear()
         self._paths = list(paths)
         self._flags = dict(flags or {})
         self._ratings = dict(ratings or {})
+        self._grades = dict(grades or {})
         self._edited = set(edited or ())
         self._refresh_visible()
         if not paths:
@@ -293,6 +296,22 @@ class Filmstrip(QWidget):
             self._list.viewport().update()
         self._update_count()
 
+    def grades(self) -> dict[str, tuple[str, float]]:
+        return dict(self._grades)
+
+    def set_grade(self, path: str, severity: str, score: float = 0.0) -> None:
+        """Marks a tile with its sharpness grade (a small chip with the score, coloured by how it came out); an empty severity takes the mark off."""
+        if severity:
+            self._grades[path] = (severity, float(score))
+        else:
+            self._grades.pop(path, None)
+        item = self._find_item(path)
+        if item is not None:
+            item.setData(GRADE_ROLE, self._grades.get(path))
+            item.setHidden(not (self._passes(path) or path == self._active_path))
+            self._list.viewport().update()
+        self._update_count()
+
     def mark_edited(self, path: str) -> None:
         """The photo now has edits that change something (so the Unedited filter no longer shows it)."""
         if path in self._edited:
@@ -324,6 +343,8 @@ class Filmstrip(QWidget):
             return path not in self._edited
         if mode == "rated":
             return self._ratings.get(path, 0) > 0
+        if mode == "soft":
+            return self._grades.get(path, ("", 0.0))[0] in ("warning", "critical")
         return True
 
     def _apply_filter(self) -> None:
@@ -458,6 +479,7 @@ class Filmstrip(QWidget):
         item.setData(Qt.ItemDataRole.UserRole, path)
         item.setData(FLAG_ROLE, self._flags.get(path))
         item.setData(RATING_ROLE, self._ratings.get(path, 0))
+        item.setData(GRADE_ROLE, self._grades.get(path))
         item.setData(OPEN_ROLE, path == self._active_path)
         if path == self._active_path and self._active_icon is not None:
             item.setIcon(self._active_icon)

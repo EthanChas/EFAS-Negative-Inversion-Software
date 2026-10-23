@@ -385,6 +385,25 @@ The **film base** is the same film on every frame, so **Find Film Base for the W
 For the *look*, rather than the measurements, use copy and paste: perfect one frame and paste its settings onto the others in the Workbench ([[presets-lesson]]).
 """, keywords=("roll", "batch", "whole roll", "crop roll", "even out", "consistency", "film base", "undo roll", "merge"), see=("sample-film-base", "flat-field-module", "crop-and-rotate")),
 
+    Lesson("sharpness-grading", "roll", "Grading how sharp each frame is", "Find the frames that are soft or out of focus, in the whole roll at once, before you spend time editing them.",
+           r"""
+Soft frames are easy to miss on a small preview and expensive to find late. **File > Grade Sharpness...** grades every frame of the open folder for you, in the background, and marks each tile of the filmstrip with its score.
+
+## What it grades
+
+It grades the *shot*, not the scan: is what you focused on in focus? The frame is blurred a second time and the edges that matter are checked for how much of their contrast survives. A sharp frame changes a great deal under a second blur; one that is already soft hardly changes at all. Because it compares the frame with itself, the score means the same for a portrait and for a street, with no reference picture. Only the strongest edges count, so a soft background does not hurt a correctly focused frame, and a margin round the frame is left out so the scan's own border is not taken for detail.
+
+## Reading the result
+
+Each frame gets a score from 0 to 100 and a word: **Sharp** (60 or more), **Soft** (below 60) or **Blurred** (below 38). On the filmstrip a small chip at the top left of a tile shows the score in green, amber or red, and **Show > Soft or blurred (graded)** lists only the soft ones, so you can look at them first and decide. EFAS never rejects or flags a frame for you: a deliberately soft picture is a choice, not a fault.
+
+**Show Where It Was Measured...** opens one frame with red (soft) through green (sharp) laid over the edges that were judged. Everywhere else stays gray, because nothing was measured there. If the colours are all red where your subject is, the focus really missed it; if the red is only on the background, the frame is fine.
+
+## Good to know
+
+Grades are kept between sessions and tied to the file: replace or change a file and it is graded again. A very grainy, very blurred frame can read a little better than it is, because noise looks like detail. When the focus on a copy stand drifts, the grades fall steadily along the roll, a quicker way to notice than looking at every frame (the Canon Tether and Live View window has a sharpness meter for setting the focus before you start).
+""", keywords=("sharp", "sharpness", "focus", "blur", "blurred", "soft", "grade", "grading", "score", "roll", "overlay", "out of focus"), see=("whole-roll-tools", "filmstrip-and-culling")),
+
     Lesson("data-safety", "roll", "Backups, and where your data lives", "Know exactly what EFAS stores and where, how it protects it, and what you still need to back up yourself.",
            r"""
 EFAS keeps your edits in a small local **database** in its own data folder, and it **never changes your scan files**. Your work therefore lives in two places: your scans, wherever you saved them, and EFAS's data folder. Both need a backup.

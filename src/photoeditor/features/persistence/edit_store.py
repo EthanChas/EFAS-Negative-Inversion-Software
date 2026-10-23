@@ -107,6 +107,16 @@ CREATE TABLE IF NOT EXISTS ratings (
 )
 """
 
+_SHARPNESS_SCHEMA = """
+CREATE TABLE IF NOT EXISTS sharpness_grades (
+    path TEXT PRIMARY KEY,
+    severity TEXT NOT NULL,
+    score REAL NOT NULL,
+    size INTEGER NOT NULL,
+    mtime_ns INTEGER NOT NULL
+)
+"""
+
 _TAGS_SCHEMA = """
 CREATE TABLE IF NOT EXISTS tags (
     path TEXT NOT NULL,
@@ -478,6 +488,7 @@ def connect(db_path: str) -> sqlite3.Connection:
     conn.execute(_GLOBAL_FLATFIELD_SCHEMA)
     conn.execute(_ROLL_SCHEMA)
     conn.execute(_RATINGS_SCHEMA)
+    conn.execute(_SHARPNESS_SCHEMA)
     conn.execute(_BASE_SCHEMA)
     conn.execute(_LINEAR_REF_SCHEMA)
     conn.execute(_INVERSION_SCHEMA)
@@ -777,6 +788,43 @@ def get_ratings(conn: sqlite3.Connection, paths: list[str]) -> dict[str, int]:
         marks = ",".join("?" * len(chunk))
         found.update(conn.execute(f"SELECT path, rating FROM ratings WHERE path IN ({marks})", chunk).fetchall())
     return found
+
+
+def set_sharpness_grade(conn: sqlite3.Connection, path: str, severity: str, score: float) -> None:
+    """Keep a frame's sharpness grade (features/sharpgrade). It is tied to the file as it is now (size and time), so a file that is changed or replaced is graded afresh."""
+    try:
+        st = os.stat(path)
+    except OSError:
+        return
+    conn.execute(
+        "INSERT INTO sharpness_grades (path, severity, score, size, mtime_ns) VALUES (?, ?, ?, ?, ?) "
+        "ON CONFLICT(path) DO UPDATE SET severity=excluded.severity, score=excluded.score, size=excluded.size, mtime_ns=excluded.mtime_ns",
+        (path, severity, float(score), st.st_size, st.st_mtime_ns),
+    )
+    conn.commit()
+
+
+def get_sharpness_grades(conn: sqlite3.Connection, paths: list[str]) -> dict[str, tuple[str, float]]:
+    """{path: (severity, score)} for whichever of paths were graded and have not changed since."""
+    found: dict[str, tuple[str, float]] = {}
+    for i in range(0, len(paths), 500):
+        chunk = paths[i : i + 500]
+        marks = ",".join("?" * len(chunk))
+        for path, severity, score, size, mtime_ns in conn.execute(f"SELECT path, severity, score, size, mtime_ns FROM sharpness_grades WHERE path IN ({marks})", chunk).fetchall():
+            try:
+                st = os.stat(path)
+            except OSError:
+                continue
+            if st.st_size == size and st.st_mtime_ns == mtime_ns:
+                found[path] = (severity, float(score))
+    return found
+
+
+def forget_sharpness_grades(conn: sqlite3.Connection, paths: list[str]) -> None:
+    for i in range(0, len(paths), 500):
+        chunk = paths[i : i + 500]
+        conn.execute(f"DELETE FROM sharpness_grades WHERE path IN ({','.join('?' * len(chunk))})", chunk)
+    conn.commit()
 
 
 def state_to_json(state: dict) -> str:

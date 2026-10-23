@@ -1,7 +1,7 @@
 import math
 
-from PyQt6.QtCore import QPointF, Qt
-from PyQt6.QtGui import QColor, QPainter, QPen, QPolygonF
+from PyQt6.QtCore import QPointF, QRectF, Qt
+from PyQt6.QtGui import QColor, QFont, QFontMetrics, QPainter, QPen, QPolygonF
 from PyQt6.QtWidgets import QStyle, QStyledItemDelegate
 
 from ...theme.tokens import THEME
@@ -9,6 +9,8 @@ from ...theme.tokens import THEME
 FLAG_ROLE = Qt.ItemDataRole.UserRole + 1
 RATING_ROLE = Qt.ItemDataRole.UserRole + 2
 OPEN_ROLE = Qt.ItemDataRole.UserRole + 3   # the photo that is open in the editor: marked even when it is not part of a selection
+GRADE_ROLE = Qt.ItemDataRole.UserRole + 4  # the sharpness grade (features/sharpgrade) as (severity, score), or None: a small coloured chip with the score, top left
+_GRADE_TINTS = {"good": THEME.status_success, "warning": THEME.status_warning, "critical": THEME.status_critical}
 _FLAG_TINTS = {
     "rejected": QColor(220, 40, 40, 115),
     "keeper": QColor(70, 200, 100, 60),
@@ -57,6 +59,23 @@ class ThumbnailDelegate(QStyledItemDelegate):
             x0, y0 = option.rect.left() + 8, option.rect.bottom() - 8
             for i in range(int(stars)):
                 painter.drawPolygon(_star(x0 + i * (_STAR_PX + 1), y0, _STAR_PX / 2))
+            painter.restore()
+
+        grade = index.data(GRADE_ROLE)
+        if grade and grade[0] in _GRADE_TINTS:
+            painter.save()
+            painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+            font = QFont(painter.font())
+            font.setPixelSize(10)
+            font.setBold(True)
+            painter.setFont(font)
+            text = str(round(grade[1]))
+            chip = QRectF(option.rect.left() + 4, option.rect.top() + 4, QFontMetrics(font).horizontalAdvance(text) + 10, 15)
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(QColor(_GRADE_TINTS[grade[0]]))
+            painter.drawRoundedRect(chip, 3, 3)
+            painter.setPen(QColor(16, 16, 16))
+            painter.drawText(chip, Qt.AlignmentFlag.AlignCenter, text)
             painter.restore()
 
         selected = bool(option.state & QStyle.StateFlag.State_Selected)
