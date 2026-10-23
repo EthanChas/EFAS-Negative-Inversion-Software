@@ -1396,6 +1396,9 @@ class AppWindow(QMainWindow):
         self._crop_tool.fine_rotation_preview.connect(self.controller.preview_fine_rotation)
         self._crop_tool.distortion_changed.connect(self.controller.set_distortion)
         self._crop_tool.distortion_preview.connect(self.controller.preview_distortion)
+        self._crop_tool.lens_correction_changed.connect(self.controller.set_lens_correction)
+        self._crop_tool.lens_distortion_requested.connect(self._on_lens_distortion)
+        self.controller.lens_changed.connect(lambda: self._crop_tool.set_lens_info(self.controller.lens_info()))
         self._crop_tool.keystone_changed.connect(self.controller.set_keystone)
         self._crop_tool.keystone_preview.connect(self.controller.preview_keystone)
         self._crop_tool.auto_keystone_requested.connect(self._on_auto_keystone)
@@ -1674,6 +1677,16 @@ class AppWindow(QMainWindow):
     def _on_roll_check(self) -> None:
         paths, reference = self.controller.roll_check_inputs()
         RollCheckDialog(paths, reference, self, controller=self.controller, on_changed=self._after_film_base_change).exec()
+
+    def _on_lens_distortion(self) -> None:
+        """Crop & Rotate > Use the Profile's Distortion: the Distortion slider takes the value that matches the photo's lens profile."""
+        k1 = self.controller.lens_profile_distortion()
+        if k1 is None:
+            self.statusBar().showMessage("The lens profile has no distortion data for this focal length.", 5000)
+            return
+        self.controller.set_distortion(k1)
+        self._crop_tool.set_distortion(self.controller.state.distortion)
+        self.statusBar().showMessage(f"Distortion set to {k1:+.3f} from the lens profile.", 5000)
 
     def _on_grade_sharpness(self) -> None:
         """File > Grade Sharpness: grade the frames of the folder in the filmstrip (or, with none there, the open photo's folder); each grade is kept and shows on its tile."""
@@ -3465,6 +3478,7 @@ class AppWindow(QMainWindow):
         self._crop_tool.set_flips(state.flip_h, state.flip_v)
         self._crop_tool.set_fine_rotation(state.fine_rotation)
         self._crop_tool.set_distortion(state.distortion)
+        self._crop_tool.set_lens_info(self.controller.lens_info())
         self._crop_tool.set_keystone(state.keystone_v, state.keystone_h)
         self._image_view.reset_crop_mode()
         self._negative_tool.reset()
@@ -4050,6 +4064,7 @@ class AppWindow(QMainWindow):
         self._crop_tool.set_flips(state.flip_h, state.flip_v)
         self._crop_tool.set_fine_rotation(state.fine_rotation)
         self._crop_tool.set_distortion(state.distortion)
+        self._crop_tool.set_lens_info(self.controller.lens_info())
         self._crop_tool.set_keystone(state.keystone_v, state.keystone_h)
         self._color_tool.set_values(state.saturation, state.temperature, state.tint)
         self._shadows_highlights_tool.set_values(state.shadows, state.highlights)

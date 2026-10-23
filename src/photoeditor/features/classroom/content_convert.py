@@ -314,6 +314,10 @@ Lenses bend straight lines near the edge of the frame. With **barrel** distortio
 
 To set it, look for something that should be straight and near an edge. The film rebate, a ruler edge, or a building line works. Increase the correction until that line is straight.
 
+## Lens Correction
+
+Below the Distortion slider, **Lens Correction** looks the photo's lens up in the **Lensfun** database from its EXIF (the camera, the lens name, the focal length and the aperture) and says what it found. If it has a profile you can switch on **Correct colour fringes** (the red and blue edges a lens leaves towards the corners, because it images the colours at slightly different sizes) and **Correct vignetting** (dark corners), and press **Use the Profile's Distortion** to start the slider from the lens's own figure. It is off until you switch it on. A profile is made for ordinary shooting distances, so for a copy stand set the **Focus distance** (0.4 m is right for a 100 mm macro lens at 1:1 on a full frame camera). If you use a **flat field**, leave vignetting alone: the flat field was measured through the same lens and already has it, so with one on only the colour fringes are corrected. A good macro lens has very little to correct, so do not expect a dramatic change.
+
 ## Keystone
 
 **Keystone** is a different fault: **parallel lines that converge**. If the camera is tilted up at a building, its sides lean towards each other at the top. When *scanning*, it happens if the camera is not parallel to the film: then the whole frame is a trapezoid. **Vertical** widens the top of the picture (positive) or the bottom (negative); **Horizontal** does the same for the left and right. The correction is a perspective warp: the four corners of a smaller quadrilateral (inset by up to 30% of the frame at the slider's limit) are stretched back out to the corners of the picture, and the result is cut from inside the frame so there are no empty corners.

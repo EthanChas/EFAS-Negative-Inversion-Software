@@ -19,6 +19,9 @@ dependencies = [
     "send2trash>=1.8; sys_platform != 'win32'",
 ]
 
+[project.optional-dependencies]
+lenses = ["lensfunpy>=1.16"]   # the Lensfun lens database, for the lens corrections in Crop & Rotate (colour fringes, vignetting, a starting distortion); without it they report "not installed"
+
 [project.scripts]
 photoeditor = "photoeditor.__main__:main"
 

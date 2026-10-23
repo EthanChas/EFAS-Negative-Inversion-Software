@@ -57,6 +57,7 @@ from ..features.masks import state as mask_state
 from ..features.masks.frame import FrameMap
 from ..features.retouchdt import logic as rt_logic
 from ..features.instances import logic as inst_logic
+from ..features.lenscorrect import logic as lens_logic
 from ..features.colormix.logic import MIXER_PANEL_KEYS, TONING_KEYS
 from .mask_blend import MaskBlender
 from ..features.halation import logic as hal_logic
@@ -223,6 +224,7 @@ class EditParams:
     retouch_view: str = ""    # what the Retouch panel is showing (see features/retouchdt VIEWS)
     retouch_view_of: int = 0  # ... for which Retouch (0 the module, else the id of one of its copies)
     instances: tuple = ()     # the copies of modules (features/instances frozen()): ((module key, id, on, ((field, value), ...)), ...)
+    lens: tuple = ()          # the lens corrections to make (features/lenscorrect spec()): (colour fringes, vignetting, distance, camera and lens as the EXIF names them, focal length, aperture), () for none
     blends: tuple = ()        # ((module key, mode, mask id, opacity, invert, blur, feather, brightness, contrast), ...) for each module blended through a mask or uniformly
     wm_vars: tuple = ()   # ((name, value), ...): the watermark variables of this photo (hashable, so a change of any draws the watermark again)
 
@@ -356,6 +358,7 @@ class EditParams:
             retouch_view=str(getattr(s, "retouch_view", "") or ""),
             retouch_view_of=int(getattr(s, "retouch_view_of", 0) or 0),
             instances=inst_logic.frozen(getattr(s, "instances", None)),
+            lens=lens_logic.spec(getattr(s, "lens_corr", None), getattr(s, "lens_shot", None)),
             blends=mask_state.blends_tuple(getattr(s, "blends", None)),
             scan_width=int(getattr(getattr(s, "original_rgb", None), "shape", (0, 0))[1] or 0),
             vignette=float(getattr(s, "vignette", 0.0)),
@@ -458,6 +461,7 @@ class Renderer:
         self._retouch: OrderedDict = OrderedDict()
         self.ai_prob_lookup = None
         self._flat: OrderedDict = OrderedDict()
+        self._lens: OrderedDict = OrderedDict()
         self._edge: OrderedDict = OrderedDict()
         self._eight: OrderedDict = OrderedDict()
         self._frames: OrderedDict = OrderedDict()
@@ -470,6 +474,7 @@ class Renderer:
             self._invert_key = None
             self._retouch.clear()
             self._flat.clear()
+            self._lens.clear()
             self._edge.clear()
             self._eight.clear()
             self._density = None
@@ -505,6 +510,18 @@ class Renderer:
         self._flat[key] = result
         while len(self._flat) > _RETOUCH_CACHE_SIZE:
             self._flat.popitem(last=False)
+        return result
+
+    def _lens_corrected(self, source: np.ndarray, token, lens: tuple, flat_active: bool) -> np.ndarray:
+        """The scan with the lens profile's corrections made (features/lenscorrect): cached per source and settings, since it is a few passes over the whole picture."""
+        key = (token, lens, flat_active, source.shape)
+        if key in self._lens:
+            self._lens.move_to_end(key)
+            return self._lens[key]
+        result = lens_logic.correct(source, lens, flat_active)
+        self._lens[key] = result
+        while len(self._lens) > _RETOUCH_CACHE_SIZE:
+            self._lens.popitem(last=False)
         return result
 
     def _edge_fixed(self, pixels: np.ndarray, key_parts: tuple, values: dict, rect, retouched) -> np.ndarray:
@@ -844,6 +861,9 @@ class Renderer:
             scale = source.shape[1] / base_width
             source16 = None
             camera_matrix = camera.matrix_of(source)  # a RAW opened in the camera's primaries: its colour matrix goes on after the inversion
+            if params.lens:   # the lens corrections come first (colour fringes, then vignetting unless a flat field has it): the rest works on the corrected picture
+                source = self._lens_corrected(source, token, params.lens, flatfield is not None)
+                token = (token, params.lens, flatfield is not None)
             if flatfield is not None:  # evened out at the picture's own depth: a 16-bit scan keeps all its levels
                 source = self._flatfielded(source, token, flatfield)
                 token = (token, flatfield[0])
@@ -1044,6 +1064,9 @@ class Renderer:
         with self.lock:
             scale = source.shape[1] / base_width
             source16 = None
+            if params.lens:
+                source = self._lens_corrected(source, token, params.lens, flatfield is not None)
+                token = (token, params.lens, flatfield is not None)
             if flatfield is not None:
                 source = self._flatfielded(source, token, flatfield)
                 token = (token, flatfield[0])

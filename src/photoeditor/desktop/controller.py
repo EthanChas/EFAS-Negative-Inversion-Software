@@ -68,6 +68,7 @@ from ..features.masks import raster as mask_raster
 from ..features.masks import state as mask_state
 from ..features.retouchdt import logic as rt_logic
 from ..features.instances import logic as inst_logic
+from ..features.lenscorrect import logic as lens_logic
 from ..features.halation import logic as hal_logic
 from ..features.lablook import logic as lab_look_logic
 from ..features.printresponse import logic as print_response_logic
@@ -172,6 +173,7 @@ class AppController(QObject):
     inversion_changed = pyqtSignal()
     roll_changed = pyqtSignal()
     flatfield_changed = pyqtSignal()
+    lens_changed = pyqtSignal()        # the lens profile found for the open photo, or the corrections switched on, changed: the Crop & Rotate panel shows them again
     flatfield_checked = pyqtSignal(object)
     flatfield_progress = pyqtSignal(int, int, str)
     flatfield_busy_changed = pyqtSignal(bool)
@@ -349,6 +351,7 @@ class AppController(QObject):
         self.state.blends = mask_state.clean_blends(saved.get("blends"), self.state.masks)
         self.state.retouch = rt_logic.Settings.from_dict(saved.get("retouch")).to_dict() if saved.get("retouch") else {}
         self.state.instances = inst_logic.clean(saved.get("instances"))
+        self.state.lens_corr = lens_logic.clean_corr(saved.get("lens_corr"))
         self.state.retouch_view = ""
         self.state.ai_dust = bool(saved.get("ai_dust", False))
         self.state.ai_threshold = float(saved.get("ai_threshold", 0.3))
@@ -625,6 +628,7 @@ class AppController(QObject):
         self._last_logged_metering = self.state.metering
         self._renderer.reset()
         self._load_flatfield(path)
+        self._load_lens_shot(path)
         self._load_roll(path)
         self.state.film_base = edit_store.effective_film_base(self._db, path)
         self._load_linear_refs(path)
@@ -912,6 +916,44 @@ class AppController(QObject):
         if k1 != self._last_logged_distortion:
             self._last_logged_distortion = k1
             self._log(f"Distortion correction {k1:+.3f}")
+
+    # ------------------------------------------------------------ lens corrections from the Lensfun database (features/lenscorrect)
+    def _load_lens_shot(self, path: str | None) -> None:
+        """Read the open photo's camera, lens, focal length and aperture from its EXIF, to find its lens profile."""
+        shot = lens_logic.shot_from_exif(read_exif_from_file(path)) if path else lens_logic.Shot()
+        self.state.lens_shot = shot.as_tuple()
+        self.lens_changed.emit()
+
+    def lens_info(self) -> dict:
+        """For the Crop & Rotate panel: whether the database is installed, the profile found for the open photo (and why not, when none), and the corrections switched on."""
+        corr = self.state.lens_corr
+        shot = lens_logic.Shot(*self.state.lens_shot) if self.state.lens_shot else lens_logic.Shot()
+        profile, why = lens_logic.profile_of(shot)
+        text = f"{profile.title} ({shot.focal_mm:g} mm, f/{shot.aperture:g})" if profile is not None else lens_logic.reason_text(why)
+        return {"available": lens_logic.available(), "found": profile is not None, "text": text, "tca": bool(corr.get("tca")), "vignetting": bool(corr.get("vignetting")),
+                "distance": float(corr.get("distance") or lens_logic.DEFAULT_DISTANCE), "flat_field": self._ff is not None}
+
+    def set_lens_correction(self, tca: bool, vignetting: bool, distance: float) -> None:
+        """Switch the lens corrections (colour fringes, vignetting) on or off for this photo and say how far away the film is (the profile is worked out for that distance)."""
+        if self.state.preview_rgb is None:
+            return
+        new = lens_logic.clean_corr({"tca": tca, "vignetting": vignetting, "distance": distance})
+        if new == self.state.lens_corr:
+            return
+        before = self.state.lens_corr
+        self.state.lens_corr = new
+        self._settle()
+        self.lens_changed.emit()
+        changed = [f"{name} {'on' if new.get(key) else 'off'}" for key, name in (("tca", "colour fringes"), ("vignetting", "vignetting")) if bool(new.get(key)) != bool(before.get(key))]
+        self._log("Lens correction: " + (", ".join(changed) or "focus distance changed"))
+
+    def lens_profile_distortion(self) -> float | None:
+        """The Distortion slider's value that matches the open photo's lens profile, or None when there is no profile (or none for this focal length)."""
+        shot = lens_logic.Shot(*self.state.lens_shot) if self.state.lens_shot else lens_logic.Shot()
+        profile, _why = lens_logic.profile_of(shot)
+        if profile is None:
+            return None
+        return lens_logic.distortion_k1(profile, self.state.lens_shot, float(self.state.lens_corr.get("distance") or lens_logic.DEFAULT_DISTANCE))
 
     def preview_keystone(self, v: float, h: float) -> None:
         if self.state.preview_rgb is None:
@@ -3084,6 +3126,7 @@ class AppController(QObject):
             blends=copy.deepcopy(s.blends),
             retouch=copy.deepcopy(s.retouch),
             instances=copy.deepcopy(s.instances),
+            lens_corr=copy.deepcopy(s.lens_corr),
             film_type=s.film_type,
             invert_r=s.invert_r,
             invert_g=s.invert_g,
@@ -3214,6 +3257,7 @@ class AppController(QObject):
             "blends": s.blends,
             "retouch": s.retouch,
             "instances": s.instances,
+            "lens_corr": s.lens_corr,
             "ai_dust": s.ai_dust,
             "ai_threshold": s.ai_threshold,
             "ai_grow": s.ai_grow,
@@ -3286,6 +3330,7 @@ class AppController(QObject):
         self.state.blends = {}
         self.state.retouch = {}
         self.state.instances = {}
+        self.state.lens_corr = {}
         self.state.retouch_view = ""
         self.state.ai_dust = False
         self.state.ai_threshold = aidust.DEFAULT_THRESHOLD
@@ -3491,6 +3536,8 @@ class AppController(QObject):
         s.blends = copy.deepcopy(entry.blends)
         s.retouch = copy.deepcopy(entry.retouch)
         s.instances = copy.deepcopy(entry.instances)
+        s.lens_corr = copy.deepcopy(entry.lens_corr)
+        self.lens_changed.emit()
         self._last_logged_ai = (entry.ai_dust, round(entry.ai_threshold, 4), entry.ai_grow)
         s.film_type = entry.film_type
         s.invert_r, s.invert_g, s.invert_b = entry.invert_r, entry.invert_g, entry.invert_b

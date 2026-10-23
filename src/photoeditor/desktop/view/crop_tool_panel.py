@@ -1,5 +1,5 @@
 from PyQt6.QtCore import QTimer, pyqtSignal
-from PyQt6.QtWidgets import QComboBox, QHBoxLayout, QLabel, QPushButton, QWidget
+from PyQt6.QtWidgets import QCheckBox, QComboBox, QDoubleSpinBox, QHBoxLayout, QLabel, QPushButton, QWidget
 
 from ...features.geometry.guides import GUIDE_LABELS, ORIENTATION_COUNT, CropGuide
 from ...features.geometry.logic import DISTORTION_LIMIT, FINE_ROTATION_LIMIT
@@ -59,6 +59,10 @@ class CropToolPanel(CollapsiblePanel):
     keystone_changed = pyqtSignal(float, float)
     keystone_preview = pyqtSignal(float, float)
     auto_keystone_requested = pyqtSignal()
+    lens_correction_changed = pyqtSignal(bool, bool, float)   # colour fringes, vignetting, focus distance in metres
+    lens_distortion_requested = pyqtSignal()
+
+    _lens_syncing = False
 
     def __init__(self, parent: QWidget | None = None):
         super().__init__(
@@ -77,6 +81,10 @@ class CropToolPanel(CollapsiblePanel):
                 "Distortion Correction: radial lens distortion - positive corrects barrel, "
                 "negative corrects pincushion; use the film rebate as a straight reference. "
                 "Double-click the slider to reset it.\n\n"
+                "Lens Correction: when the photo's EXIF names its camera and lens and the lens is in the Lensfun database, it can correct the lens's colour fringes (lateral chromatic "
+                "aberration) and dark corners (vignetting) and start the Distortion slider from the profile's own value. Off by default: a profile is made for ordinary shooting "
+                "distances, so close up (as on a copy stand) it is an approximation - set the focus distance. A flat field made through the same lens already has the vignetting in it, so "
+                "with one on only the colour fringes are corrected.\n\n"
                 "Keystone: corrects lines that lean towards each other because the camera was tilted. Vertical widens the top of the picture (positive) "
                 "or the bottom (negative); Horizontal does the same for the left and right. Auto Keystone suggests values from the straight lines it finds.\n\n"
                 "Ratio holds the crop to a shape (it turns to landscape or "
@@ -249,6 +257,38 @@ class CropToolPanel(CollapsiblePanel):
         self._distortion_settle_timer.setInterval(_SETTLE_DEBOUNCE_MS)
         self._distortion_settle_timer.timeout.connect(lambda: self.distortion_changed.emit(self._distortion.value()))
 
+        lens = QLabel("LENS CORRECTION")
+        lens.setProperty("role", "subtitle")
+        body.addWidget(lens)
+        self._lens_label = QLabel("")
+        self._lens_label.setProperty("role", "hint")
+        self._lens_label.setWordWrap(True)
+        body.addWidget(self._lens_label)
+        self._lens_tca = QCheckBox("Correct colour fringes")
+        self._lens_tca.setToolTip("Lateral chromatic aberration: red and blue are imaged a little larger or smaller than green, which shows as coloured edges towards the corners. Moves each colour back by what the lens profile says")
+        self._lens_vignetting = QCheckBox("Correct vignetting")
+        self._lens_vignetting.setToolTip("Brightens the dark corners by what the lens profile says. Left out while a flat field is on: a flat field made through the same lens has the vignetting in it already")
+        for box in (self._lens_tca, self._lens_vignetting):
+            box.toggled.connect(self._on_lens_changed)
+            body.addWidget(box)
+        distance_row = QHBoxLayout()
+        distance_row.addWidget(QLabel("Focus distance (m)"))
+        self._lens_distance = QDoubleSpinBox()
+        self._lens_distance.setRange(0.05, 1000.0)
+        self._lens_distance.setDecimals(2)
+        self._lens_distance.setSingleStep(0.05)
+        self._lens_distance.setValue(0.4)
+        self._lens_distance.setToolTip("How far the lens is from the film. A profile is worked out for a distance: 0.4 m suits a 100 mm macro lens at 1:1 on a full frame camera. Far away (1000) is how most photographs are taken")
+        self._lens_distance.valueChanged.connect(self._on_lens_changed)
+        distance_row.addWidget(self._lens_distance)
+        distance_row.addStretch(1)
+        body.addLayout(distance_row)
+        self._lens_distortion_btn = QPushButton("Use the Profile's Distortion")
+        self._lens_distortion_btn.setToolTip("Set the Distortion slider to the value that best matches the lens profile (the slider has one radial term, so it is an approximation of the profile's own model)")
+        self._lens_distortion_btn.clicked.connect(self.lens_distortion_requested)
+        body.addWidget(self._lens_distortion_btn)
+        self.set_lens_info({"available": False, "found": False, "text": "Open a photo.", "tca": False, "vignetting": False, "distance": 0.4, "flat_field": False})
+
         keystone = QLabel("KEYSTONE")
         keystone.setProperty("role", "subtitle")
         body.addWidget(keystone)
@@ -327,6 +367,25 @@ class CropToolPanel(CollapsiblePanel):
     def set_distortion(self, k1: float) -> None:
         """Sync the slider without emitting anything."""
         self._distortion.set_value(k1)
+
+    def _on_lens_changed(self, *_args) -> None:
+        if not self._lens_syncing:
+            self.lens_correction_changed.emit(self._lens_tca.isChecked(), self._lens_vignetting.isChecked(), self._lens_distance.value())
+
+    def set_lens_info(self, info: dict) -> None:
+        """Show the lens profile found for the open photo and the corrections switched on, without emitting anything."""
+        self._lens_syncing = True
+        try:
+            found = bool(info.get("found"))
+            self._lens_label.setText(("Lens profile found: " if found else "No lens profile. ") + str(info.get("text", "")) + ("  A flat field is on, so only the colour fringes are corrected." if found and info.get("flat_field") else ""))
+            self._lens_tca.setChecked(bool(info.get("tca")))
+            self._lens_vignetting.setChecked(bool(info.get("vignetting")))
+            self._lens_distance.setValue(float(info.get("distance") or 0.4))
+            for widget in (self._lens_tca, self._lens_vignetting, self._lens_distortion_btn):
+                widget.setEnabled(found)
+            self._lens_distance.setEnabled(found)
+        finally:
+            self._lens_syncing = False
 
     def current_guide(self) -> tuple[str, int]:
         return self._guide_combo.currentData(), self._guide_orientation

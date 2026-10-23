@@ -130,6 +130,7 @@ class HistoryEntry:
     blends: dict = field(default_factory=dict)   # {module key: Blend.to_dict()} for each module blended through a mask or uniformly
     retouch: dict = field(default_factory=dict)  # the Retouch module's settings (features/retouchdt): Settings.to_dict(), {} when it has no shapes
     instances: dict = field(default_factory=dict)   # the copies of modules (features/instances): {module key: [{"id", "name", "on", "values"}, ...]}
+    lens_corr: dict = field(default_factory=dict)   # the lens corrections switched on (features/lenscorrect clean_corr): {"tca": True, "vignetting": True, "distance": metres}, {} for none
     keystone_v: float = 0.0
     keystone_h: float = 0.0
     metering: Metering = field(default_factory=Metering)
@@ -300,6 +301,8 @@ class AppState:
     blends: dict = field(default_factory=dict)   # {module key: Blend.to_dict()} for each module blended through a mask or uniformly
     retouch: dict = field(default_factory=dict)  # the Retouch module's settings (features/retouchdt): Settings.to_dict(), {} when it has no shapes
     instances: dict = field(default_factory=dict)   # the copies of modules (features/instances): {module key: [{"id", "name", "on", "values"}, ...]}
+    lens_corr: dict = field(default_factory=dict)   # the lens corrections switched on (features/lenscorrect clean_corr): {"tca": True, "vignetting": True, "distance": metres}, {} for none
+    lens_shot: tuple = ()                           # the camera, lens, focal length and aperture of the open photo, from its EXIF (features/lenscorrect Shot.as_tuple); not saved
     vignette: float = 0.0
     vignette_size: float = 0.5
     border: float = 0.0
