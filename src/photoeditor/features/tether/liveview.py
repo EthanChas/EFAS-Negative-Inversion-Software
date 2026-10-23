@@ -53,6 +53,7 @@ class LiveFrame:
     rgb: np.ndarray         # the camera's picture as it came, decoded (RGB, uint8)
     sharpness: float
     clipped: dict           # per cent of the picture blown out in R, G, B
+    histogram: np.ndarray | None = None   # (4, 256): how many pixels of the camera's picture have each value, in R, G, B and the luminance
 
 
 def decode(jpeg: bytes) -> np.ndarray | None:
@@ -67,6 +68,16 @@ def edge_strength(grey: np.ndarray) -> np.ndarray:
     """Edge strength per pixel in grey levels per pixel (Scharr: the most accurate 3x3 gradient, which suits fine, directionless film grain)."""
     g = grey.astype(np.float32)
     return np.hypot(cv2.Scharr(g, cv2.CV_32F, 1, 0), cv2.Scharr(g, cv2.CV_32F, 0, 1)) / 16.0
+
+
+def histogram_of(rgb: np.ndarray) -> np.ndarray:
+    """The histogram of the camera's own picture (every other pixel in each direction is enough): rows R, G, B and luminance, 256 values each."""
+    small = np.ascontiguousarray(rgb[::2, ::2])
+    out = np.empty((4, 256), dtype=np.float32)
+    for i in range(3):
+        out[i] = cv2.calcHist([small], [i], None, [256], [0, 256]).ravel()
+    out[3] = cv2.calcHist([cv2.cvtColor(small, cv2.COLOR_RGB2GRAY)], [0], None, [256], [0, 256]).ravel()
+    return out
 
 
 def region_box(shape, cx: float, cy: float, size: float) -> tuple:
@@ -218,7 +229,7 @@ class Pipeline:
             shown = self._with_peaking(shown, small, view.peaking_sensitivity)
         else:
             self._peak = None
-        return LiveFrame(np.ascontiguousarray(shown), rgb, sharpness(rgb, view.region), clipped_percent(rgb))
+        return LiveFrame(np.ascontiguousarray(shown), rgb, sharpness(rgb, view.region), clipped_percent(rgb), histogram_of(rgb))
 
     def _positive(self, small: np.ndarray, view: View) -> np.ndarray:
         """The conversion of a whole live picture. The same two steps as engine.density_codes and engine.apply_lut (to within one density code in 13000 and one level in 255), written with

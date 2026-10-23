@@ -11,7 +11,7 @@ import time
 from collections import deque
 
 from PyQt6.QtCore import QPointF, QRectF, QSize, Qt, QTimer, pyqtSignal
-from PyQt6.QtGui import QColor, QFont, QImage, QKeySequence, QPainter, QPen, QShortcut
+from PyQt6.QtGui import QColor, QFont, QImage, QKeySequence, QPainter, QPainterPath, QPen, QShortcut
 from PyQt6.QtWidgets import (
     QApplication, QCheckBox, QComboBox, QDialog, QDoubleSpinBox, QFileDialog, QGridLayout, QGroupBox, QHBoxLayout, QLabel, QLineEdit, QListWidget, QListWidgetItem,
     QMessageBox, QProgressBar, QPushButton, QScrollArea, QSlider, QVBoxLayout, QWidget,
@@ -48,6 +48,61 @@ def primary_file(paths: list[str]) -> str:
     return ""
 
 
+class ZoomMap(QWidget):
+    """Where the camera's own zoom frame is in the whole picture: a small map (the last whole picture, with a rectangle for what the zoom shows) in the corner of the live picture. Click or drag
+    in it to move the frame."""
+
+    moved = pyqtSignal(float, float)      # the middle of the frame asked for, as fractions of the whole picture
+    SIZE = QSize(168, 112)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setFixedSize(self.SIZE)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setToolTip("Where the camera's zoom frame is in the whole picture. Click or drag here to move it; or drag the picture, or use Ctrl and the arrow keys")
+        self._overview: QImage | None = None
+        self._level, self._centre = 1, (0.5, 0.5)
+
+    def set_overview(self, rgb) -> None:
+        h, w = rgb.shape[:2]
+        self._overview = QImage(rgb.data, w, h, 3 * w, QImage.Format.Format_RGB888).copy().scaled(self.SIZE, Qt.AspectRatioMode.IgnoreAspectRatio, Qt.TransformationMode.SmoothTransformation)
+        self.update()
+
+    def set_frame(self, level: int, centre: tuple) -> None:
+        self._level, self._centre = max(1, int(level)), centre
+        self.update()
+
+    def frame_rect(self) -> QRectF:
+        w, h = self.width(), self.height()
+        fw, fh = w / self._level, h / self._level
+        return QRectF(min(max(self._centre[0] * w - fw / 2, 0), w - fw), min(max(self._centre[1] * h - fh / 2, 0), h - fh), fw, fh)
+
+    def paintEvent(self, _event) -> None:
+        p = QPainter(self)
+        p.fillRect(self.rect(), QColor(16, 16, 16, 235))
+        if self._overview is not None:
+            p.setOpacity(0.8)
+            p.drawImage(0, 0, self._overview)
+            p.setOpacity(1.0)
+        box = self.frame_rect()
+        p.fillRect(box, QColor(90, 200, 255, 60))
+        p.setPen(QPen(QColor(90, 200, 255), 2))
+        p.drawRect(box)
+        p.setPen(QPen(QColor(235, 235, 235, 160), 1))
+        p.drawRect(self.rect().adjusted(0, 0, -1, -1))
+
+    def _ask(self, event) -> None:
+        self.moved.emit(min(max(event.position().x() / self.width(), 0.0), 1.0), min(max(event.position().y() / self.height(), 0.0), 1.0))
+
+    def mousePressEvent(self, event) -> None:
+        if event.button() == Qt.MouseButton.LeftButton:
+            self._ask(event)
+
+    def mouseMoveEvent(self, event) -> None:
+        if event.buttons() & Qt.MouseButton.LeftButton:
+            self._ask(event)
+
+
 class LiveImage(QWidget):
     """The live picture, fitted to the window or zoomed (wheel, the slider, drag to move), with the sharpness region drawn on it, warnings, and (when asked) a loupe."""
 
@@ -74,6 +129,10 @@ class LiveImage(QWidget):
         self._centre = (0.5, 0.5)      # the part of the picture in the middle of the window, as fractions of it
         self._press: QPointF | None = None
         self._dragging = False
+        self._histogram = None                 # (4, 256) counts of the camera's picture, drawn in the corner while show_histogram is on
+        self.show_histogram = True
+        self.map = ZoomMap(self)               # where the camera's zoom frame is: shown only while the camera's own zoom is in use
+        self.map.hide()
         self._middle: QPointF | None = None    # where the middle button went down / was last seen: it moves around in the picture
         self.camera_pan = False                # on while the camera's own zoom is in use: the middle button then moves the camera's zoom frame, not our zoomed picture
 
@@ -85,10 +144,10 @@ class LiveImage(QWidget):
         self._image, self._message = None, text
         self.update()
 
-    def set_frame(self, rgb, region: tuple | None, info: str, warning: str) -> None:
+    def set_frame(self, rgb, region: tuple | None, info: str, warning: str, histogram=None) -> None:
         h, w = rgb.shape[:2]
         self._image = QImage(rgb.data, w, h, 3 * w, QImage.Format.Format_RGB888).copy()
-        self._region, self._info, self._warning = region, info, warning
+        self._region, self._info, self._warning, self._histogram = region, info, warning, histogram
         self.update()
 
     def set_loupe(self, rgb) -> None:
@@ -157,6 +216,7 @@ class LiveImage(QWidget):
 
     def resizeEvent(self, event) -> None:
         self._clamp_centre()
+        self.map.move(self.width() - self.map.width() - 10, 30)
         super().resizeEvent(event)
 
     def wheelEvent(self, event) -> None:
@@ -186,15 +246,19 @@ class LiveImage(QWidget):
                 self._clamp_centre()
                 self.update()
             return
-        if self._press is not None and self._image is not None and self._zoom > 1.0 and (event.buttons() & Qt.MouseButton.LeftButton):
+        if self._press is not None and self._image is not None and (self._zoom > 1.0 or self.camera_pan) and (event.buttons() & Qt.MouseButton.LeftButton):
             delta = event.position() - self._press
             if self._dragging or abs(delta.x()) + abs(delta.y()) >= self._DRAG_PIXELS:
                 self._dragging = True
                 self.setCursor(Qt.CursorShape.ClosedHandCursor)
-                self._centre = (self._centre[0] - delta.x() / self.width() / self._scale_x(), self._centre[1] - delta.y() / self.height() / self._scale_y())
                 self._press = event.position()
-                self._clamp_centre()
-                self.update()
+                if self.camera_pan and self._zoom == 1.0:      # the camera's zoom is on and ours is not: dragging moves the camera's zoom frame
+                    t = self._target()
+                    self.panned.emit(delta.x() / max(1.0, t.width()), delta.y() / max(1.0, t.height()))
+                else:
+                    self._centre = (self._centre[0] - delta.x() / self.width() / self._scale_x(), self._centre[1] - delta.y() / self.height() / self._scale_y())
+                    self._clamp_centre()
+                    self.update()
                 return
         f = self._fractions(event.position())
         self.hovered.emit(*(f if f else (-1.0, -1.0)))
@@ -251,12 +315,50 @@ class LiveImage(QWidget):
         if self._warning:
             p.setPen(QColor(THEME.status_critical))
             p.drawText(QRectF(8, 6, self.width() - 16, 18), Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter, self._warning)
+        if self.show_histogram and self._histogram is not None:
+            self._paint_histogram(p)
         if self._loupe is not None:
             size = min(300, int(self.width() * 0.34), int(self.height() * 0.5))
             box = QRectF(self.width() - size - 8, self.height() - size - 8, size, size)
             p.drawImage(box, self._loupe)
             p.setPen(QPen(QColor(235, 235, 235), 1.5))
             p.drawRect(box)
+
+
+    def _paint_histogram(self, p: QPainter) -> None:
+        """The camera's histogram in the bottom left corner: red, green and blue, and the luminance as a white line; a bar at an edge when more than half a per cent is clipped there."""
+        hist = self._histogram
+        box = QRectF(10, self.height() - 108, 276, 98)
+        p.fillRect(box, QColor(0, 0, 0, 150))
+        inner = box.adjusted(8, 6, -8, -6)
+        p.setPen(QPen(QColor(255, 255, 255, 40), 1))
+        for third in (1, 2):
+            x = inner.left() + inner.width() * third / 3
+            p.drawLine(QPointF(x, inner.top()), QPointF(x, inner.bottom()))
+        peak = max(float(hist[:, 1:255].max()), 1.0)    # (the two end bins are left out of the scale: a pile of clipped pixels would flatten the rest)
+        step = inner.width() / 255
+
+        def outline(row):
+            path = QPainterPath()
+            path.moveTo(inner.left(), inner.bottom())
+            for i in range(256):
+                path.lineTo(inner.left() + i * step, inner.bottom() - inner.height() * min(1.0, float(hist[row, i]) / peak))
+            return path
+
+        for row, (r, g, b) in enumerate(((255, 70, 70), (70, 220, 70), (90, 140, 255))):
+            path = outline(row)
+            path.lineTo(inner.right(), inner.bottom())
+            path.closeSubpath()
+            p.setBrush(QColor(r, g, b, 80))
+            p.setPen(QPen(QColor(r, g, b, 190), 1))
+            p.drawPath(path)
+        p.setBrush(Qt.BrushStyle.NoBrush)
+        p.setPen(QPen(QColor(245, 245, 245, 230), 1.2))
+        p.drawPath(outline(3))
+        total = max(float(hist[0].sum()), 1.0)
+        for edge, x in ((0, inner.left()), (255, inner.right() - 3)):
+            if float(hist[:3, edge].max()) * 100.0 / total >= _CLIP_WARN:
+                p.fillRect(QRectF(x, inner.top(), 3, inner.height()), QColor(THEME.status_critical))
 
 
 class Sparkline(QWidget):
@@ -304,6 +406,7 @@ class TetherWindow(QDialog):
         self._flat_frames: list | None = None            # the pictures of the light being collected, while capturing
         self._camera_zoom_level, self._camera_zoom_center = 1, (0.5, 0.5)
         self._zoom_sending, self._zoom_sent = False, (0.5, 0.5)
+        self._overview_at = 0.0
         area = QApplication.primaryScreen().availableGeometry() if QApplication.primaryScreen() is not None else None
         self.resize(min(1640, (area.width() - 40) if area else 1640), min(940, (area.height() - 60) if area else 940))   # wide, so the picture has room
         self._factory = factory
@@ -355,8 +458,9 @@ class TetherWindow(QDialog):
         camera_zoom.addWidget(QLabel("Camera zoom"))
         self.camera_zoom_buttons: dict[int, QPushButton] = {}
         for level, label in ((1, "Fit"), (5, "5x"), (10, "10x")):
-            b = self._button(label, "Ask the camera to zoom its own live picture: at 5x or 10x it sends the middle of the sensor at the size of the whole picture, so the film's grain and fine detail show as real "
-                                    "pixels (the Zoom slider only makes the pixels it already has bigger). Needs a camera that offers it" if level > 1 else "The camera's whole live picture",
+            b = self._button(label, "Ask the camera to zoom its own live picture: at 5x or 10x it sends part of the sensor at the size of the whole picture, so the film's grain and fine detail show as real "
+                                    "pixels (the Zoom slider only makes the pixels it already has bigger). Move around it by dragging the picture, by dragging the little map that appears in its corner, "
+                                    "or with Ctrl and the arrow keys" if level > 1 else "The camera's whole live picture",
                              lambda _c=False, n=level: self.camera_zoom(n))
             b.setCheckable(True)
             b.setChecked(level == 1)
@@ -369,6 +473,7 @@ class TetherWindow(QDialog):
         left.addLayout(camera_zoom)
         self.image.zoom_changed.connect(self._zoom_changed)
         self.image.panned.connect(self._camera_pan)
+        self.image.map.moved.connect(self._zoom_map_moved)
         bar = QHBoxLayout()   # under the picture, where it is always in reach: the shutter, and what happened to the last shot
         self.capture_button = self._button("Capture (Space)", "Wait, release the shutter without focusing (focus stays where you put it), and save what the camera makes", self.capture)
         self.capture_button.setMinimumSize(190, 40)
@@ -396,7 +501,8 @@ class TetherWindow(QDialog):
         scroll.setFixedWidth(384)
         scroll.setFrameShape(QScrollArea.Shape.NoFrame)
         root.addWidget(scroll)
-        for key, action in (("Space", self.capture), ("0", lambda: self.zoom_slider.setValue(100)), ("I", lambda: self.positive_check.toggle()), ("P", lambda: self.peaking_check.toggle()), ("L", lambda: self.loupe_check.toggle()),
+        for key, action in (("Space", self.capture), ("0", lambda: self.zoom_slider.setValue(100)), ("I", lambda: self.positive_check.toggle()), ("P", lambda: self.peaking_check.toggle()), ("L", lambda: self.loupe_check.toggle()), ("H", lambda: self.histogram_check.toggle()),
+                            ("Ctrl+Left", lambda: self._camera_step(-1, 0)), ("Ctrl+Right", lambda: self._camera_step(1, 0)), ("Ctrl+Up", lambda: self._camera_step(0, -1)), ("Ctrl+Down", lambda: self._camera_step(0, 1)),
                             ("Left", lambda: self.focus("near", "fine")), ("Right", lambda: self.focus("far", "fine")),
                             ("Shift+Left", lambda: self.focus("near", "medium")), ("Shift+Right", lambda: self.focus("far", "medium")),
                             ("Alt+Left", lambda: self.focus("near", "coarse")), ("Alt+Right", lambda: self.focus("far", "coarse"))):
@@ -511,6 +617,12 @@ class TetherWindow(QDialog):
         self.peaking_slider.setToolTip("100% marks every sharp spot, 0% only the very sharpest")
         self.peaking_slider.valueChanged.connect(lambda v: (self.peaking_value.setText(f"{v}%"), self._view_changed()))
         lay.addWidget(self.peaking_slider)
+        self.histogram_check = QCheckBox("Histogram (H)")
+        self.histogram_check.setChecked(True)
+        self.histogram_check.setToolTip("The camera's own picture as a histogram in the bottom left of the live picture: red, green and blue, with the luminance as a white line. A bar at the left or right edge "
+                                        "means more than half a per cent of the picture is clipped there. Use it to set the exposure so the film's range sits inside it")
+        self.histogram_check.toggled.connect(self._histogram_toggled)
+        lay.addWidget(self.histogram_check)
         self.loupe_check = QCheckBox("Loupe (L): enlarge what the mouse is over")   # drawn bottom right, with the picture's own pixels
         self.loupe_check.setToolTip("Four times the camera's own pixels round the mouse, not the smaller picture shown")
         self.loupe_check.toggled.connect(self._loupe_toggled)
@@ -892,6 +1004,7 @@ class TetherWindow(QDialog):
         self.camera_zoom_note.setText("" if caps.zoom else "This camera does not send a zoomed live picture.")
         self._camera_zoom_level, self._camera_zoom_center = 1, (0.5, 0.5)
         self.image.camera_pan = False
+        self.image.map.hide()
         self.session.pipeline.set_flatfield(self._flat_gain)
         self._apply_view()
         self._exposure_timer.start()
@@ -975,7 +1088,10 @@ class TetherWindow(QDialog):
         if session is not None:
             x0, y0, x1, y1 = liveview.region_box(frame.rgb.shape, *session.view.region)
             region = (x0 / w, y0 / h, x1 / w, y1 / h)
-        self.image.set_frame(frame.image, region, f"{w} x {h}   {fps:.0f} fps", ("Blown out: " + "  ".join(bad)) if bad else "")
+        self.image.set_frame(frame.image, region, f"{w} x {h}   {fps:.0f} fps", ("Blown out: " + "  ".join(bad)) if bad else "", frame.histogram)
+        if self._camera_zoom_level == 1 and now - self._overview_at > 0.7:
+            self.image.map.set_overview(frame.image)      # (the map's picture is the last whole one: it cannot be taken while zoomed)
+            self._overview_at = now
         if session is not None:
             best = max(session.best, 1e-9)
             self.sharp_label.setText(f"Sharpness: {frame.sharpness:.2f}     best {session.best:.2f}")
@@ -1025,6 +1141,10 @@ class TetherWindow(QDialog):
             elif self._flat_gain is not None and self._flat_frames is None:
                 self.flat_label.setText("Evening out the preview with " + ("the flat field captured from the light." if self._flat_source == "captured" else "EFAS's permanent flat field.")
                                         if flat else "The flat field is kept but switched off.")
+
+    def _histogram_toggled(self, on: bool) -> None:
+        self.image.show_histogram = on
+        self.image.update()
 
     def _loupe_toggled(self, on: bool) -> None:
         if not on:
@@ -1095,17 +1215,34 @@ class TetherWindow(QDialog):
             b.setChecked(n == level)
         self._camera_zoom_level, self._camera_zoom_center = level, (0.5, 0.5)
         self.image.camera_pan = level > 1
+        self.image.map.set_frame(level, self._camera_zoom_center)
+        self.image.map.setVisible(level > 1)
         self._apply_view()
-        self._send_camera_zoom(level, (0.5, 0.5) if level > 1 else None)
+        self._send_camera_zoom(level, None)      # (the camera's own position for it: the middle, unless it says otherwise)
 
     def _camera_pan(self, fx: float, fy: float) -> None:
-        """The middle button dragged the zoomed picture by (fx, fy) of its size: the picture follows the pointer, so the camera's zoom frame moves the other way (a fifth or a tenth as far)."""
+        """The picture was dragged by (fx, fy) of its size: it follows the pointer, so the camera's zoom frame moves the other way (a fifth or a tenth as far)."""
+        cx, cy = self._camera_zoom_center
+        level = max(1, self._camera_zoom_level)
+        self._set_zoom_centre((cx - fx / level, cy - fy / level))
+
+    def _camera_step(self, dx: int, dy: int) -> None:
+        """Ctrl and an arrow key: move the zoom frame by half of what it shows."""
+        cx, cy = self._camera_zoom_center
+        half = 0.5 / max(1, self._camera_zoom_level)
+        self._set_zoom_centre((cx + dx * half, cy + dy * half))
+
+    def _zoom_map_moved(self, fx: float, fy: float) -> None:
+        self._set_zoom_centre((fx, fy))
+
+    def _set_zoom_centre(self, centre: tuple) -> None:
+        """Put the middle of the camera's zoom frame here (fractions of the whole picture, held inside it) and ask the camera."""
         level = self._camera_zoom_level
         if self._state != "live" or self.session is None or level <= 1:
             return
         half = 0.5 / level
-        cx, cy = self._camera_zoom_center
-        self._camera_zoom_center = (min(max(cx - fx / level, half), 1 - half), min(max(cy - fy / level, half), 1 - half))
+        self._camera_zoom_center = (min(max(centre[0], half), 1 - half), min(max(centre[1], half), 1 - half))
+        self.image.map.set_frame(level, self._camera_zoom_center)
         self._send_camera_pan()
 
     def _send_camera_pan(self) -> None:
@@ -1113,7 +1250,7 @@ class TetherWindow(QDialog):
         if self._zoom_sending or self.session is None:
             return
         self._zoom_sending, self._zoom_sent = True, self._camera_zoom_center
-        job = self._send_camera_zoom(self._camera_zoom_level, self._zoom_sent)
+        job = self._send_camera_zoom(self._camera_zoom_level, self._zoom_sent, pan=True)
         job.finished.connect(self._camera_pan_sent)
 
     def _camera_pan_sent(self) -> None:
@@ -1121,11 +1258,12 @@ class TetherWindow(QDialog):
         if self._camera_zoom_level > 1 and self._camera_zoom_center != self._zoom_sent:
             self._send_camera_pan()
 
-    def _send_camera_zoom(self, level: int, center) -> JobWorker:
+    def _send_camera_zoom(self, level: int, center, pan: bool = False) -> JobWorker:
         session = self.session
         job = JobWorker(lambda: session.set_zoom(level) if center is None else session.set_zoom(level, center))
         job.failed.connect(self._focus_failed)
-        job.failed.connect(lambda _m: self._camera_zoom_refused())
+        if not pan:      # a zoom the camera refuses is not on; a move it refuses leaves the zoom as it is, and says so
+            job.failed.connect(lambda _m: self._camera_zoom_refused())
         self._alive.add(job)
         job.finished.connect(lambda j=job: self._alive.discard(j))
         job.start()
@@ -1134,6 +1272,7 @@ class TetherWindow(QDialog):
     def _camera_zoom_refused(self) -> None:
         self._camera_zoom_level, self._camera_zoom_center = 1, (0.5, 0.5)
         self.image.camera_pan = False
+        self.image.map.hide()
         for n, b in self.camera_zoom_buttons.items():
             b.setChecked(n == 1)
         self._apply_view()

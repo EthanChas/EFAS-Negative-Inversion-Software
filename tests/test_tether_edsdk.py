@@ -535,6 +535,27 @@ def test_a_camera_that_refuses_the_zoom_says_what_it_answered(quick):
         camera.close()
 
 
+def test_a_zoom_frame_that_cannot_be_moved_says_why_and_a_move_alone_does_not_rewrite_the_zoom(quick):
+    fake = FakeEdsdk()
+    fake.props[api.PROP_EVF_ZOOM] = 1
+    camera = opened(fake)      # (no coordinate system on this body)
+    try:
+        camera.set_zoom(5)
+        with pytest.raises(TetherError, match="size of its live picture.*Evf_CoordinateSystem"):
+            camera.set_zoom(5, (0.2, 0.5))
+        fake.props[api.PROP_EVF_COORDINATE_SYSTEM] = (5000, 3000)
+        before = [c for c in fake.calls if c[:2] == ("set", api.PROP_EVF_ZOOM)]
+        camera.set_zoom(5, (0.3, 0.5))
+        assert [c for c in fake.calls if c[:2] == ("set", api.PROP_EVF_ZOOM)] == before, "already at 5x: only the position is written"
+        assert fake.props[api.PROP_EVF_ZOOM_POSITION] == (1000, 1200)
+        original = fake.EdsSetPropertyData
+        fake.EdsSetPropertyData = lambda ref, prop, param, size, data: 0x0000A005 if prop == api.PROP_EVF_ZOOM_POSITION else original(ref, prop, param, size, data)
+        with pytest.raises(TetherError, match="Evf_ZoomPosition.*OPERATION_REFUSED"):
+            camera.set_zoom(5, (0.6, 0.5))
+    finally:
+        camera.close()
+
+
 def test_the_zoom_frame_can_be_moved_to_another_part_of_the_picture(quick):
     fake = FakeEdsdk()
     fake.props[api.PROP_EVF_ZOOM] = 1

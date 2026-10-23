@@ -150,7 +150,16 @@ _SCRIPT = textwrap.dedent(r'''
     until(lambda: camera._zoom == 5, what="the camera to zoom")
     assert w.camera_zoom_buttons[5].isChecked() and not w.camera_zoom_buttons[1].isChecked()
     until(lambda: not any(j.isRunning() for j in list(w._alive)), what="the zoom job")
-    assert w.image.camera_pan, "zoomed on the camera: the middle button moves the camera's zoom frame"
+    assert w.image.camera_pan and w.image.map.isVisible(), "zoomed on the camera: the middle button moves the camera's zoom frame, and a map of where it is shows"
+    w.image.map.moved.emit(0.8, 0.5)
+    until(lambda: camera._zoom_center[0] > 0.75, what="the camera to move its zoom frame to where the map was clicked")
+    until(lambda: not any(j.isRunning() for j in list(w._alive)), what="the move")
+    shortcuts["Ctrl+Left"].activated.emit()
+    until(lambda: camera._zoom_center[0] < 0.75, what="the camera to move its zoom frame left (Ctrl + Left)")
+    until(lambda: not any(j.isRunning() for j in list(w._alive)), what="the move")
+    w.image.map.moved.emit(0.5, 0.5)
+    until(lambda: abs(camera._zoom_center[0] - 0.5) < 0.01, what="the frame back in the middle")
+    until(lambda: not any(j.isRunning() for j in list(w._alive)), what="the move")
     QTest.mousePress(w.image, Qt.MouseButton.MiddleButton, Qt.KeyboardModifier.NoModifier, QPoint(650, 300))
     from PyQt6.QtGui import QMouseEvent
     from PyQt6.QtCore import QEvent
@@ -160,13 +169,19 @@ _SCRIPT = textwrap.dedent(r'''
     until(lambda: not any(j.isRunning() for j in list(w._alive)), what="the move")
     w.camera_zoom(1)
     until(lambda: camera._zoom == 1, what="the camera to show the whole picture again")
-    assert not w.image.camera_pan, "whole picture: the middle button moves our own zoomed picture"
+    assert not w.image.camera_pan and not w.image.map.isVisible(), "whole picture: the middle button moves our own zoomed picture, and there is no map"
     img.set_zoom(3.0); c0 = img._centre
     QTest.mousePress(img, Qt.MouseButton.MiddleButton, Qt.KeyboardModifier.NoModifier, QPoint(400, 300))
     app.sendEvent(img, QMouseEvent(QEvent.Type.MouseMove, QPointF(330, 300), QPointF(330, 300), Qt.MouseButton.NoButton, Qt.MouseButton.MiddleButton, Qt.KeyboardModifier.NoModifier))
     QTest.mouseRelease(img, Qt.MouseButton.MiddleButton, Qt.KeyboardModifier.NoModifier, QPoint(330, 300))
     assert img._centre[0] > c0[0], "the middle button moves around in the zoomed picture"
     img.set_zoom(1.0)
+
+    # --- the histogram of the camera's picture, in the corner of the live picture
+    assert w.histogram_check.isChecked() and w._frame is not None and w._frame.histogram.shape == (4, 256) and img._histogram is not None
+    shortcuts["H"].activated.emit(); assert not w.histogram_check.isChecked() and not img.show_histogram
+    shortcuts["H"].activated.emit(); assert img.show_histogram
+    img.grab()    # it draws
 
     # --- the flat field: capture the light, the preview is evened out and the profile is kept; Forget lets it go
     assert not w.flat_check.isEnabled() and "No flat field" in w.flat_label.text() and w.flat_capture_button.isEnabled()

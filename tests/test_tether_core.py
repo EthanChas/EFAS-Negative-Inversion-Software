@@ -532,6 +532,17 @@ def test_bright_parts_at_the_edges_are_not_clipped_to_white_by_the_conversion_an
     assert pipeline._lut is not first, "back to metering: it follows the picture again"
 
 
+def test_the_live_picture_comes_with_a_histogram_of_the_cameras_own_picture():
+    img = np.zeros((640, 960, 3), np.uint8)
+    img[..., 0], img[..., 1], img[..., 2] = 255, 128, 0
+    frame = liveview.Pipeline().process(_jpeg(img), liveview.View(positive=False))
+    hist = frame.histogram
+    assert hist.shape == (4, 256)
+    pixels = 320 * 480
+    assert hist[0].sum() == hist[3].sum() == pixels and int(hist[0].argmax()) >= 250 and int(hist[2].argmax()) <= 5, "red is at the top, blue at the bottom"
+    assert abs(int(hist[1].argmax()) - 128) <= 3 and abs(int(hist[3].argmax()) - 151) <= 3, "green in the middle, and the luminance 0.3 R + 0.6 G + 0.1 B"
+
+
 def test_the_live_picture_is_no_longer_made_smaller_than_the_camera_sent_up_to_1620_wide():
     assert liveview.WORK_WIDTH >= 1620
     big = np.clip(np.random.default_rng(0).normal(128, 40, (1080, 1620, 3)), 0, 255).astype(np.uint8)

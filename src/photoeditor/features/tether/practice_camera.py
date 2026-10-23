@@ -151,8 +151,7 @@ class PracticeCamera:
             raise ValueError(f"level is one of 1, 5, 10, not {level!r}")
         with self._lock:
             self._zoom = int(level)
-            if center is not None:
-                self._zoom_center = (float(center[0]), float(center[1]))
+            self._zoom_center = (0.5, 0.5) if center is None else (float(center[0]), float(center[1]))
             self._frame = None   # the next live picture is the zoomed one
 
     def _zoomed(self, rgb: np.ndarray) -> np.ndarray:
