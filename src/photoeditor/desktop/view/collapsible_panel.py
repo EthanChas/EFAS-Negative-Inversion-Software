@@ -102,6 +102,7 @@ class _CollapsibleHeader(QWidget):
         label = QLabel(title)
         label.setProperty("role", "mini_header_text")
         label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        self._title_label = label
         row.addWidget(label, 0, Qt.AlignmentFlag.AlignVCenter)
 
         self.preset_label = QLabel("")
@@ -111,6 +112,10 @@ class _CollapsibleHeader(QWidget):
         row.addWidget(self.preset_label, 0, Qt.AlignmentFlag.AlignVCenter)
         row.addStretch(1)
 
+        self.instances_button = CaptionButton("instances")
+        self.instances_button.setToolTip("Multiple instances: make another copy of this module, with its own settings and mask")
+        self.instances_button.hide()
+        row.addWidget(self.instances_button, 0, Qt.AlignmentFlag.AlignVCenter)
         self.reset_button = CaptionButton("refresh")
         self.reset_button.setToolTip("Reset this module to its defaults")
         self.presets_button = CaptionButton("menu")
@@ -289,6 +294,21 @@ class CollapsiblePanel(BevelPanel):
 
     def power_on(self) -> bool:
         return self._header.power_light.is_on()
+
+    def set_display_title(self, text: str) -> None:
+        """The name shown in the header (a copy of a module is shown with its number and name); the module's own title still picks its icon and colour."""
+        self._header._title_label.setText(text)
+
+    def enable_instance_button(self, tooltip: str | None = None) -> CaptionButton:
+        """Show the multiple-instances button (two overlapping squares) in the header."""
+        if tooltip:
+            self._header.instances_button.setToolTip(tooltip)
+        self._header.instances_button.show()
+        return self._header.instances_button
+
+    @property
+    def instances_button(self) -> CaptionButton:
+        return self._header.instances_button
 
     def enable_module_buttons(self) -> None:
         """Show a Reset button and a Presets (menu) button in the header, next to the help button."""

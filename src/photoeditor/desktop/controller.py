@@ -67,6 +67,7 @@ from ..features.masks import model as mask_model
 from ..features.masks import raster as mask_raster
 from ..features.masks import state as mask_state
 from ..features.retouchdt import logic as rt_logic
+from ..features.instances import logic as inst_logic
 from ..features.halation import logic as hal_logic
 from ..features.lablook import logic as lab_look_logic
 from ..features.printresponse import logic as print_response_logic
@@ -180,6 +181,7 @@ class AppController(QObject):
     look_preset_changed = pyqtSignal()   # the whole-look preset applied to the open photo changed (applied, cleared)
     look_presets_changed = pyqtSignal(str)
     error_marks_changed = pyqtSignal()
+    instances_changed = pyqtSignal()   # a copy of a module was added, taken away, renamed, switched or restored by an undo: the window makes its panels again
     retouch_changed = pyqtSignal()   # Retouch's settings or shapes changed (a shape added or taken out, a scale, an algorithm...): its panel reads them again
     masks_changed = pyqtSignal()   # a shape or group was added, changed, renamed or deleted, or a module's Mask box changed: the mask lists and boxes read it again
     modules_enabled_changed = pyqtSignal()
@@ -346,6 +348,7 @@ class AppController(QObject):
         self.state.masks = mask_state.clean_masks(saved.get("masks"))
         self.state.blends = mask_state.clean_blends(saved.get("blends"), self.state.masks)
         self.state.retouch = rt_logic.Settings.from_dict(saved.get("retouch")).to_dict() if saved.get("retouch") else {}
+        self.state.instances = inst_logic.clean(saved.get("instances"))
         self.state.retouch_view = ""
         self.state.ai_dust = bool(saved.get("ai_dust", False))
         self.state.ai_threshold = float(saved.get("ai_threshold", 0.3))
@@ -1893,14 +1896,16 @@ class AppController(QObject):
         return self._retouch_uses(form_ids)
 
     def _retouch_uses(self, form_ids=None) -> bool:
-        """True when Retouch acts through one of these shapes (any, when none are given) or through the group that holds them."""
-        s = self.retouch_settings()
-        if not s.active():
-            return False
-        if form_ids is None:
-            return True
-        wanted = set(form_ids)
-        return s.group in wanted or any(f.formid in wanted for f in s.forms)
+        """True when Retouch (or a copy of it) acts through one of these shapes (any, when none are given) or through the group that holds them."""
+        for s in self.all_retouch_settings():
+            if not s.active():
+                continue
+            if form_ids is None:
+                return True
+            wanted = set(form_ids)
+            if s.group in wanted or any(f.formid in wanted for f in s.forms):
+                return True
+        return False
 
     @staticmethod
     def _made_of(ms, form_id: int, wanted: set, depth: int = 0) -> bool:
@@ -2041,15 +2046,42 @@ class AppController(QObject):
         self.state.blends = blends
 
     # ------------------------------------------------------------ Retouch (features/retouchdt): shapes with an algorithm and a wavelet scale
-    def retouch_settings(self) -> rt_logic.Settings:
-        return rt_logic.Settings.from_dict(self.state.retouch)
+    def retouch_settings(self, instance: int = 0) -> rt_logic.Settings:
+        """Retouch's settings: the module's own (instance 0) or those of one of its copies (features/instances)."""
+        if not instance:
+            return rt_logic.Settings.from_dict(self.state.retouch)
+        item = inst_logic.get(self.state.instances, "retouch", instance)
+        return rt_logic.Settings.from_dict(item["settings"] if item else None)
 
-    def _put_retouch(self, s: rt_logic.Settings) -> None:
-        self.state.retouch = s.to_dict() if (s.active() or s != rt_logic.Settings()) else {}
+    def all_retouch_settings(self) -> list[rt_logic.Settings]:
+        return [self.retouch_settings(0)] + [rt_logic.Settings.from_dict(i["settings"]) for i in self.state.instances.get("retouch", ())]
 
-    def _retouch_edited(self, s: rt_logic.Settings, description: str | None, preview: bool = False, redraw: bool = True) -> None:
+    def retouch_instance_of(self, form_id: int) -> int | None:
+        """Which Retouch (0 the module, else a copy's id) a shape belongs to; None when none."""
+        if self.retouch_settings(0).form(form_id) is not None:
+            return 0
+        for item in self.state.instances.get("retouch", ()):
+            if rt_logic.Settings.from_dict(item["settings"]).form(form_id) is not None:
+                return item["id"]
+        return None
+
+    def retouch_form_setting(self, form_id: int):
+        owner = self.retouch_instance_of(form_id)
+        return None if owner is None else self.retouch_settings(owner).form(form_id)
+
+    def _put_retouch(self, s: rt_logic.Settings, instance: int = 0) -> None:
+        if not instance:
+            self.state.retouch = s.to_dict() if (s.active() or s != rt_logic.Settings()) else {}
+            return
+        instances = copy.deepcopy(self.state.instances)
+        item = inst_logic.get(instances, "retouch", instance)
+        if item is not None:
+            item["settings"] = s.to_dict()
+            self.state.instances = inst_logic.clean(instances)
+
+    def _retouch_edited(self, s: rt_logic.Settings, description: str | None, preview: bool = False, redraw: bool = True, instance: int = 0) -> None:
         """Keep these settings; draw the picture again (a drag only previews it) and say so in the undo history (unless `description` is None)."""
-        self._put_retouch(s)
+        self._put_retouch(s, instance)
         if redraw and self.state.preview_rgb is not None and (s.active() or self.state.retouch_view):
             self._preview(LIVE_OTHER_METHODS | {"retouch"}) if preview else self._settle()
         if description:
@@ -2057,24 +2089,28 @@ class AppController(QObject):
         self.retouch_changed.emit()
 
     def _retouch_prune(self, ms) -> bool:
-        """After shapes were deleted: Retouch forgets the shapes that are gone (and its group, if that went). True when it changed."""
-        s = self.retouch_settings()
-        if not s.forms and not s.group:
-            return False
-        forms = [f for f in s.forms if ms.get(f.formid) is not None]
-        group = s.group if s.group and ms.get(s.group) is not None else 0
-        if len(forms) == len(s.forms) and group == s.group:
-            return False
-        s.forms, s.group = forms, group
-        self._put_retouch(s)
-        self.retouch_changed.emit()
-        return True
+        """After shapes were deleted: Retouch and its copies forget the shapes that are gone (and their group, if that went). True when anything changed."""
+        changed = False
+        for instance in [0] + [i["id"] for i in self.state.instances.get("retouch", ())]:
+            s = self.retouch_settings(instance)
+            if not s.forms and not s.group:
+                continue
+            forms = [f for f in s.forms if ms.get(f.formid) is not None]
+            group = s.group if s.group and ms.get(s.group) is not None else 0
+            if len(forms) == len(s.forms) and group == s.group:
+                continue
+            s.forms, s.group = forms, group
+            self._put_retouch(s, instance)
+            changed = True
+        if changed:
+            self.retouch_changed.emit()
+        return changed
 
-    def add_retouch_form(self, form_type: str, points: list, source=None) -> int:
+    def add_retouch_form(self, form_type: str, points: list, source=None, instance: int = 0) -> int:
         """A shape drawn for Retouch (with its source, for clone and heal): added to the photo's masks and to Retouch's group as one step. Returns its id, 0 if it could not be added."""
         if self.state.preview_rgb is None:
             return 0
-        s = self.retouch_settings()
+        s = self.retouch_settings(instance)
         if len(s.forms) >= rt_logic.MAX_FORMS:
             self.notice.emit("Retouch is full: it takes 300 shapes")
             return 0
@@ -2085,18 +2121,18 @@ class AppController(QObject):
         if s.group and ms.get(s.group) is not None:
             ms.add_to_group(s.group, form.id)
         else:
-            group = ms.add_group([f.formid for f in s.forms if ms.get(f.formid) is not None] + [form.id], "Retouch")
+            group = ms.add_group([f.formid for f in s.forms if ms.get(f.formid) is not None] + [form.id], "Retouch" if not instance else inst_logic.title(self.state.instances, "retouch", instance))
             s.group = group.id if group is not None else 0
         s.forms.append(rt_logic.FormSetting(form.id, s.curr_scale, s.algorithm, s.blur_type, s.blur_radius, s.fill_mode, list(s.fill_color), s.fill_brightness))
         self.state.masks = ms.to_dict()
-        self._retouch_edited(s, f"Retouch: added {form.name}")
+        self._retouch_edited(s, f"{inst_logic.title(self.state.instances, 'retouch', instance)}: added {form.name}", instance=instance)
         self.masks_changed.emit()
         return form.id
 
-    def set_retouch(self, changes: dict, description: str | None = None, preview: bool = False, form_id: int = 0) -> None:
+    def set_retouch(self, changes: dict, description: str | None = None, preview: bool = False, form_id: int = 0, instance: int = 0) -> None:
         """Change Retouch's settings (algorithm, num_scales, curr_scale, merge_from_scale, blur_type, blur_radius, fill_mode, fill_color, fill_brightness, preview_levels, preview_auto).
-        With a shape picked (`form_id`) the blur and fill settings go to that shape too, as in darktable."""
-        s = self.retouch_settings()
+        With a shape picked (`form_id`) the blur and fill settings go to that shape too, as in darktable. `instance`: 0 for the module, else the id of one of its copies."""
+        s = self.retouch_settings(instance)
         d = s.to_dict()
         d.update(changes)
         new = rt_logic.Settings.from_dict(d)
@@ -2111,11 +2147,11 @@ class AppController(QObject):
                     if key in changes:
                         setattr(form, key, getattr(new, key))
         looking = set(changes) <= {"curr_scale", "preview_levels", "preview_auto"} and form is None     # where to look, not what to do: not an edit
-        self._retouch_edited(new, None if looking else description, preview, redraw=not (set(changes) <= {"algorithm"}) and (not looking or bool(self.state.retouch_view)))
+        self._retouch_edited(new, None if looking else description, preview, redraw=not (set(changes) <= {"algorithm"}) and (not looking or bool(self.state.retouch_view)), instance=instance)
 
-    def set_retouch_form(self, form_id: int, changes: dict, description: str | None = None) -> bool:
+    def set_retouch_form(self, form_id: int, changes: dict, description: str | None = None, instance: int = 0) -> bool:
         """Change one shape's own settings (algorithm, scale, blur_type, blur_radius, fill_mode, fill_color, fill_brightness)."""
-        s = self.retouch_settings()
+        s = self.retouch_settings(instance)
         form = s.form(form_id)
         if form is None:
             return False
@@ -2125,27 +2161,28 @@ class AppController(QObject):
         if new is None:
             return False
         s.forms[s.forms.index(form)] = new
-        self._retouch_edited(s, description)
+        self._retouch_edited(s, description, instance=instance)
         return True
 
-    def paste_retouch_scale(self, source: int, dest: int) -> int:
+    def paste_retouch_scale(self, source: int, dest: int, instance: int = 0) -> int:
         """Move every shape on one wavelet scale to another (darktable's cut and paste shapes between scales). Returns how many moved."""
-        s = self.retouch_settings()
+        s = self.retouch_settings(instance)
         if source == dest or source < 0 or dest < 0:
             return 0
         moved = [f for f in s.forms if f.scale == source]
         for f in moved:
             f.scale = dest
         if moved:
-            self._retouch_edited(s, f"Retouch: moved {len(moved)} shapes from scale {source} to scale {dest}")
+            self._retouch_edited(s, f"Retouch: moved {len(moved)} shapes from scale {source} to scale {dest}", instance=instance)
         return len(moved)
 
-    def set_retouch_view(self, view: str) -> None:
+    def set_retouch_view(self, view: str, instance: int = 0) -> None:
         """What Retouch shows on the picture: "" the result, "scale" the wavelet scale being worked on, "mask" where the shapes act, "suppress" the picture without Retouch. Not an edit."""
         view = view if view in rt_logic.VIEWS else ""
-        if view == self.state.retouch_view:
+        if view == self.state.retouch_view and (not view or instance == self.state.retouch_view_of):
             return
         self.state.retouch_view = view
+        self.state.retouch_view_of = instance if view else 0
         if self.state.preview_rgb is not None:
             self._settle()
 
@@ -3041,6 +3078,7 @@ class AppController(QObject):
             masks=copy.deepcopy(s.masks),
             blends=copy.deepcopy(s.blends),
             retouch=copy.deepcopy(s.retouch),
+            instances=copy.deepcopy(s.instances),
             film_type=s.film_type,
             invert_r=s.invert_r,
             invert_g=s.invert_g,
@@ -3170,6 +3208,7 @@ class AppController(QObject):
             "masks": s.masks,
             "blends": s.blends,
             "retouch": s.retouch,
+            "instances": s.instances,
             "ai_dust": s.ai_dust,
             "ai_threshold": s.ai_threshold,
             "ai_grow": s.ai_grow,
@@ -3241,6 +3280,7 @@ class AppController(QObject):
         self.state.masks = {}
         self.state.blends = {}
         self.state.retouch = {}
+        self.state.instances = {}
         self.state.retouch_view = ""
         self.state.ai_dust = False
         self.state.ai_threshold = aidust.DEFAULT_THRESHOLD
@@ -3445,6 +3485,7 @@ class AppController(QObject):
         s.masks = copy.deepcopy(entry.masks)
         s.blends = copy.deepcopy(entry.blends)
         s.retouch = copy.deepcopy(entry.retouch)
+        s.instances = copy.deepcopy(entry.instances)
         self._last_logged_ai = (entry.ai_dust, round(entry.ai_threshold, 4), entry.ai_grow)
         s.film_type = entry.film_type
         s.invert_r, s.invert_g, s.invert_b = entry.invert_r, entry.invert_g, entry.invert_b
@@ -3625,10 +3666,16 @@ class AppController(QObject):
         s = self.state
         if not self.module_enabled(key) or s.image_path is None:
             return False
+        base, instance_id = inst_logic.split_key(key)
+        if instance_id:
+            item = inst_logic.get(s.instances, base, instance_id)
+            if base == "retouch":
+                return bool(item and item["on"] and rt_logic.Settings.from_dict(item["settings"]).active())
+            return bool(item and item["on"] and item["values"] != inst_logic.defaults_of(base))
         if key == "dust":
             return bool(s.dust_auto or s.scratch_lines or s.heal_strokes or s.clone_strokes)
         if key == "retouch":
-            return self.retouch_settings().active()
+            return self.retouch_settings(0).active()
         if key == "errormarks":
             return bool(s.error_marks)
         if key == "negative":
@@ -3647,7 +3694,95 @@ class AppController(QObject):
         return any(not same(v, defaults[k]) for k, v in values.items() if k in defaults and k not in ("metering", "marks"))
 
     def module_title(self, key: str) -> str:
+        base, instance_id = inst_logic.split_key(key)
+        if instance_id:
+            return inst_logic.title(self.state.instances, base, instance_id)
         return EXTRA_TITLES[key] if key in EXTRA_TITLES else PANEL_MODULES[key][0]
+
+    # ------------------------------------------------------------ copies of a module (features/instances)
+    def instances_of(self, key: str) -> list[dict]:
+        return copy.deepcopy(self.state.instances.get(key, []))
+
+    def _instances_edited(self, instances: dict, description: str | None, preview: bool = False, rebuild: bool = False) -> None:
+        self.state.instances = inst_logic.clean(instances)
+        if self.state.preview_rgb is not None:
+            self._preview(LIVE_OTHER_METHODS | {"retouch"}) if preview else self._settle()
+        if description:
+            self._log(description)
+        if rebuild:
+            self.instances_changed.emit()
+        self.masks_changed.emit()      # (the module's Mask boxes read the copies' blends again)
+
+    def add_instance(self, key: str, copy_of: int | None = None, name: str = "") -> int:
+        """Another copy of a module. `copy_of`: None starts it with the module's defaults ("new instance"); 0 copies the module's own settings now, an id copies that copy ("duplicate").
+        Returns the copy's id, 0 if it could not be made."""
+        if key not in inst_logic.COPYABLE or self.state.preview_rgb is None:
+            return 0
+        values = None
+        if key == "retouch":     # a copy of Retouch has its own shapes: a duplicate keeps the algorithm, scales and sizes but starts with none
+            if copy_of is not None:
+                values = self.retouch_settings(copy_of).to_dict()
+                values["forms"], values["group"] = [], 0
+        elif copy_of == 0:
+            values = self.module_values(key)
+        elif copy_of:
+            source = inst_logic.get(self.state.instances, key, copy_of)
+            values = source["values"] if source else None
+        instances, new_id = inst_logic.add(self.state.instances, key, values, name)
+        if not new_id:
+            self.notice.emit(f"{self.module_title(key)} already has {inst_logic.MAX_INSTANCES} copies")
+            return 0
+        if key == "retouch":
+            pass
+        elif copy_of is not None and copy_of > 0:       # a duplicate takes its mask with it
+            blend = self.state.blends.get(inst_logic.instance_key(key, copy_of))
+            if blend:
+                self.state.blends = {**self.state.blends, inst_logic.instance_key(key, new_id): copy.deepcopy(blend)}
+        elif copy_of == 0 and key in self.state.blends and key != "retouch":
+            self.state.blends = {**self.state.blends, inst_logic.instance_key(key, new_id): copy.deepcopy(self.state.blends[key])}
+        self._instances_edited(instances, f"Added {inst_logic.title(instances, key, new_id)}", rebuild=True)
+        return new_id
+
+    def remove_instance(self, key: str, instance_id: int) -> bool:
+        if inst_logic.get(self.state.instances, key, instance_id) is None:
+            return False
+        title = inst_logic.title(self.state.instances, key, instance_id)
+        ikey = inst_logic.instance_key(key, instance_id)
+        self.state.blends = {k: v for k, v in self.state.blends.items() if k != ikey}
+        self._instances_edited(inst_logic.remove(self.state.instances, key, instance_id), f"Deleted {title}", rebuild=True)
+        return True
+
+    def rename_instance(self, key: str, instance_id: int, name: str) -> bool:
+        instances = copy.deepcopy(self.state.instances)
+        item = inst_logic.get(instances, key, instance_id)
+        if item is None:
+            return False
+        item["name"] = name
+        self._instances_edited(instances, f"Renamed {inst_logic.title(self.state.instances, key, instance_id)}", rebuild=True)
+        return True
+
+    def set_instance_enabled(self, key: str, instance_id: int, on: bool) -> None:
+        instances = copy.deepcopy(self.state.instances)
+        item = inst_logic.get(instances, key, instance_id)
+        if item is None or item["on"] == bool(on):
+            return
+        item["on"] = bool(on)
+        self._instances_edited(instances, None, rebuild=True)
+        self.notice.emit(f"{inst_logic.title(instances, key, instance_id)} switched {'on' if on else 'off'}")
+
+    def set_instance_values(self, key: str, instance_id: int, changes: dict, preview: bool = False) -> None:
+        """Change settings of a copy (a drag is only previewed, the end of it is one step in the history)."""
+        instances = copy.deepcopy(self.state.instances)
+        item = inst_logic.get(instances, key, instance_id)
+        if item is None:
+            return
+        item["values"] = inst_logic.clean_values(key, {**item["values"], **changes})
+        if item["values"] == inst_logic.get(self.state.instances, key, instance_id)["values"]:
+            return
+        self._instances_edited(instances, None if preview else f"{inst_logic.title(instances, key, instance_id)}: {', '.join(changes)}", preview)
+
+    def reset_instance(self, key: str, instance_id: int) -> None:
+        self.set_instance_values(key, instance_id, inst_logic.defaults_of(key))
 
     def module_values(self, key: str) -> dict | None:
         """The open photo's current values of one panel's fields, JSON-ready - what a module preset stores."""

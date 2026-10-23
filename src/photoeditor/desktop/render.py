@@ -56,6 +56,7 @@ from ..features.grainsharp import logic as gs_logic
 from ..features.masks import state as mask_state
 from ..features.masks.frame import FrameMap
 from ..features.retouchdt import logic as rt_logic
+from ..features.instances import logic as inst_logic
 from ..features.colormix.logic import MIXER_PANEL_KEYS, TONING_KEYS
 from .mask_blend import MaskBlender
 from ..features.halation import logic as hal_logic
@@ -220,6 +221,8 @@ class EditParams:
     masks_json: str = ""      # the photo's drawn masks as JSON (a string, so it is hashable and a change of any shape draws the picture again); "" when there are none
     retouch_json: str = ""    # the Retouch module's settings as JSON ("" when it has no shapes): hashable, so any change draws the picture again
     retouch_view: str = ""    # what the Retouch panel is showing (see features/retouchdt VIEWS)
+    retouch_view_of: int = 0  # ... for which Retouch (0 the module, else the id of one of its copies)
+    instances: tuple = ()     # the copies of modules (features/instances frozen()): ((module key, id, on, ((field, value), ...)), ...)
     blends: tuple = ()        # ((module key, mode, mask id, opacity, invert, blur, feather, brightness, contrast), ...) for each module blended through a mask or uniformly
     wm_vars: tuple = ()   # ((name, value), ...): the watermark variables of this photo (hashable, so a change of any draws the watermark again)
 
@@ -351,6 +354,8 @@ class EditParams:
             masks_json=mask_state.masks_json(getattr(s, "masks", None)),
             retouch_json=rt_logic.to_json(getattr(s, "retouch", None)),
             retouch_view=str(getattr(s, "retouch_view", "") or ""),
+            retouch_view_of=int(getattr(s, "retouch_view_of", 0) or 0),
+            instances=inst_logic.frozen(getattr(s, "instances", None)),
             blends=mask_state.blends_tuple(getattr(s, "blends", None)),
             scan_width=int(getattr(getattr(s, "original_rgb", None), "shape", (0, 0))[1] or 0),
             vignette=float(getattr(s, "vignette", 0.0)),
@@ -690,10 +695,22 @@ class Renderer:
             drawn = True
         return rgba if drawn else None
 
-    def _retouch_stage(self, pixels: np.ndarray, settings, params: EditParams, blender: MaskBlender, source_width: int) -> np.ndarray:
-        """Retouch on the picture after its geometry (before the crop): each shape's mask laid on it as the picture is, and how far from its source each clone and heal shape lies."""
+    def _retouch_stage(self, pixels: np.ndarray, copies: list, params: EditParams, blender: MaskBlender, source_width: int) -> np.ndarray:
+        """Retouch and its copies, one after the other, on the picture after its geometry (before the crop). A view of the picture (a wavelet scale, the shapes' masks) is of one of them: the ones
+        before it are made, the ones after it are left out; "without Retouch" leaves out them all."""
         if pixels.dtype != np.uint8:
             pixels = to_uint8(pixels)
+        if params.retouch_view == "suppress":
+            return pixels
+        for number, settings in copies:
+            viewed = bool(params.retouch_view) and number == params.retouch_view_of
+            pixels = self._retouch_once(pixels, settings, params, blender, params.retouch_view if viewed else "")
+            if viewed:
+                break
+        return pixels
+
+    def _retouch_once(self, pixels: np.ndarray, settings, params: EditParams, blender: MaskBlender, view: str) -> np.ndarray:
+        """One Retouch (the module or a copy of it): each shape's mask laid on the picture as it is, and how far from its source each clone and heal shape lies."""
         h, w = pixels.shape[:2]
         ms = blender.masks
         group = ms.get(settings.group) if settings.group else None
@@ -708,7 +725,7 @@ class Renderer:
             return float((a[0] - b[0]) * w), float((a[1] - b[1]) * h)       # from the source to the shape, in this picture's pixels
 
         ctx = rt_logic.Context(lambda i: blender.form_mask(i), delta, lambda i: max(0.05, min(1.0, opacity.get(i, 1.0))), w / params.scan_width if params.scan_width else 1.0,
-                               params.retouch_view if params.retouch_view in rt_logic.VIEWS else "")
+                               view if view in rt_logic.VIEWS else "")
         return rt_logic.process(pixels, settings, ctx)
 
     def _tone_staged(self, p: EditParams, blender: MaskBlender, base_ramp, pixels, pixels16, wide: bool, camera_matrix, scale: float, denoise: bool, local: bool,
@@ -738,7 +755,11 @@ class Renderer:
             ("contrast", lambda r: apply_contrast(r, p.contrast), None),
             ("printresponse", lambda r: apply_print_response(r, p.print_snap, p.print_toe, p.print_toe_width, p.print_shoulder, p.print_shoulder_width), None),
         )
-        for key, op, after_step in ramp_steps:
+        ramp_of_copy = {"exposure": lambda pp: (lambda r: apply_exposure(r, pp.exposure_ev)), "contrast": lambda pp: (lambda r: apply_contrast(r, pp.contrast))}
+        copies = blender.instances
+
+        def ramp(key, op, after_step=None):
+            nonlocal running
             if blender.masked(key):
                 flush(running)
                 running = identity_ramp()
@@ -750,6 +771,12 @@ class Renderer:
                 cur["px"] = blender.blend(key, before, after)
             else:
                 running = op(running)
+
+        for key, op, after_step in ramp_steps:
+            ramp(key, op, after_step)
+            for copy_id, values in copies.get(key, ()):      # each copy of the module is one more step, right after it
+                if key in ramp_of_copy:
+                    ramp(inst_logic.instance_key(key, copy_id), ramp_of_copy[key](dataclasses.replace(p, **values)))
         flush(running)
         pixels = cur["px"]
         if camera_matrix:
@@ -761,9 +788,18 @@ class Renderer:
                 before = pixels
                 pixels = blender.blend(key, before, fn(before))
 
+        def copies_of(key, make):
+            """The copies of a module that are on, each as a step after it: make(copy's settings) -> (what it does to the picture, whether it does anything)."""
+            for copy_id, values in copies.get(key, ()):
+                fn, enabled = make(dataclasses.replace(p, **values))
+                step(inst_logic.instance_key(key, copy_id), fn, enabled)
+
         step("denoise", lambda px: apply_chroma_denoise(px, p.chroma_denoise, scale), denoise)
+        copies_of("denoise", lambda pp: ((lambda px: apply_chroma_denoise(px, pp.chroma_denoise, scale)), pp.chroma_denoise > 0))
         step("localcontrast", lambda px: apply_local_contrast(px, p.local_contrast), local)
+        copies_of("localcontrast", lambda pp: ((lambda px: apply_local_contrast(px, pp.local_contrast)), pp.local_contrast > 0))
         step("shadows_highlights", lambda px: adjust_shadows_highlights(px, p.shadows, p.highlights), bool(p.shadows or p.highlights))
+        copies_of("shadows_highlights", lambda pp: ((lambda px: adjust_shadows_highlights(px, pp.shadows, pp.highlights)), bool(pp.shadows or pp.highlights)))
         if p.saturation and not saturation_with_color:
             pixels = adjust_saturation(pixels, p.saturation)
         tone_lut = ramp_to_lut(tone(identity_ramp()))
@@ -784,6 +820,8 @@ class Renderer:
                 pixels = apply_color(pixels, {}, color_response, p.lab_response_amount)
         elif not color_is_neutral(color_values, color_response):
             pixels = apply_color(pixels, color_values, color_response, p.lab_response_amount)
+        for key, keys in (("colormixer", MIXER_PANEL_KEYS), ("colortoning", TONING_KEYS)):
+            copies_of(key, lambda pp, keys=keys: ((lambda px: apply_color(px, {k: getattr(pp, k) for k in keys}, "none", 1.0)), not color_is_neutral({k: getattr(pp, k) for k in keys}, "none")))
         return pixels
 
     def render(
@@ -817,7 +855,8 @@ class Renderer:
             gs_values = {k: getattr(params, k) for k in gs_logic.KEYS}
             gs_active = not gs_logic.is_neutral(gs_values)
             rt_settings = rt_logic.from_json(params.retouch_json)
-            rt_active = (rt_settings.active() or params.retouch_view == "scale") and (live is None or "retouch" in live)
+            rt_copies = [(i, rt_logic.from_json(values.get("settings", ""))) for i, values in inst_logic.thawed(params.instances).get("retouch", ())]
+            rt_active = (rt_settings.active() or any(c.active() for _i, c in rt_copies) or params.retouch_view == "scale") and (live is None or "retouch" in live)
             if source.dtype == np.uint16:
                 source16 = source
                 source = self._as_uint8(source, token)
@@ -941,17 +980,27 @@ class Renderer:
                     pixels = apply_channel_lut(pixels, lut)
 
             if rt_active:   # Retouch (darktable's): clone, heal, blur and fill on the shapes drawn for it, on the finished colours and before the sharpening
-                pixels = self._retouch_stage(pixels, rt_settings, params, blender, source.shape[1])
+                pixels = self._retouch_stage(pixels, [(0, rt_settings)] + rt_copies, params, blender, source.shape[1])
 
             if params.sharpen_amount and (live is None or params.sharpen_method in live):
                 sharpened = apply_sharpening(
                     pixels, params.sharpen_amount, params.sharpen_radius, params.sharpen_masking, params.sharpen_method
                 )
                 pixels = blender.blend("sharpening", pixels, sharpened)
+            for copy_id, values in blender.instances.get("sharpening", ()):
+                pp = dataclasses.replace(params, **values)
+                if pp.sharpen_amount and (live is None or pp.sharpen_method in live):
+                    pixels = blender.blend(inst_logic.instance_key("sharpening", copy_id), pixels, apply_sharpening(pixels, pp.sharpen_amount, pp.sharpen_radius, pp.sharpen_masking, pp.sharpen_method))
 
             if gs_active and (live is None or gs_logic.LIVE in live):   # the grain, made crisper: its size is in scan pixels, so on a smaller preview of the scan it is a smaller number of this picture's
                 crisp = gs_logic.apply_grain_sharpening(pixels, gs_values, source.shape[1] / params.scan_width if params.scan_width else 1.0)
                 pixels = blender.blend("grainsharp", pixels, crisp)
+            for copy_id, values in blender.instances.get("grainsharp", ()):
+                pp = dataclasses.replace(params, **values)
+                values_i = {k: getattr(pp, k) for k in gs_logic.KEYS}
+                if not gs_logic.is_neutral(values_i) and (live is None or gs_logic.LIVE in live):
+                    pixels = blender.blend(inst_logic.instance_key("grainsharp", copy_id), pixels,
+                                           gs_logic.apply_grain_sharpening(pixels, values_i, source.shape[1] / params.scan_width if params.scan_width else 1.0))
 
             image = apply_crop(pixels, rect)
             stats = compute_stats(self._inside_frame(image, film_frame, rect)) if want_stats else None
@@ -961,8 +1010,16 @@ class Renderer:
                 overlay_rgba = self._build_overlay(retouched, params, base_width, base_hw)
             if ec_active:   # the edges' colour and brightness, on the finished and cropped picture, before the vignette
                 image = blender.blend("edgecolor", image, ec_logic.apply_edge_color(image, ec_values), cropped=True)
+            for copy_id, values in blender.instances.get("edgecolor", ()):
+                values_i = {k: getattr(dataclasses.replace(params, **values), k) for k in ec_logic.KEYS}
+                if not ec_logic.is_neutral(values_i):
+                    image = blender.blend(inst_logic.instance_key("edgecolor", copy_id), image, ec_logic.apply_edge_color(image, values_i), cropped=True)
             if hal_active:   # a simulated glow round the brightest parts, on the finished and cropped picture (see features/halation)
                 image = blender.blend("halation", image, hal_logic.apply_halation(image, hal_values), cropped=True)
+            for copy_id, values in blender.instances.get("halation", ()):
+                values_i = {k: getattr(dataclasses.replace(params, **values), k) for k in hal_logic.KEYS}
+                if not hal_logic.is_neutral(values_i):
+                    image = blender.blend(inst_logic.instance_key("halation", copy_id), image, hal_logic.apply_halation(image, values_i), cropped=True)
             if params.vignette:
                 lit = gpu_pipeline.vignette(image, params.vignette, params.vignette_size)
                 image = lit if lit is not None else apply_vignette(image, params.vignette, params.vignette_size)

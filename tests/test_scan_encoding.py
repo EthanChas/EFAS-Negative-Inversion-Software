@@ -146,9 +146,9 @@ _PANEL_SCRIPT = r'''
     p.set_metering(Metering.from_dict({"engine": "print"}))
     assert box.currentData() == "srgb", "a photo edited before shows the sRGB it keeps"
     p.set_metering(Metering(engine="standard"))
-    assert not box.isEnabled(), "Original has no use for it"
+    assert box.isHidden(), "Original has no use for it, so it is put away"
     p.set_metering(Metering(engine="print"))
-    assert box.isEnabled()
+    assert not box.isHidden()
     p.reset()
     assert box.currentData() == "auto"
     print("OK")

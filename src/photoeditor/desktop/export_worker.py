@@ -81,6 +81,7 @@ def default_edit_state(negative_inverted: bool) -> dict:
         "masks": {},
         "blends": {},
         "retouch": {},
+        "instances": {},
         "ai_dust": False,
         "ai_threshold": 0.3,
         "ai_grow": 1,

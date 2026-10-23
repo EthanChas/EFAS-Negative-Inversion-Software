@@ -129,6 +129,7 @@ class HistoryEntry:
     masks: dict = field(default_factory=dict)    # the photo's drawn masks (features/masks): MaskSet.to_dict()
     blends: dict = field(default_factory=dict)   # {module key: Blend.to_dict()} for each module blended through a mask or uniformly
     retouch: dict = field(default_factory=dict)  # the Retouch module's settings (features/retouchdt): Settings.to_dict(), {} when it has no shapes
+    instances: dict = field(default_factory=dict)   # the copies of modules (features/instances): {module key: [{"id", "name", "on", "values"}, ...]}
     keystone_v: float = 0.0
     keystone_h: float = 0.0
     metering: Metering = field(default_factory=Metering)
@@ -298,6 +299,7 @@ class AppState:
     masks: dict = field(default_factory=dict)    # the photo's drawn masks (features/masks): MaskSet.to_dict()
     blends: dict = field(default_factory=dict)   # {module key: Blend.to_dict()} for each module blended through a mask or uniformly
     retouch: dict = field(default_factory=dict)  # the Retouch module's settings (features/retouchdt): Settings.to_dict(), {} when it has no shapes
+    instances: dict = field(default_factory=dict)   # the copies of modules (features/instances): {module key: [{"id", "name", "on", "values"}, ...]}
     vignette: float = 0.0
     vignette_size: float = 0.5
     border: float = 0.0
@@ -328,6 +330,7 @@ class AppState:
     roll_lens: str = ""
     wm_vars: tuple = ()   # the photo's watermark variables as ((name, value), ...): what $(NAME) in a watermark text or SVG marker means (features/watermark/variables.py)
     show_detections: bool = False
+    retouch_view_of: int = 0   # which Retouch (0 the module, else a copy's id) the view is of
     retouch_view: str = ""   # what the Retouch panel is showing on the picture (features/retouchdt VIEWS): "", the wavelet scale, the shapes, or the picture without Retouch; not an edit
     overlay_rgba: np.ndarray | None = None
     show_shadow_clip: bool = False

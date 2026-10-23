@@ -188,6 +188,10 @@ class CaptionButton(QPushButton):
                     QPoint(cx - 2, cy - 4), QPoint(cx - 2, cy + 4), QPoint(cx + 3, cy),
                 ])
             painter.drawPolygon(triangle)
+        elif self._kind == "instances":     # two overlapping squares: a copy
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.drawRect(cx - 4, cy - 4, 5, 5)
+            painter.drawRect(cx - 1, cy - 1, 5, 5)
         elif self._kind == "add":
             painter.drawLine(cx - 4, cy, cx + 4, cy)
             painter.drawLine(cx, cy - 4, cx, cy + 4)

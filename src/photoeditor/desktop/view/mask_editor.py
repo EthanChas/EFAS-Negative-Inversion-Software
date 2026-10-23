@@ -29,7 +29,8 @@ class MaskEditor(QObject):
         self._module: str | None = None        # the module whose Mask box has the picture
         self._manager = False                  # the Masks panel has it
         self._retouch = False                  # the Retouch panel has it: the shapes of the scale it is working on
-        self.retouch_panel = None
+        self.retouch_panels: dict = {}         # the Retouch panels by instance (0 the module, else the id of a copy of it)
+        self.retouch_instance = 0              # the one that has the picture
         self._manager_ids: list[int] = []
         self._manager_parent = 0
         self._manager_edit = True
@@ -85,29 +86,31 @@ class MaskEditor(QObject):
         self._sync()
 
     # ------------------------------------------------------------ the Retouch panel
-    def draw_for_retouch(self, kind: str, continuous: bool = False) -> None:
+    def draw_for_retouch(self, kind: str, continuous: bool = False, instance: int = 0) -> None:
         if self.c.state.preview_rgb is None:
             return
+        self.retouch_instance = instance
         self._take_over(retouch=True)
         self._apply()
         self._arm_retouch(kind, continuous)
         self._sync()
 
     def _arm_retouch(self, kind: str, continuous: bool = False) -> None:
-        source = self.c.retouch_settings().algorithm in ("clone", "heal")
-        self.tool.begin_creation(kind, "retouch", continuous, source=source, spots=True)
+        source = self.c.retouch_settings(self.retouch_instance).algorithm in ("clone", "heal")
+        self.tool.begin_creation(kind, "retouch" if not self.retouch_instance else f"retouch#{self.retouch_instance}", continuous, source=source, spots=True)
 
     def rearm_retouch(self) -> None:
         """The algorithm was changed while a shape was being drawn: the next one is drawn for the new algorithm (clone and heal have a source, blur and fill do not)."""
         c = self.tool.creation
-        if c is not None and c.key == "retouch":
+        if c is not None and c.key is not None and c.key.split("#")[0] == "retouch":
             self._arm_retouch(c.kind, c.continuous)
 
-    def retouch_edit(self, on: bool) -> None:
+    def retouch_edit(self, on: bool, instance: int = 0) -> None:
         if not on:
-            if self._retouch:
+            if self._retouch and self.retouch_instance == instance:
                 self.stop()
             return
+        self.retouch_instance = instance
         if self.c.state.preview_rgb is None:
             self._sync()
             return
@@ -178,7 +181,7 @@ class MaskEditor(QObject):
             ids, parent = self._module_shapes(self._module)
             return ids, parent, True
         if self._retouch:
-            s, ms = self.c.retouch_settings(), self.c.mask_set()
+            s, ms = self.c.retouch_settings(self.retouch_instance), self.c.mask_set()
             ids = [f.formid for f in s.forms if f.scale == s.curr_scale and ms.get(f.formid) is not None]
             return ids, (s.group if s.group and ms.get(s.group) is not None else 0), True
         if self._manager:
@@ -218,13 +221,13 @@ class MaskEditor(QObject):
         """Each Mask box's pencil and eye show what is on the picture."""
         for key, box in self.boxes.items():
             box.set_editing(self._module == key and self.tool.edit, self._show_key == key)
-        if self.retouch_panel is not None:
-            self.retouch_panel.set_tool_state(self._retouch and self.tool.edit)
+        for number, panel in self.retouch_panels.items():
+            panel.set_tool_state(self._retouch and self.tool.edit and number == self.retouch_instance)
 
     # ------------------------------------------------------------ a shape was placed
     def _created(self, kind: str, key: str | None, form_id: int) -> None:
         """A module's shape button placed a shape: it becomes that module's mask - or, when the module already has one, joins it in a group."""
-        if key == "retouch":
+        if key is not None and key.split("#")[0] == "retouch":
             self._sync()
             return
         if key is None:

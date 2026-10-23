@@ -403,4 +403,17 @@ EFAS keeps your edits in a small local **database** in its own data folder, and 
 
 A backup that lives on the same disk as the original is not a backup. Copy your **scans** and EFAS's **data folder** to a second drive, and check now and then that you can read it. The film itself, the only true original, deserves proper storage too ([[film-care]]).
 """, keywords=("backup", "data", "safety", "restore", "export", "move", "database", "sidecar", "xmp", "privacy"), see=("settings-guide",)),
+
+    Lesson("multiple-instances", "tour", "Copies of a module, and the Enabled tab", "Make more than one of a module, name them, and see what is switched on in one list.",
+           r"""
+Some jobs want the same tool twice: a little Exposure for the whole picture and a lot of it, through a mask, for the shadows under a tree. EFAS, like darktable, lets you **copy a module**. Press the two-squares button in a module's header and choose **New instance** (a copy that starts with the module's defaults) or **Duplicate instance** (a copy of what the module is set to now).
+
+## What a copy is
+
+Each copy is its own panel, put right after the module it was made from, with its own settings, its own **Mask** box and its own **on/off light**. The first is the module; the copies are numbered **1, 2, 3...**, and you can give each a name (its menu button: **Rename**, **Duplicate**, **Delete**), so "Exposure 2 - shadows" says what it is for. The picture is made with the module first and then its copies in order, so an Exposure copy adds to the module's exposure and a Sharpening copy sharpens what the module left. You can copy Exposure, Contrast, Shadows & Highlights, Local Contrast, Chroma Denoise, Color Mixer, Color Toning, Sharpening, Grain Sharpening, Halation, Edge Color and Retouch (a copy of Retouch has its own shapes, scales and algorithm). Copies are saved with the photo and undone with Ctrl+Z.
+
+## The Enabled tab
+
+The **power button** at the top of the tool tabs gathers every module and copy that is on and doing something to this photo, from whichever tab it lives in, into one list: handy for seeing what has been touched, and for switching things off. Click it again, or any other tab, and the modules go home. Dust & Scratches, Retouch and Error marking have an on/off light too.
+""", keywords=("instance", "instances", "copy", "duplicate", "multiple", "layers", "enabled", "active modules", "power", "rename", "darktable"), see=("masks-module", "retouch-module", "tone-overview")),
 ]

@@ -27,8 +27,8 @@ class ControllerHost(Host):
         return self.c.raw_to_display(pts)
 
     def add_form(self, kind: str, points: list, key: str | None, source=None) -> int:
-        if key == "retouch":
-            form_id = self.c.add_retouch_form(kind, points, source)
+        if key is not None and key.split("#")[0] == "retouch":     # "retouch" is the module, "retouch#2" a copy of it
+            form_id = self.c.add_retouch_form(kind, points, source, int(key.split("#")[1]) if "#" in key else 0)
         else:
             form_id = self.c.add_mask_form(kind, points, source=source or (0.0, 0.0))
         if form_id and self._created is not None:
@@ -53,7 +53,7 @@ class ControllerHost(Host):
         return None
 
     def has_source(self, form_id: int) -> bool:
-        form = self.c.retouch_settings().form(form_id)
+        form = self.c.retouch_form_setting(form_id)
         return form is not None and form.algorithm in ("clone", "heal")
 
     def display_size(self) -> tuple[float, float]:

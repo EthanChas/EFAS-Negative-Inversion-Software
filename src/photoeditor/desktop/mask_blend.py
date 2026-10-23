@@ -10,6 +10,7 @@ from ..features.geometry.logic import apply_crop
 from ..features.masks import blend as B
 from ..features.masks import raster
 from ..features.masks import state as S
+from ..features.instances import logic as I
 
 # the modules whose result is made one step at a time (and so can be blended) while the tone and colour of the picture are made, in the order they act
 RAMP_KEYS = ("color", "exposure", "contrast", "printresponse")
@@ -23,7 +24,8 @@ class MaskBlender:
     def __init__(self, params, frame_hw: tuple, geometry=None, rect=None, scale: float = 1.0):
         """`frame_hw` is the (height, width) of the untouched scan's frame the masks are drawn on; `geometry(mask)` carries a mask the way the picture was carried (the identity when none was
         needed); `rect` is the crop; `scale` is this picture's pixels per pixel of the 1600 wide preview."""
-        self.blends = {k: b for k, b in S.blends_from_tuple(params.blends).items() if k in BLENDABLE}
+        self.blends = {k: b for k, b in S.blends_from_tuple(params.blends).items() if I.split_key(k)[0] in BLENDABLE}
+        self.instances = {k: v for k, v in I.thawed(getattr(params, "instances", ())).items() if k in BLENDABLE}   # the copies of modules that are on: {module key: [(id, {field: value}), ...]}
         self.masks = S.parse_masks(params.masks_json)
         self.frame_hw = frame_hw
         self.geometry = geometry or (lambda m: m)
@@ -36,10 +38,10 @@ class MaskBlender:
 
     def staged(self) -> bool:
         """True when a module of the tone and colour stage is blended: that stage is then made one module at a time."""
-        return any(k in self.blends for k in PIXEL_KEYS)
+        return any(I.split_key(k)[0] in PIXEL_KEYS for k in self.blends) or any(k in PIXEL_KEYS for k in self.instances)
 
     def any(self) -> bool:
-        return bool(self.blends)
+        return bool(self.blends) or bool(self.instances)
 
     def _mask(self, mask_id: int, cropped: bool) -> np.ndarray | None:
         key = (mask_id, cropped)

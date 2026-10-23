@@ -122,6 +122,8 @@ from .module_menu import ModuleMenus
 from .loading_overlay import LoadingOverlay
 from ...features.masks import properties as mask_properties
 from ...features.retouchdt import dwt as rt_dwt
+from ...features.instances import logic as inst_logic
+from .instance_panel import InstancePanel
 from .mask_editor import MaskEditor
 from .mask_manager import MaskManagerPanel
 from .retouch_panel import RetouchPanel
@@ -545,6 +547,7 @@ class AppWindow(QMainWindow):
         self._wire_mask_manager()
         self._wire_retouch()
         self._wire_extra_power()
+        self._wire_instances()
 
         self._filmstrip = Filmstrip()
         self._filmstrip.image_selected.connect(self.controller.open_file)
@@ -2848,67 +2851,78 @@ class AppWindow(QMainWindow):
 
     # ------------------------------------------------------------ the Retouch panel
     def _wire_retouch(self) -> None:
-        r, c, ed = self._retouch_tool, self.controller, self._mask_editor
-        ed.retouch_panel = r
-        r.draw_requested.connect(ed.draw_for_retouch)
-        r.edit_toggled.connect(ed.retouch_edit)
-        r.algorithm_chosen.connect(self._on_retouch_algorithm)
-        r.changed.connect(lambda changes, description, preview, picked: c.set_retouch(changes, description, preview, picked))
-        r.view_changed.connect(c.set_retouch_view)
-        r.paste_requested.connect(c.paste_retouch_scale)
-        r.opacity_changed.connect(self._on_retouch_opacity)
-        r.toggled.connect(self._on_retouch_toggled)
+        c, ed = self.controller, self._mask_editor
+        self._retouch_panels = {0: self._retouch_tool}          # the module's panel and one for each copy of it, by instance
+        ed.retouch_panels = self._retouch_panels
+        self._wire_retouch_panel(self._retouch_tool, 0)
         ed.shape_picked.connect(self._on_retouch_picked)
         for signal in (c.retouch_changed, c.masks_changed, c.history_changed, c.reverted, c.file_changed):
             signal.connect(self._refresh_retouch)
         c.file_changed.connect(lambda *_: setattr(self, "_retouch_picked", 0))
         self._refresh_retouch()
 
+    def _wire_retouch_panel(self, r, instance: int) -> None:
+        """One Retouch panel (the module's, or a copy's) to the controller: everything it asks for is about its own instance."""
+        c, ed = self.controller, self._mask_editor
+        r.draw_requested.connect(lambda kind, keep, i=instance: ed.draw_for_retouch(kind, keep, i))
+        r.edit_toggled.connect(lambda on, i=instance: ed.retouch_edit(on, i))
+        r.algorithm_chosen.connect(lambda algo, ctrl, i=instance: self._on_retouch_algorithm(algo, ctrl, i))
+        r.changed.connect(lambda changes, description, preview, picked, i=instance: c.set_retouch(changes, description, preview, picked, i))
+        r.view_changed.connect(lambda view, i=instance: c.set_retouch_view(view, i))
+        r.paste_requested.connect(lambda a, b, i=instance: c.paste_retouch_scale(a, b, i))
+        r.opacity_changed.connect(lambda form, value, preview, i=instance: self._on_retouch_opacity(form, value, preview, i))
+        r.toggled.connect(lambda expanded, i=instance: self._on_retouch_toggled(expanded, i))
+
     def _refresh_retouch(self, *_args) -> None:
         c = self.controller
-        s = c.retouch_settings()
-        form = s.form(self._retouch_picked) if self._retouch_picked else None
-        if form is None:
-            self._retouch_picked = 0
-        opacity = None
-        if form is not None and s.group:
-            opacity = next((p["opacity"] for p in c.mask_set().members(s.group) if p["formid"] == form.formid), None)
         state = c.state
         ps = state.preview_rgb.shape[1] / state.original_rgb.shape[1] if state.preview_rgb is not None and state.original_rgb is not None else 1.0
-        self._retouch_tool.set_settings(s, form, opacity, rt_dwt.first_scale_visible(s.num_scales, ps))
-        self._retouch_tool.set_view(c.state.retouch_view)
+        if self._retouch_picked and c.retouch_instance_of(self._retouch_picked) is None:
+            self._retouch_picked = 0
+        for number, panel in self._retouch_panels.items():
+            s = c.retouch_settings(number)
+            form = s.form(self._retouch_picked) if self._retouch_picked else None
+            opacity = None
+            if form is not None and s.group:
+                opacity = next((p["opacity"] for p in c.mask_set().members(s.group) if p["formid"] == form.formid), None)
+            panel.set_settings(s, form, opacity, rt_dwt.first_scale_visible(s.num_scales, ps))
+            panel.set_view(state.retouch_view if state.retouch_view_of == number else "")
 
     def _on_retouch_picked(self, form_id: int) -> None:
-        if form_id and self.controller.retouch_settings().form(form_id) is None:
+        if form_id and self.controller.retouch_instance_of(form_id) is None:
             return          # a shape of a module's mask or the Masks panel, not Retouch's
         self._retouch_picked = form_id
         self._refresh_retouch()
 
-    def _on_retouch_algorithm(self, algo: str, ctrl: bool) -> None:
+    def _on_retouch_algorithm(self, algo: str, ctrl: bool, instance: int = 0) -> None:
         c = self.controller
-        form = c.retouch_settings().form(self._retouch_picked) if self._retouch_picked else None
+        form = c.retouch_settings(instance).form(self._retouch_picked) if self._retouch_picked else None
         if form is not None and ctrl:
             if algo != form.algorithm and {form.algorithm, algo} not in ({"clone", "heal"}, {"blur", "fill"}):
                 self._refresh_retouch()
                 return          # darktable lets a shape change between clone and heal, or between blur and fill, only
-            c.set_retouch_form(form.formid, {"algorithm": algo}, f"Retouch: changed a shape to {algo}")
-        c.set_retouch({"algorithm": algo})
+            c.set_retouch_form(form.formid, {"algorithm": algo}, f"Retouch: changed a shape to {algo}", instance)
+        c.set_retouch({"algorithm": algo}, instance=instance)
         self._mask_editor.rearm_retouch()
         self._refresh_retouch()
 
-    def _on_retouch_opacity(self, form_id: int, value: float, preview: bool) -> None:
-        group = self.controller.retouch_settings().group
+    def _on_retouch_opacity(self, form_id: int, value: float, preview: bool, instance: int = 0) -> None:
+        group = self.controller.retouch_settings(instance).group
         if group and form_id:
             self.controller.set_mask_element(group, form_id, None if preview else "Changed a Retouch shape's opacity", opacity=value)
 
-    def _on_retouch_toggled(self, expanded: bool) -> None:
-        """Retouch's views of the picture, and its shapes on the picture, only while its panel is open (as darktable's only while the module has focus)."""
+    def _on_retouch_toggled(self, expanded: bool, instance: int | None = None) -> None:
+        """Retouch's views of the picture, and its shapes on the picture, only while its panel is open (as darktable's only while the module has focus). `instance` None: every Retouch."""
         if expanded:
             return
-        self.controller.set_retouch_view("")
-        self._retouch_tool.set_view("")
-        if self._mask_editor._retouch:
-            self._mask_editor.stop()
+        c = self.controller
+        if instance is None or c.state.retouch_view_of == instance:
+            c.set_retouch_view("")
+            for panel in self._retouch_panels.values():
+                panel.set_view("")
+        ed = self._mask_editor
+        if ed._retouch and (instance is None or ed.retouch_instance == instance):
+            ed.stop()
 
     # ------------------------------------------------------------ the Masks panel
     def _wire_mask_manager(self) -> None:
@@ -4689,7 +4703,7 @@ class AppWindow(QMainWindow):
     def _module_is_listed(self, panel) -> bool:
         keys = getattr(self, "_panel_keys", None)
         if keys is None:
-            keys = self._panel_keys = {id(p): k for k, p in {**self._module_menus._panels, **getattr(self, "_extra_panels", {})}.items()}
+            keys = self._panel_keys = {id(p): k for k, p in {**self._module_menus._panels, **getattr(self, "_extra_panels", {}), **getattr(self, "_instance_panels", {})}.items()}
         key = keys.get(id(panel))
         return key is not None and self.controller.module_is_active(key)
 
@@ -4718,6 +4732,104 @@ class AppWindow(QMainWindow):
                 if other_id != tab_id:
                     other_panel.set_open(False)
                     self._tool_rail.set_tab_checked(other_id, False)
+
+    # ------------------------------------------------------------ copies of a module (darktable's multiple instances)
+    def _wire_instances(self) -> None:
+        c = self.controller
+        self._instance_panels: dict[str, InstancePanel] = {}
+        for key in inst_logic.COPYABLE:
+            panel = self._retouch_tool if key == "retouch" else self._module_menus._panels.get(key)
+            if panel is None:
+                continue
+            button = panel.enable_instance_button("Multiple instances: make another copy of this module (new, with its defaults, or a duplicate of what it is set to now)")
+            button.clicked.connect(lambda _c=False, k=key, b=button: self._instance_menu(k, 0, b))
+        for signal in (c.instances_changed, c.file_changed, c.reverted, c.history_changed):
+            signal.connect(self._rebuild_instances)
+
+    def _instance_menu(self, key: str, instance_id: int, button) -> None:
+        from PyQt6.QtWidgets import QMenu
+        c = self.controller
+        menu = QMenu(button)
+        if not instance_id:
+            menu.addAction("New instance", lambda: self._new_instance(key, None))
+            menu.addAction("Duplicate instance", lambda: self._new_instance(key, 0))
+        else:
+            menu.addAction("Rename...", lambda: self._rename_instance(key, instance_id))
+            menu.addAction("Duplicate instance", lambda: self._new_instance(key, instance_id))
+            menu.addSeparator()
+            menu.addAction("Delete", lambda: c.remove_instance(key, instance_id))
+        menu.exec(button.mapToGlobal(button.rect().bottomLeft()))
+
+    def _new_instance(self, key: str, copy_of) -> None:
+        self._module_search.dismiss()     # (the modules go home first: the new panel is put next to its module)
+        self._new_instance_open = True
+        new_id = self.controller.add_instance(key, copy_of)
+        self._new_instance_open = False
+        panel = self._instance_panels.get(inst_logic.instance_key(key, new_id)) if new_id else None
+        if panel is not None and not panel._expanded:
+            panel.set_expanded(True)
+
+    def _rename_instance(self, key: str, instance_id: int) -> None:
+        from PyQt6.QtWidgets import QInputDialog
+        item = inst_logic.get(self.controller.state.instances, key, instance_id)
+        if item is None:
+            return
+        name, ok = QInputDialog.getText(self, "Rename", "Name for this copy:", text=item["name"])
+        if ok:
+            self.controller.rename_instance(key, instance_id, name)
+
+    def _rebuild_instances(self, *_args) -> None:
+        """Make the copies' panels match the photo's: new ones are put right after their module (in whichever tab it is), gone ones are taken away, the rest show their settings and name."""
+        c = self.controller
+        wanted = {inst_logic.instance_key(key, item["id"]): (key, item) for key, items in c.state.instances.items() for item in items}
+        for ikey in [k for k in self._instance_panels if k not in wanted]:
+            panel = self._instance_panels.pop(ikey)
+            self._blend_boxes.pop(ikey, None)
+            if self._mask_editor._module == ikey:
+                self._mask_editor.stop()
+            base_key, number = inst_logic.split_key(ikey)
+            if base_key == "retouch":
+                self._retouch_panels.pop(number, None)
+                if self._mask_editor._retouch and self._mask_editor.retouch_instance == number:
+                    self._mask_editor.stop()
+            panel.setParent(None)
+            panel.deleteLater()
+        for key in inst_logic.COPYABLE:
+            base = self._retouch_tool if key == "retouch" else self._module_menus._panels.get(key)
+            if base is None or base.parentWidget() is None or base.parentWidget().layout() is None:
+                continue
+            layout = base.parentWidget().layout()
+            for item in c.state.instances.get(key, ()):
+                ikey = inst_logic.instance_key(key, item["id"])
+                title = inst_logic.title(c.state.instances, key, item["id"])
+                panel = self._instance_panels.get(ikey)
+                if panel is None:
+                    if key == "retouch":
+                        panel = RetouchPanel()
+                        panel.set_display_title(title)
+                        if getattr(self, "_new_instance_open", False):
+                            panel.set_expanded(True)
+                        self._retouch_panels[item["id"]] = panel
+                        self._wire_retouch_panel(panel, item["id"])
+                        panel.set_settings(c.retouch_settings(item["id"]))
+                    else:
+                        panel = InstancePanel(key, item["id"], title, item["values"], expanded=getattr(self, "_new_instance_open", False))
+                        self._add_blend_box(ikey, panel)
+                        panel.enable_reset_button("Put this copy's settings back to their defaults").clicked.connect(lambda _c=False, k=key, i=item["id"]: c.reset_instance(k, i))
+                        panel.values_changed.connect(lambda changes, preview, k=key, i=item["id"]: c.set_instance_values(k, i, changes, preview))
+                    self._instance_panels[ikey] = panel
+                    panel.enable_power_switch()
+                    panel.power_toggled.connect(lambda on, k=key, i=item["id"]: c.set_instance_enabled(k, i, on))
+                    button = panel.enable_instance_button("This copy: rename, duplicate, delete")
+                    button.clicked.connect(lambda _c=False, k=key, i=item["id"], b=button: self._instance_menu(k, i, b))
+                    layout.insertWidget(layout.indexOf(base) + 1 + [x["id"] for x in c.state.instances[key]].index(item["id"]), panel)
+                else:
+                    panel.set_display_title(title)
+                    if key != "retouch":
+                        panel.set_values(item["values"])
+                panel.set_power(item["on"])
+        self._panel_keys = None
+        self._refresh_blend_boxes()
 
     def _wire_extra_power(self) -> None:
         """The on/off light in the header of Dust & Scratches, Retouch and Error marking (the modules that are not in the presets): off, the picture is made without them and what they have in hand is put away."""
@@ -4765,12 +4877,13 @@ class AppWindow(QMainWindow):
             return
         held = lambda widget: any(p.isAncestorOf(widget) for p in closing)
         ed = self._mask_editor
-        if (ed._module and held(self._blend_boxes[ed._module])) or (ed._retouch and held(self._retouch_tool)):
+        if (ed._module and held(self._blend_boxes[ed._module])) or (ed._retouch and held(self._retouch_panels.get(ed.retouch_instance, self._retouch_tool))):
             ed.stop()
         if ed._show_key and held(self._blend_boxes[ed._show_key]):
             ed.show_module(ed._show_key, False)
-        if held(self._retouch_tool):
-            self._on_retouch_toggled(False)
+        for number, panel in self._retouch_panels.items():
+            if held(panel):
+                self._on_retouch_toggled(False, number)
         if held(self._dust_tool):
             self._put_down_dust_tools()
         if held(self._error_marks_panel):
