@@ -29,6 +29,7 @@ class Capabilities:
 
     focus_drive: bool = False
     exposure: bool = False
+    zoom: bool = False            # the camera can zoom its own live picture (5 and 10 times): the picture then has real sensor detail, not just bigger pixels
     notes: dict = field(default_factory=dict)
 
     def note(self, name: str) -> str:
@@ -55,6 +56,10 @@ class CameraBackend(Protocol):
 
     def focus(self, direction: str, size: int = 2, steps: int = 1) -> None:
         """Drive the lens "near" or "far": `size` 1 (finest) to 3 (coarsest), `steps` times. One step can be smaller than the picture's own noise, so a move you can see takes several."""
+
+    def set_zoom(self, level: int) -> None:
+        """Zoom the camera's own live picture: 1 (all of it), 5 or 10 times. The picture stays the same size but shows the middle of the sensor, so a fifth or a tenth of the width is seen in
+        the pixels of the whole: real detail for judging focus and grain. Raises TetherError when the camera cannot."""
 
     def exposure(self) -> ExposureState | None:
         """The ISO, aperture, shutter speed and compensation the camera is set to, and the values it will take just now (features/tether/exposure.py). None when it cannot say."""

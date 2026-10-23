@@ -123,6 +123,14 @@ class EdsdkCamera:
             raise TetherError("This lens cannot be focused from the computer. " + self._caps.note("focus_drive"))
         self._submit(lambda: self._drive_lens(direction, size, steps), "focus")
 
+    def set_zoom(self, level: int) -> None:
+        if int(level) not in api.EVF_ZOOMS:
+            raise ValueError(f"level is one of {', '.join(str(z) for z in api.EVF_ZOOMS)}, not {level!r}")
+        self._require_open()
+        if not self._caps.zoom:
+            raise TetherError("This camera does not offer a zoomed live picture to the computer. Zoom on the camera itself, or use the Zoom slider here, which only enlarges the pixels it has.")
+        self._submit(lambda: self._write_number(api.PROP_EVF_ZOOM, int(level), "Evf_Zoom"), "zoom the live picture")
+
     def exposure(self) -> ex.ExposureState | None:
         if self._thread is None or not self._thread.is_alive():
             return None
@@ -318,7 +326,7 @@ class EdsdkCamera:
         elif af == api.AF_MODE_MANUAL:
             focus = False
             notes["focus_drive"] = "The lens is set to manual focus. Move its AF/MF switch to AF to focus from the computer, or focus by hand."
-        self._caps = Capabilities(focus_drive=focus, exposure=self._read_number(api.PROP_TV) is not None, notes=notes)
+        self._caps = Capabilities(focus_drive=focus, exposure=self._read_number(api.PROP_TV) is not None, zoom=self._read_number(api.PROP_EVF_ZOOM) is not None, notes=notes)
 
     # ------------------------------------------------------------ live view and focus
     def _live_view(self, on: bool) -> None:

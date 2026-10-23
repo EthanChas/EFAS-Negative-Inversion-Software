@@ -323,6 +323,22 @@ class TetherWindow(QDialog):
         zoom_row.addWidget(self.zoom_label)
         zoom_row.addWidget(self._button("Fit", "Show the whole picture (0)", lambda: self.zoom_slider.setValue(100)))
         left.addLayout(zoom_row)
+        camera_zoom = QHBoxLayout()    # the camera's own zoom: real sensor pixels, where the slider above only makes the pixels it has bigger
+        camera_zoom.addWidget(QLabel("Camera zoom"))
+        self.camera_zoom_buttons: dict[int, QPushButton] = {}
+        for level, label in ((1, "Fit"), (5, "5x"), (10, "10x")):
+            b = self._button(label, "Ask the camera to zoom its own live picture: at 5x or 10x it sends the middle of the sensor at the size of the whole picture, so the film's grain and fine detail show as real "
+                                    "pixels (the Zoom slider only makes the pixels it already has bigger). Needs a camera that offers it" if level > 1 else "The camera's whole live picture",
+                             lambda _c=False, n=level: self.camera_zoom(n))
+            b.setCheckable(True)
+            b.setChecked(level == 1)
+            b.setEnabled(False)
+            self.camera_zoom_buttons[level] = b
+            self._live_buttons.append(b)
+            camera_zoom.addWidget(b)
+        self.camera_zoom_note = _hint("")
+        camera_zoom.addWidget(self.camera_zoom_note, 1)
+        left.addLayout(camera_zoom)
         self.image.zoom_changed.connect(self._zoom_changed)
         bar = QHBoxLayout()   # under the picture, where it is always in reach: the shutter, and what happened to the last shot
         self.capture_button = self._button("Capture (Space)", "Wait, release the shutter without focusing (focus stays where you put it), and save what the camera makes", self.capture)
@@ -728,6 +744,10 @@ class TetherWindow(QDialog):
         self._live.start()
         self.image.set_message("Waiting for the first live picture...")
         self._set_state("live")
+        for level, b in self.camera_zoom_buttons.items():     # (after the state has switched the live buttons on: the zoom ones only if the camera offers it)
+            b.setChecked(level == 1)
+            b.setEnabled(bool(caps.zoom) or level == 1)
+        self.camera_zoom_note.setText("" if caps.zoom else "This camera does not send a zoomed live picture.")
         self._exposure_timer.start()
         self.exposure_note.setText("" if caps.exposure else "This camera does not report its exposure to the computer.")
         self.auto_button.setEnabled(caps.exposure)
@@ -911,6 +931,20 @@ class TetherWindow(QDialog):
         job = JobWorker(lambda: session.focus(direction, coarseness))
         job.failed.connect(self._focus_failed)
         self._focus_job = job
+        job.start()
+
+    def camera_zoom(self, level: int) -> None:
+        """Camera zoom Fit / 5x / 10x: the camera zooms its own live picture (the picture gets real detail)."""
+        if self._state != "live" or self.session is None:
+            return
+        for n, b in self.camera_zoom_buttons.items():
+            b.setChecked(n == level)
+        session = self.session
+        job = JobWorker(lambda: session.set_zoom(level))
+        job.failed.connect(self._focus_failed)
+        job.failed.connect(lambda _m: [b.setChecked(n == 1) for n, b in self.camera_zoom_buttons.items()])
+        self._alive.add(job)
+        job.finished.connect(lambda j=job: self._alive.discard(j))
         job.start()
 
     def _focus_failed(self, message: str) -> None:

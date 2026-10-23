@@ -27,6 +27,8 @@ PROP_EXPOSURE_COMP = 0x00000407
 PROP_LENS_NAME = 0x0000040D
 PROP_LENS_STATUS = 0x00000416
 PROP_EVF_OUTPUT_DEVICE = 0x00000500
+PROP_EVF_ZOOM = 0x00000507        # the camera's own live-view zoom: 1 (the whole picture), 5 or 10 times (the middle of the sensor, at the same picture size)
+EVF_ZOOMS = (1, 5, 10)
 
 # values
 EVF_OUTPUT_TFT = 1       # the live picture goes to the camera's own screen

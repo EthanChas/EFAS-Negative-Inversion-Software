@@ -94,3 +94,7 @@ sharpness), `naming.py`, `session.py`. `desktop/tether_worker.py` and `desktop/v
 
 The approach (a camera thread that owns the SDK, live pictures pulled and converted on the computer, a sharpness meter, a settle time before a non-autofocus shutter, a numbered roll) follows
 the Canon EDSDK Film Scanner by Rafat Hossain (MIT, https://github.com/RafatH0ssain/Canon-EDSDK-Film-Scanner), a separate web application; EFAS's code is its own and no code was copied.
+
+## Camera zoom: more pixels in the live picture
+
+Canon's SDK sends a live picture that is only 960 x 640 on many bodies (up to 1620 wide on newer ones), so the **Zoom** slider under the picture can only make those pixels bigger. **Camera zoom** (Fit, 5x, 10x, under the slider) asks the camera itself to zoom its live view: it then sends the middle of the sensor at the same picture size, so at 5x or 10x the film's grain and fine detail arrive as real pixels, which is what you need to judge focus. The sharpness reading starts over when you change it (it is a different picture). The buttons are on only while the camera says it offers the zoom (`Evf_Zoom`); the camera's own AF point and the sensor's middle are what you see, so frame the part of the film you want in the middle first. The live picture is no longer made smaller than the camera sent it (up to 1620 wide; peaking is still worked out at 960 wide and stretched over it).

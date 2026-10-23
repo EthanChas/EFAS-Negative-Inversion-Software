@@ -89,6 +89,7 @@ class PracticeCamera:
         self._frame: bytes | None = None
         self._grain = 0.0
         self._settings = dict(DEFAULTS)
+        self._zoom = 1
         self._tones: dict[float, np.ndarray] = {}
 
     @property
@@ -97,7 +98,7 @@ class PracticeCamera:
 
     @property
     def capabilities(self) -> Capabilities:
-        return Capabilities(focus_drive=True, exposure=True)
+        return Capabilities(focus_drive=True, exposure=True, zoom=True)
 
     @property
     def position(self) -> int:
@@ -144,13 +145,31 @@ class PracticeCamera:
     def _blur_of(self, rgb: np.ndarray, sigma: float) -> np.ndarray:
         return rgb if sigma < 0.15 else cv2.GaussianBlur(rgb, (0, 0), sigma)
 
+    def set_zoom(self, level: int) -> None:
+        if int(level) not in (1, 5, 10):
+            raise ValueError(f"level is one of 1, 5, 10, not {level!r}")
+        with self._lock:
+            self._zoom = int(level)
+            self._frame = None   # the next live picture is the zoomed one
+
+    def _zoomed(self, rgb: np.ndarray) -> np.ndarray:
+        """What the sensor shows at 5 or 10 times: the middle, at the size of the whole picture (enlarged here from the made-up negative: a real camera has its own pixels there)."""
+        z = self._zoom
+        if z == 1:
+            return rgb
+        h, w = rgb.shape[:2]
+        ch, cw = h // z, w // z
+        y0, x0 = (h - ch) // 2, (w - cw) // 2
+        return cv2.resize(rgb[y0:y0 + ch, x0:x0 + cw], (w, h), interpolation=cv2.INTER_CUBIC)
+
     def _picture(self) -> np.ndarray:
         sigma = round(abs(self._pos - BEST) * BLUR_PER_STEP * 4) / 4   # in quarter pixels, so blurred pictures can be kept
-        if sigma not in self._blurred:
+        key = (sigma, self._zoom)
+        if key not in self._blurred:
             if len(self._blurred) > 40:
                 self._blurred.clear()
-            self._blurred[sigma] = self._blur_of(self._sharp, sigma)
-        return self._blurred[sigma]
+            self._blurred[key] = self._zoomed(self._blur_of(self._sharp, sigma))
+        return self._blurred[key]
 
     def live_frame(self) -> tuple[int, bytes | None]:
         if not self._opened:

@@ -15,7 +15,7 @@ import numpy as np
 from ..focuspeaking import logic as peaking
 from ..negative import printengine as engine
 
-WORK_WIDTH = 1280         # the positive and the picture shown are made at most this wide (a Canon live picture is 960 to 1620 wide: the narrower are kept whole, and the conversion keeps up with 30 pictures a second)
+WORK_WIDTH = 1620         # the positive and the picture shown are made at most this wide (a Canon live picture is 960 to 1620 wide: all of them are kept whole, not made smaller than the camera sent)
 PEAK_WIDTH = 960          # peaking is worked out at most this wide, and stretched over the picture
 METER_WIDTH = 800         # the conversion's table is made from a picture this wide (as it always was) and applied to the full one, so the colours do not change with the size shown
 PEAK_EVERY = 3            # peaking is worked out for one frame in this many and kept for the others: focus changes slowly, and it is the dearest step

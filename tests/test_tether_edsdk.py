@@ -489,3 +489,31 @@ def test_exposure_is_read_from_the_camera_and_set_only_to_what_it_offers(quick):
     finally:
         camera.close()
     assert camera.exposure() is None, "closed: nothing to ask"
+
+
+# ---------------------------------------------------------------- the camera's own live view zoom
+def test_the_live_picture_can_be_zoomed_on_the_camera_to_5_and_10_times(quick):
+    fake = FakeEdsdk()
+    fake.props[api.PROP_EVF_ZOOM] = 1
+    camera = opened(fake)
+    try:
+        assert camera.capabilities.zoom
+        camera.set_zoom(5)
+        assert ("set", api.PROP_EVF_ZOOM, 5) in fake.calls and fake.props[api.PROP_EVF_ZOOM] == 5
+        camera.set_zoom(10); camera.set_zoom(1)
+        assert fake.props[api.PROP_EVF_ZOOM] == 1
+        with pytest.raises(ValueError):
+            camera.set_zoom(7)
+    finally:
+        camera.close()
+
+
+def test_a_camera_without_live_view_zoom_says_so(quick):
+    fake = FakeEdsdk()
+    camera = opened(fake)
+    try:
+        assert not camera.capabilities.zoom
+        with pytest.raises(TetherError):
+            camera.set_zoom(5)
+    finally:
+        camera.close()

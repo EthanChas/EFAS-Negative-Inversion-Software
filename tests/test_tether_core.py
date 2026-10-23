@@ -413,3 +413,34 @@ def test_auto_exposure_says_why_when_it_cannot():
         assert not session.auto_exposure(settle_s=0.1).ok
     finally:
         session.close()
+
+
+def test_the_cameras_own_zoom_shows_the_middle_at_the_size_of_the_whole_picture(tmp_path):
+    camera = practice_camera.PracticeCamera()
+    camera.open()
+    assert camera.capabilities.zoom
+    camera._frame = None
+    whole = liveview.decode(camera.live_frame()[1])
+    camera.set_zoom(5)
+    five = liveview.decode(camera.live_frame()[1])
+    assert five.shape == whole.shape == (640, 960, 3), "the picture keeps its size"
+    h, w = whole.shape[:2]
+    middle = cv2.resize(whole[h * 2 // 5:h * 3 // 5, w * 2 // 5:w * 3 // 5], (w, h), interpolation=cv2.INTER_CUBIC)
+    assert np.abs(five.astype(int) - middle.astype(int)).mean() < 14, "it is the middle fifth, enlarged"
+    camera.set_zoom(1)
+    assert np.abs(liveview.decode(camera.live_frame()[1]).astype(int) - whole.astype(int)).mean() < 6, "Fit brings the whole picture back"
+    with pytest.raises(ValueError):
+        camera.set_zoom(3)
+    session = TetherSession(camera, str(tmp_path))
+    session.open()
+    session.best = 12.0
+    session.set_zoom(10)
+    assert session.best != 12.0, "the best sharpness so far was of another picture and starts over"
+    session.close()
+
+
+def test_the_live_picture_is_no_longer_made_smaller_than_the_camera_sent_up_to_1620_wide():
+    assert liveview.WORK_WIDTH >= 1620
+    big = np.clip(np.random.default_rng(0).normal(128, 40, (1080, 1620, 3)), 0, 255).astype(np.uint8)
+    frame = liveview.Pipeline().process(_jpeg(big), liveview.View(positive=False))
+    assert frame is not None and frame.image.shape[1] == 1620, frame.image.shape

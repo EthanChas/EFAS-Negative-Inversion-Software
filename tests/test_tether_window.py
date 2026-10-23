@@ -144,6 +144,15 @@ _SCRIPT = textwrap.dedent(r'''
     w.measure_centre(); w.zoom_slider.setValue(100)
     shortcuts["0"].activated.emit(); assert img.zoom == 1.0
 
+    # --- the camera's own zoom: Fit / 5x / 10x ask the camera to show the middle of the sensor
+    assert all(b.isEnabled() for b in w.camera_zoom_buttons.values()) and w.camera_zoom_buttons[1].isChecked()
+    w.camera_zoom(5)
+    until(lambda: camera._zoom == 5, what="the camera to zoom")
+    assert w.camera_zoom_buttons[5].isChecked() and not w.camera_zoom_buttons[1].isChecked()
+    until(lambda: not any(j.isRunning() for j in list(w._alive)), what="the zoom job")
+    w.camera_zoom(1)
+    until(lambda: camera._zoom == 1, what="the camera to show the whole picture again")
+    until(lambda: not any(j.isRunning() for j in list(w._alive)), what="the zoom job")
     # --- the camera's exposure: shown, set from the window, and found automatically
     until(lambda: w.exposure_combos["tv"].count() > 0, what="the exposure settings")
     assert "M mode" in w.mode_label.text() and w.exposure_combos["tv"].currentText() == "1/60 s" and w.exposure_combos["iso"].currentText() == "100" and w.exposure_combos["av"].currentText() == "f/8"
