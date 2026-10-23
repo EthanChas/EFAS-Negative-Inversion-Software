@@ -540,3 +540,20 @@ def test_a_path_and_a_brush_get_a_source_too():
     _drag(tool, (300, 300), (360, 320))
     brush = host.ms.get(2)
     assert brush is not None and np.allclose(brush.source, _raw(300 + 0.01 * FW, 300 + 0.01 * FH), atol=1e-6), brush and brush.source
+
+
+def test_an_arrow_shows_where_the_picture_is_copied_from_and_to():
+    host, tool = _tool()
+    c = host.ms.add(M.CIRCLE, M.circle(0.3, 0.5, 0.05, 0.02), "", (0.6, 0.5))
+    host.sourced.add(c.id)
+    tool.set_visible([c.id])
+    arrows = [pr for pr in tool.primitives() if pr.kind == "arrow" and pr.role == "source"]
+    assert len(arrows) == 1
+    tail, head = arrows[0].pts
+    shape, source = np.array([0.3 * FW, 0.5 * FH]), np.array([0.6 * FW, 0.5 * FH])
+    assert np.hypot(*(tail - source)) < np.hypot(*(tail - shape)) and np.hypot(*(head - shape)) < np.hypot(*(head - source)), "from the source to the shape"
+    assert head[0] > shape[0] and tail[0] < source[0], "short of both centres: it starts at the dashed copy's ring and ends at the shape's"
+    near = host.ms.add(M.CIRCLE, M.circle(0.7, 0.2, 0.05, 0.02), "", (0.705, 0.2))        # a source almost on top of the shape: no room for an arrow
+    host.sourced.add(near.id)
+    tool.set_visible([near.id])
+    assert not [pr for pr in tool.primitives() if pr.kind == "arrow"]

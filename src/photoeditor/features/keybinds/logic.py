@@ -45,6 +45,8 @@ ACTIONS: tuple[KeyAction, ...] = (
     KeyAction("redo_alt", "Redo (second key)", "Editing", "Ctrl+Shift+Z", "menu"),
     KeyAction("rotate_left", "Rotate left", "Editing", "["),
     KeyAction("rotate_right", "Rotate right", "Editing", "]"),
+    KeyAction("flip_h", "Flip horizontally", "Editing", "Shift+["),
+    KeyAction("flip_v", "Flip vertically", "Editing", "Shift+]"),
     KeyAction("auto_crop", "Auto crop & straighten", "Editing", "Ctrl+Shift+A", "menu"),
     KeyAction("gradient_crop", "Gradient border crop & rotate", "Editing", "Ctrl+Shift+G", "menu"),
     KeyAction("reset_edits", "Reset all edits on this photo", "Editing", "Ctrl+Shift+R", "menu"),

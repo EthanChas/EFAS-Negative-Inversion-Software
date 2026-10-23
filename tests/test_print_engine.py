@@ -186,15 +186,15 @@ def test_the_dropdown_offers_modern_first_and_original_and_follows_the_photo():
         box = p._conversion
         assert [box.itemText(i) for i in range(box.count())] == ["Modern (film & paper)", "Original (stretch)"]
         assert box.currentData() == "print", "Modern is the default"
-        assert all(r.isEnabled() for r in (*p._print_rows.values(), *p._trim_rows))
+        assert not any(r.isHidden() for r in (*p._print_rows.values(), *p._trim_rows, p._film, p._encoding))
         got = []
         p.metering_changed.connect(got.append); p.metering_preview.connect(got.append)
         box.setCurrentIndex(box.findData("standard"))
-        assert p._metering.engine == "standard" and not any(r.isEnabled() for r in (*p._print_rows.values(), *p._trim_rows)), "Original has no print controls"
+        assert p._metering.engine == "standard" and all(r.isHidden() for r in (*p._print_rows.values(), *p._trim_rows, p._film, p._film_label, p._encoding, p._encoding_label)), "Original has no print controls: they are put away, not greyed"
         box.setCurrentIndex(box.findData("print"))
-        assert not p._range.isEnabled() and not p._white.isEnabled() and not any(b.isEnabled() for b in p._droppers.values()), "Modern puts Original's stretch controls away"
+        assert all(w.isHidden() for w in (p._range, p._white, p._wb_title, *p._droppers.values())) and not p._film.isHidden(), "Modern puts Original's stretch controls away"
         box.setCurrentIndex(box.findData("standard"))
-        assert p._range.isEnabled() and p._white.isEnabled() and all(b.isEnabled() for b in p._droppers.values())
+        assert not p._range.isHidden() and not p._white.isHidden() and not any(b.isHidden() for b in p._droppers.values())
         p.set_metering(Metering(engine="print", grade=0.2))
         assert box.currentData() == "print" and abs(p._print_rows["grade"].value() - 0.2) < 1e-6
         p.set_metering(Metering(engine="standard"))

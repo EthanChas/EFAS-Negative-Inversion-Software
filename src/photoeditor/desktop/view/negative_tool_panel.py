@@ -215,6 +215,7 @@ class NegativeToolPanel(CollapsiblePanel):
         film_row = QHBoxLayout()
         film_label = QLabel("Film")
         film_label.setFixedWidth(80)
+        self._film_label = film_label
         film_row.addWidget(film_label)
         self._film = QComboBox()
         for key, info in printengine.profiles().items():
@@ -229,6 +230,7 @@ class NegativeToolPanel(CollapsiblePanel):
         encoding_row = QHBoxLayout()
         encoding_label = QLabel("Encoding")
         encoding_label.setFixedWidth(80)
+        self._encoding_label = encoding_label
         encoding_row.addWidget(encoding_label)
         self._encoding = QComboBox()
         self._encoding.addItem("Automatic (from the file)", "auto")
@@ -299,10 +301,12 @@ class NegativeToolPanel(CollapsiblePanel):
         body.addWidget(self._cast)
         wb_title = QLabel("WHITE / BLACK POINT")
         wb_title.setProperty("role", "subtitle")
+        self._wb_title = wb_title
         body.addWidget(wb_title)
         channel_row = QHBoxLayout()
         channel_label = QLabel("Channel")
         channel_label.setFixedWidth(80)
+        self._channel_label = channel_label
         channel_row.addWidget(channel_label)
         self._channel = QComboBox()
         for label in ("All channels", "Red", "Green", "Blue"):
@@ -541,18 +545,14 @@ class NegativeToolPanel(CollapsiblePanel):
         )
 
     def _sync_engine_controls(self, engine: str) -> None:
-        """The Modern conversion has its own grade and density; the stretch's range clip, colour cast and white / black points belong to Original and are put away under Modern."""
+        """The Modern conversion has its own film, encoding, grade and density; the stretch's range clip, colour cast and white / black points belong to Original. Each set is put away (not greyed)
+        under the other conversion, and comes back with it."""
         modern = engine == "print"
-        self._film.setEnabled(modern)
-        self._encoding.setEnabled(modern)
-        for row in (*self._print_rows.values(), *self._trim_rows):
-            row.setEnabled(modern)
-        original_only = (self._range, self._cast, self._white, self._black, self._channel, *self._droppers.values())
+        for w in (self._film_label, self._film, self._encoding_label, self._encoding, *self._print_rows.values(), *self._trim_rows):
+            w.setVisible(modern)
+        original_only = (self._range, self._cast, self._wb_title, self._channel_label, self._white, self._black, self._channel, *self._droppers.values())
         for w in original_only:
-            w.setEnabled(not modern)
-        note = "Belongs to the Original conversion; Modern uses Grade and Print density." if modern else ""
-        for w in (self._range, self._cast, self._white, self._black):
-            w.setToolTip(w.toolTip().split("  [")[0] + (f"  [{note}]" if note else ""))
+            w.setVisible(not modern)
 
     def set_region_draw_active(self, active: bool) -> None:
         """Sync the Draw Region button without emitting anything."""

@@ -26,6 +26,9 @@ def event_sequences(event: QKeyEvent) -> list[str]:
     mods = event.modifiers() & _MODS
     fmt = QKeySequence.SequenceFormat.PortableText
     out = [QKeySequence(QKeyCombination(mods, key)).toString(fmt)]
+    unshifted = {Qt.Key.Key_BraceLeft: Qt.Key.Key_BracketLeft, Qt.Key.Key_BraceRight: Qt.Key.Key_BracketRight}.get(key)
+    if unshifted is not None and mods & Qt.KeyboardModifier.ShiftModifier:     # Shift+[ on a keyboard that makes "{" of it is still the key that is marked [
+        out.insert(0, QKeySequence(QKeyCombination(mods, unshifted)).toString(fmt))
     if mods & Qt.KeyboardModifier.ShiftModifier and not (Qt.Key.Key_0 <= key <= Qt.Key.Key_9 or Qt.Key.Key_A <= key <= Qt.Key.Key_Z):
         out.append(QKeySequence(QKeyCombination(mods & ~Qt.KeyboardModifier.ShiftModifier, key)).toString(fmt))
     return out

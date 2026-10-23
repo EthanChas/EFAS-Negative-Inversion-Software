@@ -260,7 +260,7 @@ def _arrows_belong_to_focus(filmstrip_list) -> bool:
 
 
 _ROLL_KEYS = {"prev_photo": Qt.Key.Key_Left, "next_photo": Qt.Key.Key_Right, "first_photo": Qt.Key.Key_Home, "last_photo": Qt.Key.Key_End}
-_PHOTO_ACTIONS = ("flag_rejected", "flag_keeper", "flag_clear", "fit_100", "rotate_left", "rotate_right")   # (and the ratings and the roll keys): what a key does to the photo that is open
+_PHOTO_ACTIONS = ("flag_rejected", "flag_keeper", "flag_clear", "fit_100", "rotate_left", "rotate_right", "flip_h", "flip_v")   # (and the ratings and the roll keys): what a key does to the photo that is open
 
 
 def _is_photo_action(action: str) -> bool:
@@ -1418,6 +1418,7 @@ class AppWindow(QMainWindow):
             lambda auto, threshold, size, sensitivity: self.controller.set_dust(auto, threshold, int(round(size)), sensitivity)
         )
         self._dust_tool.tool_changed.connect(self._on_dust_tool_changed)
+        self._dust_tool.toggled.connect(lambda expanded: None if expanded else self._put_down_dust_tools())
         self._dust_tool.overlay_toggled.connect(self.controller.set_show_detections)
         self._dust_tool.undo_requested.connect(self.controller.undo_last_retouch)
         self._dust_tool.clear_requested.connect(self.controller.clear_retouch)
@@ -1442,6 +1443,7 @@ class AppWindow(QMainWindow):
         self._error_marks_panel = ErrorMarksPanel()
         self._error_marks_panel.set_marks_visible(app_settings.get("error_marks_visible"))
         self._error_marks_panel.kind_chosen.connect(self._on_error_kind_chosen)
+        self._error_marks_panel.toggled.connect(lambda expanded: None if expanded else self._put_down_error_tool())
         self._error_marks_panel.visibility_toggled.connect(self.set_error_marks_visible)
         self._error_marks_panel.clear_requested.connect(self._on_clear_error_marks)
         self._image_view.error_mark_drawn.connect(self._on_error_mark_drawn)
@@ -3776,6 +3778,10 @@ class AppWindow(QMainWindow):
             c.toggle_rating(int(action[-1]))
         elif action in _ROLL_KEYS:
             self.step_roll(_ROLL_KEYS[action])
+        elif action == "flip_h":
+            c.set_flip_h(not c.state.flip_h)
+        elif action == "flip_v":
+            c.set_flip_v(not c.state.flip_v)
         elif action in ("rotate_left", "rotate_right"):
             turn = -1 if action == "rotate_left" else 1
             if self.proof_active():
@@ -4673,6 +4679,22 @@ class AppWindow(QMainWindow):
                     other_panel.set_open(False)
                     self._tool_rail.set_tab_checked(other_id, False)
 
+    def _put_down_dust_tools(self) -> None:
+        """Dust & Scratches was closed (or its tab was): the repair tool in hand and Show Detections are put away, as a darktable module's are when it loses focus."""
+        d = self._dust_tool
+        if d.active_tool() is not None:
+            d.deactivate_tools()
+            self._image_view.set_tool(None)
+            self._image_view.set_pick_mode(False)
+        if d.detections_shown():
+            d.hide_detections()
+
+    def _put_down_error_tool(self) -> None:
+        """Error marking was closed (or its tab was): the kind being marked is put away."""
+        if self._error_tool_kind:
+            self._on_error_kind_chosen("")
+            self._error_marks_panel.set_active_kind("")
+
     def _end_masking_in(self, closing: list) -> None:
         """Tabs are closing: whatever is being drawn, edited or shown on the picture for a module in them stops (darktable does the same when a module loses focus): a shape being placed is let
         go, shapes are no longer shown for editing, a mask shown for a module goes away, and Retouch's views of the picture (a wavelet scale, its masks, "without Retouch") are put back."""
@@ -4686,6 +4708,10 @@ class AppWindow(QMainWindow):
             ed.show_module(ed._show_key, False)
         if held(self._retouch_tool):
             self._on_retouch_toggled(False)
+        if held(self._dust_tool):
+            self._put_down_dust_tools()
+        if held(self._error_marks_panel):
+            self._put_down_error_tool()
 
     def _show_search_results(self, on: bool, reopen: bool = True) -> None:
         """Open (or close) the list of modules the search box found. Opening it closes the tab that was showing (remembered); closing it brings that tab back when `reopen`."""

@@ -274,7 +274,7 @@ A crop is a rectangle **remembered with the photo**, not a cut made in the file.
 
 **Guide** chooses the composition overlay drawn inside the crop while you work: **Thirds**, **Phi Grid**, **Diagonals**, **Golden Triangles**, **Golden Spiral**, **Armature**, **Diagonal Method**, **Grid**, or **Off**. They are aids for the eye and are never part of the picture. Thirds and the Phi Grid mark places to put the subject; the diagonal guides help to place a subject on a line.
 
-**Rotate Left / Right** (`[` and `]`) turn the picture by quarter turns and **Flip Horizontal / Vertical** mirror it. An existing crop is **carried along** with the picture rather than cleared, so you can turn a scan upright after cropping it.
+**Rotate Left / Right** (`[` and `]`) turn the picture by quarter turns and **Flip Horizontal / Vertical** (`Shift+[` and `Shift+]`) mirror it. An existing crop is **carried along** with the picture rather than cleared, so you can turn a scan upright after cropping it.
 
 ## Crop for the conversion
 

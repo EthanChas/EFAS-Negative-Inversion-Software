@@ -986,6 +986,12 @@ class MaskTool:
             shape = Prim("poly", dg["curve"] + shift, "source", fid)
         else:
             shape = Prim("line", dg["curve"] + shift, "source", fid)
+        # the line from the source to the shape ends in an arrowhead at the shape: the picture is copied from the dashed shape to this one. It starts and ends at the rings, not their centres
+        length = float(np.hypot(*shift))
+        reach = float(np.min(np.hypot(*(dg["shape"] - anchor).T))) if t in (M.CIRCLE, M.ELLIPSE) else 6.0
+        if length > 2.0 * reach + 14.0:
+            unit = shift / length
+            return [shape, Prim("arrow", np.array([anchor + shift - unit * reach, anchor + unit * (reach + 3.0)]), "source", fid)]
         return [shape, Prim("line", np.array([anchor, anchor + shift]), "source", fid)]
 
     def _form_prims(self, form: M.Form, dg: dict, hot: bool) -> list[Prim]:

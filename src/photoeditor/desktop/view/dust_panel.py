@@ -310,6 +310,13 @@ class DustToolPanel(CollapsiblePanel):
         """Turns the overlay on (emitting overlay_toggled, if it was off)."""
         self._overlay_btn.setChecked(True)
 
+    def detections_shown(self) -> bool:
+        return self._overlay_btn.isChecked()
+
+    def hide_detections(self) -> None:
+        """Turns the overlay off (emitting overlay_toggled, if it was on)."""
+        self._overlay_btn.setChecked(False)
+
     def deactivate_tools(self) -> None:
         """Un-checks every tool button without emitting tool_changed."""
         for button in self._tool_buttons.values():
