@@ -1,7 +1,8 @@
 """The tether window's flat-field profile: a picture of the bare light taken through the live view, kept between sessions, and turned into the gain map that evens out the preview. No Qt.
 
-It is EFAS's own flat field (features/flatfield) made from the live picture instead of a scan: the same smoothing methods, the same gain map. Only the preview uses it; the shots the camera
-saves are corrected by the flat field in the editor, as before.
+It is the same kind of gain map as EFAS's flat field (features/flatfield), made from the live picture instead of a scan. The live picture is an 8-bit JPEG, so a smooth falloff arrives as steps
+of one level, and a gain made by blurring them keeps the steps (they show as rings, a different set in each colour). A smooth surface fitted to the light has no steps to keep. Only the preview
+uses it; the shots the camera saves are corrected by the flat field in the editor, as before.
 """
 
 import os
@@ -11,22 +12,17 @@ import numpy as np
 
 from .. import datadir
 from ..flatfield import logic as ff
-from ..settings import logic as app_settings
 
 FRAMES = 8              # live pictures of the light that are averaged (one is noisy)
 FRAME_WIDTH = 640       # each is made this wide before it is kept: the gain map is smooth and small anyway
 TOO_DARK = 20           # an average camera value below this is not the light
 BLOWN_OUT = 250         # at or above this the light is clipped and its falloff cannot be seen
+DEGREE = 5              # the surface fitted to the light is a polynomial of this degree in x and y: smooth, so it can hold a vignette or a lamp's hot spot but not a step or a speck
+MAX_UNEVEN = 0.08       # what is left of the light after the fit, as a share of it (its spread): more than this is not bare light (film or a holder in the way)
 
 
 def path() -> str:
     return os.path.join(datadir.app_data_dir(), datadir.TETHER_FLATFIELD_FILE)
-
-
-def method() -> str:
-    """The flat-field method set in EFAS (Flat Field panel), so the preview is evened out the way the scans are."""
-    chosen = app_settings.get("flatfield_method")
-    return chosen if chosen in ff.METHODS else ff.METHOD_DEFAULT
 
 
 def shrink(rgb: np.ndarray) -> np.ndarray:
@@ -50,8 +46,34 @@ def reference_from_frames(frames: list[np.ndarray]) -> np.ndarray:
     return ff.reference_map(np.clip(np.rint(mean), 0, 255).astype(np.uint8))
 
 
-def gain_of(reference: np.ndarray, chosen: str | None = None) -> np.ndarray:
-    return ff.gain_from_map(reference, chosen or method())
+def _terms(h: int, w: int) -> np.ndarray:
+    ys, xs = np.mgrid[0:h, 0:w].astype(np.float32)
+    x, y = xs / max(1, w - 1) * 2 - 1, ys / max(1, h - 1) * 2 - 1
+    return np.stack([x ** i * y ** j for i in range(DEGREE + 1) for j in range(DEGREE + 1 - i)], axis=-1)
+
+
+def fit(reference: np.ndarray) -> tuple[np.ndarray, float]:
+    """(the gain map, how uneven what is left is): a smooth surface fitted to each colour of the light, and the gain that makes it flat. The second number is the spread of the light round that
+    surface after dust is filtered out; a large one means the picture is not bare light."""
+    ref = np.ascontiguousarray(reference, dtype=np.float32)
+    h, w = ref.shape[:2]
+    terms = _terms(h, w)
+    design = terms.reshape(-1, terms.shape[-1])
+    filtered = cv2.medianBlur(ref, 5) if min(h, w) >= 8 else ref
+    surface = np.empty_like(ref)
+    spread = 0.0
+    for c in range(3):
+        values = filtered[..., c].reshape(-1)
+        coef, *_ = np.linalg.lstsq(design[::3], values[::3], rcond=None)
+        fitted = np.maximum(design @ coef, float(values.max()) * 0.02 + 1e-6)
+        surface[..., c] = fitted.reshape(h, w)
+        spread = max(spread, float(np.std(values / fitted - 1.0)))
+    gain = surface.reshape(-1, 3).mean(axis=0)[None, None, :] / surface
+    return np.clip(gain, 0.25, 4.0).astype(np.float32), spread
+
+
+def gain_of(reference: np.ndarray) -> np.ndarray:
+    return fit(reference)[0]
 
 
 def save(reference: np.ndarray) -> None:

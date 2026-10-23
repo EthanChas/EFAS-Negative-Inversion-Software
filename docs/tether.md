@@ -101,10 +101,10 @@ Canon's SDK sends a live picture that is only 960 x 640 on many bodies (up to 16
 
 ## Flat field: an even preview
 
-The light behind the film is never perfectly even, so the live picture is brighter in the middle and darker at the corners, which makes it hard to see whether the *film* is even or flat. The **Flat field** box (under View) fixes the preview with EFAS's own flat field (`features/flatfield`, the same gain map and the same method you chose in the Flat Field panel):
+The light behind the film is never perfectly even, so the live picture is brighter in the middle and darker at the corners, which makes it hard to see whether the *film* is even or flat. The **Flat field** box (under View) fixes the preview with a flat field of the same kind as EFAS's (`features/flatfield`: a gain map that makes the light flat). The live picture is an 8-bit JPEG, so a smooth falloff arrives as steps of one level and a gain made by blurring it would show them as rings; the preview's gain is instead a smooth surface (a degree-5 polynomial in x and y, per colour) fitted to the light, which has no steps to keep:
 
 1. Take the film out so the camera sees only the bare light, and set the exposure so it is bright but not white.
-2. Click **Capture the light**. Eight live pictures are averaged into a flat field, which is kept in `~/.EFAS/tether-flat-field.npz` and loaded again next time. (A picture that is too dark, or blown out, is refused with what to change.)
+2. Click **Capture the light**. Eight live pictures are averaged into a flat field, which is kept in `~/.EFAS/tether-flat-field.npz` and loaded again next time. (A picture that is too dark, blown out, or not an even glow, which means film or the holder is still in the way, is refused with what to change.)
 3. **Even out the preview with a flat field** switches it on and off. **Use EFAS's flat field** uses the permanent flat field from the Flat Field panel instead, when there is one and it is switched on. **Forget** stops using it and throws the captured one away.
 
 It only changes the preview (and the loupe, and the colour you pick for the clear film): the sharpness meter and the clipping warning measure the camera's own picture, and the shots the camera saves are corrected by the flat field in the editor, as before. It is of the whole picture, so it switches itself off while the camera's own zoom is on.

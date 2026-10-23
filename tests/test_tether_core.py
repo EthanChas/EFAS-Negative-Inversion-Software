@@ -471,7 +471,7 @@ def test_the_flat_field_evens_out_the_live_preview(monkeypatch, tmp_path):
     view = liveview.View(positive=False)
     plain = pipeline.process(_jpeg(light), view).image
     assert _edge_to_middle(plain) < 0.8, "the light falls off towards the edges"
-    pipeline.set_flatfield(flatprofile.gain_of(reference, "improved"))
+    pipeline.set_flatfield(flatprofile.gain_of(reference))
     even = pipeline.process(_jpeg(light), view).image
     assert _edge_to_middle(even) > 0.93, _edge_to_middle(even)
     assert _edge_to_middle(pipeline.process(_jpeg(light), liveview.View(positive=False, flatfield=False)).image) < 0.8, "off in the view: untouched"
@@ -481,6 +481,23 @@ def test_the_flat_field_evens_out_the_live_preview(monkeypatch, tmp_path):
     assert pipeline.flat_colour(corner, 0.0, 0.0, frame.rgb.shape, view)[0] > corner[0] * 1.15, "a colour read at a dark corner is read as it is once evened out"
     assert pipeline.loupe(frame, 0.0, 0.0, view).mean() > 1.15 * liveview.Pipeline().loupe(frame, 0.0, 0.0, view).mean()
     pipeline.set_flatfield(None); assert not pipeline.has_flatfield
+
+
+def test_the_flat_field_has_no_rings_and_refuses_what_is_not_bare_light():
+    from photoeditor.features.tether import flatprofile
+    # an 8-bit picture of a smooth falloff has steps of one level; the gain made from it must not
+    light = _vignetted(level=120)
+    reference = flatprofile.reference_from_frames([flatprofile.shrink(light)] * 8)
+    gain, spread = flatprofile.fit(reference)
+    assert spread < flatprofile.MAX_UNEVEN / 2, spread
+    step = np.abs(np.diff(gain, n=2, axis=1)).max()
+    assert step < 0.002, f"the gain bends smoothly, with no steps: {step}"
+    blurred_steps = np.abs(np.diff(flatprofile.ff.gain_from_map(reference, "improved"), n=2, axis=1)).max()
+    assert step < blurred_steps, "smoother than the blur-based gain, which keeps the 8-bit steps"
+    # film in the way: a dark frame with a bright window is not bare light
+    film = light.copy(); film[80:560, 120:840] = 25; film[200:300, 300:500] = 150
+    uneven = flatprofile.fit(flatprofile.reference_from_frames([flatprofile.shrink(film)] * 8))[1]
+    assert uneven > flatprofile.MAX_UNEVEN, uneven
 
 
 def test_the_live_picture_is_no_longer_made_smaller_than_the_camera_sent_up_to_1620_wide():

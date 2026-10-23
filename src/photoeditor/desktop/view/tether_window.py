@@ -753,11 +753,16 @@ class TetherWindow(QDialog):
             self._sync_flat_buttons()
             return
         reference = flatprofile.reference_from_frames(frames)
+        gain, spread = flatprofile.fit(reference)
+        if spread > flatprofile.MAX_UNEVEN:
+            self.flat_label.setText("That is not bare light: it has too much in it to be a smooth glow (film, or the holder, is in the way). Take everything out of the picture and try again.")
+            self._sync_flat_buttons()
+            return
         try:
             flatprofile.save(reference)
         except OSError:
             pass     # it works for this session; it is only not kept
-        self._set_flat(flatprofile.gain_of(reference), "captured")
+        self._set_flat(gain, "captured")
 
     def use_saved_flat_field(self) -> None:
         gain = self._saved_flatfield() if self._saved_flatfield is not None else None

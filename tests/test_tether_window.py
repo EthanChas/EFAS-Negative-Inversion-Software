@@ -171,9 +171,13 @@ _SCRIPT = textwrap.dedent(r'''
     # --- the flat field: capture the light, the preview is evened out and the profile is kept; Forget lets it go
     assert not w.flat_check.isEnabled() and "No flat field" in w.flat_label.text() and w.flat_capture_button.isEnabled()
     w.capture_flat_field()
+    until(lambda: w._flat_frames is None, what="the pictures of the light")
+    assert w._flat_gain is None and ("not bare light" in w.flat_label.text() or "dark" in w.flat_label.text() or "blown" in w.flat_label.text()), "a picture of a negative is not bare light: " + w.flat_label.text()
+    from photoeditor.features.tether import flatprofile
+    flatprofile.MAX_UNEVEN = 10.0   # (the practice camera has no bare light to show: the rule is tried on its own in test_tether_core)
+    w.capture_flat_field()
     until(lambda: w._flat_gain is not None or "dark" in w.flat_label.text() or "blown" in w.flat_label.text(), what="the flat field")
     assert w._flat_gain is not None and w.flat_check.isChecked() and session.view.flatfield and session.pipeline.has_flatfield, w.flat_label.text()
-    from photoeditor.features.tether import flatprofile
     assert flatprofile.load() is not None, "kept for next time"
     w.flat_check.setChecked(False); assert not session.view.flatfield and "switched off" in w.flat_label.text()
     w.flat_check.setChecked(True); assert session.view.flatfield
