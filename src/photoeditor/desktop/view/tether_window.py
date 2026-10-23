@@ -21,7 +21,7 @@ from ...features.focuspeaking import logic as peaking
 from ...features.lightcheck.capture import RAW_EXTS
 from ...features.open_image.logic import SUPPORTED_EXTS
 from ...features.settings import logic as app_settings
-from ...features.tether import edsdk_api, exposure, liveview, naming
+from ...features.tether import edsdk_api, exposure, flatprofile, liveview, naming
 from ...features.tether.session import CAMERAS, TetherSession, make_backend
 from ...theme.tokens import THEME
 from ..tether_worker import JobWorker, LiveWorker
@@ -54,6 +54,7 @@ class LiveImage(QWidget):
     clicked = pyqtSignal(float, float)    # where, as fractions of the picture
     hovered = pyqtSignal(float, float)    # the same, as the mouse moves; (-1, -1) once it leaves
     zoom_changed = pyqtSignal(float)      # 1.0 is the whole picture fitted to the window
+    panned = pyqtSignal(float, float)     # the middle button dragged the picture by this much (fractions of the picture) while `camera_pan` is on: the camera is to move its own zoom frame
 
     ZOOM_MAX = 8.0
     _DRAG_PIXELS = 4   # a press that moves less than this is a click (it measures there); more is a drag (it moves the picture)
@@ -73,6 +74,8 @@ class LiveImage(QWidget):
         self._centre = (0.5, 0.5)      # the part of the picture in the middle of the window, as fractions of it
         self._press: QPointF | None = None
         self._dragging = False
+        self._middle: QPointF | None = None    # where the middle button went down / was last seen: it moves around in the picture
+        self.camera_pan = False                # on while the camera's own zoom is in use: the middle button then moves the camera's zoom frame, not our zoomed picture
 
     @property
     def zoom(self) -> float:
@@ -167,8 +170,22 @@ class LiveImage(QWidget):
     def mousePressEvent(self, event) -> None:
         if event.button() == Qt.MouseButton.LeftButton:
             self._press, self._dragging = event.position(), False
+        elif event.button() == Qt.MouseButton.MiddleButton and self._image is not None:
+            self._middle = event.position()
+            self.setCursor(Qt.CursorShape.ClosedHandCursor)
 
     def mouseMoveEvent(self, event) -> None:
+        if self._middle is not None and self._image is not None and (event.buttons() & Qt.MouseButton.MiddleButton):
+            delta = event.position() - self._middle
+            self._middle = event.position()
+            if self.camera_pan:
+                t = self._target()
+                self.panned.emit(delta.x() / max(1.0, t.width()), delta.y() / max(1.0, t.height()))
+            elif self._zoom > 1.0:
+                self._centre = (self._centre[0] - delta.x() / self.width() / self._scale_x(), self._centre[1] - delta.y() / self.height() / self._scale_y())
+                self._clamp_centre()
+                self.update()
+            return
         if self._press is not None and self._image is not None and self._zoom > 1.0 and (event.buttons() & Qt.MouseButton.LeftButton):
             delta = event.position() - self._press
             if self._dragging or abs(delta.x()) + abs(delta.y()) >= self._DRAG_PIXELS:
@@ -183,6 +200,10 @@ class LiveImage(QWidget):
         self.hovered.emit(*(f if f else (-1.0, -1.0)))
 
     def mouseReleaseEvent(self, event) -> None:
+        if event.button() == Qt.MouseButton.MiddleButton:
+            self._middle = None
+            self.setCursor(Qt.CursorShape.CrossCursor)
+            return
         if event.button() != Qt.MouseButton.LeftButton or self._press is None:
             return
         dragged, self._press, self._dragging = self._dragging, None, False
@@ -274,9 +295,15 @@ class TetherWindow(QDialog):
     captured = pyqtSignal(list)         # the paths a shot saved
     open_requested = pyqtSignal(str)    # a picture to open in the editor
 
-    def __init__(self, parent=None, factory=make_backend, start_folder: str = ""):
+    def __init__(self, parent=None, factory=make_backend, start_folder: str = "", saved_flatfield=None):
         super().__init__(parent)
         self.setWindowTitle("Canon Tether and Live View")
+        self._saved_flatfield = saved_flatfield          # () -> EFAS's permanent flat field as a gain map, or None
+        self._flat_gain = None                           # the gain map the preview is evened out with, and where it came from
+        self._flat_source = ""                           # "captured" (from the light, in this window) or "efas"
+        self._flat_frames: list | None = None            # the pictures of the light being collected, while capturing
+        self._camera_zoom_level, self._camera_zoom_center = 1, (0.5, 0.5)
+        self._zoom_sending, self._zoom_sent = False, (0.5, 0.5)
         area = QApplication.primaryScreen().availableGeometry() if QApplication.primaryScreen() is not None else None
         self.resize(min(1640, (area.width() - 40) if area else 1640), min(940, (area.height() - 60) if area else 940))   # wide, so the picture has room
         self._factory = factory
@@ -300,6 +327,7 @@ class TetherWindow(QDialog):
         self._build(start_folder)
         self._auto_say.connect(lambda text: self.exposure_note.setText(text))
         self._building = False
+        self._flat_init()
         self._set_state("off")
 
     # ------------------------------------------------------------ building the window
@@ -315,7 +343,7 @@ class TetherWindow(QDialog):
         self.zoom_slider = QSlider(Qt.Orientation.Horizontal)
         self.zoom_slider.setRange(100, int(LiveImage.ZOOM_MAX * 100))
         self.zoom_slider.setValue(100)
-        self.zoom_slider.setToolTip("Zoom the live picture: 100% fits it to the window. The mouse wheel zooms where the pointer is; drag the picture to move it; a click still measures sharpness there")
+        self.zoom_slider.setToolTip("Zoom the live picture: 100% fits it to the window. The mouse wheel zooms where the pointer is; drag the picture with the left or the middle button to move it; a click still measures sharpness there")
         self.zoom_slider.valueChanged.connect(lambda v: self.image.set_zoom(v / 100.0))
         zoom_row.addWidget(self.zoom_slider, 1)
         self.zoom_label = QLabel("100%")
@@ -336,19 +364,11 @@ class TetherWindow(QDialog):
             self.camera_zoom_buttons[level] = b
             self._live_buttons.append(b)
             camera_zoom.addWidget(b)
-        self.camera_zoom_moves: dict[str, QPushButton] = {}
-        self._camera_zoom_level, self._camera_zoom_center = 1, (0.5, 0.5)
-        for name, glyph, dx, dy in (("left", "\u2190", -1, 0), ("up", "\u2191", 0, -1), ("down", "\u2193", 0, 1), ("right", "\u2192", 1, 0)):
-            m = self._button(glyph, f"Move the camera's zoomed picture {name} (half of what you see): look at another part of the film", lambda _c=False, x=dx, y=dy: self.camera_zoom_move(x, y))
-            m.setEnabled(False)
-            m.setMaximumWidth(32)
-            self.camera_zoom_moves[name] = m
-            self._live_buttons.append(m)
-            camera_zoom.addWidget(m)
         self.camera_zoom_note = _hint("")
         camera_zoom.addWidget(self.camera_zoom_note, 1)
         left.addLayout(camera_zoom)
         self.image.zoom_changed.connect(self._zoom_changed)
+        self.image.panned.connect(self._camera_pan)
         bar = QHBoxLayout()   # under the picture, where it is always in reach: the shutter, and what happened to the last shot
         self.capture_button = self._button("Capture (Space)", "Wait, release the shutter without focusing (focus stays where you put it), and save what the camera makes", self.capture)
         self.capture_button.setMinimumSize(190, 40)
@@ -368,6 +388,7 @@ class TetherWindow(QDialog):
         col.addWidget(self._capture_box(start_folder))
         col.addWidget(self._focus_box())
         col.addWidget(self._view_box())
+        col.addWidget(self._flat_box())
         col.addStretch(1)
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
@@ -484,6 +505,29 @@ class TetherWindow(QDialog):
         self.loupe_check.setToolTip("Four times the camera's own pixels round the mouse, not the smaller picture shown")
         self.loupe_check.toggled.connect(self._loupe_toggled)
         lay.addWidget(self.loupe_check)
+        return box
+
+    def _flat_box(self) -> QGroupBox:
+        box = QGroupBox("Flat field")
+        lay = QVBoxLayout(box)
+        self.flat_check = QCheckBox("Even out the preview with a flat field")
+        self.flat_check.setToolTip("Divides the live picture by the light's own falloff, so a bright middle and dark corners do not hide how even the film is. The preview only: the shots the camera saves are "
+                                   "corrected by EFAS's flat field in the editor as before")
+        self.flat_check.setEnabled(False)
+        self.flat_check.toggled.connect(self._view_changed)
+        lay.addWidget(self.flat_check)
+        row = QHBoxLayout()
+        self.flat_capture_button = self._button("Capture the light", "Take the film out so the picture is only the bare light (bright, not white), then click: eight live pictures are averaged into a flat field, "
+                                                                     "kept for next time", self.capture_flat_field)
+        self._live_buttons.append(self.flat_capture_button)
+        row.addWidget(self.flat_capture_button)
+        self.flat_forget_button = self._button("Forget", "Stop evening the preview out (and throw away the flat field captured here)", self.forget_flat_field)
+        row.addWidget(self.flat_forget_button)
+        lay.addLayout(row)
+        self.flat_saved_button = self._button("Use EFAS's flat field", "Use the permanent flat field set in the Flat Field panel, when there is one and it is switched on", self.use_saved_flat_field)
+        lay.addWidget(self.flat_saved_button)
+        self.flat_label = _hint("")
+        lay.addWidget(self.flat_label)
         return box
 
     def _focus_box(self) -> QGroupBox:
@@ -654,6 +698,79 @@ class TetherWindow(QDialog):
         self.auto_button.setEnabled(self._state == "live")
         self.exposure_note.setText(message)
 
+    # ------------------------------------------------------------ the flat field of the preview
+    def _flat_init(self) -> None:
+        reference = flatprofile.load()
+        if reference is not None:
+            self._set_flat(flatprofile.gain_of(reference), "captured")
+        else:
+            self._set_flat(None, "")
+
+    def _set_flat(self, gain, source: str, say: str = "") -> None:
+        self._flat_gain, self._flat_source = gain, source if gain is not None else ""
+        was, self._building = self._building, True
+        self.flat_check.setEnabled(gain is not None)
+        self.flat_check.setChecked(gain is not None)
+        self._building = was
+        self.flat_label.setText(say or ("Evening out the preview with the flat field captured from the light." if source == "captured" else
+                                        "Evening out the preview with EFAS's permanent flat field." if source == "efas" else
+                                        "No flat field: the preview shows the light as the camera sees it. Take the film out, then Capture the light."))
+        self._sync_flat_buttons()
+        if self.session is not None:
+            self.session.pipeline.set_flatfield(gain)
+            self._apply_view()
+
+    def _sync_flat_buttons(self) -> None:
+        self.flat_forget_button.setEnabled(self._flat_gain is not None)
+        self.flat_saved_button.setEnabled(self._saved_flatfield is not None)
+        self.flat_capture_button.setEnabled(self._state == "live" and self._flat_frames is None)
+
+    def capture_flat_field(self) -> None:
+        """Collect a few live pictures of the bare light and make the preview's flat field from them."""
+        if self._state != "live" or self.session is None or self._flat_frames is not None:
+            return
+        if self._camera_zoom_level > 1:
+            self.flat_label.setText("Put the camera zoom back to Fit first: the flat field is of the whole picture.")
+            return
+        self._flat_frames = []
+        self.flat_label.setText("Capturing the light...")
+        self._sync_flat_buttons()
+
+    def _collect_flat(self, frame) -> None:
+        frames = self._flat_frames
+        if frames is None:
+            return
+        small = flatprofile.shrink(frame.rgb)
+        if frames and frames[0].shape != small.shape:
+            frames.clear()
+        frames.append(small)
+        if len(frames) < flatprofile.FRAMES:
+            return
+        self._flat_frames = None
+        problem = flatprofile.problem_with(frames)
+        if problem:
+            self.flat_label.setText(problem)
+            self._sync_flat_buttons()
+            return
+        reference = flatprofile.reference_from_frames(frames)
+        try:
+            flatprofile.save(reference)
+        except OSError:
+            pass     # it works for this session; it is only not kept
+        self._set_flat(flatprofile.gain_of(reference), "captured")
+
+    def use_saved_flat_field(self) -> None:
+        gain = self._saved_flatfield() if self._saved_flatfield is not None else None
+        if gain is None:
+            self.flat_label.setText("EFAS has no permanent flat field switched on (Flat Field panel).")
+            return
+        self._set_flat(gain, "efas")
+
+    def forget_flat_field(self) -> None:
+        flatprofile.forget()
+        self._flat_frames = None
+        self._set_flat(None, "")
+
     def _set_state(self, state: str) -> None:
         self._state = state
         live, busy = state == "live", state == "busy"
@@ -667,7 +784,7 @@ class TetherWindow(QDialog):
             w.setEnabled(can_use)
         for b in self._live_buttons:
             b.setEnabled(live)
-        self._sync_zoom_moves()
+        self._sync_flat_buttons()
         self.capture_button.setEnabled(live)
         if state == "off":
             self.image.set_message("Connect a camera to see its live picture.")
@@ -759,7 +876,9 @@ class TetherWindow(QDialog):
             b.setEnabled(bool(caps.zoom) or level == 1)
         self.camera_zoom_note.setText("" if caps.zoom else "This camera does not send a zoomed live picture.")
         self._camera_zoom_level, self._camera_zoom_center = 1, (0.5, 0.5)
-        self._sync_zoom_moves()
+        self.image.camera_pan = False
+        self.session.pipeline.set_flatfield(self._flat_gain)
+        self._apply_view()
         self._exposure_timer.start()
         self.exposure_note.setText("" if caps.exposure else "This camera does not report its exposure to the computer.")
         self.auto_button.setEnabled(caps.exposure)
@@ -830,6 +949,7 @@ class TetherWindow(QDialog):
 
     def _show_frame(self, frame) -> None:
         self._frame = frame
+        self._collect_flat(frame)
         now = time.monotonic()
         self._seen.append(now)
         fps = (len(self._seen) - 1) / (self._seen[-1] - self._seen[0]) if len(self._seen) > 2 and self._seen[-1] > self._seen[0] else 0.0
@@ -882,7 +1002,14 @@ class TetherWindow(QDialog):
 
     def _apply_view(self) -> None:
         if self.session is not None:
-            self.session.set_view(positive=self.positive_check.isChecked(), peaking=self.peaking_check.isChecked(), peaking_sensitivity=self.peaking_slider.value() / 100.0)
+            flat = self.flat_check.isChecked() and self._flat_gain is not None
+            self.session.set_view(positive=self.positive_check.isChecked(), peaking=self.peaking_check.isChecked(), peaking_sensitivity=self.peaking_slider.value() / 100.0,
+                                  flatfield=flat and self._camera_zoom_level == 1)
+            if flat and self._camera_zoom_level > 1:
+                self.flat_label.setText("The flat field is off while the camera is zoomed in: it is of the whole picture.")
+            elif self._flat_gain is not None and self._flat_frames is None:
+                self.flat_label.setText("Evening out the preview with " + ("the flat field captured from the light." if self._flat_source == "captured" else "EFAS's permanent flat field.")
+                                        if flat else "The flat field is kept but switched off.")
 
     def _loupe_toggled(self, on: bool) -> None:
         if not on:
@@ -899,7 +1026,7 @@ class TetherWindow(QDialog):
         if self.session is None or self._frame is None:
             return
         if self.base_button.isChecked():
-            colour = liveview.sample_colour(self._frame.rgb, x, y)
+            colour = self.session.pipeline.flat_colour(liveview.sample_colour(self._frame.rgb, x, y), x, y, self._frame.rgb.shape, self.session.view)
             self.session.set_view(base_rgb=colour)
             self.base_button.setChecked(False)
             self.base_label.setText("Film base: sampled, R {:.0f}  G {:.0f}  B {:.0f}.".format(*colour))
@@ -952,26 +1079,34 @@ class TetherWindow(QDialog):
         for n, b in self.camera_zoom_buttons.items():
             b.setChecked(n == level)
         self._camera_zoom_level, self._camera_zoom_center = level, (0.5, 0.5)
-        self._sync_zoom_moves()
+        self.image.camera_pan = level > 1
+        self._apply_view()
         self._send_camera_zoom(level, (0.5, 0.5) if level > 1 else None)
 
-    def camera_zoom_move(self, dx: int, dy: int) -> None:
-        """Move the camera's zoomed picture by half of what is seen, so the next part of the film comes into view."""
+    def _camera_pan(self, fx: float, fy: float) -> None:
+        """The middle button dragged the zoomed picture by (fx, fy) of its size: the picture follows the pointer, so the camera's zoom frame moves the other way (a fifth or a tenth as far)."""
         level = self._camera_zoom_level
         if self._state != "live" or self.session is None or level <= 1:
             return
         half = 0.5 / level
         cx, cy = self._camera_zoom_center
-        self._camera_zoom_center = (min(max(cx + dx * half, half), 1 - half), min(max(cy + dy * half, half), 1 - half))
-        self._send_camera_zoom(level, self._camera_zoom_center)
+        self._camera_zoom_center = (min(max(cx - fx / level, half), 1 - half), min(max(cy - fy / level, half), 1 - half))
+        self._send_camera_pan()
 
-    def _sync_zoom_moves(self) -> None:
-        if not hasattr(self, "_camera_zoom_level"):
+    def _send_camera_pan(self) -> None:
+        """One request to the camera at a time: while one is on its way, further movement only changes where the next one goes."""
+        if self._zoom_sending or self.session is None:
             return
-        for m in self.camera_zoom_moves.values():
-            m.setEnabled(self._state == "live" and self._camera_zoom_level > 1)
+        self._zoom_sending, self._zoom_sent = True, self._camera_zoom_center
+        job = self._send_camera_zoom(self._camera_zoom_level, self._zoom_sent)
+        job.finished.connect(self._camera_pan_sent)
 
-    def _send_camera_zoom(self, level: int, center) -> None:
+    def _camera_pan_sent(self) -> None:
+        self._zoom_sending = False
+        if self._camera_zoom_level > 1 and self._camera_zoom_center != self._zoom_sent:
+            self._send_camera_pan()
+
+    def _send_camera_zoom(self, level: int, center) -> JobWorker:
         session = self.session
         job = JobWorker(lambda: session.set_zoom(level) if center is None else session.set_zoom(level, center))
         job.failed.connect(self._focus_failed)
@@ -979,12 +1114,14 @@ class TetherWindow(QDialog):
         self._alive.add(job)
         job.finished.connect(lambda j=job: self._alive.discard(j))
         job.start()
+        return job
 
     def _camera_zoom_refused(self) -> None:
         self._camera_zoom_level, self._camera_zoom_center = 1, (0.5, 0.5)
+        self.image.camera_pan = False
         for n, b in self.camera_zoom_buttons.items():
             b.setChecked(n == 1)
-        self._sync_zoom_moves()
+        self._apply_view()
 
     def _focus_failed(self, message: str) -> None:
         self.status.setStyleSheet(f"color: {THEME.status_critical};")

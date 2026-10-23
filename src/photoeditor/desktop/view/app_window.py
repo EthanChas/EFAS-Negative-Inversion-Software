@@ -2794,7 +2794,7 @@ class AppWindow(QMainWindow):
             existing.activateWindow()
             return
         folder = self._filmstrip_folder if self._filmstrip_folder and os.path.isdir(self._filmstrip_folder) and not app_settings.get("tether_folder") else ""
-        dialog = TetherWindow(self, start_folder=folder)
+        dialog = TetherWindow(self, start_folder=folder, saved_flatfield=self.controller.permanent_flatfield_gain)
         dialog.open_requested.connect(self._on_tether_open)
         dialog.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, True)
         dialog.destroyed.connect(lambda *_: setattr(self, "_tether", None) if getattr(self, "_tether", None) is dialog else None)

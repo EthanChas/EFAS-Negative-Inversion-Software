@@ -1571,6 +1571,11 @@ class AppController(QObject):
         if self.state.image_path is not None:
             self._settle()
 
+    def permanent_flatfield_gain(self):
+        """The gain map of the permanent flat field when there is one and it is switched on (the tether window can even out its live picture with it), else None."""
+        row = edit_store.get_global_flatfield(self._db)
+        return row["gain"] if row is not None and row["enabled"] else None
+
     def flatfield_method(self) -> str:
         """The method new flat fields are made with (and the one the panel offers to switch the saved ones to): efas, negpy or improved."""
         method = app_settings.get("flatfield_method")

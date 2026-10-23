@@ -150,13 +150,42 @@ _SCRIPT = textwrap.dedent(r'''
     until(lambda: camera._zoom == 5, what="the camera to zoom")
     assert w.camera_zoom_buttons[5].isChecked() and not w.camera_zoom_buttons[1].isChecked()
     until(lambda: not any(j.isRunning() for j in list(w._alive)), what="the zoom job")
-    assert all(m.isEnabled() for m in w.camera_zoom_moves.values()), "zoomed: the arrows are on"
-    w.camera_zoom_move(1, 0)
-    until(lambda: camera._zoom_center[0] > 0.55, what="the camera to move its zoom frame")
+    assert w.image.camera_pan, "zoomed on the camera: the middle button moves the camera's zoom frame"
+    QTest.mousePress(w.image, Qt.MouseButton.MiddleButton, Qt.KeyboardModifier.NoModifier, QPoint(650, 300))
+    from PyQt6.QtGui import QMouseEvent
+    from PyQt6.QtCore import QEvent
+    app.sendEvent(w.image, QMouseEvent(QEvent.Type.MouseMove, QPointF(150, 300), QPointF(150, 300), Qt.MouseButton.NoButton, Qt.MouseButton.MiddleButton, Qt.KeyboardModifier.NoModifier))
+    QTest.mouseRelease(w.image, Qt.MouseButton.MiddleButton, Qt.KeyboardModifier.NoModifier, QPoint(150, 300))
+    until(lambda: camera._zoom_center[0] > 0.55, what="the camera to move its zoom frame (dragging the picture left shows more of its right)")
     until(lambda: not any(j.isRunning() for j in list(w._alive)), what="the move")
     w.camera_zoom(1)
     until(lambda: camera._zoom == 1, what="the camera to show the whole picture again")
-    assert not any(m.isEnabled() for m in w.camera_zoom_moves.values()), "whole picture: nothing to move"
+    assert not w.image.camera_pan, "whole picture: the middle button moves our own zoomed picture"
+    img.set_zoom(3.0); c0 = img._centre
+    QTest.mousePress(img, Qt.MouseButton.MiddleButton, Qt.KeyboardModifier.NoModifier, QPoint(400, 300))
+    app.sendEvent(img, QMouseEvent(QEvent.Type.MouseMove, QPointF(330, 300), QPointF(330, 300), Qt.MouseButton.NoButton, Qt.MouseButton.MiddleButton, Qt.KeyboardModifier.NoModifier))
+    QTest.mouseRelease(img, Qt.MouseButton.MiddleButton, Qt.KeyboardModifier.NoModifier, QPoint(330, 300))
+    assert img._centre[0] > c0[0], "the middle button moves around in the zoomed picture"
+    img.set_zoom(1.0)
+
+    # --- the flat field: capture the light, the preview is evened out and the profile is kept; Forget lets it go
+    assert not w.flat_check.isEnabled() and "No flat field" in w.flat_label.text() and w.flat_capture_button.isEnabled()
+    w.capture_flat_field()
+    until(lambda: w._flat_gain is not None or "dark" in w.flat_label.text() or "blown" in w.flat_label.text(), what="the flat field")
+    assert w._flat_gain is not None and w.flat_check.isChecked() and session.view.flatfield and session.pipeline.has_flatfield, w.flat_label.text()
+    from photoeditor.features.tether import flatprofile
+    assert flatprofile.load() is not None, "kept for next time"
+    w.flat_check.setChecked(False); assert not session.view.flatfield and "switched off" in w.flat_label.text()
+    w.flat_check.setChecked(True); assert session.view.flatfield
+    w.camera_zoom(5); assert not session.view.flatfield and "zoomed in" in w.flat_label.text()
+    w.camera_zoom(1)
+    until(lambda: camera._zoom == 1, what="the camera to show the whole picture again")
+    until(lambda: not any(j.isRunning() for j in list(w._alive)), what="the zoom job")
+    assert session.view.flatfield
+    w.use_saved_flat_field(); assert "no permanent" in w.flat_label.text() and w._flat_source == "captured"
+    w._saved_flatfield = lambda: __import__("numpy").ones((8, 8, 3), "float32")
+    w.use_saved_flat_field(); assert w._flat_source == "efas"
+    w.forget_flat_field(); assert w._flat_gain is None and not w.flat_check.isEnabled() and flatprofile.load() is None and not session.view.flatfield
     until(lambda: not any(j.isRunning() for j in list(w._alive)), what="the zoom job")
     # --- the camera's exposure: shown, set from the window, and found automatically
     until(lambda: w.exposure_combos["tv"].count() > 0, what="the exposure settings")

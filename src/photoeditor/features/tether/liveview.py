@@ -41,6 +41,7 @@ class View:
     peaking_sensitivity: float = 0.5            # 0 marks only the very sharpest, 1 marks every sharp spot (focuspeaking.scale_for_sensitivity)
     base_rgb: tuple | None = None               # the colour of the clear film as the camera shows it, when it was sampled
     region: tuple = (0.5, 0.5, 0.25)            # where sharpness is measured: centre x, centre y, side (all as fractions of the picture)
+    flatfield: bool = True                      # even the picture out with the pipeline's flat field, when it has one
 
 
 @dataclass
@@ -129,6 +130,43 @@ class Pipeline:
         self._peak = None          # (the sensitivity it was made for, the size of the picture, where it marks, the colour of each mark)
         self._peak_age = 0
         self._lut8 = None          # (the table it was made from, that table rounded to 8 bits)
+        self._flat = None          # (the flat field's gain map, {(width, height): the multiplier for a picture that size}) or None
+
+    def set_flatfield(self, gain: np.ndarray | None) -> None:
+        """Even out every picture from now on with this gain map (the flat field of features/flatfield; None for none). The conversion's table is made again from the corrected picture."""
+        self._flat = None if gain is None else (np.ascontiguousarray(gain, dtype=np.float32), {})
+        self._lut = None
+
+    @property
+    def has_flatfield(self) -> bool:
+        return self._flat is not None
+
+    @staticmethod
+    def _multiplier(flat, width: int, height: int) -> np.ndarray:
+        """What a camera value is multiplied by to apply the gain: the gain works in linear light, and (v^2.2 x g)^(1/2.2) is v x g^(1/2.2), so a plain multiplication does it."""
+        gain, made = flat
+        key = (width, height)
+        if key not in made:
+            if len(made) > 3:
+                made.clear()
+            made[key] = np.ascontiguousarray(np.power(cv2.resize(gain, (width, height), interpolation=cv2.INTER_LINEAR), np.float32(1.0 / 2.2)), dtype=np.float32)
+        return made[key]
+
+    def _flatten(self, rgb: np.ndarray, flat) -> np.ndarray:
+        out = rgb.astype(np.float32)
+        out *= self._multiplier(flat, rgb.shape[1], rgb.shape[0])
+        out += 0.5
+        np.clip(out, 0, 255, out=out)
+        return out.astype(np.uint8)
+
+    def flat_colour(self, colour: tuple, x: float, y: float, shape, view: View) -> tuple:
+        """A colour measured on the camera's own picture (a click on the clear film), as it reads once the flat field has evened the picture out."""
+        flat = self._flat
+        if flat is None or not view.flatfield:
+            return colour
+        h, w = shape[:2]
+        k = self._multiplier(flat, w, h)[int(min(max(y, 0.0), 1.0) * (h - 1)), int(min(max(x, 0.0), 1.0) * (w - 1))]
+        return tuple(min(255.0, float(c) * float(m)) for c, m in zip(colour, k))
 
     def _table(self, small: np.ndarray, view: View):
         base = tuple(round(v) for v in view.base_rgb) if view.base_rgb else None
@@ -150,6 +188,9 @@ class Pipeline:
             return None
         h, w = rgb.shape[:2]
         small = rgb if w <= WORK_WIDTH else cv2.resize(rgb, (WORK_WIDTH, round(h * WORK_WIDTH / w)), interpolation=cv2.INTER_AREA)
+        flat = self._flat
+        if flat is not None and view.flatfield:
+            small = self._flatten(small, flat)
         shown = self._positive(small, view) if view.positive else small
         if view.peaking:
             shown = self._with_peaking(shown, small, view.peaking_sensitivity)
@@ -206,6 +247,9 @@ class Pipeline:
         cx, cy = int(min(max(x, 0.0), 1.0) * w), int(min(max(y, 0.0), 1.0) * h)
         x0, y0 = min(max(cx - half, 0), max(0, w - LOUPE_PIXELS)), min(max(cy - half, 0), max(0, h - LOUPE_PIXELS))
         crop = frame.rgb[y0:y0 + LOUPE_PIXELS, x0:x0 + LOUPE_PIXELS]
+        flat = self._flat
+        if flat is not None and view.flatfield:
+            crop = np.clip(crop * self._multiplier(flat, w, h)[y0:y0 + LOUPE_PIXELS, x0:x0 + LOUPE_PIXELS] + 0.5, 0, 255).astype(np.uint8)
         if view.positive and self._lut is not None:
             crop = engine.apply_lut(engine.density_codes(crop, SETTINGS), self._lut)
         return cv2.resize(crop, (crop.shape[1] * LOUPE_SCALE, crop.shape[0] * LOUPE_SCALE), interpolation=cv2.INTER_NEAREST)

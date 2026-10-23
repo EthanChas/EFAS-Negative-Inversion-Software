@@ -444,6 +444,45 @@ def test_the_cameras_own_zoom_shows_the_middle_at_the_size_of_the_whole_picture(
     session.close()
 
 
+def _vignetted(width=960, height=640, level=170):
+    ys, xs = np.mgrid[0:height, 0:width].astype(np.float32)
+    r = np.hypot((xs - width / 2) / (width / 2), (ys - height / 2) / (height / 2)) / np.sqrt(2)
+    plane = np.clip(level * (1.0 - 0.45 * r ** 2), 0, 255)
+    return np.repeat(plane[..., None], 3, axis=2).astype(np.uint8)
+
+
+def _edge_to_middle(rgb):
+    h, w = rgb.shape[:2]
+    return rgb[:h // 8, :w // 8].mean() / rgb[h * 7 // 16:h * 9 // 16, w * 7 // 16:w * 9 // 16].mean()
+
+
+def test_the_flat_field_evens_out_the_live_preview(monkeypatch, tmp_path):
+    from photoeditor.features.tether import flatprofile
+    monkeypatch.setenv("PHOTOEDITOR_DATA_DIR", str(tmp_path))
+    light = _vignetted()
+    frames = [flatprofile.shrink(light)] * flatprofile.FRAMES
+    assert flatprofile.problem_with(frames) == ""
+    assert "too dark" in flatprofile.problem_with([np.zeros((10, 10, 3), np.uint8)]) and "blown out" in flatprofile.problem_with([np.full((10, 10, 3), 255, np.uint8)])
+    reference = flatprofile.reference_from_frames(frames)
+    flatprofile.save(reference)
+    assert np.allclose(flatprofile.load(), reference) and flatprofile.load().shape == reference.shape
+    flatprofile.forget(); assert flatprofile.load() is None
+    pipeline = liveview.Pipeline()
+    view = liveview.View(positive=False)
+    plain = pipeline.process(_jpeg(light), view).image
+    assert _edge_to_middle(plain) < 0.8, "the light falls off towards the edges"
+    pipeline.set_flatfield(flatprofile.gain_of(reference, "improved"))
+    even = pipeline.process(_jpeg(light), view).image
+    assert _edge_to_middle(even) > 0.93, _edge_to_middle(even)
+    assert _edge_to_middle(pipeline.process(_jpeg(light), liveview.View(positive=False, flatfield=False)).image) < 0.8, "off in the view: untouched"
+    frame = pipeline.process(_jpeg(light), view)
+    assert np.array_equal(frame.rgb[0, 0], pipeline.process(_jpeg(light), view).rgb[0, 0]), "the camera's own picture, the one measured, is not changed"
+    corner = liveview.sample_colour(frame.rgb, 0.0, 0.0)
+    assert pipeline.flat_colour(corner, 0.0, 0.0, frame.rgb.shape, view)[0] > corner[0] * 1.15, "a colour read at a dark corner is read as it is once evened out"
+    assert pipeline.loupe(frame, 0.0, 0.0, view).mean() > 1.15 * liveview.Pipeline().loupe(frame, 0.0, 0.0, view).mean()
+    pipeline.set_flatfield(None); assert not pipeline.has_flatfield
+
+
 def test_the_live_picture_is_no_longer_made_smaller_than_the_camera_sent_up_to_1620_wide():
     assert liveview.WORK_WIDTH >= 1620
     big = np.clip(np.random.default_rng(0).normal(128, 40, (1080, 1620, 3)), 0, 255).astype(np.uint8)
