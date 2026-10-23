@@ -35,7 +35,7 @@ _SCRIPT = textwrap.dedent(r"""
 
     rail = win._tool_rail
     order = [k for k in rail._buttons]
-    assert order[:6] == ["negative", "correction", "exposure", "color", "detail", "watermark"] and order[6:] == ["metadata", "plugins"], order
+    assert order[:7] == ["active", "negative", "correction", "exposure", "color", "detail", "watermark"] and order[7:] == ["metadata", "plugins"], order
     columns = win._tab_columns
     assert column(columns["negative"])[:3] == ["Negative", "Flat Field", "Edge Bleed"], column(columns["negative"])
     assert "Dust & Scratches" not in column(columns["negative"]), "clean-up is not with the conversion any more"
@@ -81,7 +81,7 @@ def test_plugins_can_put_modules_in_the_new_tabs():
 def test_each_tab_has_an_icon_file():
     from photoeditor.desktop.view import panel_icons
 
-    assert set(panel_icons.BY_TAB) == {"negative", "correction", "exposure", "color", "detail", "watermark", "metadata", "plugins"}
+    assert set(panel_icons.BY_TAB) == {"active", "negative", "correction", "exposure", "color", "detail", "watermark", "metadata", "plugins"}
     for key in panel_icons.BY_TAB:
         assert (panel_icons.ICON_DIR / f"{panel_icons.BY_TAB[key]}.svg").is_file(), key
 

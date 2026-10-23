@@ -119,6 +119,30 @@ class ModuleSearch(QObject):
         self._ops = ops
         self._pump(sync)
 
+    def show_modules(self, wanted_fn, noun: str = "enabled module") -> None:
+        """Gather the modules `wanted_fn(panel)` picks into the list, as a search does but without any words (the Enabled tab): those no longer wanted go home, the new ones come in, none is opened."""
+        self._timer.stop()
+        origins = self._origins()
+        found = [entry for entry in origins if wanted_fn(entry[0])]
+        wanted = [entry[0] for entry in found]
+        here = {m[0] for m in self._moved}
+        ops = [lambda entry=entry: self._send_home(entry) for entry in [m for m in self._moved if m[0] not in wanted]]
+        ops += [lambda entry=entry: self._bring_in(entry) for entry in found if entry[0] not in here]
+        ops.append(lambda: self._finish_list(wanted, noun))
+        self._ops = ops
+        self._pump(True)
+
+    def _finish_list(self, wanted: list[CollapsiblePanel], noun: str) -> None:
+        for position, panel in enumerate(wanted):
+            if self._results.indexOf(panel) != self._index + position:
+                self._results.removeWidget(panel)
+                self._results.insertWidget(self._index + position, panel)
+        self._moved.sort(key=lambda m: wanted.index(m[0]) if m[0] in wanted else len(wanted))
+        n = len(wanted)
+        self._status.setText(f"{n} {noun}{'s' if n != 1 else ''}" if n else "No module is enabled yet: change a module's settings and it will be listed here.")
+        self._status.setVisible(True)
+        self._show_results(True, True)
+
     def _pump(self, sync: bool = False) -> None:
         window = self._edit.window()
         started = time.perf_counter()

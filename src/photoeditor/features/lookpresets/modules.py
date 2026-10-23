@@ -163,11 +163,24 @@ PANEL_MODULES: dict[str, tuple[str, tuple[str, ...]]] = {
 # is not here: without its inversion there is no picture to edit.
 SWITCHABLE = tuple(k for k in PANEL_MODULES if k != "negative")
 
+# Modules that are not in the presets but have the same light: Dust & Scratches (its repairs), Retouch (its shapes) and Error marking (its notes, which are only ever shown).
+EXTRA_TITLES = {"dust": "Dust & Scratches", "retouch": "Retouch", "errormarks": "Error marking"}
+EXTRA_SWITCHABLE = tuple(EXTRA_TITLES)
+ALL_SWITCHABLE = SWITCHABLE + EXTRA_SWITCHABLE
+EXTRA_OFF = {   # what stands in (by EditParams field) while one of them is off
+    "dust": {"dust_auto": False, "scratch_lines": (), "heal_strokes": (), "clone_strokes": ()},
+    "retouch": {"retouch_json": "", "retouch_view": ""},
+    "errormarks": {},
+}
+
 
 def off_overrides(keys) -> dict[str, Any]:
     """The values (by field name, as the renderer takes them) that stand in for these modules while they are switched off."""
     out: dict[str, Any] = {}
     for key in keys:
+        if key in EXTRA_OFF:
+            out.update(EXTRA_OFF[key])
+            continue
         if key not in SWITCHABLE:
             continue
         for name, value in panel_defaults(key).items():

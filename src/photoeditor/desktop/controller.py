@@ -46,7 +46,7 @@ from ..features.metadata.source_exif import read_exif_from_file
 from ..features.watermark import variables as wm_variables
 from ..features.lookpresets import store as look_store
 from ..features.presettree import logic as preset_tree
-from ..features.lookpresets.modules import PANEL_MODULES, SWITCHABLE, panel_defaults, panel_fields
+from ..features.lookpresets.modules import ALL_SWITCHABLE, EXTRA_TITLES, PANEL_MODULES, SWITCHABLE, panel_defaults, panel_fields
 from ..features.metadata import store as metadata_store
 from ..features.metadata import suggest
 from ..features.metadata.models import MetadataConfig
@@ -342,7 +342,7 @@ class AppController(QObject):
         self.state.clone_strokes = [list(s) for s in saved.get("clone_strokes", [])]
         self.state.dust_excluded = [list(p) for p in saved.get("dust_excluded", [])]
         self.state.error_marks = error_marks_logic.clean(saved.get("error_marks", []))
-        self.state.modules_off = [k for k in saved.get("modules_off", []) if k in SWITCHABLE]
+        self.state.modules_off = [k for k in saved.get("modules_off", []) if k in ALL_SWITCHABLE]
         self.state.masks = mask_state.clean_masks(saved.get("masks"))
         self.state.blends = mask_state.clean_blends(saved.get("blends"), self.state.masks)
         self.state.retouch = rt_logic.Settings.from_dict(saved.get("retouch")).to_dict() if saved.get("retouch") else {}
@@ -700,7 +700,7 @@ class AppController(QObject):
         """Whether the render also makes the picture of what dust detection marks: to show (Show Detections), or because dust removal is on and the Masks panel's Dust Detection folder lists what it found
         (with removal off the detection is only run for Show Detections, as it costs a pass over the picture)."""
         s = self.state
-        return bool(s.show_detections or s.dust_auto or s.ai_dust)
+        return bool(s.show_detections or (s.dust_auto and "dust" not in s.modules_off) or s.ai_dust)
 
     def _preview(self, live) -> None:
         """A cheap in-progress drag tick: image only, no histogram/stats."""
@@ -2167,7 +2167,7 @@ class AppController(QObject):
     def set_module_enabled(self, key: str, enabled: bool) -> None:
         """Switch a module off or on for the open photo: off, the picture is made as if the module were untouched; its settings are kept for when it is back on."""
         s = self.state
-        if key not in SWITCHABLE or s.preview_rgb is None or enabled == self.module_enabled(key):
+        if key not in ALL_SWITCHABLE or s.preview_rgb is None or enabled == self.module_enabled(key):
             return
         s.modules_off = [k for k in s.modules_off if k != key] if enabled else s.modules_off + [key]
         self._settle()
@@ -2182,7 +2182,7 @@ class AppController(QObject):
     def error_mark_shapes(self) -> list[dict]:
         """Every mark as {"kind", "points"}: the four corners in pixels of the picture on screen (they follow the crop, rotation, flips and straightening)."""
         s = self.state
-        if s.image_rgb is None or not s.error_marks:
+        if s.image_rgb is None or not s.error_marks or "errormarks" in s.modules_off:
             return []
         h_img, w_img = s.image_rgb.shape[:2]
         frame = self._current_frame_size()
@@ -2198,7 +2198,7 @@ class AppController(QObject):
     def add_error_mark(self, kind: str, x1: float, y1: float, x2: float, y2: float) -> bool:
         """Mark a box, given in pixels of the picture on screen, as a fault of this kind."""
         s = self.state
-        if s.image_rgb is None or len(s.error_marks) >= error_marks_logic.MAX_MARKS:
+        if s.image_rgb is None or len(s.error_marks) >= error_marks_logic.MAX_MARKS or "errormarks" in s.modules_off:
             return False
         kind = kind if kind in error_marks_logic.KIND_IDS else "unknown"
         corners = ((x1, y1), (x2, y1), (x2, y2), (x1, y2))
@@ -3620,8 +3620,34 @@ class AppController(QObject):
             clean["marks"] = Marks.from_dict(look["marks"]).to_dict()
         return clean
 
+    def module_is_active(self, key: str) -> bool:
+        """Whether a module is doing something to the open photo (it is on, and its settings are not the ones it starts with): what the Enabled tab lists."""
+        s = self.state
+        if not self.module_enabled(key) or s.image_path is None:
+            return False
+        if key == "dust":
+            return bool(s.dust_auto or s.scratch_lines or s.heal_strokes or s.clone_strokes)
+        if key == "retouch":
+            return self.retouch_settings().active()
+        if key == "errormarks":
+            return bool(s.error_marks)
+        if key == "negative":
+            return bool(s.negative_inverted)
+        if key not in PANEL_MODULES:
+            return False
+        values, defaults = self.module_values(key) or {}, panel_defaults(key)
+
+        def same(a, b) -> bool:
+            if isinstance(a, (list, tuple)) and isinstance(b, (list, tuple)):
+                return len(a) == len(b) and all(same(x, y) for x, y in zip(a, b))
+            if isinstance(a, (int, float)) and isinstance(b, (int, float)) and not isinstance(a, bool) and not isinstance(b, bool):
+                return abs(a - b) < 1e-9
+            return a == b
+
+        return any(not same(v, defaults[k]) for k, v in values.items() if k in defaults and k not in ("metering", "marks"))
+
     def module_title(self, key: str) -> str:
-        return PANEL_MODULES[key][0]
+        return EXTRA_TITLES[key] if key in EXTRA_TITLES else PANEL_MODULES[key][0]
 
     def module_values(self, key: str) -> dict | None:
         """The open photo's current values of one panel's fields, JSON-ready - what a module preset stores."""

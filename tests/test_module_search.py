@@ -78,7 +78,7 @@ _SCRIPT = textwrap.dedent(r"""
     before = layout_state()
 
     # there is no Search tab: the box sits above the modules, over the tool rail
-    assert "search" not in win._tool_rail._buttons and list(win._tool_rail._buttons)[0] == "negative"
+    assert "search" not in win._tool_rail._buttons and list(win._tool_rail._buttons)[:2] == ["active", "negative"]
     from PyQt6.QtCore import QPoint
     assert edit.mapToGlobal(QPoint(0, 0)).y() < win._tool_rail.mapToGlobal(QPoint(0, 0)).y(), "above the modules"
     assert edit.placeholderText().startswith("Search modules") and not win._module_search_status.isVisible() and not ms.active()

@@ -544,6 +544,7 @@ class AppWindow(QMainWindow):
         self._mask_editor = MaskEditor(self.controller, self._image_view, self._blend_boxes, self._mask_manager, before_start=self._end_picture_tools, parent=self)
         self._wire_mask_manager()
         self._wire_retouch()
+        self._wire_extra_power()
 
         self._filmstrip = Filmstrip()
         self._filmstrip.image_selected.connect(self.controller.open_file)
@@ -1221,6 +1222,7 @@ class AppWindow(QMainWindow):
 
         self._tool_rail = ToolRail()
         # in the order a picture is worked on: convert the negative, frame and clean it, tone it, colour it, bring out detail, finish it
+        self._tool_rail.add_tab("active", panel_icons.for_tab("active", 18, THEME.text_primary), "Enabled modules")
         self._tool_rail.add_tab("negative", panel_icons.for_tab("negative", 18, THEME.text_primary), "Convert")
         self._tool_rail.add_tab("correction", panel_icons.for_tab("correction", 18, THEME.text_primary), "Frame & Clean")
         self._tool_rail.add_tab("exposure", panel_icons.for_tab("exposure", 18, THEME.text_primary), "Tone")
@@ -1608,6 +1610,8 @@ class AppWindow(QMainWindow):
         self._search_panel, search_col = new_tab([])
         tool_row.addWidget(self._search_panel, 0)
         self._tab_before_search = ""
+        self._active_tab_open = False
+        self._module_search_edit.textChanged.connect(lambda _t: setattr(self, "_active_tab_open", False))
         self._module_search = ModuleSearch(self._tab_columns, search_col, 0, self._module_search_edit, self._module_search_status, self._show_search_results, self)
 
         tool_row.addStretch(1)
@@ -2918,6 +2922,7 @@ class AppWindow(QMainWindow):
         m.element_changed.connect(lambda group, form, changes: c.set_mask_element(group, form, "Changed a mask in a group", **changes))
         m.opacity_preview.connect(lambda group, form, value: c.set_mask_element(group, form, None, opacity=value))
         m.opacity_committed.connect(lambda group, form, value: c.set_mask_element(group, form, "Changed a mask's opacity", opacity=value))
+        m.toggled.connect(lambda expanded: None if expanded else self._put_down_masks())
         m.property_changed.connect(self._on_mask_property)
         m.smoothing_changed.connect(lambda level: setattr(self._mask_editor.tool, "smoothing", {"low": 0.002, "medium": 0.004, "high": 0.008}.get(level, 0.004)))
         m.detection_picked.connect(self._on_detection_picked)
@@ -2943,6 +2948,12 @@ class AppWindow(QMainWindow):
         points = mask_properties.apply(form, name, value) if form is not None else None
         if points is not None:
             c.set_mask_points(form_id, points, f"Changed the {name} of {form.name}" if final else None)
+
+    def _put_down_masks(self) -> None:
+        """The Masks panel was closed: nothing picked in it stays on the picture - the shapes being drawn or edited, a mask shown, the dust folder shown, the ring on a detection."""
+        self._mask_manager._tree.clearSelection()     # (this lets go of the mask view, the folder view and the ring)
+        self._mask_editor.stop()
+        self._on_detection_group_picked("")
 
     def _refresh_mask_manager(self, *_args) -> None:
         self._mask_manager.set_masks(self.controller.mask_set())
@@ -4659,7 +4670,36 @@ class AppWindow(QMainWindow):
                     self._on_tool_tab_toggled(tab_id, True)
                 return
 
+    def _toggle_active_tab(self, checked: bool) -> None:
+        """The Enabled modules tab (the power button): every module that is on and doing something to this photo, gathered into one list - as darktable's active modules - whichever tab it lives in."""
+        panels = self._tool_tab_panels()
+        self._module_search.dismiss()
+        if not checked:
+            self._active_tab_open = False
+            self._tool_rail.set_tab_checked("active", False)
+            return
+        self._active_tab_open = True
+        for other_id, other_panel in panels.items():
+            other_panel.set_open(False)
+            self._tool_rail.set_tab_checked(other_id, False)
+        self._open_tab = ""
+        self._module_search.show_modules(self._module_is_listed)
+        self._tool_rail.set_tab_checked("active", True)
+
+    def _module_is_listed(self, panel) -> bool:
+        keys = getattr(self, "_panel_keys", None)
+        if keys is None:
+            keys = self._panel_keys = {id(p): k for k, p in {**self._module_menus._panels, **getattr(self, "_extra_panels", {})}.items()}
+        key = keys.get(id(panel))
+        return key is not None and self.controller.module_is_active(key)
+
     def _on_tool_tab_toggled(self, tab_id: str, checked: bool) -> None:
+        if tab_id == "active":
+            self._toggle_active_tab(checked)
+            return
+        if self._active_tab_open:
+            self._active_tab_open = False
+            self._tool_rail.set_tab_checked("active", False)
         panels = self._tool_tab_panels()
         if tab_id not in panels:
             return
@@ -4678,6 +4718,29 @@ class AppWindow(QMainWindow):
                 if other_id != tab_id:
                     other_panel.set_open(False)
                     self._tool_rail.set_tab_checked(other_id, False)
+
+    def _wire_extra_power(self) -> None:
+        """The on/off light in the header of Dust & Scratches, Retouch and Error marking (the modules that are not in the presets): off, the picture is made without them and what they have in hand is put away."""
+        c = self.controller
+        self._extra_panels = {"dust": self._dust_tool, "retouch": self._retouch_tool, "errormarks": self._error_marks_panel}
+        for key, panel in self._extra_panels.items():
+            panel.enable_power_switch()
+            panel.power_toggled.connect(lambda on, k=key: c.set_module_enabled(k, on))
+        for signal in (c.modules_enabled_changed, c.file_changed, c.reverted, c.history_changed):
+            signal.connect(self._refresh_extra_power)
+        self._refresh_extra_power()
+
+    def _refresh_extra_power(self, *_args) -> None:
+        c = self.controller
+        for key, panel in self._extra_panels.items():
+            panel.set_power(c.module_enabled(key))
+        if not c.module_enabled("dust"):
+            self._put_down_dust_tools()
+        if not c.module_enabled("retouch"):
+            self._on_retouch_toggled(False)
+        if not c.module_enabled("errormarks"):
+            self._put_down_error_tool()
+        self._image_view.set_error_marks(c.error_mark_shapes())
 
     def _put_down_dust_tools(self) -> None:
         """Dust & Scratches was closed (or its tab was): the repair tool in hand and Show Detections are put away, as a darktable module's are when it loses focus."""
@@ -4723,6 +4786,7 @@ class AppWindow(QMainWindow):
                     panel.set_open(False)
                     self._tool_rail.set_tab_checked(tab_id, False)
                 self._open_tab = ""
+                self._tool_rail.set_tab_checked("active", self._active_tab_open)
                 self._search_panel.set_open(True)
                 QTimer.singleShot(260, lambda: self._fit_sidebar_to_tab(self._search_panel))
             return

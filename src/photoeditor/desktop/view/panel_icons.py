@@ -23,7 +23,7 @@ BY_TITLE = {
     "Local Contrast": "scan-line", "Lab Look": "printer", "Color Mixer": "swatch-book", "Color Toning": "droplets", "Edge Bleed": "scan", "Edge Color": "circle", "Masks": "venetian-mask", "Chroma Denoise": "audio-waveform", "Finishing": "frame",
 }
 # the tool rail's tabs -> the icon file
-BY_TAB = {"negative": "film", "correction": "crop", "exposure": "sun", "color": "palette", "detail": "focus", "watermark": "stamp", "metadata": "id-card", "plugins": "puzzle"}
+BY_TAB = {"active": "power", "negative": "film", "correction": "crop", "exposure": "sun", "color": "palette", "detail": "focus", "watermark": "stamp", "metadata": "id-card", "plugins": "puzzle"}
 # icons used by name elsewhere
 OTHER = {"dropper": "pipette", "folder": "folder", "folder_open": "folder-open", "play": "play", "pause": "pause", "previous": "skip-back", "next": "skip-forward", "fullscreen": "maximize", "restart": "rotate-ccw", "search": "search"}
 # EFAS's own icons for the masks and Retouch, in the same style (not part of the Lucide import)
