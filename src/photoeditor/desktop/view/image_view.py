@@ -1,7 +1,9 @@
+import math
+
 import numpy as np
 from PyQt6.QtCore import QPointF, QRect, QRectF, Qt, pyqtSignal
 from PyQt6.QtGui import (
-    QBrush, QColor, QCursor, QImage, QKeyEvent, QMouseEvent, QPainter, QPen, QPixmap, QPolygonF, QWheelEvent,
+    QBrush, QColor, QCursor, QImage, QKeyEvent, QMouseEvent, QPainter, QPainterPath, QPen, QPixmap, QPolygonF, QWheelEvent,
 )
 from PyQt6.QtWidgets import QLabel, QScrollArea, QVBoxLayout, QWidget
 
@@ -124,7 +126,109 @@ class _ImageLabel(QLabel):
         self._split_buf = None
         self._split_pos = 0.5
         self._split_drag = False
+        self._mask_tool = None            # desktop/mask_tool.MaskTool, when masks are being drawn or edited on the picture
+        self._mask_taken = False          # the tool took the press that is going on: it gets the release too
+        self._mask_show: QImage | None = None
+        self._focus_marks: list = []      # what the Masks panel has picked in the Dust Detection folder: ("ring", x, y, r) or ("line", [(x, y), ...]) in pixels of the picture
+        self._mask_show_buf: np.ndarray | None = None
         self.setMouseTracking(True)
+
+    # ------------------------------------------------------------ masks drawn on the picture (see MaskTool)
+    def set_mask_tool(self, tool) -> None:
+        self._mask_tool = tool
+        self._mask_taken = False
+        self.update()
+
+    def _mask_active(self) -> bool:
+        return self._mask_tool is not None and self._mask_tool.active and not self._crop_mode and self._pixels is not None and self._proof is None
+
+    def _mask_mods(self, event) -> set:
+        m = event.modifiers()
+        return {name for name, flag in (("ctrl", Qt.KeyboardModifier.ControlModifier), ("shift", Qt.KeyboardModifier.ShiftModifier), ("alt", Qt.KeyboardModifier.AltModifier)) if m & flag}
+
+    def _mask_tol(self) -> float:
+        return 8.0 / (self._scale if self._scale > 0 else 1.0)
+
+    def _mask_button(self, event) -> str | None:
+        return {Qt.MouseButton.LeftButton: "left", Qt.MouseButton.RightButton: "right"}.get(event.button())
+
+    def set_focus_marks(self, marks: list) -> None:
+        """Ring or underline the things the Masks panel has picked (a detected speck, a hair, a traced scratch)."""
+        self._focus_marks = list(marks)
+        self.update()
+
+    def _paint_focus(self, painter: QPainter) -> None:
+        k = self._scale
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        for mark in self._focus_marks:
+            if mark[0] == "ring":
+                path = QPainterPath()
+                path.addEllipse(QPointF(mark[1] * k, mark[2] * k), max(10.0, mark[3] * k), max(10.0, mark[3] * k))
+            else:
+                pts = mark[1]
+                path = QPainterPath(QPointF(pts[0][0] * k, pts[0][1] * k))
+                for x, y in pts[1:]:
+                    path.lineTo(x * k, y * k)
+            painter.setPen(QPen(QColor(0, 0, 0, 200), 4.0))
+            painter.drawPath(path)
+            painter.setPen(QPen(QColor(255, 204, 0), 2.0))
+            painter.drawPath(path)
+
+    def set_mask_display(self, rgba: np.ndarray | None) -> None:
+        """The mask of a module shown on the picture (yellow where it acts); None takes it away."""
+        if rgba is None:
+            self._mask_show = self._mask_show_buf = None
+        else:
+            self._mask_show_buf = np.ascontiguousarray(rgba)
+            h, w = self._mask_show_buf.shape[:2]
+            self._mask_show = QImage(self._mask_show_buf.data, w, h, 4 * w, QImage.Format.Format_RGBA8888)
+        self.update()
+
+    def _paint_masks(self, painter: QPainter) -> None:
+        tool = self._mask_tool
+        k = self._scale
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        dark, light = QColor(0, 0, 0, 200), QColor(255, 255, 255, 235)
+        accent = QColor(255, 204, 0)
+        cyan = QColor(90, 200, 255)
+        for prim in tool.primitives():
+            pts = prim.pts * k
+            role = prim.role
+            if prim.kind == "dot":
+                big = role in ("handle",)
+                for x, y in pts:
+                    r = 4.5 if role == "node" else 3.5
+                    painter.setPen(QPen(dark, 1.5))
+                    painter.setBrush(light if role == "node" else QColor(0, 0, 0, 0))
+                    if role == "node":
+                        painter.drawRect(QRectF(x - r, y - r, 2 * r, 2 * r))
+                    else:
+                        painter.drawEllipse(QPointF(x, y), r + 1, r + 1)
+                painter.setBrush(Qt.BrushStyle.NoBrush)
+                continue
+            if len(pts) < 2:
+                continue
+            path = QPainterPath(QPointF(*pts[0]))
+            for x, y in pts[1:]:
+                path.lineTo(x, y)
+            if prim.kind == "poly":
+                path.closeSubpath()
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            dashed = role in ("feather", "hot_feather", "preview", "source")
+            width = 2.4 if role in ("hot",) else 1.4
+            painter.setPen(QPen(dark, width + 2.0, Qt.PenStyle.DashLine if dashed else Qt.PenStyle.SolidLine))
+            painter.drawPath(path)
+            colour = cyan if role == "preview" else (accent if role == "hot" else light)
+            painter.setPen(QPen(colour, width, Qt.PenStyle.DashLine if dashed else Qt.PenStyle.SolidLine))
+            painter.drawPath(path)
+            if prim.kind == "arrow":
+                (x0, y0), (x1, y1) = pts[0], pts[-1]
+                angle = math.atan2(y1 - y0, x1 - x0)
+                head = QPolygonF([QPointF(x1, y1), QPointF(x1 - 10 * math.cos(angle - 0.45), y1 - 10 * math.sin(angle - 0.45)), QPointF(x1 - 10 * math.cos(angle + 0.45), y1 - 10 * math.sin(angle + 0.45))])
+                painter.setBrush(colour)
+                painter.drawPolygon(head)
+                painter.setBrush(Qt.BrushStyle.NoBrush)
 
     def set_mark_boxes(self, boxes: dict | None, labels: dict | None = None) -> None:
         """The watermarks that can be dragged: name -> (x, y, width, height) in image pixels. None or empty turns the editing off."""
@@ -468,6 +572,12 @@ class _ImageLabel(QLabel):
             self.stroke_completed.emit(stroke)
 
     def keyPressEvent(self, event: QKeyEvent) -> None:
+        if self._mask_active() and self._mask_tool.creation is not None:
+            name = {Qt.Key.Key_Escape: "Escape", Qt.Key.Key_Return: "Return", Qt.Key.Key_Enter: "Return", Qt.Key.Key_Backspace: "Backspace"}.get(event.key())
+            if name is not None and self._mask_tool.key(name):
+                self.update()
+                event.accept()
+                return
         if self._line_tool():
             key = event.key()
             if key in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
@@ -487,6 +597,13 @@ class _ImageLabel(QLabel):
         super().keyPressEvent(event)
 
     def mouseDoubleClickEvent(self, event: QMouseEvent) -> None:
+        if self._mask_active() and self._mask_button(event) == "left":
+            pt = self._img_pt(event.position())
+            if self._mask_tool.press(pt[0], pt[1], "left", self._mask_mods(event), self._mask_tol(), double=True):
+                self._mask_taken = True
+                self.update()
+                event.accept()
+                return
         if self._tool in ("polyline", "curve") and event.button() == Qt.MouseButton.LeftButton:
             self._finish_polyline()
             event.accept()
@@ -694,6 +811,14 @@ class _ImageLabel(QLabel):
         return img_x, img_y, (r, g, b)
 
     def mousePressEvent(self, event: QMouseEvent) -> None:
+        if self._mask_active() and self._mask_button(event) is not None:
+            pt = self._img_pt(event.position())
+            self.setFocus()
+            if self._mask_tool.press(pt[0], pt[1], self._mask_button(event), self._mask_mods(event), self._mask_tol()):
+                self._mask_taken = True
+                self.update()
+                event.accept()
+                return
         if self._proof is not None:
             if event.button() == Qt.MouseButton.LeftButton:
                 cell = self._proof_cell_at(event.position())
@@ -768,7 +893,7 @@ class _ImageLabel(QLabel):
             self.update()
             event.accept()
             return
-        if event.button() == Qt.MouseButton.MiddleButton and self._pixels is not None and (self._tool is not None or self._err_tool is not None):
+        if event.button() == Qt.MouseButton.MiddleButton and self._pixels is not None and (self._tool is not None or self._err_tool is not None or self._mask_active()):
             self._dragging = True
             self._drag_button = Qt.MouseButton.MiddleButton
             self._drag_last_pos = event.globalPosition()
@@ -790,6 +915,16 @@ class _ImageLabel(QLabel):
         super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event: QMouseEvent) -> None:
+        if self._mask_active() and not self._dragging:
+            pt = self._img_pt(event.position())
+            buttons = {name for name, flag in (("left", Qt.MouseButton.LeftButton), ("right", Qt.MouseButton.RightButton)) if event.buttons() & flag}
+            handled = self._mask_tool.move(pt[0], pt[1], buttons, self._mask_mods(event), self._mask_tol())
+            tool = self._mask_tool
+            self.setCursor(Qt.CursorShape.CrossCursor if tool.creation is not None else (Qt.CursorShape.PointingHandCursor if tool.hit is not None else Qt.CursorShape.ArrowCursor))
+            self.update()
+            if self._mask_taken or tool.drag is not None:
+                event.accept()
+                return
         if self._proof is not None:
             cell = self._proof_cell_at(event.position())
             if cell != self._proof_hover:
@@ -852,6 +987,14 @@ class _ImageLabel(QLabel):
         self.pixel_hovered.emit(*picked)
 
     def mouseReleaseEvent(self, event: QMouseEvent) -> None:
+        if self._mask_taken and self._mask_button(event) is not None:
+            self._mask_taken = False
+            if self._mask_tool is not None:
+                pt = self._img_pt(event.position())
+                self._mask_tool.release(pt[0], pt[1], self._mask_button(event), self._mask_mods(event), self._mask_tol())
+            self.update()
+            event.accept()
+            return
         if self._split_drag:
             self._split_drag = False
             event.accept()
@@ -1035,6 +1178,18 @@ class _ImageLabel(QLabel):
             painter = QPainter(self)
             painter.drawImage(QRectF(self.rect()), self._peak)
             painter.end()
+        if self._mask_show is not None and not self._crop_mode:
+            painter = QPainter(self)
+            painter.drawImage(QRectF(self.rect()), self._mask_show)
+            painter.end()
+        if self._mask_tool is not None and self._mask_tool.active and not self._crop_mode and self._scale > 0 and self._pixels is not None:
+            painter = QPainter(self)
+            self._paint_masks(painter)
+            painter.end()
+        if self._focus_marks and not self._crop_mode and self._scale > 0 and self._pixels is not None:
+            painter = QPainter(self)
+            self._paint_focus(painter)
+            painter.end()
         if self._split is not None and not self._crop_mode:
             painter = QPainter(self)
             painter.setRenderHint(QPainter.RenderHint.Antialiasing)
@@ -1098,8 +1253,12 @@ class _ZoomScrollArea(QScrollArea):
     scrollbars/drag, that's just not what the wheel does here."""
 
     wheel_zoomed = pyqtSignal(int)
+    wheel_filter = None   # a function (QWheelEvent) -> bool: True when something else used the wheel (a mask being sized, say) and the picture is not to zoom
 
     def wheelEvent(self, event: QWheelEvent) -> None:
+        if self.wheel_filter is not None and self.wheel_filter(event):
+            event.accept()
+            return
         self.wheel_zoomed.emit(event.angleDelta().y())
         event.accept()
 
@@ -1112,6 +1271,7 @@ class ImageView(QWidget):
     image, and zoom_changed(percent) - percent of the image's actual pixel
     size, the normal photo-viewer convention - whenever the zoom changes."""
 
+    mask_scrolled = pyqtSignal()   # the wheel was used on a mask (so the change can be put in the undo history once it stops)
     pixel_hovered = pyqtSignal(int, int, object)
     hover_cleared = pyqtSignal()
     pixel_picked = pyqtSignal(int, int, object)
@@ -1138,6 +1298,7 @@ class ImageView(QWidget):
         self._scroll.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._scroll.setWidgetResizable(True)
         self._scroll.wheel_zoomed.connect(self._on_wheel_zoom)
+        self._scroll.wheel_filter = self._mask_wheel
         self._viewport.layout().addWidget(self._scroll)
 
         self._label = _ImageLabel()
@@ -1165,6 +1326,33 @@ class ImageView(QWidget):
         self._pixmap: QPixmap | None = None
         self._fit_scale = 1.0
         self._zoom = 1.0
+
+    def set_mask_tool(self, tool) -> None:
+        self._label.set_mask_tool(tool)
+
+    def set_mask_display(self, rgba) -> None:
+        self._label.set_mask_display(rgba)
+
+    def set_focus_marks(self, marks: list) -> None:
+        self._label.set_focus_marks(marks)
+
+    def update_mask_marks(self) -> None:
+        self._label.update()
+
+    def _mask_wheel(self, event: QWheelEvent) -> bool:
+        """The wheel while masks are drawn or edited: over a shape (or while one is being placed) it sizes it, feathers it, turns it... as darktable's does; elsewhere it zooms."""
+        label = self._label
+        if not label._mask_active():
+            return False
+        pos = label.mapFrom(self._scroll.viewport(), event.position().toPoint())
+        mods = label._mask_mods(event)
+        up = event.angleDelta().y() > 0
+        pt = label._img_pt(QPointF(pos))
+        used = label._mask_tool.scroll(pt[0], pt[1], up, mods, label._mask_tol())
+        if used:
+            label.update()
+            self.mask_scrolled.emit()
+        return used
 
     def set_image(self, pixels: np.ndarray) -> None:
         self._pixmap = _rgb_to_pixmap(pixels)

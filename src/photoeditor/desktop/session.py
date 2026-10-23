@@ -126,6 +126,9 @@ class HistoryEntry:
     gs_amount: float = 0.0
     gs_size: float = 1.2
     gs_midtones: float = 0.5
+    masks: dict = field(default_factory=dict)    # the photo's drawn masks (features/masks): MaskSet.to_dict()
+    blends: dict = field(default_factory=dict)   # {module key: Blend.to_dict()} for each module blended through a mask or uniformly
+    retouch: dict = field(default_factory=dict)  # the Retouch module's settings (features/retouchdt): Settings.to_dict(), {} when it has no shapes
     keystone_v: float = 0.0
     keystone_h: float = 0.0
     metering: Metering = field(default_factory=Metering)
@@ -292,6 +295,9 @@ class AppState:
     gs_amount: float = 0.0
     gs_size: float = 1.2
     gs_midtones: float = 0.5
+    masks: dict = field(default_factory=dict)    # the photo's drawn masks (features/masks): MaskSet.to_dict()
+    blends: dict = field(default_factory=dict)   # {module key: Blend.to_dict()} for each module blended through a mask or uniformly
+    retouch: dict = field(default_factory=dict)  # the Retouch module's settings (features/retouchdt): Settings.to_dict(), {} when it has no shapes
     vignette: float = 0.0
     vignette_size: float = 0.5
     border: float = 0.0
@@ -322,6 +328,7 @@ class AppState:
     roll_lens: str = ""
     wm_vars: tuple = ()   # the photo's watermark variables as ((name, value), ...): what $(NAME) in a watermark text or SVG marker means (features/watermark/variables.py)
     show_detections: bool = False
+    retouch_view: str = ""   # what the Retouch panel is showing on the picture (features/retouchdt VIEWS): "", the wavelet scale, the shapes, or the picture without Retouch; not an edit
     overlay_rgba: np.ndarray | None = None
     show_shadow_clip: bool = False
     show_highlight_clip: bool = False

@@ -45,7 +45,9 @@ from .edge_bleed_panel import EdgeBleedPanel
 from .edge_color_panel import EdgeColorPanel
 from ...features.grainsharp import logic as gs_logic
 from .grain_report_dialog import GrainReportDialog
+from .blend_box import BlendBox
 from .grainsharp_panel import GrainSharpeningPanel
+from ..mask_blend import BLENDABLE
 from .halation_panel import HalationPanel
 from .module_search import ModuleSearch
 from .classroom_view import ClassroomView
@@ -118,7 +120,9 @@ from ...features.errormarks import logic as error_marks_logic
 from ...features.presettree import logic as preset_tree
 from .module_menu import ModuleMenus
 from .loading_overlay import LoadingOverlay
-from .masking_panel import MaskingToolPanel
+from .mask_editor import MaskEditor
+from .mask_manager import MaskManagerPanel
+from .retouch_panel import RetouchPanel
 from .negative_tool_panel import NegativeToolPanel
 from .scientific_panel import AdvancedPanels
 from .merge_dialog import MergeDialog
@@ -526,11 +530,18 @@ class AppWindow(QMainWindow):
             ("watermark", self._watermark_tool), ("finishing", self._finishing_tool),
         ):
             self._module_menus.attach(panel, key)
+            if key in BLENDABLE:
+                self._add_blend_box(key, panel)
         for signal in (
             self.controller.module_presets_changed, self.controller.modules_enabled_changed, self.controller.history_changed, self.controller.image_adjusted,
             self.controller.image_preview_changed, self.controller.reverted, self.controller.file_changed,
         ):
             signal.connect(self._module_menus.refresh)
+        for signal in (self.controller.masks_changed, self.controller.history_changed, self.controller.reverted, self.controller.file_changed):
+            signal.connect(self._refresh_blend_boxes)   # (not on every slider tick: that would put a slider back under the hand that is dragging it)
+        self._mask_editor = MaskEditor(self.controller, self._image_view, self._blend_boxes, self._mask_manager, before_start=self._end_picture_tools, parent=self)
+        self._wire_mask_manager()
+        self._wire_retouch()
 
         self._filmstrip = Filmstrip()
         self._filmstrip.image_selected.connect(self.controller.open_file)
@@ -953,7 +964,7 @@ class AppWindow(QMainWindow):
         left_tools_col.addWidget(self._tagging_panel)
         self._wire_tagging(self._tagging_panel)
 
-        self._masking_tool = MaskingToolPanel()
+        self._mask_manager = MaskManagerPanel()
 
         self._history_panel = HistoryPanel()
         self._history_panel.revert_requested.connect(self.controller.revert_to)
@@ -1385,6 +1396,7 @@ class AppWindow(QMainWindow):
         self._sharpening_tool.changed.connect(self.controller.set_sharpen)
         self._sharpening_tool.preview_requested.connect(self.controller.preview_sharpen)
 
+        self._blend_boxes: dict[str, BlendBox] = {}
         self._local_contrast_tool = LocalContrastToolPanel()
         self._local_contrast_tool.changed.connect(self.controller.set_local_contrast)
         self._local_contrast_tool.preview_requested.connect(self.controller.preview_local_contrast)
@@ -1417,6 +1429,8 @@ class AppWindow(QMainWindow):
         self._dust_tool.clone_tool_shown.connect(lambda _on: self._refresh_clone_marker())
         self.controller.notice.connect(self._coord_label.setText)
 
+        self._retouch_tool = RetouchPanel()
+        self._retouch_picked = 0
         self._ai_dust_tool = AiDustPanel()
         self._ai_dust_tool.changed.connect(self.controller.set_ai_dust)
         self._ai_dust_tool.cancel_requested.connect(self.controller.cancel_ai_dust)
@@ -1456,7 +1470,7 @@ class AppWindow(QMainWindow):
         correction_col = QVBoxLayout(correction_content)
         correction_col.setContentsMargins(0, 0, 0, 0)
         correction_col.setSpacing(THEME.space_sm)
-        correction_widgets += [self._dust_tool, self._ai_dust_tool, self._error_marks_panel]
+        correction_widgets += [self._dust_tool, self._ai_dust_tool, self._retouch_tool, self._error_marks_panel]
         for panel in correction_widgets:
             correction_col.addWidget(panel)
         correction_col.addStretch(1)
@@ -1473,7 +1487,7 @@ class AppWindow(QMainWindow):
         tool_row.addWidget(self._correction_panel, 0)
 
         # the Tone tab is filled in the order the picture is made: exposure, contrast, shadows and highlights, the curve, the print's response, then the local masks
-        for panel in (self._exposure_tool, self._contrast_tool, self._shadows_highlights_tool, self._curve_tool, self._print_response_tool, self._masking_tool):
+        for panel in (self._exposure_tool, self._contrast_tool, self._shadows_highlights_tool, self._curve_tool, self._print_response_tool, self._mask_manager):
             tools_col.addWidget(panel)
         tools_col.addStretch(1)
 
@@ -2779,6 +2793,184 @@ class AppWindow(QMainWindow):
         """A picture was taken from the tether window: its roll loads in the filmstrip and it opens in the editor (the Workbench picks the folder up as a recent one)."""
         if os.path.isfile(path):
             self.open_folder(os.path.dirname(path), prefer=path)
+
+    # ------------------------------------------------------------ each module's Mask box
+    def _add_blend_box(self, key: str, panel) -> None:
+        box = BlendBox(key)
+        panel.body().addWidget(box)
+        self._blend_boxes[key] = box
+        box.changed.connect(lambda blend, k=key: self.controller.set_blend(k, blend))
+        box.preview_requested.connect(lambda blend, k=key: self.controller.preview_blend(k, blend))
+        box.draw_requested.connect(lambda kind, k=key: self.begin_mask_drawing(k, kind))
+        box.edit_toggled.connect(lambda on, k=key: self.set_mask_editing(k, on))
+        box.show_toggled.connect(lambda on, k=key: self.set_mask_display(k, on))
+
+    def _refresh_blend_boxes(self, *_args) -> None:
+        """Every module's Mask box shows what the open photo has: its blend, and the shapes and groups there are to choose from."""
+        ms = self.controller.mask_set()
+        forms = [(f.id, f.name, f.type) for f in ms.forms.values()]
+        for key, box in self._blend_boxes.items():
+            box.set_forms(forms)
+            box.set_blend(self.controller.blend_of(key))
+
+    def begin_mask_drawing(self, key: str, kind: str) -> None:
+        """A shape button in a module's Mask box: draw a new shape for that module (see MaskEditor)."""
+        self._mask_editor.draw_for_module(key, kind)
+
+    def set_mask_editing(self, key: str, on: bool) -> None:
+        """The pencil in a module's Mask box: edit that module's mask on the picture."""
+        self._mask_editor.edit_module(key, on)
+
+    def set_mask_display(self, key: str, on: bool) -> None:
+        """The eye in a module's Mask box: show that module's mask on the picture."""
+        self._mask_editor.show_module(key, on)
+
+    def _end_picture_tools(self) -> None:
+        """The mask tool is taking the picture: put the other tools that click on it down."""
+        self._end_point_dropper()
+        self._end_base_pick()
+        self._dust_tool.deactivate_tools()
+        self._curve_tool.deactivate_eyedropper()
+        self._image_view.set_tool(None)
+        self._image_view.set_pick_mode(False)
+        if self._crop_tool.is_crop_active():
+            self._crop_tool.set_crop_mode(False)
+
+    # ------------------------------------------------------------ the Retouch panel
+    def _wire_retouch(self) -> None:
+        r, c, ed = self._retouch_tool, self.controller, self._mask_editor
+        ed.retouch_panel = r
+        r.draw_requested.connect(ed.draw_for_retouch)
+        r.edit_toggled.connect(ed.retouch_edit)
+        r.algorithm_chosen.connect(self._on_retouch_algorithm)
+        r.changed.connect(lambda changes, description, preview, picked: c.set_retouch(changes, description, preview, picked))
+        r.view_changed.connect(c.set_retouch_view)
+        r.paste_requested.connect(c.paste_retouch_scale)
+        r.opacity_changed.connect(self._on_retouch_opacity)
+        r.toggled.connect(self._on_retouch_toggled)
+        ed.shape_picked.connect(self._on_retouch_picked)
+        for signal in (c.retouch_changed, c.masks_changed, c.history_changed, c.reverted, c.file_changed):
+            signal.connect(self._refresh_retouch)
+        c.file_changed.connect(lambda *_: setattr(self, "_retouch_picked", 0))
+        self._refresh_retouch()
+
+    def _refresh_retouch(self, *_args) -> None:
+        c = self.controller
+        s = c.retouch_settings()
+        form = s.form(self._retouch_picked) if self._retouch_picked else None
+        if form is None:
+            self._retouch_picked = 0
+        opacity = None
+        if form is not None and s.group:
+            opacity = next((p["opacity"] for p in c.mask_set().members(s.group) if p["formid"] == form.formid), None)
+        self._retouch_tool.set_settings(s, form, opacity)
+        self._retouch_tool.set_view(c.state.retouch_view)
+
+    def _on_retouch_picked(self, form_id: int) -> None:
+        if form_id and self.controller.retouch_settings().form(form_id) is None:
+            return          # a shape of a module's mask or the Masks panel, not Retouch's
+        self._retouch_picked = form_id
+        self._refresh_retouch()
+
+    def _on_retouch_algorithm(self, algo: str, ctrl: bool) -> None:
+        c = self.controller
+        form = c.retouch_settings().form(self._retouch_picked) if self._retouch_picked else None
+        if form is not None and ctrl:
+            if algo != form.algorithm and {form.algorithm, algo} not in ({"clone", "heal"}, {"blur", "fill"}):
+                self._refresh_retouch()
+                return          # darktable lets a shape change between clone and heal, or between blur and fill, only
+            c.set_retouch_form(form.formid, {"algorithm": algo}, f"Retouch: changed a shape to {algo}")
+        c.set_retouch({"algorithm": algo})
+        self._mask_editor.rearm_retouch()
+        self._refresh_retouch()
+
+    def _on_retouch_opacity(self, form_id: int, value: float, preview: bool) -> None:
+        group = self.controller.retouch_settings().group
+        if group and form_id:
+            self.controller.set_mask_element(group, form_id, None if preview else "Changed a Retouch shape's opacity", opacity=value)
+
+    def _on_retouch_toggled(self, expanded: bool) -> None:
+        """Retouch's views of the picture, and its shapes on the picture, only while its panel is open (as darktable's only while the module has focus)."""
+        if expanded:
+            return
+        self.controller.set_retouch_view("")
+        if self._mask_editor._retouch:
+            self._mask_editor.stop()
+
+    # ------------------------------------------------------------ the Masks panel
+    def _wire_mask_manager(self) -> None:
+        m, c = self._mask_manager, self.controller
+        m.rename_requested.connect(c.rename_mask)
+        m.duplicate_requested.connect(c.duplicate_mask)
+        m.delete_requested.connect(c.delete_masks)
+        m.group_requested.connect(lambda ids: c.group_masks(ids) if ids else None)
+        m.add_to_group_requested.connect(c.add_to_mask_group)
+        m.remove_from_group_requested.connect(c.remove_from_mask_group)
+        m.element_changed.connect(lambda group, form, changes: c.set_mask_element(group, form, "Changed a mask in a group", **changes))
+        m.opacity_preview.connect(lambda group, form, value: c.set_mask_element(group, form, None, opacity=value))
+        m.opacity_committed.connect(lambda group, form, value: c.set_mask_element(group, form, "Changed a mask's opacity", opacity=value))
+        m.detections_requested.connect(self._list_detections)
+        m.detection_picked.connect(self._on_detection_picked)
+        m.detection_delete_requested.connect(self._on_detection_delete)
+        for signal in (c.masks_changed, c.history_changed, c.reverted, c.file_changed):
+            signal.connect(self._refresh_mask_manager)
+        c.file_changed.connect(self._forget_detections)
+        c.image_adjusted.connect(self._detections_may_be_ready)
+        self._listing_detections = False
+        self._refresh_mask_manager()
+
+    def _refresh_mask_manager(self, *_args) -> None:
+        self._mask_manager.set_masks(self.controller.mask_set())
+
+    def _forget_detections(self, *_args) -> None:
+        self._listing_detections = False
+        self._image_view.set_focus_marks([])
+        self._mask_manager.clear_detections()
+
+    def _list_detections(self) -> None:
+        """List detections: the Show Detections wash is what the list is read from, so it is turned on (and the list filled when the picture is drawn again with it)."""
+        c = self.controller
+        if c.state.preview_rgb is None:
+            self._mask_manager.set_note("Open a photo first.")
+            return
+        if c.state.show_detections and c.state.overlay_rgba is not None:
+            self._fill_detections()
+            return
+        self._listing_detections = True
+        self._dust_tool.show_detections()
+        if c.state.show_detections:
+            c.refresh_picture()
+
+    def _detections_may_be_ready(self) -> None:
+        if self._listing_detections and self.controller.state.show_detections:
+            self._listing_detections = False
+            self._fill_detections()
+
+    def _fill_detections(self) -> None:
+        items = self.controller.detection_items()
+        self._mask_manager.set_detections(items)
+        counts = ", ".join(f"{len(items[k])} {k}" for k in ("dust", "hairs", "scratches"))
+        self._mask_manager.set_note(f"Found {counts}. Pick one to ring it on the picture; Delete takes it out.")
+        self._image_view.set_focus_marks([])
+
+    def _on_detection_picked(self, kind: str, item) -> None:
+        if item is None:
+            self._image_view.set_focus_marks([])
+            return
+        if kind == "scratches":
+            self._image_view.set_focus_marks([("line", [tuple(p) for p in item["pts"]])])
+        else:
+            self._image_view.set_focus_marks([("ring", item["x"], item["y"], max(item["w"], item["h"]) / 2 + 4)])
+
+    def _on_detection_delete(self, kind: str, item) -> None:
+        c = self.controller
+        self._image_view.set_focus_marks([])
+        if kind == "scratches":
+            done = c.delete_scratch_line(item["index"])
+        else:
+            done = c.delete_detection_at(item["x"], item["y"])
+        if done:
+            self._listing_detections = True   # the list is made again when the picture has been drawn without it
 
     def match_grain_size(self) -> None:
         """Grain Sharpening > Match My Grain: set Size to the width the Grain Report measures in the open photo."""
@@ -4133,6 +4325,7 @@ class AppWindow(QMainWindow):
     def _on_curve_picker_toggled(self, kind: str, active: bool) -> None:
         """The tone curve's Black / Grey / White picker: armed, the next click on the picture sets the colour channels' curves from that spot."""
         if active:
+            self._mask_editor.stop()
             self._end_point_dropper()
             self._end_base_pick()
             self._dust_tool.deactivate_tools()
@@ -4141,6 +4334,7 @@ class AppWindow(QMainWindow):
 
     def _on_eyedropper_toggled(self, active: bool) -> None:
         if active:
+            self._mask_editor.stop()
             self._end_point_dropper()
             self._end_base_pick()
             self._dust_tool.deactivate_tools()
@@ -4150,6 +4344,7 @@ class AppWindow(QMainWindow):
     def _on_dust_tool_changed(self, tool) -> None:
         iv = self._image_view
         if tool is not None:
+            self._mask_editor.stop()
             self._crop_tool.set_straighten_active(False)
             self._leave_corners()
         iv.set_tool(None)

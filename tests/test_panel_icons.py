@@ -106,7 +106,7 @@ def test_a_header_with_no_arrow_keeps_its_icon_clear_of_the_colour_bar():
         from photoeditor.desktop.view.collapsible_panel import CollapsiblePanel
         runtime.apply(app, {"theme": "modern", "theme_accent": "Blue", "theme_text_scale": 100})
         def icon_x(collapsible):
-            panel = CollapsiblePanel("Masking", collapsible=collapsible)
+            panel = CollapsiblePanel("Masks", collapsible=collapsible)
             panel.resize(320, 120); panel.show(); app.processEvents()
             return panel._header._icon_label.mapTo(panel._header, panel._header._icon_label.rect().topLeft()).x()
         plain, arrowed = icon_x(False), icon_x(True)

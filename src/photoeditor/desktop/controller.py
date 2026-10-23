@@ -4,6 +4,7 @@ import math
 import os
 import sqlite3
 
+import cv2
 import numpy as np
 
 from PyQt6.QtCore import QCoreApplication, QObject, pyqtSignal
@@ -60,6 +61,12 @@ from ..features.edgebleed import logic as edge_logic
 from ..features.edgecolor import logic as ec_logic
 from ..features.grain import logic as grain_logic
 from ..features.grainsharp import logic as gs_logic
+from ..features.masks import blend as mask_blend
+from ..features.masks.frame import FrameMap
+from ..features.masks import model as mask_model
+from ..features.masks import raster as mask_raster
+from ..features.masks import state as mask_state
+from ..features.retouchdt import logic as rt_logic
 from ..features.halation import logic as hal_logic
 from ..features.lablook import logic as lab_look_logic
 from ..features.printresponse import logic as print_response_logic
@@ -103,6 +110,7 @@ from ..features.whitebalance.logic import clipping_overlay
 from ..features.datadir import BACKUP_DIR, EDITS_DB
 from .paths import app_data_dir, thumbnail_cache_dir
 from .ai_dust_worker import AiDustWorker
+from .mask_blend import MaskBlender
 from .render import EditParams, _scale_rect, RenderJob, Renderer, RenderOutput, RenderThread
 from .session import AppState, HistoryEntry, entry_from_json, entry_to_json
 
@@ -172,6 +180,8 @@ class AppController(QObject):
     look_preset_changed = pyqtSignal()   # the whole-look preset applied to the open photo changed (applied, cleared)
     look_presets_changed = pyqtSignal(str)
     error_marks_changed = pyqtSignal()
+    retouch_changed = pyqtSignal()   # Retouch's settings or shapes changed (a shape added or taken out, a scale, an algorithm...): its panel reads them again
+    masks_changed = pyqtSignal()   # a shape or group was added, changed, renamed or deleted, or a module's Mask box changed: the mask lists and boxes read it again
     modules_enabled_changed = pyqtSignal()
     rating_changed = pyqtSignal(str, int)
     snapshots_changed = pyqtSignal(str)
@@ -333,6 +343,10 @@ class AppController(QObject):
         self.state.dust_excluded = [list(p) for p in saved.get("dust_excluded", [])]
         self.state.error_marks = error_marks_logic.clean(saved.get("error_marks", []))
         self.state.modules_off = [k for k in saved.get("modules_off", []) if k in SWITCHABLE]
+        self.state.masks = mask_state.clean_masks(saved.get("masks"))
+        self.state.blends = mask_state.clean_blends(saved.get("blends"), self.state.masks)
+        self.state.retouch = rt_logic.Settings.from_dict(saved.get("retouch")).to_dict() if saved.get("retouch") else {}
+        self.state.retouch_view = ""
         self.state.ai_dust = bool(saved.get("ai_dust", False))
         self.state.ai_threshold = float(saved.get("ai_threshold", 0.3))
         self.state.ai_grow = int(saved.get("ai_grow", 1))
@@ -1809,6 +1823,337 @@ class AppController(QObject):
             s.rotation_quarter_turns, s.flip_h, s.flip_v, s.fine_rotation, s.distortion, s.keystone_v, s.keystone_h,
         )
 
+    # ------------------------------------------------------------ drawn masks, and each module's Mask box (features/masks)
+    def mask_set(self) -> "mask_model.MaskSet":
+        """A copy of the photo's masks to read (change them through the methods below, so the picture and the undo history follow)."""
+        return mask_state.mask_set(self.state.masks)
+
+    def frame_map(self) -> FrameMap:
+        """Where a point of the untouched scan is on the picture shown, and back (features/masks/frame.py). Kept while the crop, turns, flips and straightening are as they were."""
+        s = self.state
+        args = (s.crop_rect, self._current_frame_size(), s.rotation_quarter_turns, s.flip_h, s.flip_v, s.fine_rotation, s.distortion, s.keystone_v, s.keystone_h)
+        cached = getattr(self, "_frame_map", None)
+        if cached is None or cached.key() != (args[0], tuple(args[1]), args[2] % 4, bool(args[3]), bool(args[4]), float(args[5]), float(args[6]), float(args[7]), float(args[8])):
+            cached = self._frame_map = FrameMap(*args)
+        return cached
+
+    def display_to_raw(self, x: float, y: float) -> tuple[float, float]:
+        """A point of the picture shown (pixels of image_rgb) -> the scan's frame (fractions)."""
+        return self._display_to_raw(x, y)
+
+    def raw_to_display(self, pts) -> "np.ndarray":
+        """Points of the scan's frame (N, 2 fractions) -> pixels of the picture shown."""
+        h_img, w_img = self.state.image_rgb.shape[:2]
+        uv = self.frame_map().to_display_array(pts)
+        return np.stack([uv[:, 0] * w_img - 0.5, uv[:, 1] * h_img - 0.5], axis=1)
+
+    def scan_frame_px(self) -> tuple[float, float]:
+        """(width, height) of the untouched scan's frame at the editing preview's size: what shapes' sizes are measured against."""
+        h0, w0 = self.state.preview_rgb.shape[:2]
+        return float(w0), float(h0)
+
+    def blend_mask_overlay(self, key: str):
+        """An RGBA picture (yellow where the module's mask lets it act) the size of the picture shown, or None when the module has no drawn mask."""
+        s = self.state
+        blend = self.blend_of(key)
+        if s.image_rgb is None or s.preview_rgb is None or not blend.active():
+            return None
+        params = EditParams.from_state(s)
+        h_img, w_img = s.image_rgb.shape[:2]
+        scale = 1.0
+        rect = params.crop_rect
+        blender = MaskBlender(params, s.preview_rgb.shape[:2], lambda m: Renderer._geometry(m, params, nearest=False), rect, scale)
+        drawn = blender.drawn_mask(blend.mask_id, cropped=True) if blend.uses_mask() and blend.mask_id else None
+        mask = mask_blend.make_mask(blend, (h_img, w_img), cv2.resize(drawn, (w_img, h_img)) if drawn is not None else None, w_img / 1600.0, s.image_rgb)
+        rgba = np.zeros((h_img, w_img, 4), np.uint8)
+        rgba[..., 0], rgba[..., 1] = 255, 214
+        rgba[..., 3] = np.clip(mask * 0.65 * 255.0, 0, 255).astype(np.uint8)
+        return rgba
+
+    def blend_of(self, key: str) -> "mask_blend.Blend":
+        """How a module is blended into the picture: off, uniformly or through a drawn mask."""
+        return mask_blend.Blend.from_dict(self.state.blends.get(key))
+
+    def _uses_masks(self, form_ids=None) -> bool:
+        """True when a module is blended through a drawn mask (that is made of one of these forms, when some are given)."""
+        ms = self.mask_set()
+        for blend in (mask_blend.Blend.from_dict(v) for v in self.state.blends.values()):
+            if not blend.uses_mask() or not blend.mask_id:
+                continue
+            if form_ids is None:
+                return True
+            if self._made_of(ms, blend.mask_id, set(form_ids)):
+                return True
+        return self._retouch_uses(form_ids)
+
+    def _retouch_uses(self, form_ids=None) -> bool:
+        """True when Retouch acts through one of these shapes (any, when none are given) or through the group that holds them."""
+        s = self.retouch_settings()
+        if not s.active():
+            return False
+        if form_ids is None:
+            return True
+        wanted = set(form_ids)
+        return s.group in wanted or any(f.formid in wanted for f in s.forms)
+
+    @staticmethod
+    def _made_of(ms, form_id: int, wanted: set, depth: int = 0) -> bool:
+        if form_id in wanted:
+            return True
+        form = ms.get(form_id)
+        if form is None or form.type != mask_model.GROUP or depth > mask_raster.MAX_DEPTH:
+            return False
+        return any(AppController._made_of(ms, p["formid"], wanted, depth + 1) for p in form.points)
+
+    def _masks_edited(self, ms, description: str | None, form_ids=None, preview: bool = False) -> None:
+        """Keep these masks, draw the picture again if a module is blended through them, say so in the undo history (unless `description` is None: a drag still going on)."""
+        self.state.masks = ms.to_dict() if len(ms) else {}
+        if self._uses_masks(form_ids):
+            self._preview(LIVE_OTHER_METHODS | {"retouch"}) if preview else self._settle()
+        if description is not None:
+            self._log(description)
+        self.masks_changed.emit()
+
+    def add_mask_form(self, form_type: str, points: list, name: str = "", source=(0.0, 0.0)) -> int:
+        """Add a shape (circle, ellipse, path, brush or gradient) to the photo's masks. Returns its id, 0 if it could not be added."""
+        if self.state.preview_rgb is None:
+            return 0
+        ms = self.mask_set()
+        form = ms.add(form_type, points, name, source)
+        if form is None:
+            return 0
+        self._masks_edited(ms, f"Added {form.name}")
+        return form.id
+
+    def set_mask_points(self, form_id: int, points: list, description: str | None = "Changed a mask shape") -> bool:
+        """Change a shape's points. With a description it is one step in the undo history; with None it is a drag still going on (the picture follows, nothing is recorded)."""
+        ms = self.mask_set()
+        if not ms.replace_points(form_id, points):
+            return False
+        self._masks_edited(ms, description, {form_id}, preview=description is None)
+        return True
+
+    def rename_mask(self, form_id: int, name: str) -> bool:
+        ms = self.mask_set()
+        if not ms.rename(form_id, name):
+            return False
+        self._masks_edited(ms, f"Renamed a mask to {name.strip()}")
+        return True
+
+    def delete_masks(self, form_ids) -> int:
+        """Delete shapes and groups. A module blended through a deleted one is then blended through no mask (everywhere, as darktable does)."""
+        ms = self.mask_set()
+        gone = [i for i in form_ids if ms.get(i) is not None]
+        if not gone:
+            return 0
+        used = self._uses_masks(set(gone))
+        names = [ms.get(i).name for i in gone]
+        for i in gone:
+            ms.remove(i)
+        blends = {}
+        for key, value in self.state.blends.items():
+            b = mask_blend.Blend.from_dict(value)
+            blends[key] = mask_blend.Blend(**{**b.to_dict(), "mask_id": 0}).to_dict() if b.mask_id in gone else value
+        self.state.blends = blends
+        self.state.masks = ms.to_dict() if len(ms) else {}
+        used = self._retouch_prune(ms) or used
+        if used:
+            self._settle()
+        self._log("Deleted " + (names[0] if len(names) == 1 else f"{len(names)} masks"))
+        self.masks_changed.emit()
+        return len(gone)
+
+    def duplicate_mask(self, form_id: int) -> int:
+        ms = self.mask_set()
+        form = ms.duplicate(form_id)
+        if form is None:
+            return 0
+        self._masks_edited(ms, f"Duplicated a mask as {form.name}")
+        return form.id
+
+    def group_masks(self, form_ids, name: str = "") -> int:
+        """Put shapes (or groups) together as a group, which is a mask of its own. Returns the group's id, 0 if there was nothing to group."""
+        ms = self.mask_set()
+        group = ms.add_group(list(form_ids), name or "")
+        if group is None:
+            return 0
+        if not name:
+            group.name = f"group #{len(ms.groups())}"
+        self._masks_edited(ms, f"Grouped masks as {group.name}")
+        return group.id
+
+    def set_mask_element(self, group_id: int, form_id: int, description: str | None = "Changed a mask in a group", **changes) -> bool:
+        """Change one element of a group: opacity (0 to 1), op (one of the model's OPERATIONS), inverse, show."""
+        ms = self.mask_set()
+        if not ms.set_element(group_id, form_id, **changes):
+            return False
+        self._masks_edited(ms, description, {group_id}, preview=description is None)
+        return True
+
+    def add_to_mask_group(self, group_id: int, form_id: int) -> bool:
+        ms = self.mask_set()
+        if not ms.add_to_group(group_id, form_id):
+            return False
+        self._masks_edited(ms, f"Added a mask to {ms.get(group_id).name}", {group_id})
+        return True
+
+    def remove_from_mask_group(self, group_id: int, form_id: int) -> bool:
+        ms = self.mask_set()
+        if not ms.remove_from_group(group_id, form_id):
+            return False
+        self._masks_edited(ms, f"Took a mask out of {ms.get(group_id).name}", {group_id})
+        return True
+
+    def preview_blend(self, key: str, blend) -> None:
+        """A module's Mask box while a slider is being dragged: the picture follows, nothing is recorded."""
+        if self.state.preview_rgb is None:
+            return
+        self._put_blend(key, blend)
+        self._preview(LIVE_OTHER_METHODS)
+
+    def set_blend(self, key: str, blend) -> None:
+        """Blend a module through a drawn mask, uniformly, or not at all (the module's Mask box)."""
+        if self.state.preview_rgb is None:
+            return
+        before = self.blend_of(key)
+        self._put_blend(key, blend)
+        after = self.blend_of(key)
+        self._settle()
+        if after != before:
+            title = self.module_title(key)
+            how = {mask_blend.OFF: "not blended", mask_blend.UNIFORM: f"blended uniformly at {after.opacity:.0f}%", mask_blend.DRAWN: f"blended through a drawn mask at {after.opacity:.0f}%"}[after.mode]
+            self._log(f"{title}: {how}")
+        self.masks_changed.emit()
+
+    def _put_blend(self, key: str, blend) -> None:
+        b = blend if isinstance(blend, mask_blend.Blend) else mask_blend.Blend.from_dict(blend)
+        blends = dict(self.state.blends)
+        if b.active():
+            blends[key] = b.to_dict()
+        else:
+            blends.pop(key, None)
+        self.state.blends = blends
+
+    # ------------------------------------------------------------ Retouch (features/retouchdt): shapes with an algorithm and a wavelet scale
+    def retouch_settings(self) -> rt_logic.Settings:
+        return rt_logic.Settings.from_dict(self.state.retouch)
+
+    def _put_retouch(self, s: rt_logic.Settings) -> None:
+        self.state.retouch = s.to_dict() if (s.active() or s != rt_logic.Settings()) else {}
+
+    def _retouch_edited(self, s: rt_logic.Settings, description: str | None, preview: bool = False, redraw: bool = True) -> None:
+        """Keep these settings; draw the picture again (a drag only previews it) and say so in the undo history (unless `description` is None)."""
+        self._put_retouch(s)
+        if redraw and self.state.preview_rgb is not None and (s.active() or self.state.retouch_view):
+            self._preview(LIVE_OTHER_METHODS | {"retouch"}) if preview else self._settle()
+        if description:
+            self._log(description)
+        self.retouch_changed.emit()
+
+    def _retouch_prune(self, ms) -> bool:
+        """After shapes were deleted: Retouch forgets the shapes that are gone (and its group, if that went). True when it changed."""
+        s = self.retouch_settings()
+        if not s.forms and not s.group:
+            return False
+        forms = [f for f in s.forms if ms.get(f.formid) is not None]
+        group = s.group if s.group and ms.get(s.group) is not None else 0
+        if len(forms) == len(s.forms) and group == s.group:
+            return False
+        s.forms, s.group = forms, group
+        self._put_retouch(s)
+        self.retouch_changed.emit()
+        return True
+
+    def add_retouch_form(self, form_type: str, points: list, source=None) -> int:
+        """A shape drawn for Retouch (with its source, for clone and heal): added to the photo's masks and to Retouch's group as one step. Returns its id, 0 if it could not be added."""
+        if self.state.preview_rgb is None:
+            return 0
+        s = self.retouch_settings()
+        if len(s.forms) >= rt_logic.MAX_FORMS:
+            self.notice.emit("Retouch is full: it takes 300 shapes")
+            return 0
+        ms = self.mask_set()
+        form = ms.add(form_type, points, "", source or (0.0, 0.0))
+        if form is None:
+            return 0
+        if s.group and ms.get(s.group) is not None:
+            ms.add_to_group(s.group, form.id)
+        else:
+            group = ms.add_group([f.formid for f in s.forms if ms.get(f.formid) is not None] + [form.id], "Retouch")
+            s.group = group.id if group is not None else 0
+        s.forms.append(rt_logic.FormSetting(form.id, s.curr_scale, s.algorithm, s.blur_type, s.blur_radius, s.fill_mode, list(s.fill_color), s.fill_brightness))
+        self.state.masks = ms.to_dict()
+        self._retouch_edited(s, f"Retouch: added {form.name}")
+        self.masks_changed.emit()
+        return form.id
+
+    def set_retouch(self, changes: dict, description: str | None = None, preview: bool = False, form_id: int = 0) -> None:
+        """Change Retouch's settings (algorithm, num_scales, curr_scale, merge_from_scale, blur_type, blur_radius, fill_mode, fill_color, fill_brightness, preview_levels, preview_auto).
+        With a shape picked (`form_id`) the blur and fill settings go to that shape too, as in darktable."""
+        s = self.retouch_settings()
+        d = s.to_dict()
+        d.update(changes)
+        new = rt_logic.Settings.from_dict(d)
+        form = new.form(form_id) if form_id else None
+        if form is not None:
+            if form.algorithm == rt_logic.BLUR:
+                for key in ("blur_type", "blur_radius"):
+                    if key in changes:
+                        setattr(form, key, getattr(new, key))
+            elif form.algorithm == rt_logic.FILL:
+                for key in ("fill_mode", "fill_color", "fill_brightness"):
+                    if key in changes:
+                        setattr(form, key, getattr(new, key))
+        looking = set(changes) <= {"curr_scale", "preview_levels", "preview_auto"} and form is None     # where to look, not what to do: not an edit
+        self._retouch_edited(new, None if looking else description, preview, redraw=not (set(changes) <= {"algorithm"}) and (not looking or bool(self.state.retouch_view)))
+
+    def set_retouch_form(self, form_id: int, changes: dict, description: str | None = None) -> bool:
+        """Change one shape's own settings (algorithm, scale, blur_type, blur_radius, fill_mode, fill_color, fill_brightness)."""
+        s = self.retouch_settings()
+        form = s.form(form_id)
+        if form is None:
+            return False
+        d = form.to_dict()
+        d.update(changes)
+        new = rt_logic.FormSetting.from_dict(d)
+        if new is None:
+            return False
+        s.forms[s.forms.index(form)] = new
+        self._retouch_edited(s, description)
+        return True
+
+    def paste_retouch_scale(self, source: int, dest: int) -> int:
+        """Move every shape on one wavelet scale to another (darktable's cut and paste shapes between scales). Returns how many moved."""
+        s = self.retouch_settings()
+        if source == dest or source < 0 or dest < 0:
+            return 0
+        moved = [f for f in s.forms if f.scale == source]
+        for f in moved:
+            f.scale = dest
+        if moved:
+            self._retouch_edited(s, f"Retouch: moved {len(moved)} shapes from scale {source} to scale {dest}")
+        return len(moved)
+
+    def set_retouch_view(self, view: str) -> None:
+        """What Retouch shows on the picture: "" the result, "scale" the wavelet scale being worked on, "mask" where the shapes act, "suppress" the picture without Retouch. Not an edit."""
+        view = view if view in rt_logic.VIEWS else ""
+        if view == self.state.retouch_view:
+            return
+        self.state.retouch_view = view
+        if self.state.preview_rgb is not None:
+            self._settle()
+
+    def set_mask_source(self, form_id: int, source, description: str | None = "Moved a source") -> bool:
+        """Move where a clone or heal shape copies from. With a description it is one step in the undo history; with None it is a drag still going on."""
+        ms = self.mask_set()
+        if not ms.set_source(form_id, source):
+            return False
+        self._masks_edited(ms, description, {form_id}, preview=description is None)
+        return True
+
+    def blended_modules(self) -> list[str]:
+        return [k for k, v in self.state.blends.items() if mask_blend.Blend.from_dict(v).active()]
+
     # ------------------------------------------------------------ the on/off light of a module
     def module_enabled(self, key: str) -> bool:
         return key not in self.state.modules_off
@@ -2155,6 +2500,58 @@ class AppController(QObject):
         self.scratches_changed.emit(self._manual_repair_count())
         self._settle()
         self._log(f"Deleted a manual repair ({self._manual_repair_count()} left)")
+
+    def refresh_picture(self) -> None:
+        """Draw the open photo again as it is (the Masks panel's detection list wants a fresh Show Detections wash)."""
+        if self.state.preview_rgb is not None:
+            self._settle()
+
+    _DETECTION_COLOURS = (("dust", (60, 230, 120)), ("hairs", (255, 60, 210)))   # the Show Detections wash: green specks, magenta hairs (render.py _build_overlay)
+
+    def detection_items(self, limit: int = 300) -> dict:
+        """What dust detection has found in the open photo, for the Masks panel's Dust Detection folder: {"dust": [...], "hairs": [...], "scratches": [...]}.
+
+        Dust and hairs are read from the Show Detections wash (so they are there while it is on): each is {"x", "y"} - a point that lies on it, in pixels of the picture shown -
+        {"w", "h"} its size and {"area"}, the biggest first. Scratches are the traced lines: {"index", "pts"} (two points in the same pixels)."""
+        s = self.state
+        out = {"dust": [], "hairs": [], "scratches": []}
+        if s.image_rgb is None or s.preview_rgb is None:
+            return out
+        for i, line in enumerate(s.scratch_lines):
+            pts = self.raw_to_display(np.array([[line[0], line[1]], [line[2], line[3]]], dtype=float))
+            out["scratches"].append({"index": i, "pts": pts.tolist()})
+        overlay = s.overlay_rgba
+        if overlay is None:
+            return out
+        oh, ow = overlay.shape[:2]
+        ih, iw = s.image_rgb.shape[:2]
+        for name, colour in self._DETECTION_COLOURS:
+            found = ((overlay[..., :3] == colour).all(axis=-1) & (overlay[..., 3] > 0)).astype(np.uint8)
+            if not found.any():
+                continue
+            count, labels, stats, centres = cv2.connectedComponentsWithStats(found, connectivity=8)
+            order = sorted(range(1, count), key=lambda i: -int(stats[i, cv2.CC_STAT_AREA]))[:limit]
+            for i in order:
+                x, y, w, h, area = (int(v) for v in stats[i])
+                ys, xs = np.nonzero(labels[y:y + h, x:x + w] == i)
+                j = int(np.argmin((xs + x - centres[i][0]) ** 2 + (ys + y - centres[i][1]) ** 2))   # a pixel that is on it, nearest the middle (a hair is curved)
+                out[name].append({"x": (int(xs[j]) + x + 0.5) / ow * iw - 0.5, "y": (int(ys[j]) + y + 0.5) / oh * ih - 0.5, "w": w / ow * iw, "h": h / oh * ih, "area": area})
+        return out
+
+    def delete_detection_at(self, x: float, y: float) -> bool:
+        """Take out the one detection under this point of the picture shown (the Dust Detection folder's Delete)."""
+        return self._delete_detection_near(x, y)
+
+    def delete_scratch_line(self, index: int) -> bool:
+        """Take out one traced scratch line (the Dust Detection folder's Scratches)."""
+        s = self.state
+        if s.preview_rgb is None or not 0 <= index < len(s.scratch_lines):
+            return False
+        s.scratch_lines = [ln for j, ln in enumerate(s.scratch_lines) if j != index]
+        self.scratches_changed.emit(self._manual_repair_count())
+        self._settle()
+        self._log(f"Deleted a traced scratch ({self._manual_repair_count()} manual repairs left)")
+        return True
 
     def _delete_detection_near(self, x: float, y: float) -> bool:
         """The delete picker, second half: a click that lands on (or just beside) something Auto Dust Removal or AI dust found takes out just that one
@@ -2618,6 +3015,9 @@ class AppController(QObject):
             ai_threshold=s.ai_threshold,
             ai_grow=s.ai_grow,
             marks=s.marks,
+            masks=copy.deepcopy(s.masks),
+            blends=copy.deepcopy(s.blends),
+            retouch=copy.deepcopy(s.retouch),
             film_type=s.film_type,
             invert_r=s.invert_r,
             invert_g=s.invert_g,
@@ -2744,6 +3144,9 @@ class AppController(QObject):
             "dust_excluded": s.dust_excluded,
             "error_marks": s.error_marks,
             "modules_off": s.modules_off,
+            "masks": s.masks,
+            "blends": s.blends,
+            "retouch": s.retouch,
             "ai_dust": s.ai_dust,
             "ai_threshold": s.ai_threshold,
             "ai_grow": s.ai_grow,
@@ -2812,6 +3215,10 @@ class AppController(QObject):
         self.state.dust_excluded = []
         self.state.error_marks = []
         self.state.modules_off = []
+        self.state.masks = {}
+        self.state.blends = {}
+        self.state.retouch = {}
+        self.state.retouch_view = ""
         self.state.ai_dust = False
         self.state.ai_threshold = aidust.DEFAULT_THRESHOLD
         self.state.ai_grow = aidust.DEFAULT_GROW
@@ -3012,6 +3419,9 @@ class AppController(QObject):
         s.dust_excluded = [list(p) for p in entry.dust_excluded]
         s.ai_dust, s.ai_threshold, s.ai_grow = entry.ai_dust, entry.ai_threshold, entry.ai_grow
         s.marks = entry.marks
+        s.masks = copy.deepcopy(entry.masks)
+        s.blends = copy.deepcopy(entry.blends)
+        s.retouch = copy.deepcopy(entry.retouch)
         self._last_logged_ai = (entry.ai_dust, round(entry.ai_threshold, 4), entry.ai_grow)
         s.film_type = entry.film_type
         s.invert_r, s.invert_g, s.invert_b = entry.invert_r, entry.invert_g, entry.invert_b
@@ -3215,6 +3625,7 @@ class AppController(QObject):
             self.state.metering = Metering()
         if key == "watermark":
             values["marks"] = {}
+        self._put_blend(key, mask_blend.Blend())   # a module's Mask box goes back to off with the rest of it
         if self.apply_look(values, f"Reset {self.module_title(key)}"):
             self._module_preset_in_use.pop((self.state.image_path, key), None)
             self._save_edit_state()

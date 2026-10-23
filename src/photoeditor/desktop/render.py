@@ -53,6 +53,11 @@ from ..features.lut.logic import (
 from ..features.edgebleed import logic as edge_logic
 from ..features.edgecolor import logic as ec_logic
 from ..features.grainsharp import logic as gs_logic
+from ..features.masks import state as mask_state
+from ..features.masks.frame import FrameMap
+from ..features.retouchdt import logic as rt_logic
+from ..features.colormix.logic import MIXER_PANEL_KEYS, TONING_KEYS
+from .mask_blend import MaskBlender
 from ..features.halation import logic as hal_logic
 from ..features.flatfield.logic import apply_flatfield
 from ..features.negative.logic import (
@@ -212,6 +217,10 @@ class EditParams:
     keystone_v: float = 0.0
     keystone_h: float = 0.0
     dust_excluded: tuple = ()
+    masks_json: str = ""      # the photo's drawn masks as JSON (a string, so it is hashable and a change of any shape draws the picture again); "" when there are none
+    retouch_json: str = ""    # the Retouch module's settings as JSON ("" when it has no shapes): hashable, so any change draws the picture again
+    retouch_view: str = ""    # what the Retouch panel is showing (see features/retouchdt VIEWS)
+    blends: tuple = ()        # ((module key, mode, mask id, opacity, invert, blur, feather, brightness, contrast), ...) for each module blended through a mask or uniformly
     wm_vars: tuple = ()   # ((name, value), ...): the watermark variables of this photo (hashable, so a change of any draws the watermark again)
 
     @classmethod
@@ -339,6 +348,10 @@ class EditParams:
             gs_amount=float(getattr(s, "gs_amount", 0.0)),
             gs_size=float(getattr(s, "gs_size", 1.2)),
             gs_midtones=float(getattr(s, "gs_midtones", 0.5)),
+            masks_json=mask_state.masks_json(getattr(s, "masks", None)),
+            retouch_json=rt_logic.to_json(getattr(s, "retouch", None)),
+            retouch_view=str(getattr(s, "retouch_view", "") or ""),
+            blends=mask_state.blends_tuple(getattr(s, "blends", None)),
             scan_width=int(getattr(getattr(s, "original_rgb", None), "shape", (0, 0))[1] or 0),
             vignette=float(getattr(s, "vignette", 0.0)),
             vignette_size=float(getattr(s, "vignette_size", 0.5)),
@@ -603,10 +616,10 @@ class Renderer:
         return result
 
     @staticmethod
-    def _geometry(arr: np.ndarray, params: EditParams):
-        arr = fine_rotate(arr, params.fine_rotation, nearest=True)
-        arr = radial_distort(arr, params.distortion, nearest=True)
-        arr = keystone(arr, params.keystone_v, params.keystone_h, nearest=True)
+    def _geometry(arr: np.ndarray, params: EditParams, nearest: bool = True):
+        arr = fine_rotate(arr, params.fine_rotation, nearest=nearest)
+        arr = radial_distort(arr, params.distortion, nearest=nearest)
+        arr = keystone(arr, params.keystone_v, params.keystone_h, nearest=nearest)
         if params.rotation_quarter_turns:
             arr = rotate_quarter_turns(arr, params.rotation_quarter_turns)
         if params.flip_h:
@@ -647,6 +660,102 @@ class Renderer:
             drawn = True
         return rgba if drawn else None
 
+    def _retouch_stage(self, pixels: np.ndarray, settings, params: EditParams, blender: MaskBlender, source_width: int) -> np.ndarray:
+        """Retouch on the picture after its geometry (before the crop): each shape's mask laid on it as the picture is, and how far from its source each clone and heal shape lies."""
+        if pixels.dtype != np.uint8:
+            pixels = to_uint8(pixels)
+        h, w = pixels.shape[:2]
+        ms = blender.masks
+        group = ms.get(settings.group) if settings.group else None
+        opacity = {p["formid"]: float(p["opacity"]) for p in group.points} if group is not None else {}
+        fmap = FrameMap(None, (h, w), params.rotation_quarter_turns, params.flip_h, params.flip_v, params.fine_rotation, params.distortion, params.keystone_v, params.keystone_h)
+
+        def delta(form_id: int):
+            anchor, form = ms.anchor(form_id), ms.get(form_id)
+            if anchor is None or form is None:
+                return None
+            a, b = fmap.to_display_array(np.array([anchor, form.source], float))
+            return float((a[0] - b[0]) * w), float((a[1] - b[1]) * h)       # from the source to the shape, in this picture's pixels
+
+        ctx = rt_logic.Context(lambda i: blender.form_mask(i), delta, lambda i: max(0.05, min(1.0, opacity.get(i, 1.0))), w / params.scan_width if params.scan_width else 1.0,
+                               params.retouch_view if params.retouch_view in rt_logic.VIEWS else "")
+        return rt_logic.process(pixels, settings, ctx)
+
+    def _tone_staged(self, p: EditParams, blender: MaskBlender, base_ramp, pixels, pixels16, wide: bool, camera_matrix, scale: float, denoise: bool, local: bool,
+                     color_values: dict, color_response: str, tone, lab) -> np.ndarray:
+        """The tone and colour of the picture made one module at a time, so that any of them can be blended through its mask (darktable blends each module into what it was given).
+
+        The same stages in the same order as the fused path (conversion, white balance, exposure, contrast, print response, camera matrix, chroma denoise, local contrast, shadows and
+        highlights, saturation, tone curve, lab look, colour mixer, colour toning) - but a module with a mask is made on its own and mixed back through the mask, and the modules
+        between two such are still fused, so the work grows with the number of masks, not the number of modules. A 16-bit picture is brought to 8 bits at the first blended module: with
+        masks the colour stages are 8-bit."""
+        running = base_ramp
+        cur = {"px": pixels, "wide": bool(wide and pixels16 is not None)}
+
+        def flush(ramp):
+            if cur["wide"]:
+                cur["px"] = apply_wide_lut(pixels16, wide_ramp_to_lut(ramp))
+                cur["wide"] = False
+            else:
+                lut = ramp_to_lut(ramp)
+                if not is_identity(lut):
+                    cur["px"] = apply_channel_lut(cur["px"], lut)
+
+        saturation_with_color = blender.masked("color")   # a blended Color module is white balance and saturation as one step
+        ramp_steps = (
+            ("color", lambda r: adjust_temperature_tint(r, p.temperature, p.tint), (lambda px: adjust_saturation(px, p.saturation)) if saturation_with_color else None),
+            ("exposure", lambda r: apply_exposure(r, p.exposure_ev), None),
+            ("contrast", lambda r: apply_contrast(r, p.contrast), None),
+            ("printresponse", lambda r: apply_print_response(r, p.print_snap, p.print_toe, p.print_toe_width, p.print_shoulder, p.print_shoulder_width), None),
+        )
+        for key, op, after_step in ramp_steps:
+            if blender.masked(key):
+                flush(running)
+                running = identity_ramp()
+                before = cur["px"]
+                lut = ramp_to_lut(op(identity_ramp()))
+                after = before if is_identity(lut) else apply_channel_lut(before, lut)
+                if after_step is not None:
+                    after = after_step(after)
+                cur["px"] = blender.blend(key, before, after)
+            else:
+                running = op(running)
+        flush(running)
+        pixels = cur["px"]
+        if camera_matrix:
+            pixels = camera.apply_matrix(pixels, camera_matrix)
+
+        def step(key, fn, enabled=True):
+            nonlocal pixels
+            if enabled:
+                before = pixels
+                pixels = blender.blend(key, before, fn(before))
+
+        step("denoise", lambda px: apply_chroma_denoise(px, p.chroma_denoise, scale), denoise)
+        step("localcontrast", lambda px: apply_local_contrast(px, p.local_contrast), local)
+        step("shadows_highlights", lambda px: adjust_shadows_highlights(px, p.shadows, p.highlights), bool(p.shadows or p.highlights))
+        if p.saturation and not saturation_with_color:
+            pixels = adjust_saturation(pixels, p.saturation)
+        tone_lut = ramp_to_lut(tone(identity_ramp()))
+        step("tonecurve", lambda px: apply_channel_lut(px, tone_lut), not is_identity(tone_lut))
+        lab_lut = ramp_to_lut(lab(identity_ramp()))
+        lab_masked = blender.masked("lablook")
+        response_here = lab_masked and color_response != "none"   # a blended Lab Look takes its scanner colour response with it
+
+        def lab_step(px):
+            out = px if is_identity(lab_lut) else apply_channel_lut(px, lab_lut)
+            return apply_color(out, {}, color_response, p.lab_response_amount) if response_here else out
+
+        step("lablook", lab_step, (not is_identity(lab_lut)) or response_here)
+        if blender.masked("colormixer") or blender.masked("colortoning") or lab_masked:
+            step("colormixer", lambda px: apply_color(px, {k: color_values[k] for k in MIXER_PANEL_KEYS}, "none", 1.0))
+            step("colortoning", lambda px: apply_color(px, {k: color_values[k] for k in TONING_KEYS}, "none", 1.0))
+            if color_response != "none" and not response_here:
+                pixels = apply_color(pixels, {}, color_response, p.lab_response_amount)
+        elif not color_is_neutral(color_values, color_response):
+            pixels = apply_color(pixels, color_values, color_response, p.lab_response_amount)
+        return pixels
+
     def render(
         self,
         source: np.ndarray,
@@ -677,6 +786,8 @@ class Renderer:
             hal_active = not hal_logic.is_neutral(hal_values)
             gs_values = {k: getattr(params, k) for k in gs_logic.KEYS}
             gs_active = not gs_logic.is_neutral(gs_values)
+            rt_settings = rt_logic.from_json(params.retouch_json)
+            rt_active = rt_settings.active() and (live is None or "retouch" in live)
             if source.dtype == np.uint16:
                 source16 = source
                 source = self._as_uint8(source, token)
@@ -709,6 +820,7 @@ class Renderer:
                 pixels16 = self._density_image(pixels16 if pixels16 is not None else pixels, print_settings(params.metering))
             frame = pixels16 if pixels16 is not None else pixels
             rect = _scale_rect(params.crop_rect, scale, frame.shape[1], frame.shape[0])
+            blender = MaskBlender(params, source.shape[:2], lambda m: self._geometry(m, params, nearest=False), rect, scale)   # each module's Mask box (see features/masks)
 
             denoise = params.chroma_denoise > 0 and (live is None or "denoise" in live)
             local = params.local_contrast > 0
@@ -717,7 +829,7 @@ class Renderer:
             color_active = not color_is_neutral(color_values, color_response)
             mixing = bool(params.shadows or params.highlights or params.saturation or denoise or local or camera_matrix or color_active)
             wide = pixels16 is not None
-            keeps_16 = not (ec_active or hal_active or gs_active or params.sharpen_amount or params.vignette or watermark_active(params.wm_film) or params.border > 0
+            keeps_16 = not (blender.any() or rt_active or ec_active or hal_active or gs_active or params.sharpen_amount or params.vignette or watermark_active(params.wm_film) or params.border > 0
                             or params.marks.wanted(params.wm_info, params.wm_camera, params.wm_lens, watermark_active(params.wm_film)))   # nothing after the colour stages needs 8 bits
             deep_ok = deep and wide and keeps_16
             hold_16 = wide and self.wide_mixing and (gpu_pipeline.wide_ok() or not gpu_pipeline.usable(frame.shape))   # the picture stays 16-bit through the mixing stages
@@ -739,6 +851,7 @@ class Renderer:
                 else:
                     ramp = apply_invert_lut(ramp, self._get_invert_lut(pixels, meter_params, meter_rect, lut_token))
             ramp = apply_channel_offsets(ramp, (params.invert_r, params.invert_g, params.invert_b))
+            base_ramp = ramp   # the conversion itself, which is not a module that can be blended
             ramp = adjust_temperature_tint(ramp, params.temperature, params.tint)
             ramp = apply_exposure(ramp, params.exposure_ev)
             ramp = apply_contrast(ramp, params.contrast)
@@ -749,7 +862,9 @@ class Renderer:
             lab_by = (params.lab_by_shadows, params.lab_by_mids, params.lab_by_highs)
             lab_gm = (params.lab_gm_shadows, params.lab_gm_mids, params.lab_gm_highs)
             lab = lambda r: apply_lab_tone(r, params.lab_fade, lab_by, lab_gm, params.lab_glow)   # the lab look comes last, after the tone curve
-            if mixing:
+            if blender.staged():
+                pixels = self._tone_staged(params, blender, base_ramp, pixels, pixels16, wide, camera_matrix, scale, denoise, local, color_values, color_response, tone, lab)
+            elif mixing:
                 if hold_16:
                     pixels = apply_wide_lut(pixels16, wide_ramp_to_lut16(ramp))
                 elif wide:
@@ -794,13 +909,18 @@ class Renderer:
                 if not is_identity(lut):
                     pixels = apply_channel_lut(pixels, lut)
 
+            if rt_active:   # Retouch (darktable's): clone, heal, blur and fill on the shapes drawn for it, on the finished colours and before the sharpening
+                pixels = self._retouch_stage(pixels, rt_settings, params, blender, source.shape[1])
+
             if params.sharpen_amount and (live is None or params.sharpen_method in live):
-                pixels = apply_sharpening(
+                sharpened = apply_sharpening(
                     pixels, params.sharpen_amount, params.sharpen_radius, params.sharpen_masking, params.sharpen_method
                 )
+                pixels = blender.blend("sharpening", pixels, sharpened)
 
             if gs_active and (live is None or gs_logic.LIVE in live):   # the grain, made crisper: its size is in scan pixels, so on a smaller preview of the scan it is a smaller number of this picture's
-                pixels = gs_logic.apply_grain_sharpening(pixels, gs_values, source.shape[1] / params.scan_width if params.scan_width else 1.0)
+                crisp = gs_logic.apply_grain_sharpening(pixels, gs_values, source.shape[1] / params.scan_width if params.scan_width else 1.0)
+                pixels = blender.blend("grainsharp", pixels, crisp)
 
             image = apply_crop(pixels, rect)
             stats = compute_stats(image) if want_stats else None
@@ -809,9 +929,9 @@ class Renderer:
                 base_hw = (round(image.shape[0] / scale), round(image.shape[1] / scale))
                 overlay_rgba = self._build_overlay(retouched, params, base_width, base_hw)
             if ec_active:   # the edges' colour and brightness, on the finished and cropped picture, before the vignette
-                image = ec_logic.apply_edge_color(image, ec_values)
+                image = blender.blend("edgecolor", image, ec_logic.apply_edge_color(image, ec_values), cropped=True)
             if hal_active:   # a simulated glow round the brightest parts, on the finished and cropped picture (see features/halation)
-                image = hal_logic.apply_halation(image, hal_values)
+                image = blender.blend("halation", image, hal_logic.apply_halation(image, hal_values), cropped=True)
             if params.vignette:
                 lit = gpu_pipeline.vignette(image, params.vignette, params.vignette_size)
                 image = lit if lit is not None else apply_vignette(image, params.vignette, params.vignette_size)

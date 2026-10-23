@@ -13,9 +13,9 @@ from PyQt6.QtGui import QColor
 # Order matters: a module's position here fixes its colour for good. Add new modules at the end.
 KNOWN_MODULES = (
     "Negative", "Exposure", "Tone Curve", "Color", "White Balance", "Contrast", "Shadows & Highlights", "Local Contrast", "Sharpening", "Chroma Denoise",
-    "Crop & Rotate", "Dust & Scratches", "AI Dust Detection", "Flat Field", "Masking", "Finishing", "Watermark", "Presets", "Snapshots", "Export",
+    "Crop & Rotate", "Dust & Scratches", "AI Dust Detection", "Flat Field", "Masks", "Finishing", "Watermark", "Presets", "Snapshots", "Export",
     "History", "Library", "Roll", "This frame", "Tags", "Density", "Density Histogram", "Sensitometry (H&D)", "Calibration and Diagnostics", "Search",
-    "Smart Collections", "Collection", "Date", "Rating & Status", "Sort", "Image Information", "Selection", "Versions",
+    "Smart Collections", "Collection", "Date", "Rating & Status", "Sort", "Image Information", "Selection", "Versions", "Retouch",
 )
 GOLDEN = 0.3819660112501051
 TIERS = ((0.60, 0.45), (0.46, 0.52), (0.72, 0.38))

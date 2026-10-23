@@ -1,0 +1,6 @@
+<!-- EFAS icon, drawn in the style of the Lucide set (24 x 24, 2 px round strokes, currentColor) -->
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M12 5 v14" />
+  <path d="M5 12 h14" />
+  <circle cx="12" cy="12" r="9" />
+</svg>

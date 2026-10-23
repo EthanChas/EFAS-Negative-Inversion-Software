@@ -20,12 +20,16 @@ BY_TITLE = {
     "Export": "download", "Exposure": "sun", "White Balance": "thermometer-sun", "Negative": "film", "Crop & Rotate": "crop", "Color": "palette",
     "Contrast": "contrast", "Dust & Scratches": "eraser", "AI Dust Detection": "bot", "Flat Field": "layout-grid", "Error marking": "triangle-alert",
     "Print Response": "chart-spline", "Shadows & Highlights": "sun-moon", "Sharpening": "focus", "Tone Curve": "spline", "Watermark": "stamp",
-    "Local Contrast": "scan-line", "Lab Look": "printer", "Color Mixer": "swatch-book", "Color Toning": "droplets", "Edge Bleed": "scan", "Edge Color": "circle", "Masking": "venetian-mask", "Chroma Denoise": "audio-waveform", "Finishing": "frame",
+    "Local Contrast": "scan-line", "Lab Look": "printer", "Color Mixer": "swatch-book", "Color Toning": "droplets", "Edge Bleed": "scan", "Edge Color": "circle", "Masks": "venetian-mask", "Chroma Denoise": "audio-waveform", "Finishing": "frame",
 }
 # the tool rail's tabs -> the icon file
 BY_TAB = {"negative": "film", "correction": "crop", "exposure": "sun", "color": "palette", "detail": "focus", "watermark": "stamp", "metadata": "id-card", "plugins": "puzzle"}
 # icons used by name elsewhere
 OTHER = {"dropper": "pipette", "folder": "folder", "folder_open": "folder-open", "play": "play", "pause": "pause", "previous": "skip-back", "next": "skip-forward", "fullscreen": "maximize", "restart": "rotate-ccw", "search": "search"}
+# EFAS's own icons for the masks and Retouch, in the same style (not part of the Lucide import)
+OWN = frozenset({"mask-circle", "mask-ellipse", "mask-path", "mask-brush", "mask-gradient", "mask-group", "mask-eye", "mask-eye-off", "mask-edit", "mask-invert", "mask-trash", "mask-dust",
+                 "mask-hair", "mask-scratch", "mask-manual", "mask-clone", "mask-heal", "mask-blur", "mask-fill", "mask-source"})
+OWN_TITLES = {"Retouch": "mask-heal"}
 NAMES = frozenset(BY_TITLE.values()) | frozenset(BY_TAB.values()) | frozenset(OTHER.values())
 
 _cache: dict[tuple, QImage] = {}   # images, not pixmaps: a pixmap that outlives the application crashes Qt on some platforms when the program exits
@@ -70,7 +74,7 @@ def pixmap(name: str | None, size: int = 16, colour: str | None = None) -> QPixm
 
 
 def for_title(title: str, size: int = 16, colour: str | None = None) -> QPixmap:
-    return pixmap(BY_TITLE.get(title), size, colour)
+    return pixmap(BY_TITLE.get(title) or OWN_TITLES.get(title), size, colour)
 
 
 def for_tab(key: str, size: int = 18, colour: str | None = None) -> QPixmap:

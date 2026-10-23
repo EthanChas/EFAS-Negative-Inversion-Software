@@ -39,8 +39,8 @@ _SCRIPT = textwrap.dedent(r"""
     columns = win._tab_columns
     assert column(columns["negative"])[:3] == ["Negative", "Flat Field", "Edge Bleed"], column(columns["negative"])
     assert "Dust & Scratches" not in column(columns["negative"]), "clean-up is not with the conversion any more"
-    assert column(columns["correction"]) == ["Crop & Rotate", "Dust & Scratches", "AI Dust Detection", "Error marking"], column(columns["correction"])
-    assert column(columns["exposure"]) == ["Exposure", "Contrast", "Shadows & Highlights", "Tone Curve", "Print Response", "Masking"], column(columns["exposure"])
+    assert column(columns["correction"]) == ["Crop & Rotate", "Dust & Scratches", "AI Dust Detection", "Retouch", "Error marking"], column(columns["correction"])
+    assert column(columns["exposure"]) == ["Exposure", "Contrast", "Shadows & Highlights", "Tone Curve", "Print Response", "Masks"], column(columns["exposure"])
     assert column(columns["color"]) == ["Color", "Color Mixer", "Color Toning", "Lab Look", "Edge Color", "Halation"], column(columns["color"])
     assert column(columns["detail"]) == ["Chroma Denoise", "Local Contrast", "Sharpening", "Grain Sharpening"], column(columns["detail"])
     assert column(columns["watermark"]) == ["Finishing", "Watermark"], column(columns["watermark"])

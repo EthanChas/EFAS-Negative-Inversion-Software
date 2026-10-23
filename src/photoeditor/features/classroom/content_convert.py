@@ -420,4 +420,50 @@ Each kind points at a different cause, so marking them by kind tells you where t
 
 NOTE: Error marking records, it does not remove. Use [[dust-auto]], [[dust-manual]] and [[ai-dust]] to repair what can be repaired.
 """, keywords=("error marks", "faults", "notes", "scratches", "light leak", "fingerprint", "newton rings", "mark", "tag", "annotate"), module="Error marking", see=("dust-and-scratches-origins", "workbench-lesson")),
+
+    Lesson("masks-module", "frame", "Masks: editing part of a picture", "Learn what the Masks panel and a module's Mask box do, the five shapes, how they combine in groups, and the keys for drawing them.",
+           r"""
+Every adjustment normally acts on the whole picture. A **mask** limits it to part of the picture: lift the shadows in one corner, soften only a face, sharpen only the middle. EFAS's masks are ported from darktable's, so they behave the same way and use the same keys.
+
+## Shapes
+
+You draw a mask with five shapes. A **circle** and an **ellipse** are soft-edged blobs. A **path** is a closed curve through nodes you click. A **brush** is a stroke you paint. A **gradient** fades from one side to the other along a line. Each has a *feather*, the soft edge outside the shape: the mask is full inside and falls to nothing across the feather.
+
+Draw one with the buttons in the **Masks** panel on the left, or from a module's own **Mask** box (every module that works on the picture's tone, colour or detail has one at its foot). Scroll over a shape to change its **size**, Shift+scroll its **feather**, Ctrl+scroll its **opacity**. Drag a shape to move it, or its anchors to resize it. For a path, click for a smooth node and Ctrl+click for a sharp one, right-click or press Enter to finish and Esc to cancel; on an existing path, Ctrl+click a node to switch smooth and sharp, right-click a node to remove it, Ctrl+click a segment to add a node. Ctrl+click a shape button to keep drawing more of the same shape. Right-click a shape to delete it.
+
+## A module's Mask box
+
+Choose **Off** (the module acts on everything, as always), **Uniformly** (everywhere, at an opacity) or **Drawn mask** (only where the mask is). With *Drawn mask*, a shape drawn from the box becomes the module's mask, and a second shape joins the first in a **group**. **Invert** turns the mask over. The **Refine** section softens it: *Blur* and *Feather* smooth the mask itself (Feather makes it follow edges in the picture), *Contrast* and *Brightness* reshape its falloff. The pencil shows the mask's shapes on the picture to edit, and the eye paints the mask yellow so you can see where the module acts.
+
+## Groups and the Masks panel
+
+The panel lists the picture's shapes and groups. Select shapes and press the group button to make a group, which is itself a mask a module can use. Inside a group each shape has an **operation**: *union* adds it, *intersection* keeps only where both are, *difference* cuts it out, *sum* adds the strengths, *exclusion* keeps where only one is. A shape can also be inverted or have its own opacity. Right-click for rename, duplicate, add to group and delete.
+
+The **Dust Detection** folder lists what dust detection found, split into **Dust**, **Hairs** and **Scratches**. Press *List detections* (it turns on Show Detections), pick one to ring it on the picture, and Delete leaves that one mark unrepaired.
+
+## Limits
+
+Masks stay on the picture whether you crop, turn or straighten afterwards. A picture with a masked module is made in 8 bits from that module on. EFAS has no *parametric* masks yet (a mask chosen by colour or brightness): draw the mask.
+""", keywords=("mask", "masks", "selective", "local", "circle", "ellipse", "path", "brush", "gradient", "feather", "group", "invert", "opacity", "darktable", "dust detection", "blend"), module="Masks", see=("retouch-module", "tone-overview", "dust-manual")),
+
+    Lesson("retouch-module", "frame", "Retouch: clone, heal, blur and fill", "Know Retouch's four tools, what a source is, and how wavelet scales let you treat a blemish's colour and texture apart.",
+           r"""
+**Retouch** is darktable's retouch module. It sits beside the Dust & Scratches tools (which are untouched) and works on shapes you draw, with four algorithms.
+
+**Clone** copies the picture from the shape's **source** over the shape. **Heal** does the same, but the copied area's *detail* is kept while its colour and brightness are fitted to what surrounds the shape, so a patch from a lighter part of the picture does not show as a patch. **Blur** blurs what is inside the shape, with a Gaussian or a bilateral blur that smooths lightness but keeps edges. **Fill** paints the shape with a colour, or erases it to black, plus a brightness.
+
+## Drawing
+
+Pick the algorithm, then a shape (path, ellipse, circle, brush). For clone and heal a dashed copy of the shape and a line to it show the **source**: drag the dashed copy to where the shape should copy from. Shift+click before placing a shape sets the source of the shapes to come, kept the same distance from each; Ctrl+Shift+click sets one source for all. Click a shape to *pick* it: the Blur and Fill settings then change that shape, and Ctrl+click an algorithm changes a picked shape between clone and heal, or between blur and fill.
+
+## Wavelet scales
+
+The bar splits the picture into **scales**. Scale **0** is the picture as it is. Scales **1, 2, 3...** are layers of detail from the finest to the coarsest, and **R** is the *residual*, the broad colour and light left when the detail is taken away; add them all together and you have the picture again. A shape acts only on the scale it was drawn on. So a blemish on skin can be healed on **R** to even out its colour while its texture, on scale 1 or 2, is left alone or cloned from a good patch: *frequency separation*. Drag along the bar's lower edge to set how many scales there are; drag along its upper edge to **merge** the scales from there on into one layer. The eye-and-layers button shows the scale you are working on, with levels to make a mostly grey detail layer visible.
+
+Scales are counted in the pixels of the picture being made, so the small editing preview shows a wider area per scale than the export. Check wavelet work at 100%.
+
+## Opacity and views
+
+Ctrl+scroll over a shape, or the Shape opacity slider, sets how much of its result is let in. The mask button shows where the shapes of this scale act; the last button shows the picture without Retouch. They only apply while the panel is open.
+""", keywords=("retouch", "heal", "clone", "blur", "fill", "wavelet", "frequency separation", "scales", "residual", "source", "blemish", "spot removal", "skin", "darktable"), module="Retouch", see=("masks-module", "dust-manual")),
 ]

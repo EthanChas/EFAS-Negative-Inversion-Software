@@ -59,7 +59,7 @@ def test_the_course_covers_every_module_of_the_editor():
     modules = {lesson.module for lesson in COURSE.lessons if lesson.module}
     for title in ("Exposure", "Contrast", "Shadows & Highlights", "Tone Curve", "Print Response", "Crop & Rotate", "Dust & Scratches", "AI Dust Detection", "Error marking", "Negative",
                   "Flat Field", "Edge Bleed", "Finishing", "Watermark", "Tags", "Color", "Color Mixer", "Color Toning", "Lab Look", "Edge Color", "Chroma Denoise", "Local Contrast",
-                  "Sharpening", "Grain Sharpening", "Roll", "Presets", "Export", "History", "Snapshots", "Versions", "Library"):
+                  "Sharpening", "Grain Sharpening", "Masks", "Retouch", "Roll", "Presets", "Export", "History", "Snapshots", "Versions", "Library"):
         assert title in modules, title
 
 
