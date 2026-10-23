@@ -136,6 +136,13 @@ class MaskEditor(QObject):
         if self._manager:
             self._apply()
 
+    def module_closed(self, key: str) -> None:
+        """A module was folded up (or its tab closed): as with darktable's modules, its mask stops being drawn, edited or shown."""
+        if self._module == key:
+            self.stop()
+        if self._show_key == key:
+            self.show_module(key, False)
+
     # ------------------------------------------------------------ giving the picture up
     def stop(self, *_args) -> None:
         """Put the mask tool down (another picture tool is taking over, or the photo changed)."""

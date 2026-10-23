@@ -64,25 +64,51 @@ class FrameMap:
             self._grid = self._build_grid()
         step = (GRID_MAX - GRID_MIN) / (GRID - 1)
         uv = out.copy()
-        for _ in range(10):
-            fx = (uv[:, 0] - GRID_MIN) / step
-            fy = (uv[:, 1] - GRID_MIN) / step
-            i = np.clip(np.floor(fx).astype(int), 0, GRID - 2)
-            j = np.clip(np.floor(fy).astype(int), 0, GRID - 2)
-            tx, ty = fx - i, fy - j   # may lie outside 0..1 beyond the grid: the cell's own slope is then carried on
-            g00, g10, g01, g11 = self._grid[j, i], self._grid[j, i + 1], self._grid[j + 1, i], self._grid[j + 1, i + 1]
-            value = (g00 * ((1 - tx) * (1 - ty))[:, None] + g10 * (tx * (1 - ty))[:, None] + g01 * ((1 - tx) * ty)[:, None] + g11 * (tx * ty)[:, None])
-            du = ((g10 - g00) * (1 - ty)[:, None] + (g11 - g01) * ty[:, None]) / step
-            dv = ((g01 - g00) * (1 - tx)[:, None] + (g11 - g10) * tx[:, None]) / step
+        for _ in range(12):
+            value = self._sample(uv)
+            h = step * 0.01
+            du = (self._sample(uv + (h, 0.0)) - self._sample(uv - (h, 0.0))) / (2.0 * h)
+            dv = (self._sample(uv + (0.0, h)) - self._sample(uv - (0.0, h))) / (2.0 * h)
             err = p - value
             det = du[:, 0] * dv[:, 1] - du[:, 1] * dv[:, 0]
             det = np.where(np.abs(det) < 1e-12, 1e-12, det)
             delta_u = (err[:, 0] * dv[:, 1] - err[:, 1] * dv[:, 0]) / det
             delta_v = (du[:, 0] * err[:, 1] - du[:, 1] * err[:, 0]) / det
             uv = uv + np.stack([delta_u, delta_v], axis=1)
-            if float(np.abs(err).max()) < 1e-8:
+            if float(np.abs(err).max()) < 1e-9:
                 break
         return uv
+
+    @staticmethod
+    def _weights(t: np.ndarray) -> np.ndarray:
+        """Catmull-Rom weights of the four grid points round a position that is a fraction `t` between the middle two: (N, 4)."""
+        t2, t3 = t * t, t * t * t
+        return np.stack([(-t3 + 2 * t2 - t) / 2, (3 * t3 - 5 * t2 + 2) / 2, (-3 * t3 + 4 * t2 + t) / 2, (t3 - t2) / 2], axis=1)
+
+    def _sample(self, uv: np.ndarray) -> np.ndarray:
+        """Where the grid says the points of the picture shown are in the scan's frame (N, 2): a smooth (cubic) fit through the grid, which keeps the mapping within a fraction of a pixel even for a
+        lens correction; beyond the grid's edge the nearest cell's own slope is carried on in a straight line."""
+        step = (GRID_MAX - GRID_MIN) / (GRID - 1)
+        fx = (uv[:, 0] - GRID_MIN) / step
+        fy = (uv[:, 1] - GRID_MIN) / step
+        i = np.clip(np.floor(fx).astype(int), 0, GRID - 2)
+        j = np.clip(np.floor(fy).astype(int), 0, GRID - 2)
+        tx, ty = fx - i, fy - j
+        # bilinear (and its straight-line carrying on beyond the edge)
+        g00, g10, g01, g11 = self._grid[j, i], self._grid[j, i + 1], self._grid[j + 1, i], self._grid[j + 1, i + 1]
+        value = (g00 * ((1 - tx) * (1 - ty))[:, None] + g10 * (tx * (1 - ty))[:, None] + g01 * ((1 - tx) * ty)[:, None] + g11 * (tx * ty)[:, None])
+        inside = (fx >= 0) & (fx <= GRID - 1) & (fy >= 0) & (fy <= GRID - 1)
+        if inside.any():
+            wx, wy = self._weights(tx[inside]), self._weights(ty[inside])
+            ii, jj = i[inside], j[inside]
+            cubic = np.zeros((int(inside.sum()), 2))
+            for b in range(4):
+                row = np.clip(jj + b - 1, 0, GRID - 1)
+                for a_ in range(4):
+                    col = np.clip(ii + a_ - 1, 0, GRID - 1)
+                    cubic += self._grid[row, col] * (wx[:, a_] * wy[:, b])[:, None]
+            value[inside] = cubic
+        return value
 
     def to_display(self, px: float, py: float) -> tuple[float, float]:
         u, v = self.to_display_array(np.array([[px, py]]))[0]

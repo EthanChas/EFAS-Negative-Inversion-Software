@@ -1,11 +1,10 @@
 from PyQt6.QtCore import QPointF, QRectF, QSize, QTimer, Qt, pyqtSignal
-from PyQt6.QtGui import QColor, QFont, QIcon, QPainter, QPen
-from PyQt6.QtWidgets import QColorDialog, QComboBox, QHBoxLayout, QLabel, QPushButton, QToolButton, QVBoxLayout, QWidget
+from PyQt6.QtGui import QColor, QLinearGradient, QPainter, QPen, QPolygonF
+from PyQt6.QtWidgets import QApplication, QColorDialog, QComboBox, QHBoxLayout, QLabel, QPushButton, QToolButton, QVBoxLayout, QWidget
 
 from ...features.masks import model as M
 from ...features.retouchdt import logic as R
 from ...theme.tokens import THEME
-from . import panel_icons
 from .blend_box import SHAPE_ICONS, tool_button
 from .collapsible_panel import CollapsiblePanel
 from .slider_row import SliderRow
@@ -15,13 +14,19 @@ _SETTLE_DEBOUNCE_MS = 200
 _LABEL_WIDTH = 90
 _ALGO_ICONS = {R.CLONE: "mask-clone", R.HEAL: "mask-heal", R.BLUR: "mask-blur", R.FILL: "mask-fill"}
 _ALGO_TIPS = {
-    R.CLONE: "Clone: copy the picture from the shape's source over the shape. Ctrl+click changes the picked shape between clone and heal.",
-    R.HEAL: "Heal: like clone, but the source's detail is fitted to the colours round the shape. Ctrl+click changes the picked shape between heal and clone.",
-    R.BLUR: "Blur: blur what is inside the shape. Ctrl+click changes the picked shape between blur and fill.",
-    R.FILL: "Fill: paint the shape with a colour, or erase it. Ctrl+click changes the picked shape between fill and blur.",
+    R.BLUR: "activate blur tool\nctrl+click to change tool for current form\nshift+click to set the tool as default",
+    R.FILL: "activate fill tool\nctrl+click to change tool for current form\nshift+click to set the tool as default",
+    R.CLONE: "activate cloning tool\nctrl+click to change tool for current form\nshift+click to set the tool as default",
+    R.HEAL: "activate healing tool\nctrl+click to change tool for current form\nshift+click to set the tool as default",
 }
-_SHAPES = (M.PATH, M.ELLIPSE, M.CIRCLE, M.BRUSH)     # darktable's order of the buttons
-_BOXES = R.MAX_SCALES + 2                              # the picture, 15 detail scales, the residual
+_SHAPES = (M.BRUSH, M.PATH, M.ELLIPSE, M.CIRCLE)     # darktable's order of the buttons
+_SHAPE_TIPS = {M.BRUSH: "add brush", M.PATH: "add path", M.ELLIPSE: "add ellipse", M.CIRCLE: "add circle"}
+_BOXES = R.MAX_SCALES + 2                              # the picture, 15 detail scales, the residual (darktable's RETOUCH_NO_SCALES)
+_INSET_RATIO = 0.2                                     # darktable's RT_WDBAR_INSET
+
+# the bar's colours (darktable's rt_wdbar_draw)
+_BORDER, _ORIGINAL, _INACTIVE, _ACTIVE, _MERGE, _RESIDUAL, _SHAPES_COLOUR = (QColor.fromRgbF(*c) for c in (
+    (0.066, 0.066, 0.066), (0.1, 0.1, 0.1), (0.15, 0.15, 0.15), (0.35, 0.35, 0.35), (0.5, 0.5, 0.5), (0.8, 0.8, 0.8), (0.75, 0.5, 0.0)))
 
 
 def _srgb(c: float) -> float:
@@ -33,125 +38,257 @@ def _linear(c: float) -> float:
     return c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4
 
 
+def _ctrl_held() -> bool:
+    return bool(QApplication.keyboardModifiers() & Qt.KeyboardModifier.ControlModifier)
+
+
+def _shift_held() -> bool:
+    return bool(QApplication.keyboardModifiers() & Qt.KeyboardModifier.ShiftModifier)
+
+
+def _section(text: str) -> QLabel:
+    label = QLabel(text)
+    label.setProperty("role", "subtitle")
+    return label
+
+
 class ScaleBar(QWidget):
-    """darktable's wavelet decompose bar: a box for the picture itself (0), for each wavelet scale (finest first) and for the residual. Click a box to work on that scale; drag along the
-    lower edge to set how many scales the picture is split into; drag along the upper edge to set the scale from which the layers are merged into one; scroll to step through the scales.
-    A dot marks a scale that has shapes."""
+    """darktable's wavelet decompose bar. A box for the picture itself (0), for each wavelet scale (finest first, 1 to 15) and for the residual (the lighter box after the last scale).
+    Click a box to work on that scale (the dot marks the one you are on). The top arrow sets where the layers start to be merged into one; the bottom arrow sets how many scales there are:
+    drag it, or click the strip it is in. Scroll to step: over the top strip the merge scale, over the bottom strip the number of scales, elsewhere the scale you work on.
+    The line along the top of a box says the scale is still visible at this size of picture; the orange line along the bottom says it has shapes on it."""
 
     scale_selected = pyqtSignal(int)
     num_scales_changed = pyqtSignal(int)
     merge_changed = pyqtSignal(int)
 
-    _MARGIN = 11
-
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
-        self.setFixedHeight(56)
+        self.setFixedHeight(40)
         self.setMinimumWidth(180)
         self.setMouseTracking(True)
         self.num_scales, self.curr_scale, self.merge_from = 0, 0, 0
+        self.first_visible = 0
         self.shapes: dict[int, int] = {}
-        self._drag: str | None = None
-        self.setToolTip("Click a box to work on that wavelet scale: 0 is the picture itself, then the scales from fine detail to coarse, then the residual (R).\n"
-                        "Drag along the lower edge to set how many scales, along the upper edge to merge the scales from there on. Scroll to step through.")
+        self._mouse = (-1.0, -1.0)
+        self._hover = -1
+        self._lower = self._upper = self._lower_cursor = self._upper_cursor = False
+        self._drag = ""
+        self.setToolTip("top slider adjusts where the merge scales start\nbottom slider adjusts the number of scales\ndot indicates the current scale\n"
+                        "top line indicates that the scale is visible at current zoom level\nbottom line indicates that the scale has shapes on it")
 
     def sizeHint(self) -> QSize:
-        return QSize(240, 56)
+        return QSize(240, 40)
 
-    def set_state(self, num_scales: int, curr_scale: int, merge_from: int, shapes: dict) -> None:
-        self.num_scales, self.curr_scale, self.merge_from, self.shapes = num_scales, curr_scale, merge_from, dict(shapes)
+    def set_state(self, num_scales: int, curr_scale: int, merge_from: int, shapes: dict, first_visible: int = 0) -> None:
+        self.num_scales, self.curr_scale, self.merge_from, self.shapes, self.first_visible = num_scales, curr_scale, merge_from, dict(shapes), first_visible
         self.update()
 
-    def _geometry(self):
-        left, right = 4.0, self.width() - 4.0
-        return left, (right - left) / _BOXES
+    # ------------------------------------------------------------ geometry
+    def _inset(self) -> int:
+        return round(_INSET_RATIO * self.height())
 
-    def _box_at(self, x: float) -> int:
-        left, w = self._geometry()
-        return int(max(0, min(_BOXES - 1, (x - left) // w)))
+    def _box_w(self) -> float:
+        return (self.width() - 2.0 * self._inset()) / _BOXES
 
-    def _paint_box(self, p: QPainter, i: int, rect: QRectF) -> None:
-        n = self.num_scales
-        residual = n + 1
-        if i == 0:
-            colour = QColor(THEME.text_secondary)
-        elif i <= n:
-            t = (i - 1) / max(1, R.MAX_SCALES - 1)
-            colour = QColor.fromHsvF(0.58 - 0.3 * t, 0.45, 0.8)
-        elif i == residual:
-            colour = QColor(THEME.accent_primary)
-        else:
-            colour = QColor(THEME.bg_input)
-        p.fillRect(rect, colour)
-        if i == self.curr_scale:
-            p.setPen(QPen(QColor(THEME.text_primary), 2.0))
-            p.drawRect(rect.adjusted(1, 1, -1, -1))
-        text = "0" if i == 0 else ("R" if i == residual else (str(i) if i <= n else ""))
-        if text:
-            p.setPen(QColor("#101010"))
-            p.drawText(rect, Qt.AlignmentFlag.AlignCenter, text)
-        if self.shapes.get(i):
-            p.setBrush(QColor(255, 204, 0))
-            p.setPen(Qt.PenStyle.NoPen)
-            p.drawEllipse(QPointF(rect.center().x(), rect.bottom() - 7), 2.5, 2.5)
+    def _sh(self) -> float:
+        return 3.0 + self._inset()
 
+    # ------------------------------------------------------------ painting
     def paintEvent(self, event) -> None:
         p = QPainter(self)
-        f = QFont(self.font())
-        f.setPixelSize(9)
-        p.setFont(f)
-        left, w = self._geometry()
-        top, bottom = self._MARGIN, self.height() - self._MARGIN
+        p.fillRect(self.rect(), _INACTIVE)
+        inset, sh, bw = self._inset(), self._sh(), self._box_w()
+        bh = self.height() - 2.0 * sh
+        n, merge = self.num_scales, self.merge_from
+        first = self.first_visible if self.first_visible > 0 else R.MAX_SCALES
         for i in range(_BOXES):
-            self._paint_box(p, i, QRectF(left + i * w + 1, top, w - 2, bottom - top))
-        n = self.num_scales
-        if n > 0 and self.merge_from > 0:     # the layers from here on are acted on as one
-            p.fillRect(QRectF(left + self.merge_from * w + 1, 2, (n - self.merge_from + 1) * w - 2, self._MARGIN - 4), QColor(THEME.status_warning))
-        p.setPen(QPen(QColor(THEME.text_primary), 1.5))
-        x = left + (n + 1) * w
-        p.drawLine(QPointF(x, bottom + 1), QPointF(x, self.height() - 2))      # where the scales end: the residual is the box before this edge
+            if i == 0:
+                colour = _ORIGINAL
+            elif i == n + 1:
+                colour = _RESIDUAL
+            elif merge > 0 and merge <= i <= n:
+                colour = _MERGE
+            elif i <= n:
+                colour = _ACTIVE
+            else:
+                colour = _INACTIVE
+            box = QRectF(bw * i + inset, sh, bw, bh)
+            p.fillRect(box, colour)
+            if first <= i <= n:                                        # this scale has detail at this size of picture
+                p.fillRect(QRectF(bw * i + inset, 1.0, bw, 2.0), _MERGE)
+            if self.shapes.get(i):                                     # and this one has shapes
+                p.fillRect(QRectF(bw * i + inset + 0.5, self.height() - sh, bw - 1.0, 2.0), _SHAPES_COLOUR)
+            p.setPen(QPen(_BORDER, 1.0))
+            p.drawRect(box)
+        # the dot of the scale being worked on
+        if 0 <= self.curr_scale < _BOXES:
+            p.setBrush(_ACTIVE if (merge > 0 and merge <= self.curr_scale <= n) else _MERGE)
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+            p.drawEllipse(QPointF(bw * (0.5 + self.curr_scale) + inset, 0.5 * bh + sh), 0.5 * inset, 0.5 * inset)
+        # the box under the mouse
+        if self._hover >= 0:
+            p.setBrush(Qt.BrushStyle.NoBrush)
+            p.setPen(QPen(_INACTIVE if self._hover == n + 1 else _RESIDUAL, 1.0))
+            p.drawRect(QRectF(bw * self._hover + inset + 1, sh + 1, bw - 2, bh - 2))
+        # the two arrows: number of scales below (pointing up), where merging starts above (pointing down)
+        self._arrow(p, bw * (0.5 + n) + inset, bh + sh + 2.0, up=True, hot=self._lower_cursor or self._drag == "scales")
+        self._arrow(p, bw * (0.5 + merge) + inset, sh - 2.0, up=False, hot=self._upper_cursor or self._drag == "merge")
         p.end()
 
-    def _band(self, y: float) -> str:
-        return "merge" if y < self._MARGIN else ("scales" if y > self.height() - self._MARGIN else "pick")
+    def _arrow(self, p: QPainter, cx: float, tip_y: float, up: bool, hot: bool) -> None:
+        half = float(self._inset())
+        height = 1.4 * half
+        base_y = tip_y + height if up else tip_y - height
+        tri = QPolygonF([QPointF(cx, tip_y), QPointF(cx - half, base_y), QPointF(cx + half, base_y)])
+        colour = QColor.fromRgbF(0.67, 0.67, 0.67) if hot else QColor.fromRgbF(0.54, 0.54, 0.54)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        p.setPen(QPen(colour, 1.2))
+        p.setBrush(colour if hot else Qt.BrushStyle.NoBrush)
+        p.drawPolygon(tri)
+
+    # ------------------------------------------------------------ the mouse
+    def _track(self, pos) -> None:
+        inset, bw, sh = self._inset(), self._box_w(), self._sh()
+        x = max(0.0, min(self.width() - 2.0 * inset - 1.0, pos.x() - inset))
+        self._mouse = (x, pos.y())
+        self._hover = int(x / bw)
+        self._lower = self._upper = self._lower_cursor = self._upper_cursor = False
+        if pos.y() <= sh:
+            self._upper = True
+            middle = bw * (0.5 + self.merge_from)
+            self._upper_cursor = middle - inset <= x <= middle + inset
+            if not self._drag:
+                self._hover = -1
+        elif pos.y() >= self.height() - sh:
+            self._lower = True
+            middle = bw * (0.5 + self.num_scales)
+            self._lower_cursor = middle - inset <= x <= middle + inset
+            if not self._drag:
+                self._hover = -1
+        if self._drag == "scales" and self._hover >= 0:
+            self.num_scales_changed.emit(min(self._hover, R.MAX_SCALES))
+        elif self._drag == "merge" and self._hover >= 0:
+            self.merge_changed.emit(min(self._hover, self.num_scales))
+        self.update()
+
+    def mouseMoveEvent(self, event) -> None:
+        self._track(event.position())
+
+    def leaveEvent(self, event) -> None:
+        self._mouse, self._hover = (-1.0, -1.0), -1
+        self._lower = self._upper = self._lower_cursor = self._upper_cursor = False
+        self.update()
 
     def mousePressEvent(self, event) -> None:
         if event.button() != Qt.MouseButton.LeftButton:
             return
-        self._drag = self._band(event.position().y())
-        self._apply(event.position().x())
-
-    def mouseMoveEvent(self, event) -> None:
-        if self._drag in ("merge", "scales"):
-            self._apply(event.position().x())
+        self._track(event.position())
+        bw = self._box_w()
+        if self._lower:
+            if self._lower_cursor:
+                self._drag = "scales"
+            else:
+                self.num_scales_changed.emit(min(int(self._mouse[0] / bw), R.MAX_SCALES))
+        elif self._upper:
+            if self._upper_cursor:
+                self._drag = "merge"
+            else:
+                self.merge_changed.emit(min(int(self._mouse[0] / bw), self.num_scales))
+        elif self._hover >= 0:
+            self.scale_selected.emit(self._hover)
+        self.update()
 
     def mouseReleaseEvent(self, event) -> None:
-        self._drag = None
-
-    def _apply(self, x: float) -> None:
-        i = self._box_at(x)
-        if self._drag == "pick":
-            if i <= self.num_scales + 1:
-                self.scale_selected.emit(i)
-        elif self._drag == "scales":
-            self.num_scales_changed.emit(min(i, R.MAX_SCALES))
-        elif self._drag == "merge":
-            self.merge_changed.emit(min(i, self.num_scales))
+        if event.button() == Qt.MouseButton.LeftButton:
+            self._drag = ""
+            self.update()
 
     def wheelEvent(self, event) -> None:
         step = 1 if event.angleDelta().y() > 0 else -1
-        new = max(0, min(self.num_scales + 1, self.curr_scale + step))
-        if new != self.curr_scale:
-            self.scale_selected.emit(new)
+        if self._lower:
+            self.num_scales_changed.emit(max(0, min(R.MAX_SCALES, self.num_scales + step)))
+        elif self._upper:
+            self.merge_changed.emit(max(0, min(self.num_scales, self.merge_from + step)))
+        else:
+            self.scale_selected.emit(max(0, min(R.MAX_SCALES + 1, self.curr_scale + step)))
         event.accept()
 
 
-class RetouchPanel(CollapsiblePanel):
-    """Retouch, ported from darktable: clone, heal, blur and fill on shapes drawn on the picture, each on a wavelet scale (frequency separation).
+class LevelsSlider(QWidget):
+    """darktable's "preview levels" slider: a black-to-grey gradient with three markers, the black point, the middle and the white point, between -3 and 3. Drag a marker; double-click resets."""
 
-    Choose what the next shape will do (the four buttons), then draw it with a shape button (Ctrl+click a button to keep drawing). Click a shape on the picture to pick it: the panel then shows
-    its settings, and the blur and fill settings change that shape. The bar chooses the wavelet scale the shapes are drawn on and acted on; the scale can be looked at (with levels, since a detail
-    layer is mostly grey), the shapes' mask can be shown, and the picture can be seen without Retouch."""
+    value_changed = pyqtSignal(list)
+    _MIN_GAP = 0.05
+
+    def __init__(self, parent: QWidget | None = None):
+        super().__init__(parent)
+        self.setFixedHeight(28)
+        self.setMinimumWidth(120)
+        self.values = [R.PREVIEW_LVL_MIN, 0.0, R.PREVIEW_LVL_MAX]
+        self._grab = -1
+        self.setToolTip("adjust preview levels (double-click to reset)")
+
+    def set_values(self, values) -> None:
+        self.values = [float(v) for v in values]
+        self.update()
+
+    def _x(self, v: float) -> float:
+        return 8.0 + (v - R.PREVIEW_LVL_MIN) / (R.PREVIEW_LVL_MAX - R.PREVIEW_LVL_MIN) * (self.width() - 16.0)
+
+    def _value(self, x: float) -> float:
+        return R.PREVIEW_LVL_MIN + (x - 8.0) / max(1.0, self.width() - 16.0) * (R.PREVIEW_LVL_MAX - R.PREVIEW_LVL_MIN)
+
+    def paintEvent(self, event) -> None:
+        p = QPainter(self)
+        bar = QRectF(8, 4, self.width() - 16, 10)
+        g = QLinearGradient(bar.left(), 0, bar.right(), 0)
+        g.setColorAt(0.0, QColor(0, 0, 0))
+        g.setColorAt(1.0, QColor(128, 128, 128))
+        p.fillRect(bar, g)
+        p.setPen(QPen(_BORDER, 1.0))
+        p.drawRect(bar)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        for i, v in enumerate(self.values):
+            x = self._x(v)
+            tri = QPolygonF([QPointF(x, bar.bottom() + 1), QPointF(x - 6, bar.bottom() + 11), QPointF(x + 6, bar.bottom() + 11)])
+            p.setPen(QPen(QColor(THEME.text_primary), 1.2))
+            p.setBrush(QColor(THEME.text_primary) if i == 1 else Qt.BrushStyle.NoBrush)
+            p.drawPolygon(tri)
+        p.end()
+
+    def mousePressEvent(self, event) -> None:
+        x = event.position().x()
+        self._grab = min(range(3), key=lambda i: abs(self._x(self.values[i]) - x))
+        self._move(x)
+
+    def mouseMoveEvent(self, event) -> None:
+        if self._grab >= 0:
+            self._move(event.position().x())
+
+    def mouseReleaseEvent(self, event) -> None:
+        self._grab = -1
+
+    def mouseDoubleClickEvent(self, event) -> None:
+        self.values = [R.PREVIEW_LVL_MIN, 0.0, R.PREVIEW_LVL_MAX]
+        self.update()
+        self.value_changed.emit(list(self.values))
+
+    def _move(self, x: float) -> None:
+        v, i, gap = self._value(x), self._grab, self._MIN_GAP
+        lo = R.PREVIEW_LVL_MIN if i == 0 else self.values[i - 1] + gap
+        hi = R.PREVIEW_LVL_MAX if i == 2 else self.values[i + 1] - gap
+        self.values[i] = max(lo, min(hi, v))
+        self.update()
+        self.value_changed.emit(list(self.values))
+
+
+class RetouchPanel(CollapsiblePanel):
+    """Retouch, ported from darktable, laid out as darktable lays it out: *retouch tools* (the shape buttons and the four algorithms), *wavelet decompose* (the scale bar, its labels and
+    buttons), *preview single scale* (the levels for looking at a scale), and *shapes* (the picked shape's blur or fill settings and its opacity).
+
+    Choose what the next shape will do, then draw it with a shape button (Ctrl+click a button to keep drawing). Click a shape to pick it: the settings below then change that shape."""
 
     draw_requested = pyqtSignal(str, bool)          # shape kind, keep drawing
     edit_toggled = pyqtSignal(bool)
@@ -166,16 +303,19 @@ class RetouchPanel(CollapsiblePanel):
             "Retouch",
             help_text=(
                 "Retouch, ported from darktable: remove spots and blemishes, or work on skin, with shapes drawn on the picture.\n\n"
-                "1. Choose what the shape will do: clone (copy from a source), heal (copy, then match the colours round it), blur, or fill (a colour, or erase).\n"
-                "2. Draw it with a shape button (path, ellipse, circle, brush; Ctrl+click a button to keep drawing). For clone and heal drag the dashed copy of the shape to where it "
-                "should copy from. Shift+click before placing sets the source of the next shapes (kept the same distance from each), Ctrl+Shift+click one source for all.\n"
-                "3. Scroll over a shape to change its size, Shift+scroll its feather, Ctrl+scroll its opacity. Click a shape to pick it: Blur and Fill then change that shape.\n\n"
-                "The scale bar splits the picture into wavelet scales: 0 is the picture as it is, 1 to N are layers of detail from fine to coarse, R is what is left (the broad colour and light). "
-                "Shapes act on the scale they were drawn on - heal a blemish's colour on R and its texture on 1 or 2. Drag along the bar's lower edge to set how many scales; drag along "
-                "its upper edge to merge the scales from there on into one layer. The scales are counted in the pixels of the picture being made, so the small preview shows a wider area per "
-                "scale than the export: check at 100%.\n\n"
-                "The eye-and-layers button shows the scale you are working on (with levels to make it visible), the mask button shows where the shapes act, and the last button shows the picture "
-                "without Retouch."
+                "RETOUCH TOOLS: choose what the shape will do - blur, fill (a colour, or erase), clone (copy from a source) or heal (copy, then match the colours round it) - then press a shape "
+                "button (brush, path, ellipse, circle; Ctrl+click keeps drawing) and click on the picture. For clone and heal drag the dashed copy of the shape to where it should copy from; "
+                "Shift+click before placing sets the source of the next shapes (kept the same distance from each), Ctrl+Shift+click one source for all. Ctrl+click an algorithm to change the "
+                "picked shape (clone and heal swap, blur and fill swap). The eye shows the shapes of this scale on the picture to move and reshape (scroll: size, Shift+scroll: feather, "
+                "Ctrl+scroll: opacity).\n\n"
+                "WAVELET DECOMPOSE: the bar splits the picture into scales. Box 0 is the picture as it is, 1 to N are layers of detail from fine to coarse, and the lighter box after them is the "
+                "residual (the broad colour and light left over). A shape acts on the scale you are on when you draw it - heal a blemish's colour on the residual and its texture on scale 1 or 2. "
+                "Click a box to work on that scale (the dot). Drag the bottom arrow to set how many scales there are; drag the top arrow to merge the scales from there on into one layer. "
+                "The line along the top of a box says the scale is visible at this size of picture; the orange line along the bottom says it has shapes. The buttons: display the wavelet "
+                "scale you are on; paste/cut shapes between scales; display where the shapes act; switch the shapes off for a moment. Scales are counted in the pixels of the picture being "
+                "made, so the small editing preview shows a wider area per scale than the export: check at 100%.\n\n"
+                "PREVIEW SINGLE SCALE: a detail layer is mostly grey, so it is shown through levels (black point, middle, white point); the button beside them fits them to the layer.\n\n"
+                "SHAPES: the blur type and radius, or the fill mode, colour and brightness, of the picked shape, and its opacity."
             ),
             collapsible=True,
             start_expanded=False,
@@ -187,106 +327,115 @@ class RetouchPanel(CollapsiblePanel):
         self._picked = 0
         self._settings = R.Settings()
         self._shown_algo = R.HEAL
+        self._cut_from = -1
 
-        head = QHBoxLayout()
-        head.setSpacing(THEME.space_sm)
-        head.addWidget(QLabel("Shapes"))
+        # ---- retouch tools
+        body.addWidget(_section("retouch tools"))
+        shapes = QHBoxLayout()
+        shapes.setSpacing(THEME.space_sm)
+        shapes.addWidget(QLabel("shapes:"))
         self._count = QLabel("0")
-        head.addWidget(self._count)
-        head.addStretch(1)
-        self._edit = tool_button("mask-edit", "Show the shapes of this scale on the picture, to move and reshape them", checkable=True)
+        shapes.addWidget(self._count)
+        shapes.addStretch(1)
+        self._edit = tool_button("mask-eye", "show and edit shapes on the current scale", checkable=True)
         self._edit.toggled.connect(self.edit_toggled.emit)
-        head.addWidget(self._edit)
+        shapes.addWidget(self._edit)
         self._draw: dict[str, QToolButton] = {}
         for kind in _SHAPES:
-            b = tool_button(SHAPE_ICONS[kind], f"Draw a {kind} (Ctrl+click keeps drawing)")
-            b.clicked.connect(lambda _=False, k=kind: self.draw_requested.emit(k, bool(_ctrl_held())))
-            head.addWidget(b)
+            b = tool_button(SHAPE_ICONS[kind], f"{_SHAPE_TIPS[kind]}\nctrl+click to add multiple")
+            b.clicked.connect(lambda _=False, k=kind: self.draw_requested.emit(k, _ctrl_held()))
+            shapes.addWidget(b)
             self._draw[kind] = b
-        body.addLayout(head)
+        body.addLayout(shapes)
 
         algo = QHBoxLayout()
         algo.setSpacing(THEME.space_sm)
-        algo.addWidget(QLabel("Algorithm"))
+        algo.addWidget(QLabel("algorithms:"))
         algo.addStretch(1)
         self._algo: dict[str, QToolButton] = {}
-        for a in R.ALGORITHMS:
+        for a in (R.BLUR, R.FILL, R.CLONE, R.HEAL):
             b = tool_button(_ALGO_ICONS[a], _ALGO_TIPS[a], checkable=True)
-            b.clicked.connect(lambda _=False, name=a: self.algorithm_chosen.emit(name, bool(_ctrl_held())))
+            b.clicked.connect(lambda _=False, name=a: self._algorithm_clicked(name))
             algo.addWidget(b)
             self._algo[a] = b
-        algo.addSpacing(THEME.space_md)
-        self._show_mask = tool_button("mask-eye", "Show where the shapes of this scale act", checkable=True)
-        self._show_mask.toggled.connect(lambda on: self._view_toggled("mask", on))
-        self._suppress = tool_button("mask-eye-off", "Show the picture without Retouch", checkable=True)
-        self._suppress.toggled.connect(lambda on: self._view_toggled("suppress", on))
-        algo.addWidget(self._show_mask)
-        algo.addWidget(self._suppress)
         body.addLayout(algo)
 
-        self._picked_label = QLabel("Picked: none")
-        self._picked_label.setProperty("role", "hint")
-        body.addWidget(self._picked_label)
+        # ---- wavelet decompose
+        body.addWidget(_section("wavelet decompose"))
+        labels = QHBoxLayout()
+        labels.setSpacing(THEME.space_md)
+        self._lbl_scales, self._lbl_current, self._lbl_merge = QLabel(), QLabel(), QLabel()
+        for text, label in (("scales:", self._lbl_scales), ("current:", self._lbl_current), ("merge from:", self._lbl_merge)):
+            labels.addWidget(QLabel(text))
+            labels.addWidget(label)
+        labels.addStretch(1)
+        body.addLayout(labels)
 
         self._bar = ScaleBar()
         self._bar.scale_selected.connect(lambda i: self.changed.emit({"curr_scale": i}, "", False, 0))
-        self._bar.num_scales_changed.connect(lambda n: self.changed.emit({"num_scales": n}, f"Retouch: {n} wavelet scales", False, 0))
-        self._bar.merge_changed.connect(lambda m: self.changed.emit({"merge_from_scale": m}, f"Retouch: merge from scale {m}", False, 0))
+        self._bar.num_scales_changed.connect(self._num_scales)
+        self._bar.merge_changed.connect(self._merge_from)
         body.addWidget(self._bar)
-        self._scale_labels = QLabel("")
-        self._scale_labels.setProperty("role", "hint")
-        body.addWidget(self._scale_labels)
 
         tools = QHBoxLayout()
         tools.setSpacing(THEME.space_sm)
-        self._cut = QPushButton("Cut shapes")
-        self._cut.setToolTip("Pick up the shapes of this scale, to put on another scale with Paste")
-        self._cut.clicked.connect(self._cut_scale)
-        self._paste = QPushButton("Paste shapes")
-        self._paste.setToolTip("Move the shapes cut from a scale onto this scale")
+        self._view_scale = tool_button("mask-layers", "display wavelet scale", checkable=True)
+        self._view_scale.toggled.connect(lambda on: self._view_toggled("scale", on))
+        self._paste = tool_button("mask-paste", "paste cut shapes to current scale", checkable=True)
         self._paste.setEnabled(False)
         self._paste.clicked.connect(self._paste_scale)
-        self._view_scale = tool_button("mask-source", "Show the wavelet scale being worked on (0 is the picture)", checkable=True)
-        self._view_scale.toggled.connect(lambda on: self._view_toggled("scale", on))
-        tools.addWidget(self._cut)
-        tools.addWidget(self._paste)
-        tools.addStretch(1)
+        self._cut = tool_button("mask-cut", "cut shapes from current scale", checkable=True)
+        self._cut.clicked.connect(self._cut_scale)
+        self._show_mask = tool_button("mask-eye", "display masks", checkable=True)
+        self._show_mask.toggled.connect(lambda on: self._view_toggled("mask", on))
+        self._suppress = tool_button("mask-eye-off", "temporarily switch off shapes", checkable=True)
+        self._suppress.toggled.connect(lambda on: self._view_toggled("suppress", on))
         tools.addWidget(self._view_scale)
+        tools.addStretch(1)
+        tools.addWidget(self._paste)
+        tools.addWidget(self._cut)
+        tools.addStretch(1)
+        tools.addWidget(self._show_mask)
+        tools.addWidget(self._suppress)
         body.addLayout(tools)
-        self._cut_from = -1
 
+        # ---- preview single scale
         self._levels_box = QWidget()
         lv = QVBoxLayout(self._levels_box)
         lv.setContentsMargins(0, 0, 0, 0)
         lv.setSpacing(THEME.space_sm)
-        self._levels: list[SliderRow] = []
-        for name in ("Black", "Middle", "White"):
-            row = SliderRow(name, min_value=R.PREVIEW_LVL_MIN, max_value=R.PREVIEW_LVL_MAX, reset_value=0.0 if name == "Middle" else (R.PREVIEW_LVL_MIN if name == "Black" else R.PREVIEW_LVL_MAX),
-                            decimals=2, step=0.01, label_width=_LABEL_WIDTH)
-            row.value_changed.connect(self._levels_moved)
-            lv.addWidget(row)
-            self._levels.append(row)
-        self._auto = QPushButton("Auto levels")
-        self._auto.setToolTip("Fit the levels to the scale shown")
+        lv.addWidget(_section("preview single scale"))
+        row = QHBoxLayout()
+        self._levels = LevelsSlider()
+        self._levels.value_changed.connect(self._levels_moved)
+        row.addWidget(self._levels, 1)
+        self._auto = tool_button("mask-levels", "auto levels", checkable=True)
         self._auto.clicked.connect(lambda: self.changed.emit({"preview_auto": True}, "", False, 0))
-        lv.addWidget(self._auto)
+        row.addWidget(self._auto)
+        lv.addLayout(row)
         body.addWidget(self._levels_box)
+
+        # ---- shapes
+        body.addWidget(_section("shapes"))
+        self._picked_label = QLabel("shape selected: none")
+        self._picked_label.setToolTip("click on a shape to select it,\nto unselect click on an empty space")
+        body.addWidget(self._picked_label)
 
         self._blur_box = QWidget()
         bl = QVBoxLayout(self._blur_box)
         bl.setContentsMargins(0, 0, 0, 0)
         bl.setSpacing(THEME.space_sm)
         row = QHBoxLayout()
-        row.addWidget(QLabel("Blur type"))
+        row.addWidget(QLabel("blur type"))
         self._blur_type = QComboBox()
-        self._blur_type.addItem("Gaussian", R.GAUSSIAN)
-        self._blur_type.addItem("Bilateral", R.BILATERAL)
-        self._blur_type.setToolTip("Gaussian blurs everything; bilateral smooths the lightness but keeps edges")
+        self._blur_type.addItem("gaussian", R.GAUSSIAN)
+        self._blur_type.addItem("bilateral", R.BILATERAL)
+        self._blur_type.setToolTip("type for the blur algorithm")
         self._blur_type.activated.connect(self._blur_changed)
         row.addWidget(self._blur_type, 1)
         bl.addLayout(row)
-        self._blur_radius = SliderRow("Blur radius", min_value=0.1, max_value=200.0, reset_value=10.0, decimals=1, step=0.5, label_width=_LABEL_WIDTH)
-        self._blur_radius.setToolTip("Radius of the blur, in pixels of the scan")
+        self._blur_radius = SliderRow("blur radius", min_value=0.1, max_value=200.0, reset_value=10.0, decimals=1, step=0.5, label_width=_LABEL_WIDTH)
+        self._blur_radius.setToolTip("radius of the selected blur type, in px")
         self._blur_radius.value_changed.connect(self._blur_dragged)
         bl.addWidget(self._blur_radius)
         body.addWidget(self._blur_box)
@@ -296,23 +445,31 @@ class RetouchPanel(CollapsiblePanel):
         fl.setContentsMargins(0, 0, 0, 0)
         fl.setSpacing(THEME.space_sm)
         row = QHBoxLayout()
-        row.addWidget(QLabel("Fill mode"))
+        row.addWidget(QLabel("fill mode"))
         self._fill_mode = QComboBox()
-        self._fill_mode.addItem("Erase", R.ERASE)
-        self._fill_mode.addItem("Color", R.COLOR)
+        self._fill_mode.addItem("erase", R.ERASE)
+        self._fill_mode.addItem("color", R.COLOR)
+        self._fill_mode.setToolTip("erase the detail or fills with chosen color")
         self._fill_mode.activated.connect(self._fill_changed)
         row.addWidget(self._fill_mode, 1)
-        self._colour = QPushButton("Pick colour")
-        self._colour.clicked.connect(self._pick_colour)
-        row.addWidget(self._colour)
         fl.addLayout(row)
-        self._fill_brightness = SliderRow("Brightness", min_value=-1.0, max_value=1.0, reset_value=0.0, decimals=2, step=0.01, label_width=_LABEL_WIDTH)
+        self._colour_row = QWidget()
+        cr = QHBoxLayout(self._colour_row)
+        cr.setContentsMargins(0, 0, 0, 0)
+        cr.addWidget(QLabel("fill color:"))
+        self._colour = QPushButton("")
+        self._colour.setToolTip("select fill color")
+        self._colour.clicked.connect(self._pick_colour)
+        cr.addWidget(self._colour, 1)
+        fl.addWidget(self._colour_row)
+        self._fill_brightness = SliderRow("brightness", min_value=-1.0, max_value=1.0, reset_value=0.0, decimals=2, step=0.01, label_width=_LABEL_WIDTH)
+        self._fill_brightness.setToolTip("adjusts color brightness to fine-tune it. works with erase as well")
         self._fill_brightness.value_changed.connect(self._fill_dragged)
         fl.addWidget(self._fill_brightness)
         body.addWidget(self._fill_box)
 
-        self._opacity = SliderRow("Shape opacity", min_value=0.05, max_value=1.0, reset_value=1.0, decimals=2, step=0.05, label_width=_LABEL_WIDTH)
-        self._opacity.setToolTip("How much of the picked shape's result is let in (Ctrl+scroll over the shape does the same)")
+        self._opacity = SliderRow("mask opacity", min_value=0.05, max_value=1.0, reset_value=1.0, decimals=2, step=0.05, label_width=_LABEL_WIDTH)
+        self._opacity.setToolTip("set the opacity on the selected shape (ctrl+scroll over the shape does the same)")
         self._opacity.value_changed.connect(lambda v: None if self._building else self.opacity_changed.emit(self._picked, v, True))
         self._opacity.setVisible(False)
         body.addWidget(self._opacity)
@@ -320,7 +477,7 @@ class RetouchPanel(CollapsiblePanel):
         self._opacity_timer.setSingleShot(True)
         self._opacity_timer.setInterval(_SETTLE_DEBOUNCE_MS)
         self._opacity_timer.timeout.connect(lambda: self.opacity_changed.emit(self._picked, self._opacity.value(), False))
-        self._opacity.value_changed.connect(lambda _v: self._opacity_timer.start())
+        self._opacity.value_changed.connect(lambda _v: None if self._building else self._opacity_timer.start())
 
         self._note = QLabel("")
         self._note.setProperty("role", "hint")
@@ -337,10 +494,11 @@ class RetouchPanel(CollapsiblePanel):
         self._settle_timer.setInterval(_SETTLE_DEBOUNCE_MS)
         self._settle_timer.timeout.connect(self._settle)
         self._settle_args: tuple | None = None
+        self._levels_box.setVisible(False)
         self._show_parts()
 
     # ------------------------------------------------------------ showing the photo's Retouch
-    def set_settings(self, s: R.Settings, picked: R.FormSetting | None = None, opacity: float | None = None) -> None:
+    def set_settings(self, s: R.Settings, picked: R.FormSetting | None = None, opacity: float | None = None, first_visible: int = 0) -> None:
         """Show these settings (the photo changed, or an undo) and the settings of the picked shape, if any."""
         self._settings = s
         self._building = True
@@ -352,26 +510,28 @@ class RetouchPanel(CollapsiblePanel):
             shapes: dict[int, int] = {}
             for f in s.forms:
                 shapes[f.scale] = shapes.get(f.scale, 0) + 1
-            self._bar.set_state(s.num_scales, s.curr_scale, s.merge_from_scale, shapes)
-            merge = f", merge from {s.merge_from_scale}" if s.merge_from_scale else ""
-            self._scale_labels.setText(f"Scale {'R (residual)' if s.curr_scale == s.num_scales + 1 else s.curr_scale} of {s.num_scales}{merge}")
-            for row, v in zip(self._levels, s.preview_levels):
-                row.set_value(v)
-            self._levels_box.setVisible(self._view_scale.isChecked())
-            self._auto.setText("Auto levels (on)" if s.preview_auto else "Auto levels")
+            self._bar.set_state(s.num_scales, s.curr_scale, s.merge_from_scale, shapes, first_visible)
+            self._lbl_scales.setText(str(s.num_scales))
+            self._lbl_current.setText(str(s.curr_scale))
+            self._lbl_merge.setText(str(s.merge_from_scale))
+            self._levels.set_values(s.preview_levels)
+            self._auto.setChecked(s.preview_auto)
             blur = picked if picked is not None and picked.algorithm == R.BLUR else None
             fill = picked if picked is not None and picked.algorithm == R.FILL else None
-            self._blur_type.setCurrentIndex(max(0, self._blur_type.findData((blur.blur_type if blur else s.blur_type))))
+            self._blur_type.setCurrentIndex(max(0, self._blur_type.findData(blur.blur_type if blur else s.blur_type)))
             self._blur_radius.set_value(blur.blur_radius if blur else s.blur_radius)
-            self._fill_mode.setCurrentIndex(max(0, self._fill_mode.findData((fill.fill_mode if fill else s.fill_mode))))
+            self._fill_mode.setCurrentIndex(max(0, self._fill_mode.findData(fill.fill_mode if fill else s.fill_mode)))
             self._fill_brightness.set_value(fill.fill_brightness if fill else s.fill_brightness)
             self._shown_algo = algo
             self._set_colour_swatch(fill.fill_color if fill else s.fill_color)
             self._picked = picked.formid if picked is not None else 0
-            self._picked_label.setText("Picked: none" if picked is None else f"Picked: shape {picked.formid} ({picked.algorithm}, scale {'R' if picked.scale == s.num_scales + 1 else picked.scale})")
+            self._picked_label.setText("shape selected: none" if picked is None else f"shape selected: #{picked.formid} ({picked.algorithm}, scale {'R' if picked.scale == s.num_scales + 1 else picked.scale})")
             self._opacity.setVisible(picked is not None)
             if picked is not None and opacity is not None:
                 self._opacity.set_value(opacity)
+            can_paste = self._cut_from >= 0 and any(f.scale == self._cut_from for f in s.forms)
+            self._paste.setEnabled(can_paste)
+            self._cut.setEnabled(any(f.scale == s.curr_scale for f in s.forms) or self._cut_from >= 0)
         finally:
             self._building = False
         self._show_parts()
@@ -402,13 +562,27 @@ class RetouchPanel(CollapsiblePanel):
         algo = self._shown_algo
         self._blur_box.setVisible(algo == R.BLUR)
         self._fill_box.setVisible(algo == R.FILL)
-        self._colour.setVisible(self._fill_mode.currentData() == R.COLOR)
+        self._colour_row.setVisible(self._fill_mode.currentData() == R.COLOR)
 
     def _set_colour_swatch(self, linear) -> None:
         c = QColor.fromRgbF(*(_srgb(v) for v in list(linear)[:3]))
-        self._colour.setStyleSheet(f"background-color: {c.name()}; color: {'#000' if c.lightness() > 128 else '#fff'};")
+        self._colour.setStyleSheet(f"background-color: {c.name()};")
 
     # ------------------------------------------------------------ the person's choices
+    def _algorithm_clicked(self, name: str) -> None:
+        if not self._building:
+            self.algorithm_chosen.emit(name, _ctrl_held())
+            if _shift_held():
+                self.set_note(f"default tool changed to {name}")
+
+    def _num_scales(self, n: int) -> None:
+        if n != self._settings.num_scales:
+            self.changed.emit({"num_scales": n}, f"Retouch: {n} wavelet scales", False, 0)
+
+    def _merge_from(self, m: int) -> None:
+        if m != self._settings.merge_from_scale:
+            self.changed.emit({"merge_from_scale": m}, f"Retouch: merge from scale {m}", False, 0)
+
     def _view_toggled(self, name: str, on: bool) -> None:
         if on:
             for b, other in ((self._show_mask, "mask"), (self._suppress, "suppress"), (self._view_scale, "scale")):
@@ -417,25 +591,36 @@ class RetouchPanel(CollapsiblePanel):
                     b.setChecked(False)
                     b.blockSignals(False)
         self._levels_box.setVisible(name == "scale" and on)
+        if name == "scale" and on and self._settings.num_scales == 0:
+            self.set_note("Drag the bottom arrow of the bar to split the picture into wavelet scales; then click a box to look at that scale.")
+        elif not on:
+            self.set_note("")
         self.view_changed.emit(name if on else "")
 
     def _cut_scale(self) -> None:
+        if self._cut_from >= 0:
+            self._cut_from = -1
+            self._cut.setChecked(False)
+            self._paste.setEnabled(False)
+            self.set_note("")
+            return
         self._cut_from = self._settings.curr_scale
+        self._cut.setChecked(True)
         self._paste.setEnabled(any(f.scale == self._cut_from for f in self._settings.forms))
-        self.set_note(f"Shapes of scale {self._cut_from} picked up: go to another scale and press Paste shapes.")
+        self.set_note(f"Shapes of scale {self._cut_from} picked up: click another scale, then paste.")
 
     def _paste_scale(self) -> None:
         if self._cut_from >= 0 and self._cut_from != self._settings.curr_scale:
             self.paste_requested.emit(self._cut_from, self._settings.curr_scale)
-            self._cut_from = -1
-            self._paste.setEnabled(False)
-            self.set_note("")
+        self._cut_from = -1
+        self._cut.setChecked(False)
+        self._paste.setChecked(False)
+        self._paste.setEnabled(False)
+        self.set_note("")
 
-    def _levels_moved(self, _v=None) -> None:
-        if self._building:
-            return
-        black, middle, white = (r.value() for r in self._levels)
-        self._queue({"preview_levels": [black, middle, white], "preview_auto": False}, "")
+    def _levels_moved(self, values: list) -> None:
+        if not self._building:
+            self._queue({"preview_levels": list(values), "preview_auto": False}, "")
 
     def _blur_changed(self, _i=None) -> None:
         if not self._building:
@@ -456,7 +641,7 @@ class RetouchPanel(CollapsiblePanel):
 
     def _pick_colour(self) -> None:
         start = QColor.fromRgbF(*(_srgb(v) for v in self._settings.fill_color[:3]))
-        c = QColorDialog.getColor(start, self, "Fill colour")
+        c = QColorDialog.getColor(start, self, "select fill color")
         if c.isValid():
             self.changed.emit({"fill_color": [_linear(c.redF()), _linear(c.greenF()), _linear(c.blueF())]}, "Retouch: fill colour", False, self._picked)
 
@@ -484,8 +669,3 @@ class RetouchPanel(CollapsiblePanel):
             self._settle_args = None
             self._pending = None
             self.changed.emit(changes, description, False, picked)
-
-
-def _ctrl_held() -> bool:
-    from PyQt6.QtWidgets import QApplication
-    return bool(QApplication.keyboardModifiers() & Qt.KeyboardModifier.ControlModifier)

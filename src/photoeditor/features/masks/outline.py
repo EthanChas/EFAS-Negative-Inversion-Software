@@ -66,9 +66,9 @@ def path_geometry(nodes: list, fw: float, fh: float) -> dict:
         norm = np.hypot(tangent[:, 0], tangent[:, 1])
         norm[norm == 0] = 1.0
         normal = np.stack([tangent[:, 1], -tangent[:, 0]], axis=1) / norm[:, None]
-        centre = corners.mean(axis=0)
-        outward = np.sign(np.einsum("ij,ij->i", xy - centre, normal))
-        outward[outward == 0] = 1.0
+        # which side is outward is one answer for the whole curve (by the divergence theorem the sum of position . normal along a closed curve is twice the area it encloses, signed by the way round
+        # it is drawn), not one per point: a path that goes in and out would otherwise throw its feather from side to side
+        outward = 1.0 if float(np.sum(np.einsum("ij,ij->i", xy - xy.mean(axis=0), normal))) >= 0 else -1.0
         border = xy + normal * (size * outward)[:, None]
     keep = _thin_index(len(xy))
     return {"corners": corners, "ctrl1": c1, "ctrl2": c2, "curve": xy[keep], "border": border[keep], "segment": s["segment"][keep], "tparam": s["tparam"][keep], "closed": True}

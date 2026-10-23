@@ -50,6 +50,17 @@ _SCRIPT = textwrap.dedent(r"""
     before = spot(s.image_rgb)
     assert before > 100, before
 
+    # --- a wavelet scale can be looked at on the picture before there is a shape: the panel's bar and its display button
+    still = s.image_rgb.copy()
+    panel._bar.num_scales_changed.emit(4); panel._bar.scale_selected.emit(2); app.processEvents()
+    assert c.retouch_settings().num_scales == 4 and c.retouch_settings().curr_scale == 2
+    panel._view_scale.setChecked(True); app.processEvents()
+    assert pump(lambda: not np.array_equal(s.image_rgb, still), 30.0), "the layer is shown instead of the picture"
+    assert panel._levels_box.isVisibleTo(panel), "the levels slider appears with the layer"
+    panel._view_scale.setChecked(False); app.processEvents()
+    assert pump(lambda: np.array_equal(s.image_rgb, still), 30.0)
+    panel._bar.scale_selected.emit(0); panel._bar.num_scales_changed.emit(0); app.processEvents()
+
     # --- heal a blemish: pick the heal algorithm, draw a circle on it
     panel._algo["heal"].click(); app.processEvents()
     assert c.retouch_settings().algorithm == "heal"
@@ -66,7 +77,7 @@ _SCRIPT = textwrap.dedent(r"""
     after = spot(s.image_rgb)
     assert after < 25, "the blemish took on what is round it"
     assert tool.edit and tool.visible == {cs.forms[0].formid} and editor._retouch
-    assert win._retouch_picked == cs.forms[0].formid and "Picked: shape" in panel._picked_label.text()
+    assert win._retouch_picked == cs.forms[0].formid and "shape selected: #" in panel._picked_label.text()
 
     # --- the picture shown without Retouch, and where the shapes act
     c.set_retouch_view("suppress"); assert pump(lambda: spot(s.image_rgb) > before * 0.8, 30.0), "suppress shows the picture as it was"

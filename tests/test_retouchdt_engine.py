@@ -154,3 +154,30 @@ def test_settings_are_cleaned_when_read_back():
     assert len(s.forms) == 1 and s.forms[0].scale == R.MAX_SCALES + 1 and s.forms[0].algorithm == R.HEAL and s.forms[0].blur_radius == 0.1
     assert s.num_scales == R.MAX_SCALES and s.merge_from_scale == R.MAX_SCALES and s.preview_levels == [R.PREVIEW_LVL_MIN, 0.0, R.PREVIEW_LVL_MAX]
     assert R.Settings.from_dict(s.to_dict()).to_dict() == s.to_dict() and R.is_neutral(None) and R.is_neutral({"forms": []})
+
+
+def test_a_wavelet_scale_can_be_looked_at_before_any_shape_is_on_it():
+    img = _textured()
+    s = R.Settings(num_scales=3, curr_scale=2)
+    assert R.process(img, s, _ctx({})) is img, "with no shapes and no view the picture is as it was"
+    shown = R.process(img, s, _ctx({}, view="scale"))
+    assert shown.shape == img.shape and not np.array_equal(shown, img), "the layer is shown"
+    assert R.to_json(s.to_dict()) != "" and R.to_json(R.Settings().to_dict()) == "", "settings other than the starting ones reach the renderer even without shapes"
+    resid = R.process(img, R.Settings(num_scales=3, curr_scale=4), _ctx({}, view="scale"))
+    assert abs(float(resid.mean()) - float(img.mean())) < 40, "the residual is the broad light of the picture"
+
+
+def test_mask_properties_read_and_change_the_picked_shape():
+    from photoeditor.features.masks import model as M
+    from photoeditor.features.masks import properties as P
+    ms = M.MaskSet()
+    c = ms.add(M.CIRCLE, M.circle(0.5, 0.5, 0.05, 0.02))
+    b = ms.add(M.BRUSH, [M.brush_node(0.1, 0.1), M.brush_node(0.2, 0.2)])
+    e = ms.add(M.ELLIPSE, M.ellipse(0.5, 0.5, 0.06, 0.03))
+    g = ms.add(M.GRADIENT, M.gradient(0.5, 0.5))
+    assert P.available(M.CIRCLE) == ("size", "feather") and "hardness" in P.available(M.BRUSH) and P.available(M.GROUP) == ()
+    assert P.read(c)["size"] == 0.05 and P.apply(c, "size", 0.2)[0]["radius"] == 0.2 and P.apply(c, "hardness", 0.5) is None
+    assert abs(P.read(b)["size"] - 0.1) < 1e-9 and all(n["border"][0] == 0.15 for n in P.apply(b, "size", 0.3))
+    pts = P.apply(e, "size", 0.12)
+    assert pts[0]["radius"][0] == 0.12 and abs(pts[0]["radius"][1] - 0.06) < 1e-9, "an ellipse keeps its shape when it is resized"
+    assert P.apply(g, "curvature", 9.0)[0]["curvature"] == 2.0, "values are held to the limits"

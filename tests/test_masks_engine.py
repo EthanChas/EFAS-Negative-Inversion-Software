@@ -220,3 +220,18 @@ def test_blends_are_saved_and_checked():
     assert B.blends_from_dict(json.loads(json.dumps(saved))) == {"exposure": blends["exposure"]}
     got = B.blends_from_dict({"x": {"mode": "drawn", "opacity": 5000, "blur": float("nan"), "mask_id": "no"}, 7: {"mode": "drawn"}, "y": "text", "z": {"mode": "nonsense"}})
     assert list(got) == ["x"] and got["x"].opacity == 100.0 and got["x"].blur == 0.0 and got["x"].mask_id == 0
+
+
+def test_a_paths_feather_runs_all_the_way_round_it_even_when_the_path_goes_in_and_out():
+    """A teardrop with a notch: the feather outline is the curve moved the same way out everywhere (no jumps from side to side, no crossing lines)."""
+    from photoeditor.features.masks import outline as O
+    nodes = [M.path_node(0.45, 0.30), M.path_node(0.55, 0.45), M.path_node(0.52, 0.62), M.path_node(0.46, 0.66), M.path_node(0.44, 0.52), M.path_node(0.50, 0.45), M.path_node(0.40, 0.38)]
+    for n in nodes:
+        n["border"] = [0.05, 0.05]
+    for order in (nodes, nodes[::-1]):                 # drawn either way round
+        g = O.path_geometry(order, 800.0, 600.0)
+        curve, border = g["curve"], g["border"]
+        gap = np.hypot(*(np.roll(border, -1, axis=0) - border).T)
+        assert gap.max() < 12.0, ("the feather jumps", gap.max())
+        dist = np.array([np.hypot(*(curve - b).T).min() for b in border])
+        assert float(np.mean(dist > 25.0)) > 0.8 and dist.max() < 33.0, ("it stays one border's width (30 px) from the curve, but where the notch is narrower than that", float(np.mean(dist > 25.0)), dist.max())

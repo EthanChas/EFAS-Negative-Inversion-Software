@@ -455,6 +455,7 @@ class Renderer:
         self._flat: OrderedDict = OrderedDict()
         self._edge: OrderedDict = OrderedDict()
         self._eight: OrderedDict = OrderedDict()
+        self._frames: OrderedDict = OrderedDict()
         self._density: tuple | None = None
         self._dust_stats = DustStatsCache()
 
@@ -526,6 +527,35 @@ class Renderer:
         if pixels16 is not None:   # with a 16-bit scan the geometry is done on that copy alone: it is the picture
             return pixels, self._edge_fixed(pixels16, parts, edge_values, rect, retouched)
         return self._edge_fixed(pixels, parts, edge_values, rect, retouched), pixels16
+
+    def _film_frame(self, pixels: np.ndarray, pixels16, params: EditParams, token):
+        """The picture inside the clear film border round it, found in the scan after its geometry (the way Edge Bleed finds it): (x1, y1, x2, y2), or None when there is no border to leave out.
+        Kept for as long as the photo and its geometry stay as they are."""
+        scan = pixels16 if pixels16 is not None else pixels
+        key = (token, scan.shape[:2], params.rotation_quarter_turns, params.flip_h, params.flip_v, params.fine_rotation, params.distortion, params.keystone_v, params.keystone_h, params.film_type == "bw")
+        if key in self._frames:
+            self._frames.move_to_end(key)
+            return self._frames[key]
+        found = edge_logic.find_frame(scan)
+        h, w = scan.shape[:2]
+        if found is not None and (found[2] - found[0]) * (found[3] - found[1]) < 0.25 * w * h:
+            found = None    # a "border" that leaves little of the picture is more likely a mistake than a border
+        self._frames[key] = found
+        while len(self._frames) > 4:
+            self._frames.popitem(last=False)
+        return found
+
+    @staticmethod
+    def _inside_frame(image: np.ndarray, frame, rect) -> np.ndarray:
+        """The part of the cropped picture that lies inside the film border found (the histogram and the readings are taken from it); the whole picture when there is no border or the crop is already inside it."""
+        if frame is None:
+            return image
+        ox, oy = (rect[0], rect[1]) if rect else (0, 0)
+        h, w = image.shape[:2]
+        x1, y1, x2, y2 = max(frame[0] - ox, 0), max(frame[1] - oy, 0), min(frame[2] - ox, w), min(frame[3] - oy, h)
+        if x2 - x1 < 0.25 * w or y2 - y1 < 0.25 * h or (x1 == 0 and y1 == 0 and x2 == w and y2 == h):
+            return image
+        return image[y1:y2, x1:x2]
 
     def _density_image(self, pixels: np.ndarray, settings: "printengine.Settings") -> np.ndarray:
         """The scan as a density image for the Print Engine (the dyes' crosstalk taken out), kept while the same picture is rendered again."""
@@ -787,7 +817,7 @@ class Renderer:
             gs_values = {k: getattr(params, k) for k in gs_logic.KEYS}
             gs_active = not gs_logic.is_neutral(gs_values)
             rt_settings = rt_logic.from_json(params.retouch_json)
-            rt_active = rt_settings.active() and (live is None or "retouch" in live)
+            rt_active = (rt_settings.active() or params.retouch_view == "scale") and (live is None or "retouch" in live)
             if source.dtype == np.uint16:
                 source16 = source
                 source = self._as_uint8(source, token)
@@ -814,6 +844,7 @@ class Renderer:
                 geometry(flip_horizontal)
             if params.flip_v:
                 geometry(flip_vertical)
+            film_frame = self._film_frame(pixels, pixels16, params, token) if want_stats else None      # (for the histogram: the clear film border is no part of the picture)
             pixels, pixels16 = self._fix_edges(pixels, pixels16, params, edge_values, token, retouched, scale)   # the border's light, its holder and holes: repaired before the conversion reads the picture
             if params.negative_inverted and params.metering.engine == "print":
                 deep = deep and pixels16 is not None   # an 8-bit source has no more levels to keep, whatever depth the density image is held at
@@ -923,7 +954,7 @@ class Renderer:
                 pixels = blender.blend("grainsharp", pixels, crisp)
 
             image = apply_crop(pixels, rect)
-            stats = compute_stats(image) if want_stats else None
+            stats = compute_stats(self._inside_frame(image, film_frame, rect)) if want_stats else None
             overlay_rgba = None
             if overlay:
                 base_hw = (round(image.shape[0] / scale), round(image.shape[1] / scale))

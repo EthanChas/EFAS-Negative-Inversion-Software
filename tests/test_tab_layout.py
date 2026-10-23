@@ -40,7 +40,7 @@ _SCRIPT = textwrap.dedent(r"""
     assert column(columns["negative"])[:3] == ["Negative", "Flat Field", "Edge Bleed"], column(columns["negative"])
     assert "Dust & Scratches" not in column(columns["negative"]), "clean-up is not with the conversion any more"
     assert column(columns["correction"]) == ["Crop & Rotate", "Dust & Scratches", "AI Dust Detection", "Retouch", "Error marking"], column(columns["correction"])
-    assert column(columns["exposure"]) == ["Exposure", "Contrast", "Shadows & Highlights", "Tone Curve", "Print Response", "Masks"], column(columns["exposure"])
+    assert column(columns["exposure"]) == ["Exposure", "Contrast", "Shadows & Highlights", "Tone Curve", "Print Response"], column(columns["exposure"])
     assert column(columns["color"]) == ["Color", "Color Mixer", "Color Toning", "Lab Look", "Edge Color", "Halation"], column(columns["color"])
     assert column(columns["detail"]) == ["Chroma Denoise", "Local Contrast", "Sharpening", "Grain Sharpening"], column(columns["detail"])
     assert column(columns["watermark"]) == ["Finishing", "Watermark"], column(columns["watermark"])
@@ -49,10 +49,10 @@ _SCRIPT = textwrap.dedent(r"""
     titles = [m._title for m in win.findChildren(CollapsiblePanel)]
     assert titles.count("Export") == 1 and titles.count("Presets") == 1, "Export and Presets each appear once (the Roll Card's own are named for it)"
     assert "Roll Card Export" in titles and "Roll Card Presets" in titles
-    left = [w._title for w in (win._library_panel, win._tagging_panel, win._history_panel, win._snapshots_panel, win._versions_panel, win._presets_panel, win._export_panel)]
+    left = [w._title for w in (win._library_panel, win._tagging_panel, win._history_panel, win._mask_manager, win._snapshots_panel, win._versions_panel, win._presets_panel, win._export_panel)]
     layout_left = win._library_panel.parentWidget().layout()
     seen = [layout_left.itemAt(i).widget()._title for i in range(layout_left.count()) if isinstance(layout_left.itemAt(i).widget(), CollapsiblePanel)]
-    assert seen == left == ["Library", "Tagging", "History", "Snapshots", "Versions", "Presets", "Export"], seen
+    assert seen == left == ["Library", "Tagging", "History", "Masks", "Snapshots", "Versions", "Presets", "Export"], seen
 
     # every tab opens and closes, and only one at a time
     for key in ("negative", "correction", "exposure", "color", "detail", "watermark", "metadata"):

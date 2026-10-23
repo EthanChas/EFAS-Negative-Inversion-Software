@@ -690,11 +690,17 @@ class AppController(QObject):
             full=full,
             live=live,
             hq_only=hq_only,
-            overlay=self.state.show_detections,
+            overlay=self._wants_overlay(),
             clip=(self.state.show_shadow_clip, self.state.show_highlight_clip),
             flatfield=self._ff,
         )
         self._thread.submit(job)
+
+    def _wants_overlay(self) -> bool:
+        """Whether the render also makes the picture of what dust detection marks: to show (Show Detections), or because dust removal is on and the Masks panel's Dust Detection folder lists what it found
+        (with removal off the detection is only run for Show Detections, as it costs a pass over the picture)."""
+        s = self.state
+        return bool(s.show_detections or s.dust_auto or s.ai_dust)
 
     def _preview(self, live) -> None:
         """A cheap in-progress drag tick: image only, no histogram/stats."""
@@ -761,7 +767,7 @@ class AppController(QObject):
         params = EditParams.from_state(self.state)
         base = self._render_base()
         image, pre_crop, stats, overlay = self._renderer.render(
-            base, params, self._token(), base.shape[1], None, want_stats=True, overlay=self.state.show_detections,
+            base, params, self._token(), base.shape[1], None, want_stats=True, overlay=self._wants_overlay(),
             flatfield=self._ff,
         )
         s = self.state
@@ -2537,6 +2543,23 @@ class AppController(QObject):
                 j = int(np.argmin((xs + x - centres[i][0]) ** 2 + (ys + y - centres[i][1]) ** 2))   # a pixel that is on it, nearest the middle (a hair is curved)
                 out[name].append({"x": (int(xs[j]) + x + 0.5) / ow * iw - 0.5, "y": (int(ys[j]) + y + 0.5) / oh * ih - 0.5, "w": w / ow * iw, "h": h / oh * ih, "area": area})
         return out
+
+    def detection_wash(self, kinds) -> "np.ndarray | None":
+        """An RGBA picture of just these kinds of detection ("dust", "hairs"), in their own colours and strong, the size of the wash dust detection makes; None when there is none."""
+        overlay = self.state.overlay_rgba
+        if overlay is None:
+            return None
+        out = np.zeros_like(overlay)
+        found = False
+        for name, colour in self._DETECTION_COLOURS:
+            if name not in kinds:
+                continue
+            on = (overlay[..., :3] == colour).all(axis=-1) & (overlay[..., 3] > 0)
+            if on.any():
+                out[on, :3] = colour
+                out[on, 3] = 235
+                found = True
+        return out if found else None
 
     def delete_detection_at(self, x: float, y: float) -> bool:
         """Take out the one detection under this point of the picture shown (the Dust Detection folder's Delete)."""

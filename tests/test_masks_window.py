@@ -74,12 +74,19 @@ _SCRIPT = textwrap.dedent(r"""
     assert c.blend_of("exposure").mask_id == group.id and [p["formid"] for p in group.points] == [1, 2], group.points
     assert group.name == "Exposure mask", group.name
 
+    # --- the Masks panel is on the left, under History, and collapsible
+    left = win._history_panel.parentWidget().layout()
+    names = [left.itemAt(i).widget() for i in range(left.count()) if left.itemAt(i).widget() is not None]
+    assert names.index(win._mask_manager) == names.index(win._history_panel) + 1, "Masks sits right under History"
+    assert win._mask_manager._collapsible
+
     # --- the Masks panel lists them: Dust Detection folder first with Dust, Hairs, Scratches, then Groups and Shapes
     tree = mgr._tree
     top = [tree.topLevelItem(i).text(0) for i in range(tree.topLevelItemCount())]
     assert top == ["Dust Detection", "Groups", "Shapes"], top
     subs = [tree.topLevelItem(0).child(i).text(0) for i in range(3)]
-    assert subs == ["Dust", "Hairs", "Scratches"], subs
+    assert [x.split(" (")[0] for x in subs] == ["Dust", "Hairs", "Scratches"], subs
+    assert subs == ["Dust (0)", "Hairs (0)", "Scratches (0)"], "the three folders are there from the start, with their counts"
     groups_item, shapes_item = tree.topLevelItem(1), tree.topLevelItem(2)
     assert groups_item.childCount() == 1 and groups_item.child(0).childCount() == 2 and shapes_item.childCount() == 2
     # picking a shape in the list shows it on the picture
@@ -87,6 +94,15 @@ _SCRIPT = textwrap.dedent(r"""
     assert editor._manager and tool.visible == {1}, tool.visible
     tree.clearSelection(); groups_item.child(0).setSelected(True); app.processEvents()
     assert tool.visible == {1, 2} and tool.parent_id == group.id
+
+    # --- the properties of the picked shape, as in darktable's mask manager
+    tree.clearSelection(); shapes_item.child(0).setSelected(True); app.processEvents()
+    assert mgr._prop_rows["size"].isVisible() and mgr._prop_rows["feather"].isVisible() and not mgr._prop_rows["hardness"].isVisible()
+    mgr._prop_rows["size"].set_value(10.0); mgr._property_moved("size", 10.0); app.processEvents()
+    pump(lambda: abs(c.mask_set().get(1).points[0]["radius"] - 0.10) < 1e-6, 5.0)
+    assert abs(c.mask_set().get(1).points[0]["radius"] - 0.10) < 1e-6, c.mask_set().get(1).points
+    pump(secs=0.7)    # the slider's final value is one step in the history, a moment after it stops
+    assert "Changed the size" in s.history[-1].description, s.history[-1].description
 
     # --- a free shape from the panel
     mgr._draw_buttons[M.CIRCLE].click(); assert tool.creation is not None and tool.creation.key is None
@@ -115,17 +131,30 @@ _SCRIPT = textwrap.dedent(r"""
     c._save_edit_state()
     saved = edit_store.load_edit_state(c._db, path)
     assert saved["blends"]["exposure"]["mask_id"] == group.id and saved["masks"], saved["blends"]
-    c.undo(); c.undo(); c.undo(); app.processEvents()   # the free circle, the group and the blend are taken back, one step each
+    c.undo(); c.undo(); c.undo(); c.undo(); app.processEvents()   # the size change, the free circle, the group and the blend are taken back, one step each
     assert c.mask_set().get(free) is None and c.mask_set().get(group.id) is None, "the group is undone"
 
     # --- Dust Detection: a traced scratch and the specks
     c.state.scratch_lines = [[0.1, 0.5, 0.9, 0.5, 6.0]]
     c.set_dust(True, 0.5, 10, 0.8); pump(secs=1.5)
-    mgr.detections_requested.emit(); assert pump(lambda: mgr._listed, 15.0), "the list fills once the picture is drawn with Show Detections"
+    assert not c.state.show_detections, "Show Detections is off: the folder fills by itself"
+    assert pump(lambda: tree.topLevelItem(0).child(2).text(0) == "Scratches (1)" and tree.topLevelItem(0).child(0).text(0) == "Dust (3)", 15.0), "the Dust Detection folder fills by itself when the picture is drawn with dust removal on"
     items = c.detection_items()
     assert len(items["scratches"]) == 1 and items["scratches"][0]["index"] == 0
     dust_label = tree.topLevelItem(0).child(2).text(0)
     assert dust_label == "Scratches (1)", dust_label
+    # clicking a whole folder looks at everything in it: the specks ringed and washed, the scratches underlined
+    lab = win._image_view._label
+    tree.clearSelection(); tree.topLevelItem(0).child(0).setSelected(True); app.processEvents()
+    assert [m[0] for m in lab._focus_marks] == ["ring"] * 3 and lab._overlay is not None, "the Dust folder shows its three specks"
+    tree.clearSelection(); tree.topLevelItem(0).child(2).setSelected(True); app.processEvents()
+    assert [m[0] for m in lab._focus_marks] == ["line"] and lab._overlay is None, "the Scratches folder underlines the scratch"
+    tree.clearSelection(); tree.topLevelItem(0).setSelected(True); app.processEvents()
+    assert sorted(m[0] for m in lab._focus_marks) == ["line", "ring", "ring", "ring"] and lab._overlay is not None, "the Dust Detection folder shows all of it"
+    pump(secs=1.0)
+    assert len(lab._focus_marks) == 4, "and keeps showing it as the picture is drawn again"
+    tree.clearSelection(); app.processEvents()
+    assert lab._focus_marks == [] and lab._overlay is None, "clicking away puts the picture back"
     scratch_leaf = tree.topLevelItem(0).child(2).child(0)
     scratch_leaf.setSelected(True); app.processEvents()
     marks = win._image_view._label._focus_marks

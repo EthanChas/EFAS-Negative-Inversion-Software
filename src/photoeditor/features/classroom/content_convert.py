@@ -437,9 +437,9 @@ Choose **Off** (the module acts on everything, as always), **Uniformly** (everyw
 
 ## Groups and the Masks panel
 
-The panel lists the picture's shapes and groups. Select shapes and press the group button to make a group, which is itself a mask a module can use. Inside a group each shape has an **operation**: *union* adds it, *intersection* keeps only where both are, *difference* cuts it out, *sum* adds the strengths, *exclusion* keeps where only one is. A shape can also be inverted or have its own opacity. Right-click for rename, duplicate, add to group and delete.
+The panel (on the left, under History) lists the picture's shapes and groups, and under the list its **properties** are the picked shape's own sliders: size, feather, hardness, rotation, opacity and so on. Select shapes and press the group button to make a group, which is itself a mask a module can use. Inside a group each shape has an **operation**: *union* adds it, *intersection* keeps only where both are, *difference* cuts it out, *sum* adds the strengths, *exclusion* keeps where only one is. A shape can also be inverted or have its own opacity. Right-click for rename, duplicate, add to group and delete.
 
-The **Dust Detection** folder lists what dust detection found, split into **Dust**, **Hairs** and **Scratches**. Press *List detections* (it turns on Show Detections), pick one to ring it on the picture, and Delete leaves that one mark unrepaired.
+The **Dust Detection** folder lists what dust detection found, split into **Dust**, **Hairs** and **Scratches**. It is there as soon as a photo is open and follows the dust settings (it lists what Auto Dust Removal or AI Dust Detection found while they are on, or the candidates when Show Detections is on, and your traced scratches); click a folder to see everything in it on the picture, pick one entry to ring just that one, and Delete leaves that one mark unrepaired.
 
 ## Limits
 
@@ -458,7 +458,7 @@ Pick the algorithm, then a shape (path, ellipse, circle, brush). For clone and h
 
 ## Wavelet scales
 
-The bar splits the picture into **scales**. Scale **0** is the picture as it is. Scales **1, 2, 3...** are layers of detail from the finest to the coarsest, and **R** is the *residual*, the broad colour and light left when the detail is taken away; add them all together and you have the picture again. A shape acts only on the scale it was drawn on. So a blemish on skin can be healed on **R** to even out its colour while its texture, on scale 1 or 2, is left alone or cloned from a good patch: *frequency separation*. Drag along the bar's lower edge to set how many scales there are; drag along its upper edge to **merge** the scales from there on into one layer. The eye-and-layers button shows the scale you are working on, with levels to make a mostly grey detail layer visible.
+The bar splits the picture into **scales**. The **bottom arrow** sets how many; the **top arrow** sets where merging starts; the **dot** is the one you are on; the lighter box at the end is the residual. Scale **0** is the picture as it is. Scales **1, 2, 3...** are layers of detail from the finest to the coarsest, and **R** is the *residual*, the broad colour and light left when the detail is taken away; add them all together and you have the picture again. A shape acts only on the scale it was drawn on. So a blemish on skin can be healed on **R** to even out its colour while its texture, on scale 1 or 2, is left alone or cloned from a good patch: *frequency separation*. Drag along the bar's lower edge to set how many scales there are; drag along its upper edge to **merge** the scales from there on into one layer. The eye-and-layers button shows the scale you are working on, with levels to make a mostly grey detail layer visible.
 
 Scales are counted in the pixels of the picture being made, so the small editing preview shows a wider area per scale than the export. Check wavelet work at 100%.
 

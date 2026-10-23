@@ -115,6 +115,7 @@ class MaskTool:
         self.module_defaults = copy.deepcopy(M.DEFAULTS)
         self.spot_defaults = copy.deepcopy(M.SPOT_DEFAULTS)    # the sizes of shapes for Retouch
         self.defaults = self.module_defaults
+        self.smoothing = 0.004                                  # how much a brush stroke is simplified when it is drawn: a fraction of the scan's shorter side
         self.src_type = "relative_temp"                         # how the next source is placed: relative_temp (not set yet), relative (to the shape) or absolute
         self.src_pos: tuple | None = None                       # picture pixels: the spot (absolute) or the offset from the shape (relative)
         self.visible: set[int] | None = None       # the shapes that can be picked and edited (None: none, until set)
@@ -905,7 +906,7 @@ class MaskTool:
                 return True
             fw, fh = self._frame()
             raw = np.array([self._norm(px, py) for px, py in stroke]) * (fw, fh)
-            kept = O.simplify_stroke(raw, tolerance=max(1.0, 0.004 * min(fw, fh)))
+            kept = O.simplify_stroke(raw, tolerance=max(1.0, self.smoothing * min(fw, fh)))
             b = self.defaults[M.BRUSH]
             nodes = [M.brush_node(float(px / fw), float(py / fh), b["border"], b["hardness"], b["density"]) for px, py in kept]
             self._place(c, nodes, first[0], first[1])

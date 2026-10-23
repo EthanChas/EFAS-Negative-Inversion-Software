@@ -2,6 +2,19 @@
 
 Retouch is darktable's retouch module (5.4) ported to EFAS, **alongside** the Dust & Scratches tools, which are unchanged. Shapes are drawn on the picture (the [masks](masks.md)); each shape has an **algorithm** and a **wavelet scale**.
 
+## The panel (as darktable lays it out)
+
+- **retouch tools**: *shapes* (a count), the eye (show and edit the shapes of the current scale on the picture) and the shape buttons brush, path, ellipse, circle (Ctrl+click keeps drawing); *algorithms*: blur, fill, clone, heal (Ctrl+click changes the picked shape: clone and heal swap, blur and fill swap; Shift+click makes it the default).
+- **wavelet decompose**: labels for *scales*, *current* and *merge from*, then the scale bar, then the buttons: *display wavelet scale*, *paste* and *cut shapes*, *display masks*, and *temporarily switch off shapes*.
+- **preview single scale** (while a scale is displayed): the levels slider with its three markers and the *auto levels* button.
+- **shapes**: *shape selected*, then the blur (type, radius) or fill (mode, colour, brightness) settings of the picked shape, and *mask opacity*.
+
+### The scale bar
+
+A box for the picture (**0**), the scales **1** to **N** and, lighter, the **residual**. The **dot** is the scale you are on (click a box to change it). The **bottom arrow** sets the number of scales: drag it, or click along the bottom strip; the **top arrow** sets *merge from*: the layers from there on are added together and acted on as one layer. Scroll over the top strip, the bottom strip or the boxes to step the merge scale, the number of scales or the current scale. The **line along the top** of a box says the scale still has detail at this size of picture; the **orange line along the bottom** says it has shapes. The boxes from *merge from* to the last scale are lighter.
+
+**Display wavelet scale** shows the layer you are on in the picture (it works before there is a shape on it; with no scales set there is only the picture itself, so drag the bottom arrow first). Details are mostly grey, so the layer is put through the preview levels; *auto levels* (on by default) fits them to the layer, and moving a marker takes them over (double-click the slider to reset).
+
 ## Algorithms
 
 - **Clone**: copies the picture from the shape's **source** over the shape.
@@ -11,18 +24,13 @@ Retouch is darktable's retouch module (5.4) ported to EFAS, **alongside** the Du
 
 ## Drawing
 
-Choose the algorithm, then press a shape button (path, ellipse, circle, brush; Ctrl+click keeps drawing). New shapes start at darktable's "spots" sizes, smaller than the sizes of masks. For clone and heal the shape is placed with its source a little up and to the right, and **the source follows the pointer while the button is held**; later drag the dashed copy to move it. **Shift+click** before placing sets where the source of the shapes to come is (the first shape copies from there; later shapes keep the same distance from theirs); **Ctrl+Shift+click** sets one absolute spot for all. A path or brush gets its source from its first node. Scroll, Shift+scroll and Ctrl+scroll work as for masks.
+Choose the algorithm, then press a shape button. New shapes start at darktable's "spots" sizes, smaller than the sizes of masks. For clone and heal the shape is placed with its source a little up and to the right, and **the source follows the pointer while the button is held**; later drag the dashed copy to move it. **Shift+click** before placing sets where the source of the shapes to come is (the first shape copies from there; later shapes keep the same distance from theirs); **Ctrl+Shift+click** sets one absolute spot for all. A path or brush gets its source from its first node. Scroll, Shift+scroll and Ctrl+scroll work as for masks.
 
-Click a shape to **pick** it. The Blur type and radius, and the Fill mode, colour and brightness then change that shape (without a shape picked, they are what the next shape starts with). Ctrl+click an algorithm button changes the picked shape: clone and heal can be swapped, and blur and fill, nothing else (darktable's rule). The Shape opacity slider (and Ctrl+scroll) is the shape's opacity in Retouch's group; the algorithm's result is mixed in by `shape mask x opacity`.
+Click a shape to **pick** it. The blur and fill settings then change that shape (without a shape picked, they are what the next shape starts with). The mask opacity slider (and Ctrl+scroll) is the shape's opacity in Retouch's group; the algorithm's result is mixed in by `shape mask x opacity`.
 
 ## Wavelet scales
 
-The scale bar has a box for the picture (**0**), the scales **1** to **N** and the residual **R**. The picture is split into N layers of detail, fine to coarse, and the residual (an "a trous" wavelet with the hat `[1 2 1]/4` widened by 2^scale pixels per pass, mirrored at the edges: darktable's `dwt.c`); the layers add up to the picture. A shape acts on the layer of the scale it was drawn on. Scale 0 acts on the picture itself, before it is split.
-
-- Click a box to work on that scale; the shapes shown (pencil) are those of that scale. Scroll over the bar to step.
-- Drag along the lower edge to set the number of scales (up to 15, and as many as the picture takes); drag along the upper edge for **merge from**: the layers from there on are added together and acted on as one layer (shapes of the scale numbers in the merged range act on the running sum).
-- **Cut shapes** / **Paste shapes** move all the shapes of one scale onto another.
-- **Display wavelet scale** shows the layer you are working on (details are mostly grey, so the lightness is put through *Black / Middle / White* levels; *Auto levels* fits them to the layer). **Show mask** paints where the shapes of the scale act; the last button shows the picture without Retouch. These views only apply while the panel is open.
+The picture is split into N layers of detail, fine to coarse, and the residual (an "a trous" wavelet with the hat `[1 2 1]/4` widened by 2^scale pixels per pass, mirrored at the edges: darktable's `dwt.c`); the layers add up to the picture. A shape acts on the layer of the scale it was drawn on. Scale 0 acts on the picture itself, before it is split. Up to 15 scales, and as many as the picture takes. With *merge from* set, the shapes of the scales in the merged range act on the running sum of those layers. **Cut shapes** / **Paste shapes** move all the shapes of one scale onto another.
 
 Scales are counted in **pixels of the picture being made**, as in darktable: the editing preview is the scan made smaller, so it shows a wider area per scale than the export. Judge scale work at 100%.
 

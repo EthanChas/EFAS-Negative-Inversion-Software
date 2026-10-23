@@ -142,6 +142,12 @@ class _ImageLabel(QLabel):
     def _mask_active(self) -> bool:
         return self._mask_tool is not None and self._mask_tool.active and not self._crop_mode and self._pixels is not None and self._proof is None
 
+    def _mask_pt(self, pos) -> tuple[float, float]:
+        """A point of the picture under the mouse in the numbering shapes and the picture's pixels use: pixel 0's centre is 0, so a point on the picture's edge pixel is 0.5 less than the continuous
+        position the screen gives (and what is painted for a shape is moved 0.5 the other way): a shape then lies exactly where the effect it makes does."""
+        x, y = self._img_pt(pos)
+        return x - 0.5, y - 0.5
+
     def _mask_mods(self, event) -> set:
         m = event.modifiers()
         return {name for name, flag in (("ctrl", Qt.KeyboardModifier.ControlModifier), ("shift", Qt.KeyboardModifier.ShiftModifier), ("alt", Qt.KeyboardModifier.AltModifier)) if m & flag}
@@ -164,12 +170,12 @@ class _ImageLabel(QLabel):
         for mark in self._focus_marks:
             if mark[0] == "ring":
                 path = QPainterPath()
-                path.addEllipse(QPointF(mark[1] * k, mark[2] * k), max(10.0, mark[3] * k), max(10.0, mark[3] * k))
+                path.addEllipse(QPointF((mark[1] + 0.5) * k, (mark[2] + 0.5) * k), max(10.0, mark[3] * k), max(10.0, mark[3] * k))
             else:
                 pts = mark[1]
-                path = QPainterPath(QPointF(pts[0][0] * k, pts[0][1] * k))
+                path = QPainterPath(QPointF((pts[0][0] + 0.5) * k, (pts[0][1] + 0.5) * k))
                 for x, y in pts[1:]:
-                    path.lineTo(x * k, y * k)
+                    path.lineTo((x + 0.5) * k, (y + 0.5) * k)
             painter.setPen(QPen(QColor(0, 0, 0, 200), 4.0))
             painter.drawPath(path)
             painter.setPen(QPen(QColor(255, 204, 0), 2.0))
@@ -193,7 +199,7 @@ class _ImageLabel(QLabel):
         accent = QColor(255, 204, 0)
         cyan = QColor(90, 200, 255)
         for prim in tool.primitives():
-            pts = prim.pts * k
+            pts = (prim.pts + 0.5) * k
             role = prim.role
             if prim.kind == "dot":
                 big = role in ("handle",)
@@ -598,7 +604,7 @@ class _ImageLabel(QLabel):
 
     def mouseDoubleClickEvent(self, event: QMouseEvent) -> None:
         if self._mask_active() and self._mask_button(event) == "left":
-            pt = self._img_pt(event.position())
+            pt = self._mask_pt(event.position())
             if self._mask_tool.press(pt[0], pt[1], "left", self._mask_mods(event), self._mask_tol(), double=True):
                 self._mask_taken = True
                 self.update()
@@ -812,7 +818,7 @@ class _ImageLabel(QLabel):
 
     def mousePressEvent(self, event: QMouseEvent) -> None:
         if self._mask_active() and self._mask_button(event) is not None:
-            pt = self._img_pt(event.position())
+            pt = self._mask_pt(event.position())
             self.setFocus()
             if self._mask_tool.press(pt[0], pt[1], self._mask_button(event), self._mask_mods(event), self._mask_tol()):
                 self._mask_taken = True
@@ -916,7 +922,7 @@ class _ImageLabel(QLabel):
 
     def mouseMoveEvent(self, event: QMouseEvent) -> None:
         if self._mask_active() and not self._dragging:
-            pt = self._img_pt(event.position())
+            pt = self._mask_pt(event.position())
             buttons = {name for name, flag in (("left", Qt.MouseButton.LeftButton), ("right", Qt.MouseButton.RightButton)) if event.buttons() & flag}
             handled = self._mask_tool.move(pt[0], pt[1], buttons, self._mask_mods(event), self._mask_tol())
             tool = self._mask_tool
@@ -990,7 +996,7 @@ class _ImageLabel(QLabel):
         if self._mask_taken and self._mask_button(event) is not None:
             self._mask_taken = False
             if self._mask_tool is not None:
-                pt = self._img_pt(event.position())
+                pt = self._mask_pt(event.position())
                 self._mask_tool.release(pt[0], pt[1], self._mask_button(event), self._mask_mods(event), self._mask_tol())
             self.update()
             event.accept()
@@ -1347,7 +1353,7 @@ class ImageView(QWidget):
         pos = label.mapFrom(self._scroll.viewport(), event.position().toPoint())
         mods = label._mask_mods(event)
         up = event.angleDelta().y() > 0
-        pt = label._img_pt(QPointF(pos))
+        pt = label._mask_pt(QPointF(pos))
         used = label._mask_tool.scroll(pt[0], pt[1], up, mods, label._mask_tol())
         if used:
             label.update()

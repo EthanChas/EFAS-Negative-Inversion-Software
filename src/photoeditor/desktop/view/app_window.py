@@ -120,6 +120,8 @@ from ...features.errormarks import logic as error_marks_logic
 from ...features.presettree import logic as preset_tree
 from .module_menu import ModuleMenus
 from .loading_overlay import LoadingOverlay
+from ...features.masks import properties as mask_properties
+from ...features.retouchdt import dwt as rt_dwt
 from .mask_editor import MaskEditor
 from .mask_manager import MaskManagerPanel
 from .retouch_panel import RetouchPanel
@@ -964,11 +966,12 @@ class AppWindow(QMainWindow):
         left_tools_col.addWidget(self._tagging_panel)
         self._wire_tagging(self._tagging_panel)
 
-        self._mask_manager = MaskManagerPanel()
-
         self._history_panel = HistoryPanel()
         self._history_panel.revert_requested.connect(self.controller.revert_to)
         left_tools_col.addWidget(self._history_panel)
+
+        self._mask_manager = MaskManagerPanel()      # under History, on the left
+        left_tools_col.addWidget(self._mask_manager)
 
         self._presets_panel = LookPresetsPanel()
         self._presets_panel.set_sort(app_settings.get("preset_sort"))
@@ -1487,7 +1490,7 @@ class AppWindow(QMainWindow):
         tool_row.addWidget(self._correction_panel, 0)
 
         # the Tone tab is filled in the order the picture is made: exposure, contrast, shadows and highlights, the curve, the print's response, then the local masks
-        for panel in (self._exposure_tool, self._contrast_tool, self._shadows_highlights_tool, self._curve_tool, self._print_response_tool, self._mask_manager):
+        for panel in (self._exposure_tool, self._contrast_tool, self._shadows_highlights_tool, self._curve_tool, self._print_response_tool):
             tools_col.addWidget(panel)
         tools_col.addStretch(1)
 
@@ -2804,6 +2807,7 @@ class AppWindow(QMainWindow):
         box.draw_requested.connect(lambda kind, k=key: self.begin_mask_drawing(k, kind))
         box.edit_toggled.connect(lambda on, k=key: self.set_mask_editing(k, on))
         box.show_toggled.connect(lambda on, k=key: self.set_mask_display(k, on))
+        panel.toggled.connect(lambda expanded, k=key: None if expanded else self._mask_editor.module_closed(k))     # a folded module lets go of its mask, as darktable's does
 
     def _refresh_blend_boxes(self, *_args) -> None:
         """Every module's Mask box shows what the open photo has: its blend, and the shapes and groups there are to choose from."""
@@ -2863,7 +2867,9 @@ class AppWindow(QMainWindow):
         opacity = None
         if form is not None and s.group:
             opacity = next((p["opacity"] for p in c.mask_set().members(s.group) if p["formid"] == form.formid), None)
-        self._retouch_tool.set_settings(s, form, opacity)
+        state = c.state
+        ps = state.preview_rgb.shape[1] / state.original_rgb.shape[1] if state.preview_rgb is not None and state.original_rgb is not None else 1.0
+        self._retouch_tool.set_settings(s, form, opacity, rt_dwt.first_scale_visible(s.num_scales, ps))
         self._retouch_tool.set_view(c.state.retouch_view)
 
     def _on_retouch_picked(self, form_id: int) -> None:
@@ -2894,6 +2900,7 @@ class AppWindow(QMainWindow):
         if expanded:
             return
         self.controller.set_retouch_view("")
+        self._retouch_tool.set_view("")
         if self._mask_editor._retouch:
             self._mask_editor.stop()
 
@@ -2909,53 +2916,92 @@ class AppWindow(QMainWindow):
         m.element_changed.connect(lambda group, form, changes: c.set_mask_element(group, form, "Changed a mask in a group", **changes))
         m.opacity_preview.connect(lambda group, form, value: c.set_mask_element(group, form, None, opacity=value))
         m.opacity_committed.connect(lambda group, form, value: c.set_mask_element(group, form, "Changed a mask's opacity", opacity=value))
-        m.detections_requested.connect(self._list_detections)
+        m.property_changed.connect(self._on_mask_property)
+        m.smoothing_changed.connect(lambda level: setattr(self._mask_editor.tool, "smoothing", {"low": 0.002, "medium": 0.004, "high": 0.008}.get(level, 0.004)))
         m.detection_picked.connect(self._on_detection_picked)
+        m.detection_group_picked.connect(self._on_detection_group_picked)
+        self._detection_group = ""
         m.detection_delete_requested.connect(self._on_detection_delete)
         for signal in (c.masks_changed, c.history_changed, c.reverted, c.file_changed):
             signal.connect(self._refresh_mask_manager)
         c.file_changed.connect(self._forget_detections)
-        c.image_adjusted.connect(self._detections_may_be_ready)
-        self._listing_detections = False
+        self._detections_timer = QTimer(self)
+        self._detections_timer.setSingleShot(True)
+        self._detections_timer.setInterval(350)
+        self._detections_timer.timeout.connect(self._fill_detections)
+        for signal in (c.image_adjusted, c.image_preview_changed, c.reverted):      # the list follows the picture: what dust detection finds changes with its settings (and a photo just opened has its first picture drawn without either of the first two)
+            signal.connect(lambda *_: self._detections_timer.start())
+        self._detections_key = None
         self._refresh_mask_manager()
+
+    def _on_mask_property(self, form_id: int, name: str, value: float, final: bool) -> None:
+        """A slider of the Masks panel's properties: the picked shape changes as the wheel over it would change it."""
+        c = self.controller
+        form = c.mask_set().get(form_id)
+        points = mask_properties.apply(form, name, value) if form is not None else None
+        if points is not None:
+            c.set_mask_points(form_id, points, f"Changed the {name} of {form.name}" if final else None)
 
     def _refresh_mask_manager(self, *_args) -> None:
         self._mask_manager.set_masks(self.controller.mask_set())
 
     def _forget_detections(self, *_args) -> None:
-        self._listing_detections = False
+        self._detections_key = None
         self._image_view.set_focus_marks([])
         self._mask_manager.clear_detections()
-
-    def _list_detections(self) -> None:
-        """List detections: the Show Detections wash is what the list is read from, so it is turned on (and the list filled when the picture is drawn again with it)."""
-        c = self.controller
-        if c.state.preview_rgb is None:
-            self._mask_manager.set_note("Open a photo first.")
-            return
-        if c.state.show_detections and c.state.overlay_rgba is not None:
-            self._fill_detections()
-            return
-        self._listing_detections = True
-        self._dust_tool.show_detections()
-        if c.state.show_detections:
-            c.refresh_picture()
-
-    def _detections_may_be_ready(self) -> None:
-        if self._listing_detections and self.controller.state.show_detections:
-            self._listing_detections = False
-            self._fill_detections()
+        self._detections_timer.start()      # and listed again once the new photo has been drawn
 
     def _fill_detections(self) -> None:
-        items = self.controller.detection_items()
+        """Dust, Hairs and Scratches in the Masks panel's Dust Detection folder, read from what dust detection found in the picture just drawn (made again only when it differs)."""
+        c = self.controller
+        if c.state.image_rgb is None:
+            return
+        items = c.detection_items()
+        key = tuple((k, tuple((round(i.get("x", i.get("index", 0))), round(i.get("y", 0))) for i in items[k])) for k in ("dust", "hairs", "scratches"))
+        if key == self._detections_key:
+            return
+        self._detections_key = key
         self._mask_manager.set_detections(items)
+        if self._detection_group:
+            self._show_detection_group()
         counts = ", ".join(f"{len(items[k])} {k}" for k in ("dust", "hairs", "scratches"))
-        self._mask_manager.set_note(f"Found {counts}. Pick one to ring it on the picture; Delete takes it out.")
+        self._mask_manager.set_note(f"Found {counts}. Pick one to ring it on the picture; Delete leaves it unrepaired.")
         self._image_view.set_focus_marks([])
+
+    def _group_kinds(self) -> tuple:
+        return {"all": ("dust", "hairs", "scratches"), "dust": ("dust",), "hairs": ("hairs",), "scratches": ("scratches",)}.get(self._detection_group, ())
+
+    def _detection_view(self):
+        """What the picture shows while a folder of the Dust Detection list is picked: every speck and hair of it in its own colour (the scratches are underlined, see _show_detection_group)."""
+        return self.controller.detection_wash(self._group_kinds())
+
+    def _on_detection_group_picked(self, group: str) -> None:
+        """A whole folder of the Dust Detection list was clicked: everything in it is shown on the picture, ringed and washed; clicking away puts the picture back."""
+        self._detection_group = group
+        if group:
+            self._fill_detections()         # (the list is as fresh as what is about to be shown)
+        self._show_detection_group()
+
+    def _show_detection_group(self) -> None:
+        c = self.controller
+        if not self._detection_group:
+            self._image_view.set_focus_marks([])
+            self._image_view.set_overlay(c.state.overlay_rgba if c.state.show_detections else None)
+            return
+        items = c.detection_items()
+        marks = []
+        for kind in self._group_kinds():
+            for item in items[kind]:
+                if kind == "scratches":
+                    marks.append(("line", [tuple(p) for p in item["pts"]]))
+                else:
+                    marks.append(("ring", item["x"], item["y"], max(item["w"], item["h"]) / 2 + 4))
+        self._image_view.set_focus_marks(marks)
+        self._image_view.set_overlay(self._detection_view())
 
     def _on_detection_picked(self, kind: str, item) -> None:
         if item is None:
-            self._image_view.set_focus_marks([])
+            self._show_detection_group()      # (nothing single picked: whatever whole folder is picked, or the plain picture)
             return
         if kind == "scratches":
             self._image_view.set_focus_marks([("line", [tuple(p) for p in item["pts"]])])
@@ -2969,8 +3015,6 @@ class AppWindow(QMainWindow):
             done = c.delete_scratch_line(item["index"])
         else:
             done = c.delete_detection_at(item["x"], item["y"])
-        if done:
-            self._listing_detections = True   # the list is made again when the picture has been drawn without it
 
     def match_grain_size(self) -> None:
         """Grain Sharpening > Match My Grain: set Size to the width the Grain Report measures in the open photo."""
@@ -3566,7 +3610,7 @@ class AppWindow(QMainWindow):
 
     def _refresh_overlay(self) -> None:
         state = self.controller.state
-        self._image_view.set_overlay(state.overlay_rgba if state.show_detections else None)
+        self._image_view.set_overlay(self._detection_view() if self._detection_group else (state.overlay_rgba if state.show_detections else None))
         marking = state.show_shadow_clip or state.show_highlight_clip
         self._image_view.set_clip_overlay(state.clip_rgba if marking else None)
         if marking and state.clip_fractions is not None:
@@ -4621,12 +4665,27 @@ class AppWindow(QMainWindow):
         if app_settings.get("collapse_on_tab_change"):
             for left in was_open:
                 self._close_modules_when_hidden(panels[left])
+        self._end_masking_in([panels[o] for o in was_open] + ([] if checked else [panels[tab_id]]))
         if checked:
             QTimer.singleShot(260, lambda p=panels[tab_id]: self._fit_sidebar_to_tab(p))
             for other_id, other_panel in panels.items():
                 if other_id != tab_id:
                     other_panel.set_open(False)
                     self._tool_rail.set_tab_checked(other_id, False)
+
+    def _end_masking_in(self, closing: list) -> None:
+        """Tabs are closing: whatever is being drawn, edited or shown on the picture for a module in them stops (darktable does the same when a module loses focus): a shape being placed is let
+        go, shapes are no longer shown for editing, a mask shown for a module goes away, and Retouch's views of the picture (a wavelet scale, its masks, "without Retouch") are put back."""
+        if not closing:
+            return
+        held = lambda widget: any(p.isAncestorOf(widget) for p in closing)
+        ed = self._mask_editor
+        if (ed._module and held(self._blend_boxes[ed._module])) or (ed._retouch and held(self._retouch_tool)):
+            ed.stop()
+        if ed._show_key and held(self._blend_boxes[ed._show_key]):
+            ed.show_module(ed._show_key, False)
+        if held(self._retouch_tool):
+            self._on_retouch_toggled(False)
 
     def _show_search_results(self, on: bool, reopen: bool = True) -> None:
         """Open (or close) the list of modules the search box found. Opening it closes the tab that was showing (remembered); closing it brings that tab back when `reopen`."""

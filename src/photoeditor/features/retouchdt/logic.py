@@ -144,9 +144,9 @@ def is_neutral(d) -> bool:
 
 
 def to_json(d) -> str:
-    """The renderer's copy of the settings (so any change of them draws the picture again): JSON, "" when there are no shapes."""
+    """The renderer's copy of the settings (so any change of them draws the picture again): JSON, "" when they are all as they start."""
     s = Settings.from_dict(d)
-    return json.dumps(s.to_dict(), sort_keys=True, separators=(",", ":")) if s.active() else ""
+    return json.dumps(s.to_dict(), sort_keys=True, separators=(",", ":")) if s != Settings() else ""
 
 
 @lru_cache(maxsize=16)
@@ -231,7 +231,7 @@ def process_form(layer: np.ndarray, setting: FormSetting, mask: np.ndarray, opac
     if algo in (CLONE, HEAL):
         if delta is None:
             return False
-        dx, dy = int(delta[0]), int(delta[1])        # darktable hands whole pixels on
+        dx, dy = int(round(delta[0])), int(round(delta[1]))      # whole pixels (darktable cuts the fraction off; rounding keeps the copy on the source that is drawn)
         if dx == 0 and dy == 0:
             return False
     area = _area(box, size, dx, dy, 1 if algo == HEAL else 0)
@@ -306,7 +306,7 @@ def auto_levels(layer: np.ndarray, current=None) -> list:
 # ------------------------------------------------------------------ the module
 def process(pixels: np.ndarray, s: Settings, ctx: Context) -> np.ndarray:
     """The picture (uint8, height x width x 3) with Retouch applied; the same array when there is nothing to do."""
-    if not s.forms or ctx.view == "suppress":
+    if ctx.view == "suppress" or (not s.forms and ctx.view != "scale"):    # (a wavelet scale can be looked at before there is a shape on it)
         return pixels
     h, w = pixels.shape[:2]
     ps = ctx.preview_scale if ctx.preview_scale > 0 else 1.0
