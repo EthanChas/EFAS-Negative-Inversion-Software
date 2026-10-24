@@ -1,6 +1,6 @@
-# Modern conversion (film & paper)
+# NegPy Conversion (film & paper)
 
-Convert tab > Conversion > **Method**. Two choices: **Modern (film & paper)**, the default, and **Original (stretch)**, the conversion EFAS used before. Photos that were edited before Modern existed keep Original; photos that were only opened, never edited, and new photos get Modern. The choice is saved per photo and goes into presets with the rest of the metering. This page says what Modern does, why, and how far to trust it.
+Convert tab > Conversion > **Method**. Two choices: **NegPy Conversion (film & paper)**, the default, and **Original (stretch)**, the conversion EFAS used before. Photos that were edited before NegPy Conversion existed keep Original; photos that were only opened, never edited, and new photos get NegPy Conversion. The choice is saved per photo and goes into presets with the rest of the metering. This page says what NegPy Conversion does, why, and how far to trust it.
 
 ## Why a second conversion
 
@@ -10,7 +10,7 @@ The Original conversion stretches each colour channel in a straight line between
 - **the scene**, whose own range and middle differ from frame to frame;
 - **the paper**, which has a white and a black that are not the ends of the scan, and whose curve rolls highlights and shadows off instead of clipping them.
 
-Modern keeps them apart, in the order a darkroom meets them.
+NegPy Conversion keeps them apart, in the order a darkroom meets them.
 
 ## The steps
 
@@ -34,7 +34,7 @@ The approach (density in, characteristic curve, grade, automatic density and gra
 
 ## How far to trust it
 
-On the simulator, Modern and Original are close in colour, and Modern clips far fewer pixels (a fraction of a percent against several percent) and keeps highlight detail. That is a statement about the simulator's film, which uses the same kind of S-shaped curve the conversion assumes, so it shows the maths is consistent, not that it is right for every stock. Two limits are worth knowing:
+On the simulator, NegPy Conversion and Original are close in colour, and NegPy Conversion clips far fewer pixels (a fraction of a percent against several percent) and keeps highlight detail. That is a statement about the simulator's film, which uses the same kind of S-shaped curve the conversion assumes, so it shows the maths is consistent, not that it is right for every stock. Two limits are worth knowing:
 
 - Balancing from the picture's own range means a scene dominated by one colour is pulled toward neutral a little. The film base, when sampled, does not fix this by itself; it improves the film-curve step only.
 - The film curve uses one generic S-shape for every stock. Stock-specific curves would do better; the sensitometry tools (Advanced mode) can measure a real film's curves if you have a step tablet.
@@ -43,11 +43,11 @@ On real scans it gives smoother highlights and less clipping than Original, with
 
 ## Checked against the Pakon reference
 
-Ali Bosworth's Pakon F-X35 reference (documentation, CC BY 4.0, https://github.com/alibosworth/pakon-reference) records how the Pakon scanners turn a raw colour-negative scan into a positive, from reverse engineering and checks on real scanners. EFAS never talks to a scanner, so almost all of it (the USB protocol, the firmware, the calibration data) does not matter here. Its colour-pipeline page is a useful outside check on Modern's first steps, and it agrees:
+Ali Bosworth's Pakon F-X35 reference (documentation, CC BY 4.0, https://github.com/alibosworth/pakon-reference) records how the Pakon scanners turn a raw colour-negative scan into a positive, from reverse engineering and checks on real scanners. EFAS never talks to a scanner, so almost all of it (the USB protocol, the firmware, the calibration data) does not matter here. Its colour-pipeline page is a useful outside check on NegPy Conversion's first steps, and it agrees:
 
-- The scanner's negative-to-positive step is a pure log conversion of the linear scan code, D = 3500 x log10(16383 / x): density, with no tone shaping in it. Modern's density step is the same function (D = -log10 of the linear value; only the scale differs), and a test checks that the two agree to 0.00002.
-- The film base must be compensated once, in one place: doing it both in the linear domain and in the density domain applies it twice. Modern uses a sampled base in one place (the film-curve step), so a scan and its sampled film base can be scaled together (an exposure change) without changing the print. A test checks that, and checks that scaling the scan alone does change it.
-- The off-diagonal terms of the scanner's 3 x 3 matrix are the dye crosstalk correction in density, each row summing to about 1 so neutrals stay neutral. That is what Modern's crosstalk step does with the film profiles.
+- The scanner's negative-to-positive step is a pure log conversion of the linear scan code, D = 3500 x log10(16383 / x): density, with no tone shaping in it. NegPy Conversion's density step is the same function (D = -log10 of the linear value; only the scale differs), and a test checks that the two agree to 0.00002.
+- The film base must be compensated once, in one place: doing it both in the linear domain and in the density domain applies it twice. NegPy Conversion uses a sampled base in one place (the film-curve step), so a scan and its sampled film base can be scaled together (an exposure change) without changing the print. A test checks that, and checks that scaling the scan alone does change it.
+- The off-diagonal terms of the scanner's 3 x 3 matrix are the dye crosstalk correction in density, each row summing to about 1 so neutrals stay neutral. That is what NegPy Conversion's crosstalk step does with the film profiles.
 
 Two things are deliberately not taken from it. The matrix is documented as the F-235 engine's, and the 135-line scanners (F-135 and F-135+) are reported to use a different, per-unit colour transform, so it is not a general film profile and EFAS does not ship it as one. And the reference documents the scanner's inversion, not its look, so it says nothing about how big the Pakon response in the Lab Look module should be: those sizes stay estimates from published descriptions.
 
@@ -61,7 +61,7 @@ Each picture is exposed onto three modelled films, at three exposure errors, und
 
 ## Controls that belong to Original
 
-Range clip, Colour cast, the white and black points and their droppers are Original's way of setting black and white. Under Modern they are greyed out; Grade and Print density do that job. Margin and Draw Region still choose which part of the picture is measured.
+Range clip, Colour cast, the white and black points and their droppers are Original's way of setting black and white. Under NegPy Conversion they are greyed out; Grade and Print density do that job. Margin and Draw Region still choose which part of the picture is measured.
 
 ## Scan encoding
 

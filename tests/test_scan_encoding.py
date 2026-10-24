@@ -1,4 +1,4 @@
-"""The scan's encoding: the Modern conversion turns a scan's numbers back into light with the curve they were made with (a RAW file EFAS decodes: BT.709; any other file: sRGB;
+"""The scan's encoding: the NegPy Conversion turns a scan's numbers back into light with the curve they were made with (a RAW file EFAS decodes: BT.709; any other file: sRGB;
 or one the person picks), per photo. A photo saved before this was a setting keeps the sRGB reading it was edited with."""
 import inspect
 
@@ -101,7 +101,7 @@ def test_a_look_never_carries_the_scan_encoding():
 
 
 def test_a_raw_file_is_decoded_with_libraws_own_curve(monkeypatch, tmp_path):
-    """The Modern conversion reads RAW scans as BT.709 because libraw puts that curve on a decode that is not told otherwise. If a gamma is ever passed to the decode, the
+    """The NegPy Conversion reads RAW scans as BT.709 because libraw puts that curve on a decode that is not told otherwise. If a gamma is ever passed to the decode, the
     reading in render.py (`_source_is_raw`) has to follow it."""
     from photoeditor.features.open_image import processor
 

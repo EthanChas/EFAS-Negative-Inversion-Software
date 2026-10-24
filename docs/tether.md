@@ -47,7 +47,7 @@ are left alone: on a copy stand the aperture is the lens's sharp one and the ISO
 practice camera has the same controls: its picture gets brighter with more light and clips, so auto exposure can be tried without a camera. Written against Canon's property codes (each code is an eighth
 of a stop) and a stand-in, not yet tried on a real body.
 
-**View.** *Show as a positive* uses EFAS's own Modern conversion (the same as in the editor), so you judge focus on what you will see; a plain flip would keep the orange mask and come out
+**View.** *Show as a positive* uses EFAS's own NegPy Conversion (the same as in the editor), so you judge focus on what you will see; a plain flip would keep the orange mask and come out
 cyan. The conversion is metered on the middle of the picture and re-made about twice a second. *Pick the Clear Film*, then click a patch of clear film between frames, and the conversion
 knows the film's orange; *Forget* goes back to working it out. *Focus peaking* marks what is in focus in colour (blue sharp, green sharper, yellow very sharp, red the sharpest); the
 *Peaking sensitivity* slider decides how much is marked (100% marks every sharp spot, 0% only the very sharpest). Holding **N** shows the other of positive and negative for as long as it is held

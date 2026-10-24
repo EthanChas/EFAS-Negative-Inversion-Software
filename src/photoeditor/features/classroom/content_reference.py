@@ -53,7 +53,7 @@ If it is neither, you have a cast to correct by eye, and the question is *in whi
 
 ## Where in the picture is it?
 
-A cast that is only in the **shadows** (or only in the highlights), the opposite of the cast in the other end, is **crossover**, and no single colour slider can fix it without disturbing the midtones. Use the Modern conversion's **Red, Green and Blue grade** ([[modern-conversion-controls]]) or the Tone Curve's colour curves ([[tone-curve-module]]). A cast that is only at the **edges** is not a white balance problem at all: see [[recipe-flat-light]].
+A cast that is only in the **shadows** (or only in the highlights), the opposite of the cast in the other end, is **crossover**, and no single colour slider can fix it without disturbing the midtones. Use the NegPy Conversion's **Red, Green and Blue grade** ([[modern-conversion-controls]]) or the Tone Curve's colour curves ([[tone-curve-module]]). A cast that is only at the **edges** is not a white balance problem at all: see [[recipe-flat-light]].
 
 ## The golden rule
 
@@ -150,7 +150,7 @@ A flat scan has a histogram squeezed into the middle: nothing near black, nothin
 
 ## Is it the conversion?
 
-First, check the conversion's range. In the **Modern** method, raise **Grade** a little so the picture's own range fills the paper's; in the **Original** method, use the white and black points ([[modern-conversion-controls]], [[white-black-points]]). A picture that is flat because the conversion did not spread it properly is cured here, at the source, without touching anything later in the chain.
+First, check the conversion's range. In the **NegPy Conversion** method, raise **Grade** a little so the picture's own range fills the paper's; in the **Original** method, use the white and black points ([[modern-conversion-controls]], [[white-black-points]]). A picture that is flat because the conversion did not spread it properly is cured here, at the source, without touching anything later in the chain.
 
 ## Then the tone
 
@@ -231,7 +231,7 @@ NOTE: Some shortcuts only work in the editor, some in the Workbench (the rating 
 - **EV (exposure value) / stop**: a doubling or halving of light. [[stops-and-ev]]
 - **Flat field**: a correction for uneven backlight, from a reference shot. [[flat-field-module]]
 - **Gain**: a multiplier. Flat Field and Shadows & Highlights both work by gain.
-- **Grade**: the contrast of the 'paper' in the Modern conversion. [[modern-conversion-controls]]
+- **Grade**: the contrast of the 'paper' in the NegPy Conversion. [[modern-conversion-controls]]
 - **Grain**: the texture of silver or dye in film. [[film-speed-and-grain]]
 - **Halo**: a bright or dark rim next to an edge, caused by too much sharpening or local contrast. [[sharpening-module]]
 - **Histogram**: a graph of how many pixels have each brightness. [[histogram-basics]]

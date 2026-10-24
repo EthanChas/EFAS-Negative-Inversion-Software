@@ -39,7 +39,7 @@ _SCRIPT = textwrap.dedent(r"""
     win._new_instance("retouch", None); pump(1.0)
     copy = win._retouch_panels[1]
     layout = base.parentWidget().layout()
-    assert layout.indexOf(copy) == layout.indexOf(base) + 1 and copy._header._title_label.text() == "Retouch 1" and copy.power_on()
+    assert layout.indexOf(copy) == layout.indexOf(base) + 1 and copy._header._title_label.text() == "Retouch 1 (darktable)" and copy.power_on()
     assert s.instances["retouch"][0]["id"] == 1
 
     # --- its shapes are its own
@@ -68,7 +68,7 @@ _SCRIPT = textwrap.dedent(r"""
     assert red() == 0 and not copy.power_on() and green > 0
     copy.power_toggled.emit(True); assert pump(15, lambda: red() > 50)
     c.rename_instance("retouch", 1, "dust"); pump(0.4)
-    assert copy._header._title_label.text() == "Retouch 1 - dust"
+    assert copy._header._title_label.text() == "Retouch 1 - dust (darktable)"
     c.set_retouch_view("mask", 1); pump(2.0); win._refresh_retouch()
     assert s.retouch_view == "mask" and s.retouch_view_of == 1 and copy._show_mask.isChecked() and not base._show_mask.isChecked()
     c.set_retouch_view("", 1); pump(1.0)

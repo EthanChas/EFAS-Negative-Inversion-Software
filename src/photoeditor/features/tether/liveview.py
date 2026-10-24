@@ -1,6 +1,6 @@
 """What the tether window does with each live picture from the camera: decode it, turn the negative into a positive, mark what is in focus, and measure how sharp it is. No Qt.
 
-The positive is EFAS's own Modern conversion (features/negative/printengine.py), not a plain flip: a plain flip keeps the orange mask and comes out cyan. The conversion's lookup
+The positive is EFAS's own NegPy Conversion (features/negative/printengine.py), not a plain flip: a plain flip keeps the orange mask and comes out cyan. The conversion's lookup
 table is made from the picture and then reused for about half a second, so most pictures cost only a table lookup. Focus peaking is EFAS's own too (features/focuspeaking).
 Sharpness is a gated edge-energy number: gradients below the picture's noise floor count for nothing, because the sum of many tiny noise gradients would otherwise score a
 blurred picture as high as a sharp one.

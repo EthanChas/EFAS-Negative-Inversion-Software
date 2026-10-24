@@ -576,7 +576,7 @@ class TetherWindow(QDialog):
         lay = QVBoxLayout(box)
         self.positive_check = QCheckBox("Show as a positive (I; hold N to peek at the negative)")
         self.positive_check.setChecked(True)
-        self.positive_check.setToolTip("EFAS's own Modern conversion turns the negative into a picture as you focus, so you judge focus on what you will see")
+        self.positive_check.setToolTip("EFAS's own NegPy Conversion turns the negative into a picture as you focus, so you judge focus on what you will see")
         self.positive_check.toggled.connect(self._view_changed)
         lay.addWidget(self.positive_check)
         meter = QHBoxLayout()

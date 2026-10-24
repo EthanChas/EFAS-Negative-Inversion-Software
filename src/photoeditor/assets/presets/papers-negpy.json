@@ -1,0 +1,81 @@
+{
+ "presets": [
+  {
+   "name": "Papers (NegPy)/Neutral (default)",
+   "description": "NegPy's neutral paper: Print Response back to its defaults (nothing added).",
+   "look": {
+    "print_snap": 0.0,
+    "print_toe": 0.0,
+    "print_toe_width": 2.5,
+    "print_shoulder": 0.0,
+    "print_shoulder_width": 2.5
+   }
+  },
+  {
+   "name": "Papers (NegPy)/B&W/Ilford Multigrade RC",
+   "description": "A neutral variable-contrast workhorse on resin-coated paper: maximum density about 2.1, normal contrast. Ported from NegPy's paper profile (GPL-3.0) by fitting Print Response's five sliders to its curve: the fit is within 0.25 of 255 tone levels, and the paper itself differs from neutral by 3.1. Only the tone curve is carried over: NegPy's colour terms for this paper and its lith colour path are not part of Print Response.",
+   "look": {
+    "print_snap": 0.128,
+    "print_toe": -0.006,
+    "print_toe_width": 5.0,
+    "print_shoulder": 0.298,
+    "print_shoulder_width": 0.78
+   }
+  },
+  {
+   "name": "Papers (NegPy)/B&W/Ilford Multigrade FB Classic",
+   "description": "Fibre-based (baryta) paper: deeper blacks and a crisper shadow knee than the resin-coated one, maximum density about 2.15. Ported from NegPy's paper profile (GPL-3.0) by fitting Print Response's five sliders to its curve: the fit is within 0.25 of 255 tone levels, and the paper itself differs from neutral by 3.1. Only the tone curve is carried over: NegPy's colour terms for this paper and its lith colour path are not part of Print Response.",
+   "look": {
+    "print_snap": 0.131,
+    "print_toe": -0.162,
+    "print_toe_width": 0.54,
+    "print_shoulder": 0.306,
+    "print_shoulder_width": 0.84
+   }
+  },
+  {
+   "name": "Papers (NegPy)/B&W/Foma Fomatone MG Classic",
+   "description": "A warm chlorobromide paper with a gentler rendering, maximum density about 2.0. Ported from NegPy's paper profile (GPL-3.0) by fitting Print Response's five sliders to its curve: the fit is within 0.11 of 255 tone levels, and the paper itself differs from neutral by 1.8. Only the tone curve is carried over: NegPy's colour terms for this paper and its lith colour path are not part of Print Response.",
+   "look": {
+    "print_snap": 0.071,
+    "print_toe": -0.018,
+    "print_toe_width": 5.0,
+    "print_shoulder": 0.168,
+    "print_shoulder_width": 0.85
+   }
+  },
+  {
+   "name": "Papers (NegPy)/B&W/Foma Fomabrom Variant",
+   "description": "A neutral baryta paper, maximum density about 2.0. Ported from NegPy's paper profile (GPL-3.0) by fitting Print Response's five sliders to its curve: the fit is within 0.24 of 255 tone levels, and the paper itself differs from neutral by 3.3. Only the tone curve is carried over: NegPy's colour terms for this paper and its lith colour path are not part of Print Response.",
+   "look": {
+    "print_snap": 0.16,
+    "print_toe": -0.147,
+    "print_toe_width": 0.56,
+    "print_shoulder": 0.347,
+    "print_shoulder_width": 1.2
+   }
+  },
+  {
+   "name": "Papers (NegPy)/Colour (RA4)/Kodak Endura Premier",
+   "description": "A colour paper with deep blacks and a punchy midtone S, maximum density about 2.55. Ported from NegPy's paper profile (GPL-3.0) by fitting Print Response's five sliders to its curve: the fit is within 0.39 of 255 tone levels, and the paper itself differs from neutral by 4.6. Only the tone curve is carried over: NegPy's colour terms for this paper and its lith colour path are not part of Print Response.",
+   "look": {
+    "print_snap": 0.48,
+    "print_toe": 0.406,
+    "print_toe_width": 5.0,
+    "print_shoulder": 0.716,
+    "print_shoulder_width": 2.99
+   }
+  },
+  {
+   "name": "Papers (NegPy)/Colour (RA4)/Fujicolor Crystal Archive",
+   "description": "A colour paper with brilliant whites and a vivid look, maximum density about 2.35 (NegPy's own rough estimate: no curve is published for it). Ported from NegPy's paper profile (GPL-3.0) by fitting Print Response's five sliders to its curve: the fit is within 0.24 of 255 tone levels, and the paper itself differs from neutral by 2.8. Only the tone curve is carried over: NegPy's colour terms for this paper and its lith colour path are not part of Print Response.",
+   "look": {
+    "print_snap": 0.258,
+    "print_toe": 0.219,
+    "print_toe_width": 5.0,
+    "print_shoulder": 0.456,
+    "print_shoulder_width": 2.83
+   }
+  }
+ ]
+}

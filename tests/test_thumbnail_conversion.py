@@ -1,4 +1,4 @@
-"""The quick thumbnail of a photo that has not been opened yet is made with the same conversion the editor starts a photo with (Modern), so the tile does not change when the photo
+"""The quick thumbnail of a photo that has not been opened yet is made with the same conversion the editor starts a photo with (NegPy Conversion), so the tile does not change when the photo
 is opened."""
 import io
 
@@ -27,7 +27,7 @@ def test_a_thumbnail_of_a_negative_is_made_with_the_modern_conversion(tmp_path):
     modern = printengine.convert(pixels, printengine.Settings(transfer="srgb")).astype(float)
     original = invert_negative(pixels).astype(float)
     assert tile.shape == modern.shape
-    assert np.abs(tile - modern).mean() < 6.0, "the tile is the Modern conversion (JPEG compression aside)"
+    assert np.abs(tile - modern).mean() < 6.0, "the tile is the NegPy Conversion (JPEG compression aside)"
     assert np.abs(tile - original).mean() > 2.0 * np.abs(tile - modern).mean(), "and not the Original one"
 
 

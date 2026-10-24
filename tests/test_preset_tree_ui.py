@@ -85,6 +85,8 @@ _SCRIPT = textwrap.dedent(r'''
     stop = next((i for i in range(start + 1, len(whole)) if not whole[i].startswith(" ")), len(whole))
     assert [x for x in whole[start + 1:stop] if not x.startswith("    ")][:3] == ["  CineStill", "  Foma", "  Fuji"], whole[start:start + 6]
     assert whole[:start] + whole[stop:] == ["Film Stocks", "  Cinestill", "    Cinestill", "  Fuji", "    Superia", "  Kodak", "    Gold", "    Portra", "    Portra Airy",
+                       "Papers (NegPy)", "  B&W", "    Ilford Multigrade RC", "    Ilford Multigrade FB Classic", "    Foma Fomatone MG Classic", "    Foma Fomabrom Variant",
+                       "  Colour (RA4)", "    Kodak Endura Premier", "    Fujicolor Crystal Archive", "  Neutral (default)",
                        "Scanners (DarkSlide)", "  Frontier Classic", "  Frontier Modern", "  Noritsu", "  Neutral", "  Agfa d-Lab",
                        "Scanners (EFAS Original)", "  Frontier 100", "  Crystal 100", "  Pakon (Clean and Rich)", "  Noritsu (Green Shadows)",
                        "Watermarks (EFAS Examples)", "  Film credit, bottom left, light", "  Film credit, bottom left, dark", "  Film and camera line, bottom centre",

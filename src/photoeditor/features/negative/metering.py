@@ -16,7 +16,7 @@ _FIELDS_NAMES = {
     "engine": "conversion", "crosstalk": "dye crosstalk", "film_curve": "film curve", "grade": "print grade", "density": "print density",
     "paper_toe": "paper toe", "paper_shoulder": "paper shoulder", "grade_trim": "colour crossover", "film": "film profile", "transfer": "scan encoding",
 }
-ENGINES = ("print", "standard")   # "print" is Modern (film and paper: features/negative/printengine.py), "standard" is Original (a straight stretch of each channel)
+ENGINES = ("print", "standard")   # "print" is NegPy Conversion (film and paper: features/negative/printengine.py), "standard" is Original (a straight stretch of each channel)
 DEFAULT_ENGINE = "print"
 TRANSFERS = ("auto", "srgb", "bt709", "linear")   # how the scan's codes were made from light; "auto" reads it from the file (RAW decoded by EFAS: bt709, anything else: srgb)
 
@@ -47,7 +47,7 @@ class Metering:
     black: float = 0.0
     white_trim: tuple[float, float, float] = (0.0, 0.0, 0.0)
     black_trim: tuple[float, float, float] = (0.0, 0.0, 0.0)
-    engine: str = DEFAULT_ENGINE    # "print" (Modern) or "standard" (Original)
+    engine: str = DEFAULT_ENGINE    # "print" (NegPy Conversion) or "standard" (Original)
     film: str = "generic"            # print engine: the crosstalk profile (printengine.profiles(): generic, none, a bundled film's file name, or user:<file>)
     transfer: str = "auto"          # print engine: how the scan was encoded (TRANSFERS). Photos saved before this was a setting have "srgb", the reading they were edited with
     crosstalk: float = 1.0          # print engine: how much of the dyes' crosstalk is taken out
@@ -76,7 +76,7 @@ class Metering:
 
     def to_dict(self) -> dict[str, Any]:
         """The conversion method, the scan encoding and whatever else differs from the defaults. The method and the encoding are always written: a saved photo with no method is
-        one from before the Modern conversion existed, and one with no encoding is from before that was a setting; each keeps the look it was edited with (see from_dict)."""
+        one from before the NegPy Conversion existed, and one with no encoding is from before that was a setting; each keeps the look it was edited with (see from_dict)."""
         base, out = Metering(), {"engine": self.engine, "transfer": self.transfer}
         for field in dataclasses.fields(self):
             value, default = getattr(self, field.name), getattr(base, field.name)
@@ -87,7 +87,7 @@ class Metering:
     @classmethod
     def from_dict(cls, data: Any) -> "Metering":
         """Always valid: unknown keys are ignored, bad values fall back to the default, numbers are pulled into range. A saved dict with no conversion method was made before
-        the Modern conversion existed and keeps the Original one; one with no scan encoding was made when every scan was read as sRGB and keeps that."""
+        the NegPy Conversion existed and keeps the Original one; one with no scan encoding was made when every scan was read as sRGB and keeps that."""
         if isinstance(data, Metering):
             return data
         if not isinstance(data, dict):

@@ -203,12 +203,12 @@ class NegativeToolPanel(CollapsiblePanel):
         conv_label.setFixedWidth(80)
         conv_row.addWidget(conv_label)
         self._conversion = QComboBox()
-        self._conversion.addItem("Modern (film & paper)", "print")
+        self._conversion.addItem("NegPy Conversion (film & paper)", "print")
         self._conversion.addItem("Original (stretch)", "standard")
         self._conversion.setToolTip(
-            "Modern treats the film, the scene and the paper separately: it takes out the dyes' crosstalk, puts back part of the film's toe and shoulder, balances the "
+            "NegPy Conversion treats the film, the scene and the paper separately: it takes out the dyes' crosstalk, puts back part of the film's toe and shoulder, balances the "
             "channels, and prints through a paper curve with a toe and a shoulder, so highlights roll off instead of clipping. Original is the earlier conversion: it "
-            "stretches each colour channel in a straight line between its darkest and lightest readings. Photos edited before Modern existed keep Original.")
+            "stretches each colour channel in a straight line between its darkest and lightest readings. Photos edited before NegPy Conversion existed keep Original.")
         self._conversion.currentIndexChanged.connect(self._on_metering_slider)
         conv_row.addWidget(self._conversion, 1)
         body.addLayout(conv_row)
@@ -238,7 +238,7 @@ class NegativeToolPanel(CollapsiblePanel):
         self._encoding.addItem("BT.709 (RAW decoded by EFAS)", "bt709")
         self._encoding.addItem("Linear (a linear scan)", "linear")
         self._encoding.setToolTip(
-            "How the scan's numbers were made from light, so Modern can turn them back into density correctly. Automatic is right for most photos: a RAW file EFAS decodes carries "
+            "How the scan's numbers were made from light, so NegPy Conversion can turn them back into density correctly. Automatic is right for most photos: a RAW file EFAS decodes carries "
             "the BT.709 curve, any other file is read as sRGB. Choose Linear for a 16-bit TIFF from scanner software that saved the scan without a curve. A photo edited before this "
             "was a setting keeps sRGB, the reading it was edited with: switch it to Automatic to use the correct one (the picture will change).")
         self._encoding.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
@@ -545,7 +545,7 @@ class NegativeToolPanel(CollapsiblePanel):
         )
 
     def _sync_engine_controls(self, engine: str) -> None:
-        """The Modern conversion has its own film, encoding, grade and density; the stretch's range clip, colour cast and white / black points belong to Original. Each set is put away (not greyed)
+        """The NegPy Conversion has its own film, encoding, grade and density; the stretch's range clip, colour cast and white / black points belong to Original. Each set is put away (not greyed)
         under the other conversion, and comes back with it."""
         modern = engine == "print"
         for w in (self._film_label, self._film, self._encoding_label, self._encoding, *self._print_rows.values(), *self._trim_rows):

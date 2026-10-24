@@ -46,7 +46,7 @@ When the picture needs *the middle* lighter but the ends left alone, Exposure is
 
 Choosing exposure by eye from a single preview is hard, so the Tone tab can show you alternatives. **Test Strip** (`Shift+T`) prints the photo at **25 exposure and contrast steps** side by side, like the test strips of a darkroom, and you pick the one that looks right. **Ring-Around** (`Shift+F`) does the same for colour: it steps the colour balance in a 5 by 5 mosaic, so you can pick the tile where a cast disappears. See [[proofing-tools]].
 
-NOTE: Exposure works with the conversion's own black and white points. Under the Modern conversion, **Print density** in the Convert tab shifts the print darker or lighter in a more film-like way, so use Exposure for a broad nudge and Print density for tuning the print itself.
+NOTE: Exposure works with the conversion's own black and white points. Under the NegPy Conversion, **Print density** in the Convert tab shifts the print darker or lighter in a more film-like way, so use Exposure for a broad nudge and Print density for tuning the print itself.
 """, keywords=("exposure", "brightness", "ev", "stops", "lighter", "darker", "test strip", "ring-around", "multiply", "clip"), module="Exposure", see=("stops-and-ev", "proofing-tools")),
 
     Lesson("contrast-module", "tone", "Contrast", "Learn what the Contrast slider does to the tones, why the middle stays put and the ends roll off, and how it differs from Grade.",
@@ -65,11 +65,11 @@ Contrast is a pointwise change, so it costs nothing per pixel: it folds into the
 
 ## Using it
 
-Film scans often start a little **flat**, because the conversion has to squeeze a wide range into a screen's range. A small positive contrast usually helps. If you find yourself pushing it far, check whether the real problem is the conversion's range ([[white-black-points]] in Original, **Grade** in Modern) or an end that needs opening up ([[shadows-highlights-module]]).
+Film scans often start a little **flat**, because the conversion has to squeeze a wide range into a screen's range. A small positive contrast usually helps. If you find yourself pushing it far, check whether the real problem is the conversion's range ([[white-black-points]] in Original, **Grade** in NegPy Conversion) or an end that needs opening up ([[shadows-highlights-module]]).
 
 Too much contrast clips the ends, even with the roll-off: watch the histogram's corner triangles. For finer control of particular tones use the [[tone-curve-module]], which can bend the middle and the ends independently.
 
-NOTE: In the Modern conversion **Grade** also sets contrast, but as part of the conversion itself, before the picture reaches this slider. Use Grade for the broad contrast of the print and this slider for taste afterwards.
+NOTE: In the NegPy Conversion **Grade** also sets contrast, but as part of the conversion itself, before the picture reaches this slider. Use Grade for the broad contrast of the print and this slider for taste afterwards.
 """, keywords=("contrast", "punch", "flat", "soft", "pop", "s-curve", "smoothstep", "midpoint"), module="Contrast", see=("dynamic-range-contrast", "tone-curve-module")),
 
     Lesson("shadows-highlights-module", "tone", "Shadows & Highlights", "See how Shadows & Highlights opens up one end of the range by gain, why it keeps colour, and what its limits are.",
@@ -142,7 +142,7 @@ Each is zero when its slider is zero, so neutral settings change nothing, bit fo
 
 ## Using it, and how it differs from the Tone Curve
 
-The **Tone Curve** lets you place points anywhere; Print Response gives you three controls tied to the *physics of a print*, so its results look photographic with little effort. It is the better tool for the **character** of the roll-off: soft and filmic, or hard and graphic. Start by raising **Shoulder** if the highlights look harsh, **Toe** if the blacks look crushed, and use **Snap** for overall punch. Under the Modern conversion there are also **Paper toe** and **Paper shoulder** in the Convert tab, which do something similar inside the conversion; use those to set the paper, and this module to fine-tune the picture ([[modern-conversion-controls]]).
+The **Tone Curve** lets you place points anywhere; Print Response gives you three controls tied to the *physics of a print*, so its results look photographic with little effort. It is the better tool for the **character** of the roll-off: soft and filmic, or hard and graphic. Start by raising **Shoulder** if the highlights look harsh, **Toe** if the blacks look crushed, and use **Snap** for overall punch. Under the NegPy Conversion there are also **Paper toe** and **Paper shoulder** in the Convert tab, which do something similar inside the conversion; use those to set the paper, and this module to fine-tune the picture ([[modern-conversion-controls]]).
 """, keywords=("print response", "toe", "shoulder", "snap", "roll off", "filmic", "characteristic curve", "hurter driffield", "density", "paper"), module="Print Response", see=("modern-conversion-controls", "tone-curve-module")),
 
     # ------------------------------------------------------------------ Color

@@ -146,7 +146,7 @@ def test_rendering_with_a_flat_field_keeps_every_level_of_a_narrow_range_negativ
 
     state = AppState()
     from photoeditor.features.negative.metering import Metering
-    state.metering = Metering(engine="standard")   # the Original conversion keeps a narrow range's levels; Modern is covered by its own tests
+    state.metering = Metering(engine="standard")   # the Original conversion keeps a narrow range's levels; NegPy Conversion is covered by its own tests
     state.negative_inverted = True
     params = EditParams.from_state(state)
     plain = Renderer().render(scan, params, "a", scan.shape[1], want_stats=False)[0]

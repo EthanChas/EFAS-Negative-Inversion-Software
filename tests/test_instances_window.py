@@ -38,7 +38,7 @@ _SCRIPT = textwrap.dedent(r"""
     panel = win._instance_panels["exposure#1"]
     layout = base.parentWidget().layout()
     assert layout.indexOf(panel) == layout.indexOf(base) + 1, "right after the module it is a copy of"
-    assert panel._header._title_label.text() == "Exposure 1" and panel.power_on() and "exposure#1" in win._blend_boxes
+    assert panel._header._title_label.text() == "Exposure 1 (EFAS)" and panel.power_on() and "exposure#1" in win._blend_boxes
     assert not panel.instances_button.isHidden() and not panel.reset_button.isHidden()
     assert s.instances["exposure"][0]["values"]["exposure_ev"] == 0.0
 
@@ -48,7 +48,7 @@ _SCRIPT = textwrap.dedent(r"""
     assert s.image_rgb.astype(int).mean() > before + 8
     # --- it can be named
     c.rename_instance("exposure", 1, "skin"); pump(0.5)
-    assert panel._header._title_label.text() == "Exposure 1 - skin"
+    assert panel._header._title_label.text() == "Exposure 1 - skin (EFAS)"
     # --- the light switches it off and on again
     panel.power_toggled.emit(False); pump(2.0)
     assert abs(s.image_rgb.astype(int).mean() - before) < 1.0 and not panel.power_on()
@@ -58,7 +58,7 @@ _SCRIPT = textwrap.dedent(r"""
     c.set_exposure_ev(0.4); pump(1.0)
     new_id = c.add_instance("exposure", 0); pump(1.0)
     assert new_id == 2 and s.instances["exposure"][1]["values"]["exposure_ev"] == 0.4 and "exposure#2" in win._instance_panels
-    assert win._instance_panels["exposure#2"]._header._title_label.text() == "Exposure 2"
+    assert win._instance_panels["exposure#2"]._header._title_label.text() == "Exposure 2 (EFAS)"
     # --- its own mask
     box = win._blend_boxes["exposure#2"]
     from photoeditor.features.masks import blend as B

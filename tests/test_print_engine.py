@@ -134,7 +134,7 @@ def test_modern_is_the_default_and_the_choice_is_always_saved():
     bad = Metering.from_dict({"engine": "warp", "grade": 9, "crosstalk": "x", "density": float("nan")})
     assert bad.engine == "print" and bad.grade == 0.5 and bad.crosstalk == 1.0 and bad.density == 0.0
     assert Metering.from_dict(None).engine == "print", "a photo with nothing saved gets the default"
-    assert Metering.from_dict({}).engine == "standard" and Metering.from_dict({"range_clip": 0.2}).engine == "standard", "a photo saved before Modern existed keeps Original"
+    assert Metering.from_dict({}).engine == "standard" and Metering.from_dict({"range_clip": 0.2}).engine == "standard", "a photo saved before NegPy Conversion existed keeps Original"
 
 
 def test_photos_edited_before_modern_keep_their_look_and_untouched_ones_get_the_default(tmp_path, monkeypatch):
@@ -154,7 +154,7 @@ def test_photos_edited_before_modern_keep_their_look_and_untouched_ones_get_the_
     edited["exposure_ev"] = 0.5
     edit_store.save_edit_state(conn, "edited.png", edited)
     assert edit_store.load_edit_state(conn, "untouched.png")["metering"] == {"engine": "print"}, "never edited: today's default"
-    assert edit_store.load_edit_state(conn, "edited.png")["metering"] == {}, "edited before Modern: stays as saved, which reads as Original"
+    assert edit_store.load_edit_state(conn, "edited.png")["metering"] == {}, "edited before NegPy Conversion: stays as saved, which reads as Original"
     assert Metering.from_dict(edit_store.load_edit_state(conn, "edited.png")["metering"]).engine == "standard"
     assert edit_store.touched_paths(conn, ["untouched.png", "edited.png"], DEFAULT_POINTS) == {"edited.png"}
     modern = dict(legacy)
@@ -184,15 +184,15 @@ def test_the_dropdown_offers_modern_first_and_original_and_follows_the_photo():
         from photoeditor.features.negative.metering import Metering
         p = NegativeToolPanel()
         box = p._conversion
-        assert [box.itemText(i) for i in range(box.count())] == ["Modern (film & paper)", "Original (stretch)"]
-        assert box.currentData() == "print", "Modern is the default"
+        assert [box.itemText(i) for i in range(box.count())] == ["NegPy Conversion (film & paper)", "Original (stretch)"]
+        assert box.currentData() == "print", "NegPy Conversion is the default"
         assert not any(r.isHidden() for r in (*p._print_rows.values(), *p._trim_rows, p._film, p._encoding))
         got = []
         p.metering_changed.connect(got.append); p.metering_preview.connect(got.append)
         box.setCurrentIndex(box.findData("standard"))
         assert p._metering.engine == "standard" and all(r.isHidden() for r in (*p._print_rows.values(), *p._trim_rows, p._film, p._film_label, p._encoding, p._encoding_label)), "Original has no print controls: they are put away, not greyed"
         box.setCurrentIndex(box.findData("print"))
-        assert all(w.isHidden() for w in (p._range, p._white, p._wb_title, *p._droppers.values())) and not p._film.isHidden(), "Modern puts Original's stretch controls away"
+        assert all(w.isHidden() for w in (p._range, p._white, p._wb_title, *p._droppers.values())) and not p._film.isHidden(), "NegPy Conversion puts Original's stretch controls away"
         box.setCurrentIndex(box.findData("standard"))
         assert not p._range.isHidden() and not p._white.isHidden() and not any(b.isHidden() for b in p._droppers.values())
         p.set_metering(Metering(engine="print", grade=0.2))
@@ -200,7 +200,7 @@ def test_the_dropdown_offers_modern_first_and_original_and_follows_the_photo():
         p.set_metering(Metering(engine="standard"))
         assert box.currentData() == "standard"
         p.reset()
-        assert box.currentData() == "print", "reset goes back to Modern"
+        assert box.currentData() == "print", "reset goes back to NegPy Conversion"
         print("OK")
     ''')
     src = str(Path(__file__).resolve().parents[1] / "src")
@@ -216,7 +216,7 @@ def test_the_renderer_uses_it_for_16_bit_8_bit_and_black_and_white_scans():
     scan16 = negative_of(lin)
     scan8 = (scan16 // 257).astype(np.uint8)
     default = EditParams.from_state(AppState())
-    assert default.metering.engine == "print", "a new photo is converted the Modern way"
+    assert default.metering.engine == "print", "a new photo is converted the NegPy Conversion way"
     params = dataclasses.replace(default, negative_inverted=True, metering=Metering(engine="standard"))
     printed = dataclasses.replace(params, metering=Metering(engine="print"))
     for scan in (scan16, scan8):
@@ -282,7 +282,7 @@ def test_a_film_profile_changes_the_picture_and_is_kept_with_the_photo():
 
 def test_the_density_step_is_the_log_conversion_the_pakon_reference_documents():
     """The Pakon F-X35 reference (CC BY 4.0, github.com/alibosworth/pakon-reference) documents the scanner's negative-to-positive step as a pure log conversion of the linear
-    code, D = 3500 * log10(16383 / x), with no tone shaping. Modern's density step is the same function, D = -log10(T), up to the scale (3500 counts per unit of density, and
+    code, D = 3500 * log10(16383 / x), with no tone shaping. NegPy Conversion's density step is the same function, D = -log10(T), up to the scale (3500 counts per unit of density, and
     14-bit against 16-bit codes)."""
     x14 = np.arange(1, 16384, dtype=np.float64)
     oem = 3500 * np.log10(16383 / x14)

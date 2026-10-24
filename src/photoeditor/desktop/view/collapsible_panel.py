@@ -5,6 +5,7 @@ from PyQt6.QtWidgets import (
 )
 
 from ...theme.tokens import THEME
+from . import module_origin
 from .bevel_widgets import BevelPanel, CaptionButton
 from . import panel_icons
 from .module_style import AUTOMATIC, NAMED, PLAIN, STYLE
@@ -99,7 +100,8 @@ class _CollapsibleHeader(QWidget):
         row.addWidget(self._icon_label, 0, Qt.AlignmentFlag.AlignVCenter)
         self._show_icon()
 
-        label = QLabel(title)
+        label = QLabel(module_origin.display_title(title))
+        label.setToolTip(module_origin.tooltip(title))
         label.setProperty("role", "mini_header_text")
         label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
         self._title_label = label
@@ -297,7 +299,7 @@ class CollapsiblePanel(BevelPanel):
 
     def set_display_title(self, text: str) -> None:
         """The name shown in the header (a copy of a module is shown with its number and name); the module's own title still picks its icon and colour."""
-        self._header._title_label.setText(text)
+        self._header._title_label.setText(module_origin.with_origin(text, self._title))
 
     def enable_instance_button(self, tooltip: str | None = None) -> CaptionButton:
         """Show the multiple-instances button (two overlapping squares) in the header."""

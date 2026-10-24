@@ -52,7 +52,7 @@ Colour negative film is not clear: it is tinted orange all over, even where no l
 
 Without a sample, EFAS has to guess where the picture's black is. In the standard conversion it measures each colour channel's density over the cropped picture and treats the darkest ordinary shadow it finds (the first percentile of the density) as the floor. That works for most pictures, because most pictures have a real shadow in them. It goes wrong when they do not: a foggy morning, a high-key portrait, a snow scene. The guessed floor is then too high, EFAS stretches the picture's shadows down to black, and the result is too contrasty and often leans a colour.
 
-With a sample, the floor is the measured colour of the unexposed film. Black now means "no exposure at all" rather than "the darkest thing in this particular picture", and that does not depend on what the scene contained. EFAS only uses the sample when it is believable, that is when it sits clearly (more than 0.15 density) below the brightest part of the picture. In the **Modern** conversion the sample matters even more: the film's own curve can only be restored accurately when the base is known, so without it that step is scaled down to about a third.
+With a sample, the floor is the measured colour of the unexposed film. Black now means "no exposure at all" rather than "the darkest thing in this particular picture", and that does not depend on what the scene contained. EFAS only uses the sample when it is believable, that is when it sits clearly (more than 0.15 density) below the brightest part of the picture. In the **NegPy Conversion** conversion the sample matters even more: the film's own curve can only be restored accurately when the base is known, so without it that step is scaled down to about a third.
 
 ## The three ways to find it
 
@@ -67,7 +67,7 @@ With a sample, the floor is the measured colour of the unexposed film. Black now
 If your film holder masks the border away, you have no film base in the picture to sample. Shoot a frame of clear, developed film at the start of the roll (or the end) with the same holder and settings, and sample that.
 """, keywords=("film base", "sample", "dmin", "orange", "calibrate", "rebate", "border", "eyedropper", "automatic", "whole roll"), module="Negative", see=("negative-orange-mask", "whole-roll-tools")),
 
-    Lesson("inversion-method", "convert", "The two conversion methods: Modern and Original", "Understand how the Original stretch and the Modern film-and-paper conversion differ in what they assume, and when each is better.",
+    Lesson("inversion-method", "convert", "The two conversion methods: NegPy Conversion and Original", "Understand how the Original stretch and the NegPy Conversion (film and paper) differ in what they assume, and when each is better.",
            r"""
 The conversion has two engines, chosen with **Conversion > Method** in the **Negative** module. The difference is not cosmetic: they model the problem differently.
 
@@ -75,24 +75,24 @@ The conversion has two engines, chosen with **Conversion > Method** in the **Neg
 
 The Original method treats each colour channel separately. It measures the channel's density at the dark end and the light end of the picture (the floor and the ceiling), and maps that span linearly onto black and white. In plain terms, it **stretches each channel until the picture fills the range**. This is simple, quick and forgiving, and it is what most quick conversion tools do. It handles three different things as one: the film, which does not respond in a straight line; the scene, whose own brightness range varies from frame to frame; and the paper (or screen) it will end up on.
 
-Four controls belong to Original alone: **Range clip**, **Color cast**, and the **white and black points** with their droppers. They are its way of deciding where black and white land. Under Modern they are greyed out. See [[metering]] and [[white-black-points]].
+Four controls belong to Original alone: **Range clip**, **Color cast**, and the **white and black points** with their droppers. They are its way of deciding where black and white land. Under NegPy Conversion they are greyed out. See [[metering]] and [[white-black-points]].
 
-## Modern: film and paper
+## NegPy Conversion: film and paper
 
-The Modern method keeps those three things apart, in the order a darkroom meets them: the film, then the scene, then the paper. It works in density, takes out the overlap between the dye layers, puts back part of the film's S-shaped response, balances the channels, and then prints through a paper curve with its own toe and shoulder, so highlights **roll off** into white instead of clipping. The next guide explains each stage and its controls: [[modern-conversion-controls]].
+The NegPy Conversion keeps those three things apart, in the order a darkroom meets them: the film, then the scene, then the paper. It works in density, takes out the overlap between the dye layers, puts back part of the film's S-shaped response, balances the channels, and then prints through a paper curve with its own toe and shoulder, so highlights **roll off** into white instead of clipping. The next guide explains each stage and its controls: [[modern-conversion-controls]].
 
 ## Which to use
 
-New photos, and photos that were only opened and never edited, get **Modern**. Photos that were edited before Modern existed keep **Original**, so their look does not change underneath you. The choice is saved per photo and goes into presets.
+New photos, and photos that were only opened and never edited, get **NegPy Conversion**. Photos that were edited before NegPy Conversion existed keep **Original**, so their look does not change underneath you. The choice is saved per photo and goes into presets.
 
-On real scans Modern usually gives smoother highlights and clips far fewer pixels than Original, with a little less contrast out of the box. **Grade** and **Print density** are there to bring the contrast up to taste. Original remains the more predictable method when you want to push the range yourself with white and black points. Judge it on your own film: switch the **Method** menu and look.
+On real scans NegPy Conversion usually gives smoother highlights and clips far fewer pixels than Original, with a little less contrast out of the box. **Grade** and **Print density** are there to bring the contrast up to taste. Original remains the more predictable method when you want to push the range yourself with white and black points. Judge it on your own film: switch the **Method** menu and look.
 
 There is one more button nearby, **Compare Methods...**, and it is about something else: in Advanced mode it shows the standard conversion beside the *curve-informed* one, which uses a film profile you measured yourself, with numbers. It changes nothing.
 """, keywords=("modern", "original", "method", "conversion", "compare", "highlights", "clipping", "inversion", "stretch", "paper"), module="Negative", see=("modern-conversion-controls", "metering")),
 
-    Lesson("modern-conversion-controls", "convert", "The Modern conversion, step by step", "Follow the six stages of the Modern conversion and see which control belongs to which stage.",
+    Lesson("modern-conversion-controls", "convert", "The NegPy Conversion, step by step", "Follow the six stages of the NegPy Conversion and see which control belongs to which stage.",
            r"""
-The Modern conversion is a short chain of steps, and each of its controls adjusts exactly one of them. Knowing the chain tells you which slider to reach for when something looks wrong.
+The NegPy Conversion is a short chain of steps, and each of its controls adjusts exactly one of them. Knowing the chain tells you which slider to reach for when something looks wrong.
 
 ## 1. Density, then 2. crosstalk
 
@@ -147,12 +147,12 @@ By default EFAS measures the picture you have **cropped to**. With no crop it me
 
 The metering reads the crop. If a bright film border or a black holder edge is inside what is measured, it becomes the 'brightest' or 'darkest' thing in the picture and everything else is scaled to fit it. Crop to the picture before you judge a conversion, and the measuring becomes about the picture. (The **Edge Bleed** module's border mask has a switch to keep its band out of the measuring for the same reason.)
 
-Under the Modern conversion, **Margin** and **Draw Region** still decide what is measured; **Range clip** and **Color cast** are Original's controls and are greyed out.
+Under the NegPy Conversion, **Margin** and **Draw Region** still decide what is measured; **Range clip** and **Color cast** are Original's controls and are greyed out.
 """, keywords=("metering", "margin", "region", "range clip", "color cast", "reset metering", "measure", "percentile", "crop"), module="Negative", see=("white-black-points", "crop-and-rotate")),
 
     Lesson("white-black-points", "convert", "White and black points, and the droppers", "Learn what the white and black points move, how the droppers set them, and why a dropper sometimes refuses.",
            r"""
-In the Original conversion, the measured floor and ceiling of each channel are where black and white would land. The **white point** and **black point** let you move those landing places, so you decide how much of the range is thrown away at each end. They are Original's controls: under the Modern conversion they are greyed out, and **Grade** and **Print density** do the same job.
+In the Original conversion, the measured floor and ceiling of each channel are where black and white would land. The **white point** and **black point** let you move those landing places, so you decide how much of the range is thrown away at each end. They are Original's controls: under the NegPy Conversion they are greyed out, and **Grade** and **Print density** do the same job.
 
 ## What the sliders do
 
@@ -254,7 +254,7 @@ Click a thumbnail to see that photograph larger, with its title and the name of 
 
 Treat it as a **sanity check, not a target**. Lenses, scanners, labs and tastes all differ, and the photographs in a gallery have been through someone's own scanner. What it is good for is the broad questions: is this film's skin tone warm or neutral? Are its greens yellowish or blue-ish? Does it have a cool shadow or a warm one? If your skin tones are believable and your greys are grey, you are in the right region, and the rest is taste.
 
-It is also a useful companion to the **Film** menu in the Modern conversion ([[modern-conversion-controls]]): pick the stock you shot, then check the result against the gallery for that same stock.
+It is also a useful companion to the **Film** menu in the NegPy Conversion ([[modern-conversion-controls]]): pick the stock you shot, then check the result against the gallery for that same stock.
 """, keywords=("film reference", "lomography", "gallery", "compare", "colour reference", "stock", "online"), module="Negative", see=("inversion-method",)),
 
     # ------------------------------------------------------------------ Frame & Clean
