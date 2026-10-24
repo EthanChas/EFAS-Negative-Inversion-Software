@@ -1,16 +1,17 @@
 # Where each module comes from
 
-Every module's header says where it comes from, in brackets after its name: **(darktable)**, **(NegPy)** or **(EFAS)**. It is the honest label for a project that is built from other people's work: the interface and the layout of the modules follow darktable's as a whole, but this table is about the *module itself*.
+Every module's header says where it comes from, in brackets after its name: **(darktable)**, **(NegPy)**, **(EFAS)** or, for the one module that has a part of each, **(NegPy & EFAS)**. It is the honest label for a project that is built from other people's work: the interface and the layout of the modules follow darktable's as a whole, but this table is about the *module itself*.
 
 - **(darktable)**: the module is ported from, or follows closely, darktable's own module of that kind.
 - **(NegPy)**: the module is ported from, or adapted from, NegPy's (GPL-3.0).
+- **(NegPy & EFAS)**: Negative. Its **NegPy Conversion** is ported from NegPy; its **Original** conversion was made for EFAS.
 - **(EFAS)**: the module was made for EFAS. It may look like darktable's (all of them are laid out the way darktable lays modules out), but its logic is EFAS's own.
 
 The tag is only in the header. The module's own title (which picks its icon and colour, and which Find, the Classroom and the history use) is unchanged, so nothing that looks a module up by name is affected. A copy of a module (multiple instances) carries the tag of the module it was copied from.
 
 | Module | Origin | What it took |
 |---|---|---|
-| Negative | NegPy | The inversion and metering approach, the film type heuristic, the print-stage approach behind the NegPy Conversion, and the film crosstalk profiles it bundles. The *Original* conversion is EFAS's own |
+| Negative | NegPy & EFAS | The NegPy Conversion takes NegPy's inversion and metering approach, the film type heuristic, the print-stage approach behind the NegPy Conversion, and the film crosstalk profiles it bundles. The *Original* conversion is EFAS's own |
 | Sharpening | NegPy | Its four sharpening methods (features/sharpening/logic.py) |
 | Chroma Denoise | NegPy | Its chroma-only denoise (features/denoise/logic.py) |
 | Dust & Scratches | NegPy | Its dust and scratch repair (features/retouch/logic.py) and clone tool |

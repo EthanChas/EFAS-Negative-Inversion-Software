@@ -17,13 +17,15 @@ SRC = str(Path(__file__).resolve().parents[1] / "src")
 
 
 def test_the_origin_of_a_module_is_one_of_three_and_only_modules_have_one():
-    assert set(mo.ORIGINS.values()) == {"darktable", "NegPy", "EFAS"}
+    assert set(mo.ORIGINS.values()) == {"darktable", "NegPy", "EFAS", "NegPy & EFAS"}
     assert mo.display_title("Retouch") == "Retouch (darktable)" and mo.display_title("Print Response") == "Print Response (NegPy)" and mo.display_title("Exposure") == "Exposure (EFAS)"
     assert mo.display_title("History") == "History" and mo.origin_of("Library") == "", "a list or a section is not a module"
     assert mo.with_origin("Exposure 2 - skin", "Exposure") == "Exposure 2 - skin (EFAS)" and mo.with_origin("Roll 1", "Roll") == "Roll 1"
     assert "darktable" in mo.tooltip("Masks") and "NegPy" in mo.tooltip("Sharpening") and mo.tooltip("Halation") == "Made for EFAS" and mo.tooltip("History") == ""
     assert {t for t, o in mo.ORIGINS.items() if o == "darktable"} == {"Retouch", "Masks", "Watermark", "Tagging", "Tags"}
-    assert {"Negative", "Sharpening", "Chroma Denoise", "Dust & Scratches", "Local Contrast", "Flat Field", "Print Response", "Color Toning"} == {t for t, o in mo.ORIGINS.items() if o == "NegPy"}
+    assert mo.display_title("Negative") == "Negative (NegPy & EFAS)" and {t for t, o in mo.ORIGINS.items() if o == "NegPy & EFAS"} == {"Negative"}, "the one module with a part of each"
+    assert "NegPy Conversion" in mo.tooltip("Negative") and "Original" in mo.tooltip("Negative")
+    assert {"Sharpening", "Chroma Denoise", "Dust & Scratches", "Local Contrast", "Flat Field", "Print Response", "Color Toning"} == {t for t, o in mo.ORIGINS.items() if o == "NegPy"}
 
 
 def test_every_origin_is_written_down_in_the_docs():

@@ -1,4 +1,4 @@
-"""Where each module comes from: a module's header says (darktable), (NegPy) or (EFAS). No logic of the module is here, only its name.
+"""Where each module comes from: a module's header says (darktable), (NegPy), (EFAS) or, for a module with a part of each, (NegPy & EFAS). No logic of the module is here, only its name.
 
 (darktable) and (NegPy) mean the module is ported from, or follows closely, that program's module (see the table in docs/module-origins.md for what each one took); (EFAS) means it was
 made for EFAS, even where its layout follows darktable's, as the whole interface does. The tag is shown in the header only: the module's own title (which picks its icon and its colour, and
@@ -6,18 +6,19 @@ which the search and the Classroom use) is unchanged.
 """
 
 DARKTABLE, NEGPY, EFAS = "darktable", "NegPy", "EFAS"
+BOTH = "NegPy & EFAS"     # a module with a part of each: Negative has NegPy's conversion and EFAS's own Original one
 
 ORIGINS: dict[str, str] = {
     # ported from darktable
     "Retouch": DARKTABLE, "Masks": DARKTABLE, "Watermark": DARKTABLE, "Tagging": DARKTABLE, "Tags": DARKTABLE,
     # ported from NegPy
-    "Negative": NEGPY, "Sharpening": NEGPY, "Chroma Denoise": NEGPY, "Dust & Scratches": NEGPY, "Local Contrast": NEGPY, "Flat Field": NEGPY, "Print Response": NEGPY, "Color Toning": NEGPY,
+    "Negative": BOTH, "Sharpening": NEGPY, "Chroma Denoise": NEGPY, "Dust & Scratches": NEGPY, "Local Contrast": NEGPY, "Flat Field": NEGPY, "Print Response": NEGPY, "Color Toning": NEGPY,
     # made for EFAS
     "Exposure": EFAS, "Tone Curve": EFAS, "Color": EFAS, "White Balance": EFAS, "Contrast": EFAS, "Shadows & Highlights": EFAS, "Color Mixer": EFAS, "Halation": EFAS,
     "Grain Sharpening": EFAS, "Edge Bleed": EFAS, "Edge Color": EFAS, "Lab Look": EFAS, "AI Dust Detection": EFAS, "Error marking": EFAS, "Crop & Rotate": EFAS, "Finishing": EFAS,
 }
 
-_WORDS = {DARKTABLE: "Ported from darktable", NEGPY: "Ported from NegPy", EFAS: "Made for EFAS"}
+_WORDS = {DARKTABLE: "Ported from darktable", NEGPY: "Ported from NegPy", EFAS: "Made for EFAS", BOTH: "The NegPy Conversion is ported from NegPy; the Original conversion was made for EFAS"}
 
 
 def origin_of(title: str) -> str:
@@ -39,4 +40,4 @@ def with_origin(shown: str, title: str) -> str:
 
 def tooltip(title: str) -> str:
     origin = ORIGINS.get(title, "")
-    return _WORDS[origin] + (": see docs/module-origins.md for what it took" if origin != EFAS else "") if origin else ""
+    return _WORDS[origin] + (": see docs/module-origins.md for what it took" if origin in (DARKTABLE, NEGPY, BOTH) else "") if origin else ""
