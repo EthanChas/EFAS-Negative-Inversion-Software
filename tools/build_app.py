@@ -6,6 +6,7 @@
 The result is in dist/. PyInstaller cannot build for another system, so each system builds its own.
 """
 
+import importlib.util
 import os
 import subprocess
 import sys
@@ -22,6 +23,8 @@ def command() -> list[str]:
     cmd.append("--onedir" if sys.platform == "darwin" else "--onefile")
     if sys.platform.startswith("win"):   # without this the .exe carries PyInstaller's stock icon: the pinned taskbar shortcut, File Explorer and the start-up show that, and only the running window shows ours
         cmd += ["--icon", ICON]
+    if importlib.util.find_spec("lensfunpy") is not None:   # the lens database for the lens corrections (its library, its dlls and the Lensfun data); without it the corrections say "not installed"
+        cmd += ["--collect-all", "lensfunpy"]
     for module in EXCLUDE:
         cmd += ["--exclude-module", module]
     return cmd + ["run_app.py"]
