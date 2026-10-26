@@ -12,6 +12,12 @@ Masks limit a module to part of the picture. They are ported from darktable's (5
 | Brush | press, drag, let go | size | hardness | opacity |
 | Gradient | press and drag to set its direction | curvature | compression | opacity |
 
+The **AI object** button (a wand) cuts an object out from a few clicks and keeps it as paths: see [ai-mask.md](ai-mask.md).
+
+**Picking a shape that is under another.** The precise parts of any shape (an anchor, a node, a handle, a segment, a source) are picked first. Failing those, where several shapes overlap the one the pointer is inside (not just in the feather of) wins, and among those the smallest, so a small shape under or inside a bigger one can be picked and the bigger one is still picked outside it.
+
+**A feather that fits the shape.** A path you draw gets a feather no wider than half its own radius (a path round a speck no longer gets 5% of the picture); making a path, circle or ellipse smaller with the wheel also takes its feather down to no wider than the shape (making it bigger leaves the feather as it is); and the next circle's feather follows its size down too.
+
 Ctrl+click a shape button (or Ctrl while placing a circle, ellipse, brush or gradient) keeps the tool armed. Drag a shape to move it; drag its anchors to resize it (Ctrl+drag an ellipse anchor turns it, Shift+click an ellipse switches how its feather is measured). On a path: drag a node, drag a handle (Ctrl keeps it symmetric, Shift moves just that handle, right-click resets the curve), Shift+click (or Ctrl+click) a node to switch smooth and sharp, right-click a node to remove it, Ctrl+click a segment to add a node. Gradient: drag the arrow's tip to turn it, double-click to reset the curvature, Shift+click to switch linear and sigmoidal. Right-click a shape to delete it. The middle button pans while a mask is being drawn or edited.
 
 Sizes are fractions of the scan's shorter side, and every shape is kept in the **untouched scan's frame**, so it stays on the same part of the picture when you crop, turn, flip or straighten.

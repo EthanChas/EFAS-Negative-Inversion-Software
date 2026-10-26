@@ -35,6 +35,8 @@ TOL = 8.0                       # pixels (of the screen) within which a node, ha
 SCROLL_UP, SCROLL_DOWN = 1 / 0.97, 0.97   # darktable's step for a scroll tick (dt_masks_change_size)
 OPACITY_STEP = 0.05
 ROTATION_STEP = 360.0 / 40.0
+AI_OBJECT = "object"           # not a shape that is kept: the AI object mask, which cuts an object out from a few clicks and is kept as path shapes (see features/aimask)
+AI_FEATHER = 0.003             # the feather of a path made from an AI cut: a thin soft edge (a share of the picture's shorter side)
 
 
 @dataclass
@@ -108,6 +110,14 @@ class Host:
     def say(self, text: str) -> None: pass
     def changed(self) -> None: pass                                                 # the overlay needs painting again
     def geometry_key(self): return None                                            # changes when the crop, turns or straightening do: the outlines are then worked out again
+    # the AI object mask: the clicks go to a model, which answers with the outlines of the object (picture pixels)
+    def ai_begin(self) -> str: return "The AI object mask is not available here."   # "" when it started, else why not
+    def ai_add_point(self, x: float, y: float, label: int) -> None: pass            # label 1: part of the object, 0: not
+    def ai_undo_point(self) -> None: pass
+    def ai_end(self) -> None: pass
+    def ai_polygons(self) -> list: return []                                         # [(N, 2) picture pixels, ...]: the outlines of the cut so far
+    def ai_points(self) -> list: return []                                           # [(x, y, label), ...] the clicks so far
+    def ai_status(self) -> str: return ""                                            # what the model is doing ("Reading the picture...")
 
 
 class MaskTool:
@@ -160,6 +170,15 @@ class MaskTool:
     def begin_creation(self, kind: str, key: str | None = None, continuous: bool = False, source: bool = False, spots: bool = False) -> None:
         """Arm the tool to place a `kind` of shape. `spots`: Retouch's shapes (their own sizes); `source`: clone and heal, which copy from a source."""
         self.cancel()
+        if kind == AI_OBJECT:
+            problem = self.host.ai_begin()
+            if problem:
+                self.host.say(problem)
+                return
+            self.creation = Creation(AI_OBJECT, key)
+            self.host.say(self.hint())
+            self.host.changed()
+            return
         if kind in M.SHAPES:
             self.defaults = self.spot_defaults if spots else self.module_defaults
             self.src_type, self.src_pos = "relative_temp", None
@@ -169,12 +188,24 @@ class MaskTool:
 
     def cancel(self) -> None:
         self.flush()
+        if self.creation is not None and self.creation.kind == AI_OBJECT:
+            self.host.ai_end()
         self.creation = None
         self.drag = None
         self.host.changed()
 
+    def keep_ai_cut(self) -> bool:
+        """Keep the AI cut made so far as path shapes (Enter, pressing the AI button again, or going on to something else). False if there is no cut to keep."""
+        c = self.creation
+        if c is None or c.kind != AI_OBJECT or not self.host.ai_polygons():
+            return False
+        return self._finish_object(c)
+
     def hint(self) -> str:
         c = self.creation
+        if c is not None and c.kind == AI_OBJECT:
+            status = self.host.ai_status()
+            return (status + " " if status else "") + "AI object: click the object, right-click what is not part of it. Enter (or the AI button again): keep the cut as paths under Shapes. Backspace: take the last click back. Esc: cancel."
         if c is not None and c.source and c.kind in (M.CIRCLE, M.ELLIPSE):
             return "Click to place the shape; drag to put its source where it should copy from. Shift+click first sets the source (relative to the next shapes), ctrl+shift+click an absolute source. Scroll: size."
         if c is not None:
@@ -306,21 +337,57 @@ class MaskTool:
         return [f for f in (ms.get(i) for i in ids) if f is not None and f.type != M.GROUP]
 
     def hit_test(self, x: float, y: float, tol: float = TOL) -> Hit | None:
+        """What is under the pointer. The precise parts of any shape (an anchor, a node, a handle, a segment, a source) come first, the newest shape first. Failing those, the shape whose
+        body the pointer is in: where several overlap, the one the pointer is inside (and not only in the feather of) wins, and among those the smallest, so a small shape under or inside
+        a bigger one can still be picked (before, the newest shape won wherever its feather reached, and the shape underneath could not be reached at all)."""
         p = np.array([x, y], float)
-        found = None
-        for form in reversed(self._shown_forms()):
-            dg = self._display_of(form)
-            if dg is None:
-                continue
-            found = self._hit_form_or_source(form, dg, p, tol)
-            if found is not None:
-                return found
-        return found
+        shown = [(form, self._display_of(form)) for form in reversed(self._shown_forms())]
+        shown = [(form, dg) for form, dg in shown if dg is not None]
+        for form, dg in shown:
+            hit = self._hit_form_or_source(form, dg, p, tol, bodies=False)
+            if hit is not None:
+                return hit
+        best = None
+        for form, dg in shown:
+            rank = self._body_rank(form, dg, p, tol)
+            if rank is not None and (best is None or rank < best[0]):
+                best = (rank, form)
+        return Hit(best[1].id, "body") if best is not None else None
+
+    @staticmethod
+    def _area(poly: np.ndarray) -> float:
+        if len(poly) < 3:
+            return 0.0
+        x, y = poly[:, 0], poly[:, 1]
+        return float(abs(np.dot(x, np.roll(y, -1)) - np.dot(y, np.roll(x, -1))) * 0.5)
+
+    def _body_rank(self, form: M.Form, dg: dict, p: np.ndarray, tol: float) -> tuple | None:
+        """(0 when the pointer is inside the shape itself and 1 when only inside its feather, the area it covers) for a shape whose body is under the pointer, else None: smaller sorts first."""
+        t = form.type
+        if t in (M.CIRCLE, M.ELLIPSE):
+            if not O.point_in_polygon(p, dg["border"]):
+                return None
+            return (0 if O.point_in_polygon(p, dg["shape"]) else 1, self._area(dg["border"]))
+        if t == M.PATH:
+            outline = dg["border"] if len(dg["border"]) > 2 else dg["curve"]
+            inside = O.point_in_polygon(p, dg["curve"])
+            if not (inside or O.point_in_polygon(p, outline)):
+                return None
+            return (0 if inside else 1, self._area(outline))
+        if t == M.BRUSH:
+            reach = float(np.hypot(*(dg["left"][0] - dg["curve"][0]))) if len(dg["left"]) else tol
+            if O.distance_to_polyline(p, dg["curve"])[0] > max(reach, tol):
+                return None
+            curve = dg["curve"]
+            length = float(np.hypot(*np.diff(curve, axis=0).T).sum()) if len(curve) > 1 else 0.0
+            return (0, length * 2.0 * max(reach, tol))
+        return None
 
     def _near(self, p: np.ndarray, q: np.ndarray, tol: float) -> bool:
         return float(np.hypot(*(p - q))) <= tol
 
-    def _hit_form(self, form: M.Form, dg: dict, p: np.ndarray, tol: float) -> Hit | None:
+    def _hit_form(self, form: M.Form, dg: dict, p: np.ndarray, tol: float, bodies: bool = True) -> Hit | None:
+        """The part of a shape under the pointer; with `bodies` False only its precise parts (anchors, nodes, handles, segments), never the inside of it."""
         fid = form.id
         t = form.type
         if t == M.CIRCLE:
@@ -328,13 +395,13 @@ class MaskTool:
                 return Hit(fid, "radius")
             if self._near(p, dg["border_anchor"], tol):
                 return Hit(fid, "border")
-            if O.point_in_polygon(p, dg["border"]):
+            if bodies and O.point_in_polygon(p, dg["border"]):
                 return Hit(fid, "body")
         elif t == M.ELLIPSE:
             for part, key in (("a", "a_anchor"), ("b", "b_anchor"), ("a_border", "a_border_anchor"), ("b_border", "b_border_anchor")):
                 if self._near(p, dg[key], tol):
                     return Hit(fid, part)
-            if O.point_in_polygon(p, dg["border"]):
+            if bodies and O.point_in_polygon(p, dg["border"]):
                 return Hit(fid, "body")
         elif t in (M.PATH, M.BRUSH):
             corners = dg["corners"]
@@ -352,11 +419,11 @@ class MaskTool:
                 t0, t1 = float(dg["tparam"][seg]), float(dg["tparam"][nxt])
                 param = t0 + (t1 - t0) * along if dg["segment"][nxt] == dg["segment"][seg] and t1 >= t0 else t0
                 return Hit(fid, "segment", int(dg["segment"][seg]), t=float(min(max(param, 0.02), 0.98)))
-            if t == M.PATH and O.point_in_polygon(p, dg["border"] if len(dg["border"]) > 2 else dg["curve"]):
+            if bodies and t == M.PATH and O.point_in_polygon(p, dg["border"] if len(dg["border"]) > 2 else dg["curve"]):
                 return Hit(fid, "body")
-            if t == M.PATH and O.point_in_polygon(p, dg["curve"]):
+            if bodies and t == M.PATH and O.point_in_polygon(p, dg["curve"]):
                 return Hit(fid, "body")
-            if t == M.BRUSH:
+            if bodies and t == M.BRUSH:
                 reach = float(np.hypot(*(dg["left"][0] - dg["curve"][0]))) if len(dg["left"]) else tol
                 if O.distance_to_polyline(p, dg["curve"])[0] <= max(reach, tol):
                     return Hit(fid, "body")
@@ -367,8 +434,8 @@ class MaskTool:
                 return Hit(fid, "body")
         return None
 
-    def _hit_form_or_source(self, form: M.Form, dg: dict, p: np.ndarray, tol: float) -> Hit | None:
-        hit = self._hit_form(form, dg, p, tol)
+    def _hit_form_or_source(self, form: M.Form, dg: dict, p: np.ndarray, tol: float, bodies: bool = True) -> Hit | None:
+        hit = self._hit_form(form, dg, p, tol, bodies)
         if hit is None and self._source_hit(form, dg, p):
             return Hit(form.id, "source")
         return hit
@@ -681,6 +748,8 @@ class MaskTool:
                 label = f"feather size: {p['border'] * 100:.2f}%"
             else:
                 p["radius"] = change_size(up, p["radius"], M.MIN_CIRCLE_RADIUS, 1.0)
+                if not up:      # a shape made smaller keeps a feather no wider than itself (a fixed feather round a small shape swamped it)
+                    p["border"] = max(M.MIN_CIRCLE_BORDER, min(p["border"], p["radius"]))
                 label = f"size: {p['radius'] * 100:.2f}%"
         elif t == M.ELLIPSE:
             p = pts[0]
@@ -695,6 +764,8 @@ class MaskTool:
                 old = p["radius"][0]
                 p["radius"][0] = change_size(up, old, 0.001, 1.0)
                 p["radius"][1] = max(0.001, p["radius"][1] * p["radius"][0] / old)
+                if not up and p["flags"] == M.ELLIPSE_EQUIDISTANT:
+                    p["border"] = max(0.001, min(p["border"], min(p["radius"])))
                 label = f"size: {max(p['radius']) * 100:.2f}%"
         elif t == M.GRADIENT:
             p = pts[0]
@@ -711,6 +782,8 @@ class MaskTool:
                 label = f"feather size: {sum(sum(n['border']) for n in pts) * 50.0 / len(pts):.2f}%"
             else:
                 pts = self._scale_path(pts, up)
+                if not up:
+                    self._fit_path_feather(pts)
                 label = "size"
         elif t == M.BRUSH:
             only = self.hit.index if self.hit is not None and self.hit.part == "node" else None
@@ -729,6 +802,23 @@ class MaskTool:
         self.host.say(label)
         self.host.changed()
         return True
+
+    def _path_radius(self, nodes: list) -> float:
+        """The radius, as a share of the picture's shorter side, of the circle with the same area as the path (0 when it has none)."""
+        n = len(nodes)
+        if n < 3:
+            return 0.0
+        fw, fh = self._frame()
+        xy = np.array([(node["corner"][0] * fw, node["corner"][1] * fh) for node in nodes], float)
+        return math.sqrt(self._area(xy) / math.pi) / max(1.0, min(fw, fh))
+
+    def _fit_path_feather(self, nodes: list) -> None:
+        """No node's feather wider than half the path's own radius: a feather of a fixed size round a small path swamped it (a path round a speck got a feather of 5% of the picture)."""
+        cap = 0.5 * self._path_radius(nodes)
+        if cap <= 0.0:
+            return
+        for node in nodes:
+            node["border"] = [max(0.0005, min(node["border"][0], cap)), max(0.0005, min(node["border"][1], cap))]
 
     def _scale_path(self, pts: list, up: bool) -> list:
         """A path's size, as darktable does: every node and handle moved in or out from the path's centre of gravity."""
@@ -780,6 +870,15 @@ class MaskTool:
             self.cancel()
             self.host.say("")
             return True
+        if c.kind == AI_OBJECT:
+            if name in ("Return", "Enter"):
+                return self._finish_object(c)
+            if name == "Backspace":
+                self.host.ai_undo_point()
+                self.host.say(self.hint())
+                self.host.changed()
+                return True
+            return False
         if name in ("Return", "Enter") and c.kind == M.PATH:
             return self._finish_path(c)
         if name == "Backspace" and c.kind == M.PATH and c.nodes:
@@ -790,6 +889,8 @@ class MaskTool:
 
     # ------------------------------------------------------------ creation
     def _creation_scroll(self, c: Creation, up: bool, mods: set) -> bool:
+        if c.kind == AI_OBJECT:
+            return False       # the wheel zooms the picture, to click on a small thing
         d = self.defaults
         shift, ctrl = "shift" in mods, "ctrl" in mods
         if c.kind == M.CIRCLE:
@@ -798,6 +899,8 @@ class MaskTool:
                 self.host.say(f"feather size: {d[M.CIRCLE]['border'] * 100:.2f}%")
             elif not ctrl:
                 d[M.CIRCLE]["size"] = change_size(up, d[M.CIRCLE]["size"], M.MIN_CIRCLE_RADIUS, 1.0)
+                if not up:      # the feather of the next circle follows it down, as it does for one already drawn
+                    d[M.CIRCLE]["border"] = max(M.MIN_CIRCLE_BORDER, min(d[M.CIRCLE]["border"], d[M.CIRCLE]["size"]))
                 self.host.say(f"size: {d[M.CIRCLE]['size'] * 100:.2f}%")
         elif c.kind == M.ELLIPSE:
             e = d[M.ELLIPSE]
@@ -812,6 +915,8 @@ class MaskTool:
                 old = e["radius_a"]
                 e["radius_a"] = change_size(up, old, 0.001, 1.0)
                 e["radius_b"] = max(0.001, e["radius_b"] * e["radius_a"] / old)
+                if not up and e["flags"] == M.ELLIPSE_EQUIDISTANT:
+                    e["border"] = max(0.001, min(e["border"], e["radius_a"], e["radius_b"]))
                 self.host.say(f"size: {max(e['radius_a'], e['radius_b']) * 100:.2f}%")
         elif c.kind == M.BRUSH:
             b = d[M.BRUSH]
@@ -846,6 +951,13 @@ class MaskTool:
         return []
 
     def _creation_press(self, c: Creation, x: float, y: float, button: str, mods: set) -> bool:
+        if c.kind == AI_OBJECT:
+            if button not in ("left", "right"):
+                return False
+            self.host.ai_add_point(x, y, 0 if (button == "right" or "shift" in mods or "ctrl" in mods) else 1)
+            self.host.say(self.hint())
+            self.host.changed()
+            return True
         if button == "right":
             if c.kind == M.PATH and len(c.nodes) >= 3:
                 return self._finish_path(c)
@@ -929,12 +1041,39 @@ class MaskTool:
             return True
         return True
 
+    def _finish_object(self, c: Creation) -> bool:
+        """Enter: the outlines of the cut become path shapes (one for each separate piece), with sharp corners and a thin feather, and are then edited like any other path."""
+        polygons = self.host.ai_polygons()
+        if not polygons:
+            self.host.say("Nothing is cut out yet: click the object first. " + self.hint())
+            return True
+        ids = []
+        for poly in polygons:
+            nodes = []
+            for px, py in poly:
+                nx, ny = self._norm(float(px), float(py))
+                nodes.append(M.path_node(nx, ny, AI_FEATHER, smooth=False))
+            form_id = self.host.add_form(M.PATH, nodes, c.key)
+            if form_id:
+                ids.append(form_id)
+        self.host.ai_end()
+        self.creation = None
+        if ids:
+            self.selected = ids[0]
+            self.host.picked(ids[0])
+            self.visible = (set(self.visible) if self.visible is not None else set()) | set(ids)
+            self.edit = True
+        self.refresh()
+        self.host.say("")
+        return True
+
     def _finish_path(self, c: Creation) -> bool:
         if len(c.nodes) < 3:
             self.cancel()
             return True
         nodes = c.nodes
         c.nodes = []
+        self._fit_path_feather(nodes)
         at = c.press or (0.0, 0.0)
         c.press = None
         self._place(c, nodes, at[0], at[1])
@@ -1033,6 +1172,15 @@ class MaskTool:
 
     def _creation_prims(self, c: Creation) -> list[Prim]:
         prims: list[Prim] = []
+        if c.kind == AI_OBJECT:
+            for poly in self.host.ai_polygons():
+                if len(poly) >= 3:
+                    prims.append(Prim("poly", np.asarray(poly, float), "ai"))
+            for role, label in (("ai_fg", 1), ("ai_bg", 0)):
+                dots = [(x, y) for x, y, tag in self.host.ai_points() if tag == label]
+                if dots:
+                    prims.append(Prim("dot", np.array(dots, float), role))
+            return prims
         if c.hover is None and c.press is None and not c.nodes:
             return prims
         fw, fh = self._frame()

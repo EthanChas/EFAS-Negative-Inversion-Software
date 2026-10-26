@@ -2,8 +2,9 @@ from PyQt6.QtCore import QObject, QTimer, pyqtSignal
 
 from ...features.masks import blend as B
 from ...features.masks import model as M
+from ..ai_mask_service import AiMaskService
 from ..mask_host import ControllerHost
-from ..mask_tool import MaskTool
+from ..mask_tool import AI_OBJECT, MaskTool
 
 _FLUSH_MS = 500       # the wheel makes many small changes; once it has been still this long they become one step in the undo history
 _OVERLAY_MS = 150     # a shown mask is made again this long after the last thing that changed it
@@ -16,6 +17,7 @@ class MaskEditor(QObject):
     (it shows the shapes picked in its list). `before_start()` is called when the mask tool takes the picture, so the window can put the other picture tools down."""
 
     shape_picked = pyqtSignal(int)        # the person clicked on a shape (or placed one): its id
+    ai_models_requested = pyqtSignal(str)   # the AI object mask was asked for but cannot run (no model yet): why. The window offers the AI Models dialog
 
     def __init__(self, controller, view, boxes: dict, manager, before_start=None, parent=None):
         super().__init__(parent)
@@ -24,7 +26,9 @@ class MaskEditor(QObject):
         self.boxes = boxes
         self.manager = manager
         self._before_start = before_start
-        self.tool = MaskTool(ControllerHost(controller, controller.notice.emit, view.update_mask_marks, self._created, self.shape_picked.emit))
+        self.ai = AiMaskService(lambda: controller.state.image_rgb)
+        self.ai.changed.connect(self._ai_changed)
+        self.tool = MaskTool(ControllerHost(controller, controller.notice.emit, view.update_mask_marks, self._created, self.shape_picked.emit, ai=self.ai))
         view.set_mask_tool(self.tool)
         self._module: str | None = None        # the module whose Mask box has the picture
         self._manager = False                  # the Masks panel has it
@@ -55,8 +59,33 @@ class MaskEditor(QObject):
         manager.edit_toggled.connect(self.manager_edit)
 
     # ------------------------------------------------------------ a module's Mask box
+    def _ai_changed(self) -> None:
+        """The AI cut changed (the picture was read, a click was answered): draw it and say what it is doing."""
+        c = self.tool.creation
+        if c is not None and c.kind == AI_OBJECT:
+            self.tool.host.say(self.tool.hint())
+        self.view.update_mask_marks()
+
+    def _ai_ready(self, kind: str) -> bool:
+        """False (and the window is asked to offer a model) when the AI object mask was asked for and no model is installed."""
+        if kind != AI_OBJECT:
+            return True
+        problem = self.ai.model_problem()
+        if problem:
+            self.ai_models_requested.emit(problem)
+        return not problem
+
+    def _ai_done(self, kind: str) -> bool:
+        """Pressing the AI button while it is armed keeps the cut."""
+        c = self.tool.creation
+        if kind == AI_OBJECT and c is not None and c.kind == AI_OBJECT and self.tool.keep_ai_cut():
+            self._apply()
+            self._sync()
+            return True
+        return False
+
     def draw_for_module(self, key: str, kind: str) -> None:
-        if self.c.state.preview_rgb is None:
+        if self.c.state.preview_rgb is None or self._ai_done(kind) or not self._ai_ready(kind):
             return
         self._take_over(module=key)
         self._apply()
@@ -120,7 +149,7 @@ class MaskEditor(QObject):
 
     # ------------------------------------------------------------ the Masks panel
     def draw_free(self, kind: str) -> None:
-        if self.c.state.preview_rgb is None:
+        if self.c.state.preview_rgb is None or self._ai_done(kind) or not self._ai_ready(kind):
             return
         self._take_over(manager=True)
         self._apply()
@@ -162,7 +191,8 @@ class MaskEditor(QObject):
         if self._before_start is not None:
             self._before_start()
         if self.tool.creation is not None:
-            self.tool.cancel()
+            if not self.tool.keep_ai_cut():       # a cut that was made is kept, not lost, when the person goes on to something else
+                self.tool.cancel()
         self._module = module
         self._manager = manager
         self._retouch = retouch

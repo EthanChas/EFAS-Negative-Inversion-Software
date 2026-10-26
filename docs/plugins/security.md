@@ -8,7 +8,7 @@ A plugin is a program that runs inside EFAS. Treat installing one the way you tr
 - **Errors are contained.** A plugin that fails to load, or raises an error in a callback, is reported in the Plugin Output window and nothing else is affected.
 - **Everything a plugin does is on the screen.** There is no background process: a plugin only runs inside EFAS, while EFAS is running, and stops when it is switched off.
 - **Edits go through history.** `set_edit` makes ordinary history steps, so a plugin's changes to a photo can be undone.
-- **EFAS never sends a plugin anywhere.** Nothing about plugins is uploaded; the program only goes online for the update check and the Film Colour Reference (see the main README's Privacy section).
+- **EFAS never sends a plugin anywhere.** Nothing about plugins is uploaded; the program only goes online for the update check, the Film Colour Reference and, when you ask for it, the download of an AI model (see the main README's Privacy section).
 
 ## Lua plugins are sandboxed
 

@@ -201,6 +201,13 @@ class _ImageLabel(QLabel):
         for prim in tool.primitives():
             pts = (prim.pts + 0.5) * k
             role = prim.role
+            if prim.kind == "dot" and role in ("ai_fg", "ai_bg"):
+                painter.setPen(QPen(QColor(255, 255, 255), 2.0))
+                painter.setBrush(QColor(60, 210, 110) if role == "ai_fg" else QColor(240, 80, 80))
+                for x, y in pts:
+                    painter.drawEllipse(QPointF(x, y), 6.0, 6.0)
+                painter.setBrush(Qt.BrushStyle.NoBrush)
+                continue
             if prim.kind == "dot":
                 big = role in ("handle",)
                 for x, y in pts:
@@ -220,12 +227,13 @@ class _ImageLabel(QLabel):
                 path.lineTo(x, y)
             if prim.kind == "poly":
                 path.closeSubpath()
-            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.setBrush(QColor(90, 200, 255, 70) if role == "ai" else Qt.BrushStyle.NoBrush)      # the AI cut so far: the object tinted
             dashed = role in ("feather", "hot_feather", "preview", "source")
             width = 2.4 if role in ("hot",) else 1.4
             painter.setPen(QPen(dark, width + 2.0, Qt.PenStyle.DashLine if dashed else Qt.PenStyle.SolidLine))
             painter.drawPath(path)
-            colour = cyan if role == "preview" else (accent if role == "hot" else light)
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            colour = cyan if role in ("preview", "ai") else (accent if role == "hot" else light)
             painter.setPen(QPen(colour, width, Qt.PenStyle.DashLine if dashed else Qt.PenStyle.SolidLine))
             painter.drawPath(path)
             if prim.kind == "arrow":

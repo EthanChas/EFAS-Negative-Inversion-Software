@@ -6,6 +6,7 @@ from ...features.masks import model as M
 from ...features.masks import properties as P
 from ...theme.tokens import THEME
 from . import panel_icons
+from ..mask_tool import AI_OBJECT
 from .blend_box import SHAPE_ICONS, shape_icon, tool_button
 from .collapsible_panel import CollapsiblePanel
 from .slider_row import SliderRow
@@ -75,7 +76,8 @@ class MaskManagerPanel(CollapsiblePanel):
         self._draw_buttons: dict[str, object] = {}
         tips = {M.CIRCLE: "Draw a circle", M.ELLIPSE: "Draw an ellipse", M.PATH: "Draw a path (click: smooth node, Shift+click: sharp node, right-click or Enter: finish)",
                 M.BRUSH: "Draw a brush stroke (press, drag, let go)", M.GRADIENT: "Draw a gradient (press and drag to set its direction)"}
-        for kind in (M.BRUSH, M.CIRCLE, M.ELLIPSE, M.PATH, M.GRADIENT):
+        tips[AI_OBJECT] = "AI object: click an object and the AI cuts it out as editable paths (right-click what is not part of it, Enter to keep it). The first time it offers to download a model"
+        for kind in (M.BRUSH, M.CIRCLE, M.ELLIPSE, M.PATH, M.GRADIENT, AI_OBJECT):
             b = tool_button(SHAPE_ICONS[kind], tips[kind])
             b.clicked.connect(lambda _checked=False, k=kind: self.draw_requested.emit(k))
             row.addWidget(b)

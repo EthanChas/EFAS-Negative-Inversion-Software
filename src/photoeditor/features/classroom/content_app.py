@@ -416,7 +416,7 @@ EFAS keeps your edits in a small local **database** in its own data folder, and 
 
 ## What stays on your computer
 
-**Nothing is sent anywhere.** EFAS goes online in only two cases: to check for a new version (which you can switch off) and, if you allow it, for the Film Colour Reference. No data about you or your photographs is sent in either case.
+**Nothing is sent anywhere.** EFAS goes online in only three cases: to check for a new version (which you can switch off), if you allow it for the Film Colour Reference, and if you ask for it, to download an AI model for the AI object mask (Extra > AI Models; it says where from and how big first). No data about you or your photographs is sent in any of them.
 
 ## What is up to you
 

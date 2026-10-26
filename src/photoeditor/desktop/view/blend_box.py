@@ -5,19 +5,21 @@ from PyQt6.QtWidgets import QCheckBox, QComboBox, QHBoxLayout, QLabel, QToolButt
 from ...features.masks import blend as B
 from ...features.masks import model as M
 from ...theme.tokens import THEME
+from ..mask_tool import AI_OBJECT
 from . import panel_icons
 from .slider_row import SliderRow
 
 _PREVIEW_THROTTLE_MS = 33
 _SETTLE_DEBOUNCE_MS = 200
 _LABEL_WIDTH = 76
-SHAPE_ICONS = {M.CIRCLE: "mask-circle", M.ELLIPSE: "mask-ellipse", M.PATH: "mask-path", M.BRUSH: "mask-brush", M.GRADIENT: "mask-gradient", M.GROUP: "mask-group"}
+SHAPE_ICONS = {AI_OBJECT: "mask-ai", M.CIRCLE: "mask-circle", M.ELLIPSE: "mask-ellipse", M.PATH: "mask-path", M.BRUSH: "mask-brush", M.GRADIENT: "mask-gradient", M.GROUP: "mask-group"}
 _HINTS = {
     M.CIRCLE: "Draw a circle: click where it goes. Scroll sets its size, Shift+scroll its feather, Ctrl+scroll its opacity. Ctrl+click keeps drawing circles.",
     M.ELLIPSE: "Draw an ellipse: click where it goes. Scroll sets its size, Shift+scroll its feather, Ctrl+Shift+scroll turns it, Ctrl+scroll sets its opacity. Ctrl+click keeps drawing.",
     M.PATH: "Draw a path: click to put smooth nodes, Shift+click (or Ctrl+click) for sharp ones, right-click (or Enter) to finish it. Shift+scroll sets its feather, Ctrl+scroll its opacity.",
     M.BRUSH: "Draw a brush stroke: press and drag; let go to finish. Scroll sets the size, Shift+scroll the hardness, Ctrl+scroll the density.",
     M.GRADIENT: "Draw a gradient: click and drag to set its line and direction. Scroll bends it, Shift+scroll sets how fast it ramps, Ctrl+scroll sets its opacity.",
+    AI_OBJECT: "AI object: click an object and the AI cuts it out as editable paths (right-click what is not part of it, Enter to keep it). The first time it offers to download a model.",
 }
 
 
@@ -97,7 +99,7 @@ class BlendBox(QWidget):
         tools = QHBoxLayout()
         tools.setSpacing(2)
         self._shape_buttons: dict[str, QToolButton] = {}
-        for kind in M.SHAPES:
+        for kind in (*M.SHAPES, AI_OBJECT):
             b = tool_button(SHAPE_ICONS[kind], _HINTS[kind])
             b.clicked.connect(lambda _c=False, k=kind: self.draw_requested.emit(k))
             self._shape_buttons[kind] = b

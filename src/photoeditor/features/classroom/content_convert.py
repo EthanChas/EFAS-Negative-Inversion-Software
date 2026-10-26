@@ -242,7 +242,7 @@ The best repair is prevention: mask off every bit of light that does not pass th
            r"""
 Converting a negative always involves judgement, because no scan comes with the answer to *what should this film's colours look like?* The **Film Colour Reference** helps you answer it. Open it from the **Extra** menu or from the Convert tab: search for a film stock, and it shows sample photographs shot on that film in a clean gallery, so you can hold your own conversion up against what the film really does.
 
-The photographs come from **lomography.com**. That makes this one of only two places where EFAS goes online (the other is the update check). For that reason it asks permission the first time you open it, connects only while its window is open, and sends nothing about you or your photographs. **Settings > General** can switch it off entirely.
+The photographs come from **lomography.com**. That makes this one of only three places where EFAS goes online (the others are the update check and the download of an AI model you ask for). For that reason it asks permission the first time you open it, connects only while its window is open, and sends nothing about you or your photographs. **Settings > General** can switch it off entirely.
 
 ## What is in the window
 
@@ -434,6 +434,14 @@ Every adjustment normally acts on the whole picture. A **mask** limits it to par
 You draw a mask with five shapes. A **circle** and an **ellipse** are soft-edged blobs. A **path** is a closed curve through nodes you click. A **brush** is a stroke you paint. A **gradient** fades from one side to the other along a line. Each has a *feather*, the soft edge outside the shape: the mask is full inside and falls to nothing across the feather.
 
 Draw one with the buttons in the **Masks** panel on the left, or from a module's own **Mask** box (every module that works on the picture's tone, colour or detail has one at its foot). Scroll over a shape to change its **size**, Shift+scroll its **feather**, Ctrl+scroll its **opacity**. Drag a shape to move it, or its anchors to resize it. For a path, click for a smooth node and Shift+click (or Ctrl+click) for a sharp one, right-click or press Enter to finish and Esc to cancel; on an existing path, Shift+click (or Ctrl+click) a node to switch smooth and sharp, right-click a node to remove it, Ctrl+click a segment to add a node. Ctrl+click a shape button to keep drawing more of the same shape. Right-click a shape to delete it.
+
+## The AI object mask
+
+The wand button next to the shapes cuts an object out from a few clicks, with darktable's AI (the Segment Anything 2.1 models). The first time, Extra > AI Models offers to download one (136 to 294 MB; it asks first and runs on your computer). Then click the object (left click), right-click what is not part of it, and press Enter (or press the wand again): the cut becomes ordinary path masks, listed under Shapes, that you can edit. Until then it is only a preview. It is a model, so check the result and fix it with another click or by moving nodes. It follows large shapes well and fine detail such as hair poorly.
+
+## Picking, and feathers that fit
+
+Where shapes overlap, the one you point inside of wins, and the smallest of those, so a small shape under a big one can still be picked. A path drawn round something small gets a feather to match, and making a shape smaller takes its feather down with it.
 
 ## A module's Mask box
 

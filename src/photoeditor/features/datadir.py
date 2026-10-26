@@ -29,6 +29,7 @@ GEAR_DIR = "camera-and-lens-lists"                # gear
 FILM_PROFILES_DIR = "film-profiles"               # film_profiles
 CAMERA_SETUPS_DIR = "camera-setups"               # camera_setups
 AI_DUST_CACHE_DIR = "ai-dust-cache"               # ai_dust_cache
+AI_MODELS_DIR = "ai-models"                        # (new) the AI models the person chose to download (features/aimask): one folder each
 TETHER_FLATFIELD_FILE = "tether-flat-field.npz"   # (new) the flat field the tether window made from the bare light
 FILM_REFERENCE_FILE = "film-reference-films.json"      # (new) the film list from lomography.com, so it is not fetched every time
 PLUGINS_DIR = "plugins"                            # (new) the plugins (add-ons) the user installed: one folder each

@@ -20,7 +20,7 @@ The tag is only in the header. The module's own title (which picks its icon and 
 | Print Response | NegPy | Its Snap / Toe / Shoulder response of the paper curve, here as an edit of the finished tones, and its paper profiles as presets (see presets.md) |
 | Color Toning | NegPy | The idea of split toning: a hue and a strength for the shadows, midtones and highlights |
 | Retouch | darktable | Ported 1:1: the shapes, the wavelet scales, clone, heal, blur and fill, and the panel |
-| Masks | darktable | The drawn masks (circle, ellipse, path, brush, gradient), their groups and keys, and the Masks panel |
+| Masks | darktable | The drawn masks (circle, ellipse, path, brush, gradient), their groups and keys, the Masks panel, and the AI object mask (darktable's models and steps) |
 | Watermark | darktable | The watermark variables (`$(EXIF.MAKER)` and the rest) and SVG markers, so darktable's own SVG files work |
 | Tagging, Tags | darktable | The tagging module's layout: tags on the photo, and the tag dictionary below |
 | Exposure, Tone Curve, Color, White Balance, Contrast, Shadows & Highlights, Color Mixer | EFAS | Made for EFAS (laid out like darktable's modules) |

@@ -202,6 +202,100 @@ def test_an_ellipse_radius_anchor_resizes_one_axis_and_ctrl_drag_turns_it():
     assert abs(host.ms.get(e.id).points[0]["rotation"] - 90.0) < 3.0, "ctrl+drag turned it a quarter"
 
 
+# ------------------------------------------------------------------ picking a shape that is under another
+def test_a_small_shape_inside_a_bigger_newer_one_can_be_picked_and_the_big_one_still_can():
+    host, tool = _tool()
+    small = host.ms.add(M.CIRCLE, M.circle(200 / FW, 150 / FH, 0.04, 0.02))
+    big = host.ms.add(M.CIRCLE, M.circle(200 / FW, 150 / FH, 0.30, 0.05))      # made last: on top
+    tool.set_visible([small.id, big.id])
+    r_small, r_big = 0.04 * FH, 0.30 * FH
+    for point, wanted, why in (((200, 150), small.id, "the middle: the small one is inside the big one and smaller"),
+                               ((200 - r_small * 0.5, 150), small.id, "still inside the small one"),
+                               ((200 + r_big * 0.6, 150), big.id, "inside the big one only"),
+                               ((200, 150 - r_big - 0.025 * FH), big.id, "in the big one's feather")):
+        tool.hover(*point)
+        assert tool.hit is not None and tool.hit.form_id == wanted and tool.hit.part == "body", (why, tool.hit)
+        assert tool.selected == wanted
+    assert tool.hit_test(5, 5) is None
+
+
+def test_a_shape_inside_another_ones_feather_beats_it_and_precise_parts_beat_bodies():
+    host, tool = _tool()
+    wide = host.ms.add(M.CIRCLE, M.circle(200 / FW, 150 / FH, 0.10, 0.40))     # a feather reaching far past the shape
+    inner = host.ms.add(M.CIRCLE, M.circle(300 / FW, 150 / FH, 0.05, 0.01))    # newer and sitting in that feather
+    tool.set_visible([wide.id, inner.id])
+    tool.hover(300, 150)
+    assert tool.hit.form_id == inner.id, "inside the small one (the newer): it wins"
+    tool.hover(215, 150)
+    assert tool.hit.form_id == wide.id and tool.hit.part == "body", "inside the wide one's core, though the small one's feather is near"
+    anchor = host.ms.add(M.CIRCLE, M.circle(205 / FW, 150 / FH, 0.02, 0.01))   # an anchor of this one is on the first one's body
+    tool.set_visible([wide.id, inner.id, anchor.id])
+    tool.hover(205 + 0.02 * FH, 150)
+    assert tool.hit.form_id == anchor.id and tool.hit.part == "radius", "an anchor is picked before any body"
+
+
+def test_a_path_and_a_brush_stroke_under_a_bigger_path_can_be_picked():
+    host, tool = _tool()
+    tiny = host.ms.add(M.PATH, [M.path_node(x / FW, y / FH, 0.005, smooth=False) for x, y in ((190, 140), (210, 140), (210, 160), (190, 160))])
+    huge = host.ms.add(M.PATH, [M.path_node(x / FW, y / FH, 0.02, smooth=False) for x, y in ((60, 40), (340, 40), (340, 260), (60, 260))])
+    tool.set_visible([tiny.id, huge.id])
+    tool.hover(200, 150)
+    assert tool.hit.form_id == tiny.id and tool.hit.part == "body"
+    tool.hover(100, 100)
+    assert tool.hit.form_id == huge.id and tool.hit.part == "body"
+
+
+# ------------------------------------------------------------------ feathering that fits the shape
+def test_a_small_path_gets_a_feather_that_fits_it():
+    host, tool = _tool()
+    _path(host, tool, [(195, 145), (205, 145), (205, 155), (195, 155)], {0: ("shift",), 1: ("shift",), 2: ("shift",), 3: ("shift",)})
+    border = host.ms.get(1).points[0]["border"][0]
+    assert border < 0.01, f"a 10 pixel path has a feather of {border}, not the 5% default"
+    assert abs(border - 0.5 * math.sqrt(10 * 10 / math.pi) / FH) < 1e-6 or border == 0.0005 or border < 0.5 * math.sqrt(10 * 10 / math.pi) / FH + 1e-9
+    host2, tool2 = _tool()
+    _path(host2, tool2, [(60, 40), (340, 40), (340, 260), (60, 260)])
+    assert host2.ms.get(1).points[0]["border"][0] == 0.05, "a big path keeps the default feather"
+
+
+def test_making_a_shape_smaller_does_not_leave_it_a_feather_wider_than_itself():
+    host, tool = _tool()
+    circle = host.ms.add(M.CIRCLE, M.circle(200 / FW, 150 / FH, 0.05, 0.05))
+    tool.set_visible([circle.id])
+    tool.hover(200, 150)
+    for _ in range(30):
+        tool.scroll(200, 150, False, set())      # the wheel down: smaller
+    p = host.ms.get(circle.id).points[0]
+    assert p["radius"] < 0.025 and p["border"] <= p["radius"] + 1e-9, p
+    big = p["border"]
+    for _ in range(6):
+        tool.scroll(200, 150, True, set())       # larger again: the feather is left as it is
+    assert host.ms.get(circle.id).points[0]["border"] == big
+    ellipse = host.ms.add(M.ELLIPSE, M.ellipse(100 / FW, 100 / FH, 0.05, 0.035, 90.0, 0.05))
+    tool.set_visible([ellipse.id])
+    tool.hover(100, 100)
+    for _ in range(30):
+        tool.scroll(100, 100, False, set())
+    e = host.ms.get(ellipse.id).points[0]
+    assert e["border"] <= min(e["radius"]) + 1e-9, e
+    path = host.ms.add(M.PATH, [M.path_node(x / FW, y / FH, 0.05, smooth=False) for x, y in ((150, 100), (250, 100), (250, 200), (150, 200))])
+    tool.set_visible([path.id])
+    tool.hover(200, 150)
+    before = host.ms.get(path.id).points[0]["border"][0]
+    for _ in range(30):
+        tool.scroll(200, 150, False, set())
+    after = host.ms.get(path.id).points[0]["border"][0]
+    assert after < before and after <= 0.5 * tool._path_radius(host.ms.get(path.id).points) + 1e-9, (before, after)
+
+
+def test_the_next_circle_drawn_after_making_the_size_smaller_has_a_feather_to_match():
+    host, tool = _tool()
+    tool.begin_creation(M.CIRCLE)
+    for _ in range(30):
+        tool.scroll(100, 100, False, set())
+    d = tool.defaults[M.CIRCLE]
+    assert d["size"] < 0.025 and d["border"] <= d["size"] + 1e-9, d
+
+
 # ------------------------------------------------------------------ path
 def _path(host, tool, clicks, mods_for=None, finish="right"):
     tool.begin_creation(M.PATH, key="color")

@@ -56,6 +56,7 @@ DEFAULTS: dict[str, Any] = {
     "tether_prefix": "scan_",
     "tether_settle": 1.5,
     "tether_show": True,
+    "ai_mask_model": "",      # the AI model for the object mask that is used (features/aimask/models.py); "" is the first one installed
     "gpu_enabled": True,
     "classroom_last": "",
     "preset_sort": "made",
@@ -110,6 +111,8 @@ def _clean(data: Any) -> dict[str, Any]:
         out["tether_settle"] = float(min(max(settle, 0.0), 10.0))
     if isinstance(data.get("tether_show"), bool):
         out["tether_show"] = data["tether_show"]
+    if isinstance(data.get("ai_mask_model"), str):
+        out["ai_mask_model"] = data["ai_mask_model"].strip()[:120]
     if data.get("preset_sort") in ("made", "az", "za"):   # how the presets inside each folder are ordered: the order made, A to Z, Z to A
         out["preset_sort"] = data["preset_sort"]
     if isinstance(data.get("classroom_last"), str):   # the Classroom lesson that was open

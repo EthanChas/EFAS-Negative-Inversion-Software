@@ -6,10 +6,36 @@ from .mask_tool import Host
 
 
 class ControllerHost(Host):
-    def __init__(self, controller, say=None, redraw=None, created=None, picked=None):
-        """`say(text)` shows a hint, `redraw()` repaints the picture's overlay, `created(kind, key, form_id)` is told when a shape was placed (a module's own shape button)."""
+    def __init__(self, controller, say=None, redraw=None, created=None, picked=None, ai=None):
+        """`say(text)` shows a hint, `redraw()` repaints the picture's overlay, `created(kind, key, form_id)` is told when a shape was placed (a module's own shape button), `ai` is the
+        AI object mask's engine (desktop/ai_mask_service.py)."""
         self.c = controller
         self._say, self._redraw, self._created, self._picked = say, redraw, created, picked
+        self._ai = ai
+
+    def ai_begin(self) -> str:
+        return self._ai.begin() if self._ai is not None else "The AI object mask is not available."
+
+    def ai_add_point(self, x: float, y: float, label: int) -> None:
+        if self._ai is not None:
+            self._ai.add_point(x, y, label)
+
+    def ai_undo_point(self) -> None:
+        if self._ai is not None:
+            self._ai.undo_point()
+
+    def ai_end(self) -> None:
+        if self._ai is not None:
+            self._ai.end()
+
+    def ai_polygons(self) -> list:
+        return self._ai.polygons() if self._ai is not None else []
+
+    def ai_points(self) -> list:
+        return self._ai.points() if self._ai is not None else []
+
+    def ai_status(self) -> str:
+        return self._ai.status() if self._ai is not None else ""
 
     def masks(self) -> M.MaskSet:
         return self.c.mask_set()

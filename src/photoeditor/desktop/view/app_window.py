@@ -159,6 +159,7 @@ from .stats_panel import ChannelStatsPanel
 from .title_bar import TitleBar
 from .tone_curve_panel import ToneCurveToolPanel
 from .film_reference_dialog import FilmReferenceDialog
+from .ai_models_dialog import AiModelsDialog
 from .light_check_dialog import LightCheckDialog
 from .tether_window import TetherWindow
 from .tool_rail import SlideOutPanel, ToolRail
@@ -545,6 +546,7 @@ class AppWindow(QMainWindow):
         for signal in (self.controller.masks_changed, self.controller.history_changed, self.controller.reverted, self.controller.file_changed):
             signal.connect(self._refresh_blend_boxes)   # (not on every slider tick: that would put a slider back under the hand that is dragging it)
         self._mask_editor = MaskEditor(self.controller, self._image_view, self._blend_boxes, self._mask_manager, before_start=self._end_picture_tools, parent=self)
+        self._mask_editor.ai_models_requested.connect(self.show_ai_models)
         self._wire_mask_manager()
         self._wire_retouch()
         self._wire_extra_power()
@@ -850,6 +852,10 @@ class AppWindow(QMainWindow):
         self._light_check_action.setToolTip("Measure whether the light you scan film with is steady and even, and whether a roll was scanned consistently under it, from RAW photos taken with your scanning camera")
         self._light_check_action.triggered.connect(lambda _c=False: self.show_light_check())
         extra_menu.addAction(self._light_check_action)
+        self._ai_models_action = QAction("AI Models...", self)
+        self._ai_models_action.setToolTip("Download or choose the AI model the AI object mask uses (darktable's Segment Anything 2.1 models). Nothing is downloaded unless you ask")
+        self._ai_models_action.triggered.connect(lambda _c=False: self.show_ai_models())
+        extra_menu.addAction(self._ai_models_action)
         self._grain_report_action = QAction("Grain Report...", self)
         self._grain_report_action.setToolTip("Measure the open photo's grain: how strong it is, whether your capture resolves it, and whether your sharpening and denoise keep it. Changes nothing")
         self._grain_report_action.triggered.connect(lambda _c=False: self.show_grain_report())
@@ -3100,6 +3106,12 @@ class AppWindow(QMainWindow):
         dialog.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, True)
         self._grain_report = dialog
         dialog.show()
+
+    def show_ai_models(self, reason: str = "") -> None:
+        """Extra > AI Models, or what the AI object tool opens when no model is installed yet."""
+        dialog = AiModelsDialog(self, reason)
+        self._ai_models_dialog = dialog
+        dialog.exec()
 
     def show_light_check(self) -> None:
         """Extra > Check My Scanning Light: the bare-light check and the film-scan check (features/lightcheck). It reads RAW photos and changes nothing."""

@@ -16,7 +16,8 @@ _CREDITS = (
     "contact sheets. <a href=\"https://www.adobe.com/products/photoshop-lightroom.html\">adobe.com/lightroom</a></li>"
     "</ul>"
     "<p>Please go and check them out - they are fantastic programs, and well worth your time.</p>"
-    "<p>The AI dust detection runs a small model from the FilmDefectNet project.</p>"
+    "<p>The AI dust detection runs a small model from the FilmDefectNet project. The AI object mask runs darktable's Segment Anything 2.1 models (from Meta; weights Apache-2.0) "
+    "through the packages darktable publishes at github.com/darktable-org/darktable-ai.</p>"
     "<p>This app is developed with the help of AI (Claude, by Anthropic). Its changelogs, release notes and documentation are written by AI, as it is more "
     "effective and better organised than writing them by hand.</p>"
 )
