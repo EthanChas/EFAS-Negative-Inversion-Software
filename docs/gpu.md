@@ -12,6 +12,8 @@ These stages work on every pixel by itself, and they are the ones that cost the 
 4. the colour work in OKLCH: **Vibrance, the Color Mixer, the scanner colour response and Color Toning**
 5. the **vignette**
 
+Two of darktable's modules have a program of their own on the card, because they are the slowest in EFAS: **Color Balance RGB** (a program that grades every pixel by itself, in darktable UCS; the old JzAzBz formula stays on the processor) and **Diffuse or Sharpen** (the wavelet decomposition and the heat equation on whole-picture buffers; see below).
+
 Everything else stays on the processor: denoise, sharpening, local contrast, the geometry (rotation, straightening, distortion, keystone), dust repair, the edge tools, the border, the watermark and the histogram. The RAW decoding and the inversion's measuring are unchanged too.
 
 How much it matters, measured on a 6720 x 4480 photo and a 2048 x 1365 preview (RTX 3060 Ti; the processor times are for this computer's processor):
@@ -22,6 +24,11 @@ How much it matters, measured on a 6720 x 4480 photo and a 2048 x 1365 preview (
 | the same, preview size | 4.6 s | 0.03 s |
 | saturation + shadows / highlights, full size | 1.6 s | 0.14 s |
 | saturation + shadows / highlights, preview | 0.10 s | 0.02 s |
+
+| Color Balance RGB (darktable UCS), preview size | 0.8 s | 0.03 s |
+| Diffuse or Sharpen, *sharpness / normal*, preview size | 11 s | 0.2 s |
+| Diffuse or Sharpen, *denoise / medium*, preview size | 119 s | 0.9 s |
+| Diffuse or Sharpen, *sharpness / normal*, 24 megapixels | minutes | 4.4 s |
 
 Edits that are only a tone curve, exposure, contrast or colour balance were never slow (they are lookups, 20 to 45 ms even at full size), so they stay as they were.
 
@@ -55,6 +62,12 @@ Why lower it: the card (and its fan) stays cooler and quieter, the screen and ot
 
 The card opens in the background when the editor starts (it takes about a second), so the first big picture does not wait for it.
 
+## Diffuse or Sharpen and Color Balance RGB on the card
+
+Color Balance RGB is one program: a band of rows goes up as packed 8-bit RGB, every pixel is decoded, graded in Filmlight Yrg, given its saturation and brilliance with darktable UCS's gamut map, and encoded, and the band comes back. It matches the processor's picture to within one level.
+
+Diffuse or Sharpen keeps the whole picture in float buffers on the card (16 bytes a pixel, a buffer for each wavelet scale and a few more), runs every iteration there (two passes of the B-spline for each scale on the way down, one pass of the heat equation for each on the way up) and fetches the result once at the end. A picture that does not fit in one pass (more than about 7 megapixels) is cut into strips with an overlap, as the processor path does; a setting whose radii are so large that the overlap would be most of the strip (darktable's *dehaze* and *local contrast* on a very large scan) is left to the processor, which is then slow. It matches the processor's picture to within one level. The limit above applies between iterations.
+
 ## For developers
 
-The code is in `src/photoeditor/features/gpu`: `device.py` (finding and opening the card, the only place that imports `wgpu`), `kernels.py` (the WGSL shader and the layout of the numbers it is given), `pipeline.py` (bands, buffers, falling back), `throttle.py` (the limit). `desktop/render.py` calls `gpu_pipeline.tone(...)` and `gpu_pipeline.vignette(...)` and runs the processor's own stages when they return `None`. `tests/test_gpu.py` compares the card's pictures with the processor's for every stage (it is skipped on a computer without a usable card).
+The code is in `src/photoeditor/features/gpu`: `device.py` (finding and opening the card, the only place that imports `wgpu`), `kernels.py` (the WGSL shader and the layout of the numbers it is given), `pipeline.py` (bands, buffers, falling back), `throttle.py` (the limit), and the two darktable modules' own programs, `colorbalance.py` and `diffuse.py` (tests: `tests/test_gpu_color_balance.py`, `tests/test_gpu_diffuse.py`). `desktop/render.py` calls `gpu_pipeline.tone(...)` and `gpu_pipeline.vignette(...)` and runs the processor's own stages when they return `None`. `tests/test_gpu.py` compares the card's pictures with the processor's for every stage (it is skipped on a computer without a usable card).

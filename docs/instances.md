@@ -1,6 +1,6 @@
 # Multiple instances (copies of a module)
 
-As in darktable, a module can be copied. The two-squares button in the header of **Exposure, Contrast, Shadows & Highlights, Local Contrast, Chroma Denoise, Color Mixer, Color Toning, Sharpening, Grain Sharpening, Halation, Edge Color and Retouch** opens a menu: **New instance** (a copy with the module's defaults), **Duplicate instance** (a copy of what the module is set to now; for Retouch the algorithm, scales and sizes but no shapes). Up to 8 copies of a module.
+As in darktable, a module can be copied. The two-squares button in the header of **Exposure, Contrast, Shadows & Highlights, Local Contrast, Chroma Denoise, Color Mixer, Color Toning, Sharpening, Grain Sharpening, Tone Equalizer, Color Balance RGB, Diffuse or Sharpen, Halation, Edge Color and Retouch** opens a menu: **New instance** (a copy with the module's defaults), **Duplicate instance** (a copy of what the module is set to now; for Retouch the algorithm, scales and sizes but no shapes). Up to 8 copies of a module.
 
 - A copy is a panel right after its module, titled with the module's name, its number and its name ("Exposure 2 - shadows"). The module itself is not numbered. The copy's header button: **Rename**, **Duplicate**, **Delete**; it also has a reset button and its own **on/off light**.
 - Its controls are the module's own fields (a slider for each number, a box for each choice), and a **Mask** box at the foot: the copy's mask is its own (kept under the key `exposure#2`: the module key, `#`, the copy's id).

@@ -146,6 +146,27 @@ The **Tone Curve** lets you place points anywhere; Print Response gives you thre
 """, keywords=("print response", "toe", "shoulder", "snap", "roll off", "filmic", "characteristic curve", "hurter driffield", "density", "paper"), module="Print Response", see=("modern-conversion-controls", "tone-curve-module")),
 
     # ------------------------------------------------------------------ Color
+    Lesson("tone-equalizer-module", "tone", "Tone Equalizer", "See how it relights a picture octave by octave, what its mask is for, and how to dodge and burn with it.",
+           r"""
+The **Tone Equalizer** is darktable's module for relighting a picture, and it is the nearest thing in EFAS to a *zone system* in software. It sets an **exposure correction for each octave of brightness**, the way an audio equalizer sets a gain for each octave of sound: lighten the shadows by a stop and a bit without touching the highlights, bring a bright sky down without darkening the foreground.
+
+## The nodes and the curve
+
+Nine **nodes** sit one EV (one stop) apart, from **-8 EV** (the deepest shadows) to **0 EV** (white), and each can be moved from -2 to +2 EV. On the **simple** page there is a slider for each; on the **advanced** page they are the dots of a curve, with the histogram of the picture's mask behind it, and you can drag them up (lighter) or down (darker). Double-click the graph to put them all back. **Curve smoothing** makes the curve between the nodes more gradual (positive) or more cautious (negative); too much makes it wave.
+
+## The mask: why it is not just a curve
+
+A plain tone curve changes a tone wherever it is. The Tone Equalizer reads the brightness of each pixel from a **mask**: a blurred copy of the picture's luminance, blurred by a **guided filter** that follows edges. Two pixels of the same sky or the same wall then get the same correction, however much they differ, so the local contrast inside the region is kept, while the difference *between* regions is what is changed. **Preserve details** chooses the filter: *no* (a plain curve), the *guided filter*, or **EIGF**, the default, which smooths shadows and highlights alike. **Smoothing diameter** is how big the blur is, **edge feathering** how closely it follows edges (too far and it stops smoothing; too little and halos appear), and **filter diffusion** how many passes it makes.
+
+The **mask exposure compensation** and **contrast compensation** slide and spread the mask so that the picture uses all nine nodes; the two **wands** beside them set both from the picture. **Display exposure mask** shows the mask as a grey picture, which is the way to see what the guided filter is doing and to choose the **luminance estimator** (a way of turning red, green and blue into one brightness) that separates the parts you want to lighten from those you want to darken.
+
+## How to use it
+
+TRY: Press the Presets button in the module's header and choose *compress shadows/highlights | EIGF | medium*. The shadows come up and the highlights come down, and the picture keeps its texture. For dodging and burning, set the nodes you want and use the module's **Mask** box to confine it to part of the picture.
+
+It works in linear light and does nothing while all nine nodes are 0. See [[tone-overview]] for where it sits among the other tone tools.
+""", keywords=("tone equalizer", "relight", "dodge", "burn", "zone", "shadows", "highlights", "guided filter", "eigf", "equalizer", "darktable", "mask", "nodes"), module="Tone Equalizer", see=("shadows-highlights-module", "tone-curve-module", "stops-and-ev")),
+
     Lesson("color-overview", "color", "Color: correcting, then styling", "Understand the two jobs colour tools do, and where each tool sits in the chain.",
            r"""
 Colour work has two quite different jobs, and mixing them up is the commonest cause of muddy results. **Correcting** is making colours *accurate*: greys that are grey, skin that is skin-coloured, a white shirt that is white. **Styling** is making them *beautiful*: richer greens, a warmer glow, a particular film look. Correct first. Styling on top of a cast just fights the cast.
@@ -287,6 +308,27 @@ It works on the **cropped** picture, so **crop off the film's border first**. Th
 """, keywords=("edge color", "flash", "green edges", "fluorescent", "tungsten", "cast", "corners", "vignette", "orange edges", "auto match"), module="Edge Color", see=("recipe-flat-light", "flat-field-module")),
 
     # ------------------------------------------------------------------ Detail
+    Lesson("color-balance-rgb-module", "color", "Color Balance RGB", "See how darktable's grading module works: the master sliders, the four ways, the masks and where to start.",
+           r"""
+**Color Balance RGB** is darktable's modern colour grading module, and the most complete colour tool in EFAS. It takes the picture to a **perceptual** space (Filmlight Yrg, made from the way the eye's cones respond) and does its work there, so a change in colour does not drag the brightness or the hue along with it.
+
+## The master page
+
+**Hue shift** turns every hue round the colour wheel at the same luminance. **Vibrance** adds colour to the muted colours more than to the vivid ones. **Contrast** raises or lowers it about a grey fulcrum without changing the colours. Below them, three groups of sliders work on colourfulness, each with a *global* slider and one each for the **shadows**, **mid-tones** and **highlights**: **chroma** (more colour at the same luminance), **saturation** (the perceptual saturation, in one of two formulas) and **brilliance** (how bright the colours look). Whatever you push, a colour that would leave the picture's gamut is brought back at the same hue and brightness, so boosting never makes a smudge.
+
+## The 4 ways page
+
+The classic grading of a colourist: a **global offset**, a **lift** (colour and luminance in the shadows), a **gain** (in the highlights) and a **power** (in the mid-tones). Each has a **luminance**, a **hue** (the strip of colours under the slider shows the hues it passes through) and a **chroma**. A warm gain with a cool lift is the teal-and-orange look; a small global offset takes out a cast.
+
+## The masks page
+
+The shadows, mid-tones and highlights are not three regions but three **overlapping masks** of the luminance, and the graph draws them: blue for the shadows, white for the mid-tones, orange for the highlights. **Shadows fall-off** and **highlights fall-off** make them steeper or wider, **mask middle-gray fulcrum** moves where they cross, and **white fulcrum** and **contrast gray fulcrum** set the levels the power and the contrast work round. The **saturation formula** is darktable UCS (2022, the default and the more accurate) or JzAzBz (2021, the old one, kept so a preset of the old look still works).
+
+TRY: Open the module's Presets menu and choose *basic colorfulness | standard*, then use **global saturation** and **shadows** saturation to taste. For a film scan whose colour is flat, a little **vibrance** and a lift of **chroma** in the shadows often do more than the Saturation slider of [[color-module]].
+
+It does nothing while every grading slider is 0, and it keeps its changes in the history like the other modules. See [[color-overview]] for how it relates to the others.
+""", keywords=("color balance rgb", "colour grading", "color grading", "4 ways", "lift", "gain", "power", "offset", "saturation", "brilliance", "vibrance", "chroma", "hue shift", "darktable", "teal and orange"), module="Color Balance RGB", see=("color-mixer-module", "color-toning-module", "color-module")),
+
     Lesson("detail-overview", "detail", "Detail: noise, texture and sharpness", "Understand what the detail tools do to a picture's fine structure, and why they are used in a particular order.",
            r"""
 The tools in the **Detail** tab all work on a picture's *fine structure*, and they pull in different directions, which is why the order matters. **Chroma Denoise** removes something: the coloured speckle of grain. **Local Contrast** adds something: texture, by stretching contrast within small areas. **Sharpening** adds something else: crispness along edges. **Grain Sharpening** does the same for the film's own grain, at the grain's size. Remove first, add second, sharpen last, so that adding and sharpening do not amplify what you have just removed.
@@ -391,4 +433,23 @@ Size is measured in pixels of the scan, and the editing preview is the scan made
 
 TIP: Use Grain Sharpening for the grain and Sharpening for the picture. If the Grain Report says your capture does not resolve the grain, no setting here will find it; a closer capture or a sharper aperture will.
 """, keywords=("grain", "grain sharpening", "sharpen grain", "crisp", "texture", "film grain", "match my grain", "size", "midtones"), module="Grain Sharpening", see=("sharpening-module", "grain-report", "detail-overview")),
+
+    Lesson("diffuse-or-sharpen-module", "detail", "Diffuse or Sharpen", "Understand darktable's diffusion module: its speeds, anisotropy and radii, and which preset to start from.",
+           r"""
+**Diffuse or Sharpen** is darktable's most powerful and slowest detail module. It simulates the diffusion of light with a heat-transfer model, so it can blur along edges, fill in a damaged part of a picture, or take out a blur with a *blind deconvolution*, depending on how it is set. Most people use it through its **presets**.
+
+## How it works
+
+The picture is cut into layers of detail, one for each size (wavelet scales). On every layer an equation is solved one step: the layer is blurred or sharpened in a direction that follows the local edge. That is done for as many **iterations** as you say. More iterations make the effect stronger and the module slower.
+
+**Speed** is how fast: negative values sharpen, positive blur, and 0 does nothing. There are four, because the module works on the low-frequency layers (1st and 2nd order) and the high-frequency ones (3rd and 4th) separately. **Anisotropy** is the direction of each speed: negative follows the edges, positive avoids them, 0 is both alike. **Central radius** and **radius span** choose the sizes of detail it works on: a central radius of 0 acts on the finest detail (deblurring and denoising), a large one on local contrast; the span is how wide a band round it, and for deblurring it should be about the width of the blur. **Sharpness** raises or lowers the finest layers; **edge sensitivity** and **edge threshold** keep the diffusion off edges so that no halo or noise appears; the **luminance threshold** limits it to the bright parts, which is how it fills in blown highlights.
+
+## The presets
+
+In the module's Presets menu: *lens deblur* (soft, medium, hard) for a soft lens, *sharpen demosaicing* for a camera scan with or without an anti-aliasing filter, *sharpness* (fast, normal, strong), *denoise* (fine, medium, coarse), *surface blur*, *dehaze*, *local contrast* and the artistic *bloom*, *watercolor* and *line drawing*. Try *lens deblur | soft* or *sharpness | normal* on a soft scan, and compare at 100%.
+
+CAREFUL: It is slow. With a graphics card it follows the slider; on the processor it waits until you let go of a slider before it computes, as darktable's does, and big settings take a long time. Start with a preset and a few iterations, and use the graphics card (Settings > Graphics card) if you have one.
+
+It works in linear light, after Sharpening and Grain Sharpening, and does nothing while the four speeds, the sharpness and the luminance threshold are all 0. See [[sharpening-module]] and [[grain-sharpening-module]] for the simpler tools, and [[detail-overview]] for the whole picture.
+""", keywords=("diffuse or sharpen", "diffuse", "deconvolution", "deblur", "sharpen", "blur", "bloom", "dehaze", "denoise", "inpaint", "watercolor", "darktable", "wavelet", "lens blur"), module="Diffuse or Sharpen", see=("sharpening-module", "grain-sharpening-module", "detail-overview")),
 ]

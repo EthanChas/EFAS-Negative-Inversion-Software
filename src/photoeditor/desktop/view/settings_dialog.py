@@ -408,8 +408,8 @@ class SettingsDialog(QDialog):
         col = QVBoxLayout(page)
         col.setSpacing(THEME.space_md)
         col.addWidget(_hint("The editor can hand the heaviest per-pixel picture work to your graphics card, through Vulkan: the colour mixer, vibrance, the scanner colour response and "
-                            "colour toning, shadows / highlights, saturation and the vignette. On a full-size photo the colour work takes a fraction of a second instead of half a "
-                            "minute. Everything else (denoise, sharpening, local contrast, geometry, dust repair) still runs on the processor. If the card cannot be used, or "
+                            "colour toning, shadows / highlights, saturation and the vignette, and darktable's Color Balance RGB and Diffuse or Sharpen. On a full-size photo the colour work takes a "
+                            "fraction of a second instead of half a minute. Everything else (denoise, sharpening, local contrast, geometry, dust repair) still runs on the processor. If the card cannot be used, or "
                             "gives any trouble, the processor does the work, exactly as before."))
         self._gpu_status = QLabel(f"Graphics card: {gpu_device.describe()}")
         col.addWidget(self._gpu_status)

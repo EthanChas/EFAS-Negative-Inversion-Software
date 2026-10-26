@@ -13,6 +13,9 @@ from ..colormix import logic as color_mix
 from ..edgebleed import logic as edge_bleed
 from ..edgecolor import logic as edge_color
 from ..grainsharp import logic as grainsharp
+from ..colorbalancergb import logic as color_balance
+from ..diffuse import logic as diffuse
+from ..toneequalizer import logic as tone_eq
 from ..halation import logic as halation
 from ..lablook import logic as lab_look
 from ..printresponse import logic as print_response
@@ -42,6 +45,68 @@ class ModuleSpec:
 
 def _trim(key: str, label: str) -> FieldSpec:
     return FieldSpec(key, label, "float", 0.0, -1.0, 1.0)
+
+
+_ORDINALS = ("1st", "2nd", "3rd", "4th")
+
+
+def _diffuse_fields() -> tuple[FieldSpec, ...]:
+    r = diffuse.RANGES
+    d = diffuse.DEFAULTS
+    out = [FieldSpec("dif_iterations", "Iterations", "float", d["dif_iterations"], *r["dif_iterations"], 1.0),
+           FieldSpec("dif_radius_center", "Central radius", "float", d["dif_radius_center"], *r["dif_radius_center"], 1.0),
+           FieldSpec("dif_radius", "Radius span", "float", d["dif_radius"], *r["dif_radius"], 1.0)]
+    for name, key in zip(_ORDINALS, ("first", "second", "third", "fourth")):
+        out.append(FieldSpec(f"dif_{key}", f"{name} order speed", "float", 0.0, *r[f"dif_{key}"], 0.01))
+    for name, key in zip(_ORDINALS, ("first", "second", "third", "fourth")):
+        out.append(FieldSpec(f"dif_aniso_{key}", f"{name} order anisotropy", "float", 0.0, *r[f"dif_aniso_{key}"], 0.1))
+    out += [FieldSpec("dif_sharpness", "Sharpness", "float", 0.0, *r["dif_sharpness"], 0.005),
+            FieldSpec("dif_regularization", "Edge sensitivity", "float", 0.0, *r["dif_regularization"]),
+            FieldSpec("dif_variance_threshold", "Edge threshold", "float", 0.0, *r["dif_variance_threshold"]),
+            FieldSpec("dif_threshold", "Luminance masking threshold", "float", 0.0, *r["dif_threshold"])]
+    return tuple(out)
+
+
+def _tone_eq_fields() -> tuple[FieldSpec, ...]:
+    r = tone_eq.RANGES
+    d = tone_eq.DEFAULTS
+    out = [FieldSpec(k, label, "float", 0.0, *r[k]) for k, label in zip(tone_eq.BANDS, tone_eq.BAND_LABELS)]
+    out += [FieldSpec("teq_smoothing", "Curve smoothing", "float", d["teq_smoothing"], *r["teq_smoothing"]),
+            FieldSpec("teq_exposure_boost", "Mask exposure compensation", "float", 0.0, *r["teq_exposure_boost"]),
+            FieldSpec("teq_contrast_boost", "Mask contrast compensation", "float", 0.0, *r["teq_contrast_boost"]),
+            FieldSpec("teq_method", "Luminance estimator", "choice", d["teq_method"], choices=tuple((float(i), n) for i, n in enumerate(tone_eq.METHOD_LABELS))),
+            FieldSpec("teq_details", "Preserve details", "choice", d["teq_details"], choices=tuple((float(i), n) for i, n in enumerate(tone_eq.DETAILS_LABELS))),
+            FieldSpec("teq_iterations", "Filter diffusion", "float", d["teq_iterations"], *r["teq_iterations"], 1.0),
+            FieldSpec("teq_blending", "Smoothing diameter", "float", d["teq_blending"], *r["teq_blending"], 0.1),
+            FieldSpec("teq_feathering", "Edges refinement / feathering", "float", d["teq_feathering"], *r["teq_feathering"], 0.1),
+            FieldSpec("teq_quantization", "Mask quantization", "float", 0.0, *r["teq_quantization"])]
+    return tuple(out)
+
+
+_CB_LABELS = {"Y": "luminance", "C": "chroma", "H": "hue"}
+_CB_SECTIONS = {"global": "Global offset", "shadows": "Shadows lift", "highlights": "Highlights gain", "midtones": "Power (midtones)"}
+
+
+def _color_balance_fields() -> tuple[FieldSpec, ...]:
+    r = color_balance.RANGES
+    d = color_balance.DEFAULTS
+    labels = {"cbr_hue_angle": "Hue shift", "cbr_vibrance": "Global vibrance", "cbr_contrast": "Contrast", "cbr_chroma_global": "Global chroma",
+              "cbr_chroma_shadows": "Chroma in shadows", "cbr_chroma_midtones": "Chroma in midtones", "cbr_chroma_highlights": "Chroma in highlights",
+              "cbr_saturation_global": "Global saturation", "cbr_saturation_shadows": "Saturation in shadows", "cbr_saturation_midtones": "Saturation in midtones",
+              "cbr_saturation_highlights": "Saturation in highlights", "cbr_brilliance_global": "Global brilliance", "cbr_brilliance_shadows": "Brilliance in shadows",
+              "cbr_brilliance_midtones": "Brilliance in midtones", "cbr_brilliance_highlights": "Brilliance in highlights", "cbr_shadows_weight": "Shadows fall-off",
+              "cbr_mask_grey_fulcrum": "Mask middle-grey fulcrum", "cbr_highlights_weight": "Highlights fall-off", "cbr_white_fulcrum": "White fulcrum",
+              "cbr_grey_fulcrum": "Contrast grey fulcrum"}
+    for section, title in _CB_SECTIONS.items():
+        for c, word in _CB_LABELS.items():
+            labels[f"cbr_{section}_{c}"] = f"{title}: {word}"
+    out = []
+    for k in color_balance.KEYS:
+        if k == "cbr_formula":
+            out.append(FieldSpec(k, "Saturation formula", "choice", d[k], choices=tuple((float(i), n) for i, n in color_balance.FORMULA_LABELS.items())))
+        else:
+            out.append(FieldSpec(k, labels[k], "float", d[k], *r[k], 0.01))
+    return tuple(out)
 
 
 MODULES: tuple[ModuleSpec, ...] = (
@@ -87,6 +152,9 @@ MODULES: tuple[ModuleSpec, ...] = (
         FieldSpec("gs_size", "Grain size", "float", grainsharp.DEFAULTS["gs_size"], *grainsharp.SIZE_RANGE),
         FieldSpec("gs_midtones", "Grain sharpening midtones", "float", grainsharp.DEFAULTS["gs_midtones"], 0.0, 1.0),
     )),
+    ModuleSpec("diffuse", "Diffuse or sharpen", _diffuse_fields()),
+    ModuleSpec("toneequalizer", "Tone equalizer", _tone_eq_fields()),
+    ModuleSpec("colorbalancergb", "Color balance RGB", _color_balance_fields()),
     ModuleSpec("edgebleed", "Edge bleed", (
         FieldSpec("edge_holder", "Fill holder and sprockets", "float", 0.0, 0.0, 1.0),
         FieldSpec("edge_bleed", "Bleed repair strength", "float", 0.0, 0.0, 1.0),
@@ -147,6 +215,9 @@ PANEL_MODULES: dict[str, tuple[str, tuple[str, ...]]] = {
     "edgecolor": ("Edge Color", ("edgecolor",)),
     "halation": ("Halation", ("halation",)),
     "grainsharp": ("Grain Sharpening", ("grainsharp",)),
+    "diffuse": ("Diffuse or Sharpen", ("diffuse",)),
+    "toneequalizer": ("Tone Equalizer", ("toneequalizer",)),
+    "colorbalancergb": ("Color Balance RGB", ("colorbalancergb",)),
     "tonecurve": ("Tone Curve", ("tonecurve",)),
     "shadows_highlights": ("Shadows & Highlights", ("shadows_highlights",)),
     "color": ("Color", ("whitebalance", "color")),

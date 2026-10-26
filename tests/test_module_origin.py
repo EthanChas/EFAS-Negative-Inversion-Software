@@ -22,7 +22,7 @@ def test_the_origin_of_a_module_is_one_of_three_and_only_modules_have_one():
     assert mo.display_title("History") == "History" and mo.origin_of("Library") == "", "a list or a section is not a module"
     assert mo.with_origin("Exposure 2 - skin", "Exposure") == "Exposure 2 - skin (EFAS)" and mo.with_origin("Roll 1", "Roll") == "Roll 1"
     assert "darktable" in mo.tooltip("Masks") and "NegPy" in mo.tooltip("Sharpening") and mo.tooltip("Halation") == "Made for EFAS" and mo.tooltip("History") == ""
-    assert {t for t, o in mo.ORIGINS.items() if o == "darktable"} == {"Retouch", "Masks", "Watermark", "Tagging", "Tags"}
+    assert {t for t, o in mo.ORIGINS.items() if o == "darktable"} == {"Retouch", "Masks", "Watermark", "Tagging", "Tags", "Diffuse or Sharpen", "Tone Equalizer", "Color Balance RGB"}
     assert mo.display_title("Negative") == "Negative (NegPy & EFAS)" and {t for t, o in mo.ORIGINS.items() if o == "NegPy & EFAS"} == {"Negative", "Sharpening"}, "the modules with a part of each"
     assert "NegPy Conversion" in mo.tooltip("Negative") and "Original" in mo.tooltip("Negative")
     assert "NegPy" in mo.tooltip("Sharpening") and "EFAS" in mo.tooltip("Sharpening") and mo.display_title("Sharpening") == "Sharpening (NegPy & EFAS)"

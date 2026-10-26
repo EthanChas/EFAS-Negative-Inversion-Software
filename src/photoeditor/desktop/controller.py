@@ -70,6 +70,11 @@ from ..features.retouchdt import logic as rt_logic
 from ..features.instances import logic as inst_logic
 from ..features.lenscorrect import logic as lens_logic
 from ..features.halation import logic as hal_logic
+from ..features.colorbalancergb import logic as cbr_logic
+from ..features.diffuse import logic as dif_logic
+from ..features.gpu import diffuse as gpu_diffuse
+from ..features.toneequalizer import logic as teq_logic
+from ..features.lookpresets import module_builtin
 from ..features.lablook import logic as lab_look_logic
 from ..features.printresponse import logic as print_response_logic
 from ..features.geometry import corners as corners_logic
@@ -132,6 +137,7 @@ LOOK_FIELDS = (
     "contrast", "local_contrast", "print_snap", "print_toe", "print_toe_width", "print_shoulder", "print_shoulder_width", "lab_fade", "lab_glow", "lab_by_shadows", "lab_by_mids", "lab_by_highs", "lab_gm_shadows", "lab_gm_mids", "lab_gm_highs", "lab_response", "lab_response_amount", "vibrance", "mix_hue_red", "mix_sat_red", "mix_lum_red", "mix_hue_orange", "mix_sat_orange", "mix_lum_orange", "mix_hue_yellow", "mix_sat_yellow", "mix_lum_yellow", "mix_hue_green", "mix_sat_green", "mix_lum_green", "mix_hue_aqua", "mix_sat_aqua", "mix_lum_aqua", "mix_hue_blue", "mix_sat_blue", "mix_lum_blue", "mix_hue_purple", "mix_sat_purple", "mix_lum_purple", "mix_hue_magenta", "mix_sat_magenta", "mix_lum_magenta", "tone_hue_shadows", "tone_amt_shadows", "tone_hue_mids", "tone_amt_mids", "tone_hue_highs", "tone_amt_highs", "edge_holder", "edge_bleed", "edge_dodge", "edge_reach", "edge_mask", "edge_feather", "edge_mask_color", "edge_mask_meter", "ec_tint", "ec_warmth", "ec_light", "ec_size", "ec_shape", "hal_amount", "hal_radius", "hal_threshold", "hal_warmth", "gs_amount", "gs_size", "gs_midtones", "vignette", "vignette_size", "border", "border_color", "sharpen_amount", "sharpen_radius", "sharpen_masking", "sharpen_method", "film_type", "invert_r", "invert_g",
     "invert_b", "chroma_denoise", "wm_film", "wm_texture", "wm_size", "wm_position", "wm_info", "wm_camera", "wm_lens",
 )
+LOOK_FIELDS = LOOK_FIELDS + dif_logic.KEYS + teq_logic.KEYS + cbr_logic.KEYS
 
 
 LOOK_KEY = "__look__"   # where the look preset applied to a photo is kept among its module presets (a built-in one is "builtin:" and its name)
@@ -387,6 +393,8 @@ class AppController(QObject):
             setattr(self.state, key, float(saved.get(key, default)))
         for key, default in gs_logic.DEFAULTS.items():
             setattr(self.state, key, float(saved.get(key, default)))
+        for key, default in (*dif_logic.DEFAULTS.items(), *teq_logic.DEFAULTS.items(), *cbr_logic.DEFAULTS.items()):
+            setattr(self.state, key, float(saved.get(key, default)))
         self.state.vignette = float(saved.get("vignette", 0.0))
         self.state.vignette_size = float(saved.get("vignette_size", 0.5))
         self.state.border = float(saved.get("border", 0.0))
@@ -617,6 +625,10 @@ class AppController(QObject):
         self._last_logged_ec = self._ec_values()
         self._last_logged_hal = self._hal_values()
         self._last_logged_gs = self._gs_values()
+        self._last_logged_dif = self._dif_values()
+        self.state.teq_show_mask = False
+        self._last_logged_teq = self._teq_values()
+        self._last_logged_cbr = self._cbr_values()
         self._last_logged_finish = self._finishing_values()
         self._clone_source_raw = self._clone_source_display = self._clone_offset_raw = None
         self._last_logged_ai = (self.state.ai_dust, round(self.state.ai_threshold, 4), self.state.ai_grow)
@@ -1420,6 +1432,127 @@ class AppController(QObject):
         if now != self._last_logged_gs:
             self._last_logged_gs = now
             self._log(f"Grain sharpening: amount {now['gs_amount']:.2f}, size {now['gs_size']:.2f} px, midtones {now['gs_midtones']:.2f}")
+
+    # ------------------------------------------------------------ Diffuse or Sharpen, Tone Equalizer and Color Balance RGB (darktable's)
+    def _dif_values(self) -> dict:
+        return {k: getattr(self.state, k) for k in dif_logic.KEYS}
+
+    def preview_diffuse(self, values: dict) -> None:
+        if self.state.preview_rgb is None:
+            return
+        for key in dif_logic.KEYS:
+            if key in values:
+                setattr(self.state, key, float(values[key]))
+        card = gpu_diffuse.usable(self.state.preview_rgb.shape)
+        self._preview(LIVE_OTHER_METHODS | ({dif_logic.LIVE} if card else set()))    # (on the processor the module waits until the slider is let go, as in darktable's fast pipe; the card keeps it live)
+
+    def set_diffuse(self, values: dict) -> None:
+        """Diffuse or Sharpen: darktable's wavelet and heat-diffusion module (it does nothing while the speeds, the sharpness and the luminance threshold are all 0)."""
+        if self.state.preview_rgb is None:
+            return
+        for key in dif_logic.KEYS:
+            if key in values:
+                setattr(self.state, key, float(values[key]))
+        self._settle()
+        now = self._dif_values()
+        if now != self._last_logged_dif:
+            self._last_logged_dif = now
+            speeds = ", ".join(f"{n} {now[k]:+.2f}" for n, k in (("1st", "dif_first"), ("2nd", "dif_second"), ("3rd", "dif_third"), ("4th", "dif_fourth")) if now[k])
+            self._log(f"Diffuse or sharpen: {int(now['dif_iterations'])} iterations, radius {now['dif_radius']:.0f} px" + (f", speeds {speeds}" if speeds else ""))
+
+    def _teq_values(self) -> dict:
+        return {k: getattr(self.state, k) for k in teq_logic.KEYS}
+
+    def preview_tone_equalizer(self, values: dict) -> None:
+        if self.state.preview_rgb is None:
+            return
+        for key in teq_logic.KEYS:
+            if key in values:
+                setattr(self.state, key, float(values[key]))
+        self._preview(LIVE_OTHER_METHODS | {teq_logic.LIVE})
+
+    def set_tone_equalizer(self, values: dict) -> None:
+        """Tone Equalizer: an exposure correction for each octave of brightness, from -8 EV to 0 EV (it does nothing while all nine are 0)."""
+        if self.state.preview_rgb is None:
+            return
+        for key in teq_logic.KEYS:
+            if key in values:
+                setattr(self.state, key, float(values[key]))
+        self._settle()
+        now = self._teq_values()
+        if now != self._last_logged_teq:
+            self._last_logged_teq = now
+            moved = ", ".join(f"{label} {now[k]:+.2f}" for k, label in zip(teq_logic.BANDS, teq_logic.BAND_LABELS) if now[k])
+            self._log("Tone equalizer: " + (moved if moved else "all nodes at 0"))
+
+    def _cbr_values(self) -> dict:
+        return {k: getattr(self.state, k) for k in cbr_logic.KEYS}
+
+    def preview_color_balance_rgb(self, values: dict) -> None:
+        if self.state.preview_rgb is None:
+            return
+        for key in cbr_logic.KEYS:
+            if key in values:
+                setattr(self.state, key, float(values[key]))
+        self._preview(LIVE_OTHER_METHODS | {cbr_logic.LIVE})
+
+    def set_color_balance_rgb(self, values: dict) -> None:
+        """Color Balance RGB: darktable's colour grading (it does nothing while every grading slider is 0)."""
+        if self.state.preview_rgb is None:
+            return
+        for key in cbr_logic.KEYS:
+            if key in values:
+                setattr(self.state, key, float(values[key]))
+        self._settle()
+        now = self._cbr_values()
+        if now != self._last_logged_cbr:
+            old, self._last_logged_cbr = self._last_logged_cbr, now
+            changed = [k[4:].replace("_", " ") for k in cbr_logic.KEYS if abs(now[k] - old.get(k, now[k])) > 1e-9][:3]
+            self._log("Color balance rgb: " + (", ".join(changed) if changed else "changed"))
+
+    def set_tone_eq_mask_display(self, on: bool) -> None:
+        """The Tone Equalizer's "display exposure mask" button: the picture shows the luminance mask (a view of the picture, not an edit: nothing is saved or put in the history)."""
+        if self.state.preview_rgb is None:
+            return
+        self.state.teq_show_mask = bool(on)
+        self._settle()
+
+    def tone_eq_mask_stats(self):
+        """(the histogram of the luminance mask between -8 and 0 EV, its first and last decile in EV) of the open photo as the Tone Equalizer receives it (the picture made without it and
+        without the modules after it) - what the graph shows and the two wands read. None when no photo is open."""
+        s = self.state
+        if s.preview_rgb is None:
+            return None
+        base = self._render_base()
+        params = dataclasses.replace(EditParams.from_state(s), **{k: 0.0 for k in teq_logic.BANDS}, **cbr_logic.DEFAULTS, **dif_logic.DEFAULTS)
+        _image, received, _stats, _overlay = self._renderer.render(base, params, self._token(), base.shape[1], None, want_stats=False, overlay=False, flatfield=self._ff)
+        return teq_logic.mask_stats(received, self._teq_values())
+
+    def auto_tone_eq(self, key: str) -> float | None:
+        """The value of "teq_exposure_boost" or "teq_contrast_boost" that centres or spreads the mask of the open photo (the wands beside them), or None."""
+        stats = self.tone_eq_mask_stats()
+        if stats is None:
+            return None
+        _hist, first, last = stats
+        values = self._teq_values()
+        return teq_logic.auto_exposure_boost((first, last), values) if key == "teq_exposure_boost" else teq_logic.auto_contrast_boost((first, last), values)
+
+    def apply_darktable_module_preset(self, key: str, name: str) -> bool:
+        """One of darktable's own presets for Diffuse or Sharpen, Tone Equalizer or Color Balance RGB, as one undoable step."""
+        values = module_builtin.get(key, name)
+        if values is None:
+            self.notice.emit(f"Preset '{name}' was not found")
+            return False
+        label = f"{self.module_title(key)} preset '{name}'"
+        if self.apply_look({**panel_defaults(key), **values}, label):
+            self._save_edit_state()
+            self.module_presets_changed.emit(key)
+            self.notice.emit(f"Applied {label}")
+            return True
+        return False
+
+    def module_darktable_presets(self, key: str) -> list[str]:
+        return module_builtin.names(key)
 
     def measured_grain_width(self) -> float | None:
         """The width in scan pixels of the open photo's grain, as the Grain Report measures it (None when there is no flat mid-tone patch to measure)."""
@@ -3003,6 +3136,12 @@ class AppController(QObject):
             parts.append("chroma denoise")
         if self.state.local_contrast:
             parts.append("local contrast")
+        if not dif_logic.is_neutral(self._dif_values()):
+            parts.append("diffuse or sharpen")
+        if not teq_logic.is_neutral(self._teq_values()):
+            parts.append("tone equalizer")
+        if not cbr_logic.is_neutral(self._cbr_values()):
+            parts.append("color balance rgb")
         if wm.is_active(self.state.wm_film):
             parts.append("canister watermark")
         if self.state.flip_h:
@@ -3153,6 +3292,9 @@ class AppController(QObject):
             **{k: getattr(s, k) for k in ec_logic.KEYS},
             **{k: getattr(s, k) for k in hal_logic.KEYS},
             **{k: getattr(s, k) for k in gs_logic.KEYS},
+            **{k: getattr(s, k) for k in dif_logic.KEYS},
+            **{k: getattr(s, k) for k in teq_logic.KEYS},
+            **{k: getattr(s, k) for k in cbr_logic.KEYS},
             metering=s.metering,
             vignette=s.vignette,
             vignette_size=s.vignette_size,
@@ -3281,6 +3423,9 @@ class AppController(QObject):
             **self._ec_values(),
             **self._hal_values(),
             **self._gs_values(),
+            **self._dif_values(),
+            **self._teq_values(),
+            **self._cbr_values(),
             "vignette": s.vignette,
             "vignette_size": s.vignette_size,
             "border": s.border,
@@ -3357,6 +3502,8 @@ class AppController(QObject):
         for key, default in hal_logic.DEFAULTS.items():
             setattr(self.state, key, default)
         for key, default in gs_logic.DEFAULTS.items():
+            setattr(self.state, key, default)
+        for key, default in (*dif_logic.DEFAULTS.items(), *teq_logic.DEFAULTS.items(), *cbr_logic.DEFAULTS.items()):
             setattr(self.state, key, default)
         self.state.vignette, self.state.vignette_size, self.state.border, self.state.border_color = 0.0, 0.5, 0.0, "white"
         self.state.metering = Metering()
@@ -3556,7 +3703,7 @@ class AppController(QObject):
         self._last_logged_local = entry.local_contrast
         s.print_snap, s.print_toe, s.print_toe_width, s.print_shoulder, s.print_shoulder_width = (
             entry.print_snap, entry.print_toe, entry.print_toe_width, entry.print_shoulder, entry.print_shoulder_width)
-        for key in (*lab_look_logic.ALL_KEYS, *color_mix_logic.KEYS, *edge_logic.KEYS, *ec_logic.KEYS, *hal_logic.KEYS, *gs_logic.KEYS):
+        for key in (*lab_look_logic.ALL_KEYS, *color_mix_logic.KEYS, *edge_logic.KEYS, *ec_logic.KEYS, *hal_logic.KEYS, *gs_logic.KEYS, *dif_logic.KEYS, *teq_logic.KEYS, *cbr_logic.KEYS):
             setattr(s, key, getattr(entry, key))
         self._last_logged_print = self._print_values()
         s.vignette, s.vignette_size, s.border, s.border_color = entry.vignette, entry.vignette_size, entry.border, entry.border_color
@@ -4803,7 +4950,7 @@ class AppController(QObject):
             EditParams.from_state(s),
             exposure_ev=0.0, tone_curve_points=tuple(tuple(p) for p in DEFAULT_POINTS), tone_curve_red=tuple(DEFAULT_POINTS), tone_curve_green=tuple(DEFAULT_POINTS), tone_curve_blue=tuple(DEFAULT_POINTS), saturation=0.0, temperature=0.0, tint=0.0, shadows=0.0,
             highlights=0.0, sharpen_amount=0.0, dust_auto=False, scratch_lines=(), heal_strokes=(), clone_strokes=(), ai_dust=False, contrast=0.0,
-            chroma_denoise=0.0, local_contrast=0.0, print_snap=0.0, print_toe=0.0, print_shoulder=0.0, **lab_look_logic.ALL_DEFAULTS, **color_mix_logic.DEFAULTS, **edge_logic.DEFAULTS, **ec_logic.DEFAULTS, **hal_logic.DEFAULTS, **gs_logic.DEFAULTS, vignette=0.0, border=0.0, wm_film="off", wm_info=False, crop_rect=None,
+            chroma_denoise=0.0, local_contrast=0.0, print_snap=0.0, print_toe=0.0, print_shoulder=0.0, **lab_look_logic.ALL_DEFAULTS, **color_mix_logic.DEFAULTS, **edge_logic.DEFAULTS, **ec_logic.DEFAULTS, **hal_logic.DEFAULTS, **gs_logic.DEFAULTS, **dif_logic.DEFAULTS, **teq_logic.DEFAULTS, **cbr_logic.DEFAULTS, vignette=0.0, border=0.0, wm_film="off", wm_info=False, crop_rect=None,
             rotation_quarter_turns=0, flip_h=False, flip_v=False, fine_rotation=0.0, distortion=0.0, keystone_v=0.0, keystone_h=0.0,
         )
         scanned = self._negative_base()
@@ -4984,7 +5131,7 @@ class AppController(QObject):
         params = dataclasses.replace(
             EditParams.from_state(s), crop_rect=None, rotation_quarter_turns=0, flip_h=False, flip_v=False, fine_rotation=0.0, distortion=0.0, keystone_v=0.0, keystone_h=0.0,
             dust_auto=False, scratch_lines=(), heal_strokes=(), clone_strokes=(), ai_dust=False, vignette=0.0, border=0.0, wm_film="off", wm_info=False, marks=Marks(), scan_width=0,
-            **edge_logic.DEFAULTS, **ec_logic.DEFAULTS, **hal_logic.DEFAULTS,
+            **edge_logic.DEFAULTS, **ec_logic.DEFAULTS, **hal_logic.DEFAULTS, **dif_logic.DEFAULTS, **teq_logic.DEFAULTS, **cbr_logic.DEFAULTS,
         )
         params = dataclasses.replace(params, metering=dataclasses.replace(params.metering, rect=None))   # (the patch is its own picture: the film base is read from it)
         off = dataclasses.replace(params, sharpen_amount=0.0, chroma_denoise=0.0, local_contrast=0.0, gs_amount=0.0)
@@ -5018,7 +5165,7 @@ class AppController(QObject):
             exposure_ev=0.0, tone_curve_points=tuple(tuple(p) for p in DEFAULT_POINTS), tone_curve_red=tuple(DEFAULT_POINTS), tone_curve_green=tuple(DEFAULT_POINTS), tone_curve_blue=tuple(DEFAULT_POINTS),
             saturation=0.0, temperature=0.0, tint=0.0, shadows=0.0, highlights=0.0, sharpen_amount=0.0,
             dust_auto=False, scratch_lines=(), heal_strokes=(), clone_strokes=(), ai_dust=False, contrast=0.0, chroma_denoise=0.0, local_contrast=0.0,
-            print_snap=0.0, print_toe=0.0, print_shoulder=0.0, **lab_look_logic.ALL_DEFAULTS, **color_mix_logic.DEFAULTS, **edge_logic.DEFAULTS, **ec_logic.DEFAULTS, **hal_logic.DEFAULTS, **gs_logic.DEFAULTS,
+            print_snap=0.0, print_toe=0.0, print_shoulder=0.0, **lab_look_logic.ALL_DEFAULTS, **color_mix_logic.DEFAULTS, **edge_logic.DEFAULTS, **ec_logic.DEFAULTS, **hal_logic.DEFAULTS, **gs_logic.DEFAULTS, **dif_logic.DEFAULTS, **teq_logic.DEFAULTS, **cbr_logic.DEFAULTS,
             vignette=0.0, border=0.0 if not keep_frame else EditParams.from_state(self.state).border,
             wm_film="off", wm_info=False,
         )

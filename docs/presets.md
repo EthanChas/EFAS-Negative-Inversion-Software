@@ -147,6 +147,10 @@ Only the tone curve is carried over. NegPy's colour terms (the RA4 papers' chann
 
 Under **Film Stocks**, sorted by brand: **Cinestill/Cinestill**, **Fuji/Superia**, **Kodak/Gold**, **Kodak/Portra** and **Kodak/Portra Airy**. They are made the same way as the Scanners (EFAS Original) presets (the same conversion, from the film-look presets in the same published list), so everything said above applies: approximations of the stock's character in tone, saturation and warmth by tone, not a model of the film's colour. Kodak Gold is the warm one (warm, yellow shadows and midtones with clean highlights), Portra keeps its highlights soft and protected, Portra Airy lifts shadows and highlights. A film preset changes the picture the same way whatever film is in the scanner: use it as a starting point, not as proof of what the film looked like.
 
+## darktable's own presets for three modules
+
+The **Presets** menu in the header of **Diffuse or Sharpen**, **Tone Equalizer** and **Color Balance RGB** ends with darktable's own presets for that module, read-only, grouped as darktable groups them ("lens deblur", "dehaze", "denoise" and the rest as submenus of Diffuse or Sharpen; "compress shadows/highlights", "contrast tone curve" and "mask blending" for Tone Equalizer; "basic colorfulness" for Color Balance RGB). Choosing one sets every control of the module (what the preset does not name goes to the module's default) as one undoable step. They are not part of My Presets and are not exported with them; **Store new preset...** makes an editable copy of the module's current settings. See [diffuse-or-sharpen.md](diffuse-or-sharpen.md), [tone-equalizer.md](tone-equalizer.md) and [color-balance-rgb.md](color-balance-rgb.md).
+
 ## Adding built-in presets
 
 Built-in presets are JSON files in `src/photoeditor/assets/presets/`. Each file holds `{"presets": [{"name": "Folder/Name", "description": "...", "look": {...}}]}`, where `look` uses the slider keys of the Presets and Print Response modules (see `features/lookpresets/modules.py`). A new file in that folder appears in the Built-in Presets list the next time EFAS starts.

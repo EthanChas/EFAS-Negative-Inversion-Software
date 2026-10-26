@@ -12,7 +12,7 @@ from ..lookpresets.modules import PANEL_MODULES, clamp, panel_defaults, panel_fi
 from ..retouchdt import logic as rt_logic
 
 # the modules that can be copied: the ones that act on the picture as one step of their own and have a Mask box
-INSTANCE_MODULES = ("exposure", "contrast", "shadows_highlights", "localcontrast", "denoise", "colormixer", "colortoning", "sharpening", "grainsharp", "halation", "edgecolor")
+INSTANCE_MODULES = ("exposure", "contrast", "shadows_highlights", "localcontrast", "denoise", "colormixer", "colortoning", "sharpening", "grainsharp", "halation", "edgecolor", "diffuse", "toneequalizer", "colorbalancergb")
 COPYABLE = INSTANCE_MODULES + ("retouch",)     # Retouch is copied too, but a copy holds a whole set of Retouch's own settings (shapes, scales...) rather than a module's fields
 MAX_INSTANCES = 8
 NAME_LENGTH = 40

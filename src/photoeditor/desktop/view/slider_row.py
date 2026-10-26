@@ -120,6 +120,10 @@ class SliderRow(QWidget):
         self._slider.setValue(self._to_slider(value))
         self._updating = False
 
+    def set_suffix(self, text: str) -> None:
+        """Units shown after the number in the box (" px", " EV", "%")."""
+        self._spin.setSuffix(text)
+
     def value(self) -> float:
         return self._spin.value()
 

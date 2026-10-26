@@ -29,7 +29,7 @@ Sizes are fractions of the scan's shorter side, and every shape is kept in the *
 - **Invert** turns the mask over. **Refine**: *Blur* (a Gaussian of the mask, in pixels of a 1600 px picture), *Feather* (the mask follows edges of the picture, a guided filter), *Contrast* and *Brightness* (darktable's mask tone curve).
 - The picture becomes `before + (module's result - before) x mask`, darktable's normal blend. A drawn mask with no shape chosen means everywhere (inverted, nowhere).
 
-Modules that can be blended: Color (white balance and saturation together), Exposure, Contrast, Print Response, Chroma Denoise, Local Contrast, Shadows & Highlights, Tone Curve, Lab Look (with its scanner colour response), Color Mixer, Color Toning, Sharpening, Grain Sharpening, Edge Color, Halation.
+Modules that can be blended: Color (white balance and saturation together), Exposure, Contrast, Print Response, Chroma Denoise, Local Contrast, Shadows & Highlights, Tone Curve, Lab Look (with its scanner colour response), Color Mixer, Color Toning, Sharpening, Grain Sharpening, Tone Equalizer, Color Balance RGB, Diffuse or Sharpen, Edge Color, Halation.
 
 ## The Masks panel
 

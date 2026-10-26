@@ -8,7 +8,7 @@ _CREDITS = (
     "<p>This editor was inspired by three programs, and borrows ideas from all of them:</p>"
     "<ul>"
     "<li><b>darktable</b> - the free, open-source darkroom: focus peaking, the per-module presets and reset buttons, "
-    "the way modules are laid out. <a href=\"https://www.darktable.org\">darktable.org</a></li>"
+    "the way modules are laid out, and the Diffuse or Sharpen, Tone Equalizer and Color Balance RGB modules, ported from its source. <a href=\"https://www.darktable.org\">darktable.org</a></li>"
     "<li><b>NegPy</b> - a free, open-source film-negative editor: the negative inversion and metering ideas, "
     "dust and scratch repair, local contrast (CLAHE), the clone tool and more. Parts of this app are adapted "
     "from its code (GPL-3.0). <a href=\"https://github.com/marcinz606/NegPy\">github.com/marcinz606/NegPy</a></li>"

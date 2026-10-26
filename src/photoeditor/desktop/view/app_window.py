@@ -49,6 +49,9 @@ from .blend_box import BlendBox
 from .grainsharp_panel import GrainSharpeningPanel
 from ..mask_blend import BLENDABLE
 from .halation_panel import HalationPanel
+from .color_balance_rgb_panel import ColorBalanceRgbPanel
+from .diffuse_panel import DiffuseSharpenPanel
+from .tone_equalizer_panel import ToneEqualizerPanel
 from .module_search import ModuleSearch
 from .classroom_view import ClassroomView
 from .slideshow_view import SlideshowView
@@ -82,6 +85,8 @@ from ...theme import runtime as theme_runtime
 from ...features.library.index import LibraryIndex, read_record
 from ...features import gpu as gpu_config
 from ...features.gpu import pipeline as gpu_pipeline
+from ...features.gpu import colorbalance as gpu_colorbalance
+from ...features.gpu import diffuse as gpu_diffuse
 from ...features.livefolder import filing as live_filing
 from ...features.livefolder import logic as live_logic
 from ...features.focuspeaking.logic import overlay_from_levels
@@ -532,6 +537,7 @@ class AppWindow(QMainWindow):
         for key, panel in (
             ("exposure", self._exposure_tool), ("contrast", self._contrast_tool), ("printresponse", self._print_response_tool), ("lablook", self._lab_look_tool), ("colormixer", self._color_mixer_tool), ("colortoning", self._color_toning_tool), ("edgebleed", self._edge_tool), ("edgecolor", self._edge_color_tool), ("halation", self._halation_tool), ("tonecurve", self._curve_tool),
             ("shadows_highlights", self._shadows_highlights_tool), ("color", self._color_tool), ("sharpening", self._sharpening_tool), ("grainsharp", self._grainsharp_tool),
+            ("diffuse", self._diffuse_tool), ("toneequalizer", self._tone_eq_tool), ("colorbalancergb", self._color_balance_tool),
             ("localcontrast", self._local_contrast_tool), ("denoise", self._denoise_tool), ("negative", self._negative_tool),
             ("watermark", self._watermark_tool), ("finishing", self._finishing_tool),
         ):
@@ -1288,6 +1294,19 @@ class AppWindow(QMainWindow):
         self._halation_tool.changed.connect(self.controller.set_halation)
         self._halation_tool.preview_requested.connect(self.controller.preview_halation)
 
+        # the three modules ported from darktable that have many controls: tone equalizer (Tone tab), color balance rgb (Color tab), diffuse or sharpen (Detail tab)
+        self._tone_eq_tool = ToneEqualizerPanel()
+        self._tone_eq_tool.changed.connect(self.controller.set_tone_equalizer)
+        self._tone_eq_tool.preview_requested.connect(self.controller.preview_tone_equalizer)
+        self._tone_eq_tool.wand_requested.connect(self._on_tone_eq_wand)
+        self._tone_eq_tool.mask_display_toggled.connect(self.controller.set_tone_eq_mask_display)
+        self._color_balance_tool = ColorBalanceRgbPanel()
+        self._color_balance_tool.changed.connect(self.controller.set_color_balance_rgb)
+        self._color_balance_tool.preview_requested.connect(self.controller.preview_color_balance_rgb)
+        self._diffuse_tool = DiffuseSharpenPanel()
+        self._diffuse_tool.changed.connect(self.controller.set_diffuse)
+        self._diffuse_tool.preview_requested.connect(self.controller.preview_diffuse)
+
         self._curve_tool = ToneCurveToolPanel()
         self._curve_tool.curve_changed.connect(self.controller.set_tone_curve)
         self._curve_tool.preview_requested.connect(self.controller.preview_tone_curve)
@@ -1512,7 +1531,7 @@ class AppWindow(QMainWindow):
         tool_row.addWidget(self._correction_panel, 0)
 
         # the Tone tab is filled in the order the picture is made: exposure, contrast, shadows and highlights, the curve, the print's response, then the local masks
-        for panel in (self._exposure_tool, self._contrast_tool, self._shadows_highlights_tool, self._curve_tool, self._print_response_tool):
+        for panel in (self._exposure_tool, self._contrast_tool, self._shadows_highlights_tool, self._tone_eq_tool, self._curve_tool, self._print_response_tool):
             tools_col.addWidget(panel)
         tools_col.addStretch(1)
 
@@ -1534,10 +1553,10 @@ class AppWindow(QMainWindow):
             return SlideOutPanel(scroll), col
 
         # Color: white balance and saturation, the colour mixer, then the lab's look (the last word on colour)
-        self._color_panel, color_col = new_tab([self._color_tool, self._color_mixer_tool, self._color_toning_tool, self._lab_look_tool, self._edge_color_tool, self._halation_tool])
+        self._color_panel, color_col = new_tab([self._color_tool, self._color_balance_tool, self._color_mixer_tool, self._color_toning_tool, self._lab_look_tool, self._edge_color_tool, self._halation_tool])
         tool_row.addWidget(self._color_panel, 0)
         # Detail, in the order the picture is made: chroma noise, local contrast, sharpening last
-        self._detail_panel, detail_col = new_tab([self._denoise_tool, self._local_contrast_tool, self._sharpening_tool, self._grainsharp_tool])
+        self._detail_panel, detail_col = new_tab([self._denoise_tool, self._local_contrast_tool, self._sharpening_tool, self._grainsharp_tool, self._diffuse_tool])
         tool_row.addWidget(self._detail_panel, 0)
 
         self._finishing_tool = FinishingPanel()
@@ -2786,6 +2805,8 @@ class AppWindow(QMainWindow):
         gpu_config.configure(enabled=app_settings.get("gpu_enabled"), limit=app_settings.get("gpu_limit"))
         if gpu_config.enabled():
             threading.Thread(target=gpu_pipeline.warm_up, name="gpu-warm-up", daemon=True).start()
+            threading.Thread(target=gpu_diffuse.warm_up, name="gpu-warm-up-diffuse", daemon=True).start()
+            threading.Thread(target=gpu_colorbalance.warm_up, name="gpu-warm-up-colorbalance", daemon=True).start()
 
     def show_settings(self, page: str = "") -> None:
         dialog = SettingsDialog(self, self.controller, plugins=self._plugin_manager, start_page=page if isinstance(page, str) else "")
@@ -3462,6 +3483,10 @@ class AppWindow(QMainWindow):
         self._grainsharp_tool.reset()
         self._grainsharp_tool.set_values(self.controller._gs_values())
         self._grainsharp_tool.set_note("Judge it at 100% zoom: on the small preview the grain is under a pixel.")
+        for tool, values in ((self._diffuse_tool, self.controller._dif_values()), (self._tone_eq_tool, self.controller._teq_values()), (self._color_balance_tool, self.controller._cbr_values())):
+            tool.reset()
+            tool.set_values(values)
+        self._tone_eq_tool.put_mask_display(False)
         self._watermark_tool.set_values(
             state.wm_film, state.wm_texture, state.wm_size, state.wm_position, state.wm_info, state.wm_camera, state.wm_lens
         )
@@ -4090,6 +4115,9 @@ class AppWindow(QMainWindow):
         self._edge_color_tool.set_values(self.controller._ec_values())
         self._halation_tool.set_values(self.controller._hal_values())
         self._grainsharp_tool.set_values(self.controller._gs_values())
+        self._diffuse_tool.set_values(self.controller._dif_values())
+        self._tone_eq_tool.set_values(self.controller._teq_values())
+        self._color_balance_tool.set_values(self.controller._cbr_values())
         self._watermark_tool.set_values(
             state.wm_film, state.wm_texture, state.wm_size, state.wm_position, state.wm_info, state.wm_camera, state.wm_lens
         )
@@ -4873,6 +4901,18 @@ class AppWindow(QMainWindow):
                 panel.set_power(item["on"])
         self._panel_keys = None
         self._refresh_blend_boxes()
+
+    def _on_tone_eq_wand(self, key: str) -> None:
+        """The wand beside the Tone Equalizer's mask exposure or contrast compensation: read it from the histogram of the open photo's mask (darktable's auto-adjust)."""
+        c = self.controller
+        if c.state.preview_rgb is None:
+            self._tone_eq_tool.set_note("Open a photo first.")
+            return
+        value = c.auto_tone_eq(key)
+        if value is None:
+            return
+        self._tone_eq_tool.set_row(key, max(-16.0, min(16.0, value)))
+        self._tone_eq_tool.set_note("Set from the histogram of the mask: " + ("the average exposure is centred on -4 EV." if key == "teq_exposure_boost" else "90% of the mask is spread over -7 to -1 EV."))
 
     def _wire_extra_power(self) -> None:
         """The on/off light in the header of Dust & Scratches, Retouch and Error marking (the modules that are not in the presets): off, the picture is made without them and what they have in hand is put away."""

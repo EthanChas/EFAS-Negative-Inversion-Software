@@ -16,6 +16,7 @@ KNOWN_MODULES = (
     "Crop & Rotate", "Dust & Scratches", "AI Dust Detection", "Flat Field", "Masks", "Finishing", "Watermark", "Presets", "Snapshots", "Export",
     "History", "Library", "Roll", "This frame", "Tags", "Density", "Density Histogram", "Sensitometry (H&D)", "Calibration and Diagnostics", "Search",
     "Smart Collections", "Collection", "Date", "Rating & Status", "Sort", "Image Information", "Selection", "Versions", "Retouch",
+    "Tone Equalizer", "Color Balance RGB", "Diffuse or Sharpen",
 )
 GOLDEN = 0.3819660112501051
 TIERS = ((0.60, 0.45), (0.46, 0.52), (0.72, 0.38))

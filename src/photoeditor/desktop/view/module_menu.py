@@ -45,8 +45,20 @@ class ModuleMenus(QObject):
             action.setCheckable(True)
             action.setChecked(name == active)
             action.triggered.connect(lambda _c=False, n=name: c.apply_module_preset(key, n))
-        if not names:
+        built = c.module_darktable_presets(key)
+        if not names and not built:
             menu.addAction("No presets yet").setEnabled(False)
+        if built:     # darktable's own presets for this module, read-only: "lens deblur | soft" is "soft" in a "lens deblur" submenu
+            if names:
+                menu.addSeparator()
+            groups: dict[str, QMenu] = {}
+            for name in built:
+                head, _, tail = name.partition(" | ")
+                target = groups.setdefault(head, menu.addMenu(head)) if tail else menu
+                action = target.addAction(tail or name)
+                action.setEnabled(has_photo)
+                action.setToolTip(f"darktable's preset '{name}'")
+                action.triggered.connect(lambda _c=False, n=name: c.apply_darktable_module_preset(key, n))
         menu.addSeparator()
         if active is not None and c.module_preset_modified(key):
             update = menu.addAction(f"Update preset '{active}'")

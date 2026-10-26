@@ -10,7 +10,7 @@ BOTH = "NegPy & EFAS"     # a module with a part of each: Negative has NegPy's c
 
 ORIGINS: dict[str, str] = {
     # ported from darktable
-    "Retouch": DARKTABLE, "Masks": DARKTABLE, "Watermark": DARKTABLE, "Tagging": DARKTABLE, "Tags": DARKTABLE,
+    "Retouch": DARKTABLE, "Masks": DARKTABLE, "Watermark": DARKTABLE, "Tagging": DARKTABLE, "Tags": DARKTABLE, "Diffuse or Sharpen": DARKTABLE, "Tone Equalizer": DARKTABLE, "Color Balance RGB": DARKTABLE,
     # ported from NegPy
     "Negative": BOTH, "Sharpening": BOTH, "Chroma Denoise": NEGPY, "Dust & Scratches": NEGPY, "Local Contrast": NEGPY, "Flat Field": NEGPY, "Print Response": NEGPY, "Color Toning": NEGPY,
     # made for EFAS

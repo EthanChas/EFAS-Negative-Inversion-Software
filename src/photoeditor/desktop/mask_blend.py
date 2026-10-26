@@ -15,7 +15,7 @@ from ..features.instances import logic as I
 # the modules whose result is made one step at a time (and so can be blended) while the tone and colour of the picture are made, in the order they act
 RAMP_KEYS = ("color", "exposure", "contrast", "printresponse")
 PIXEL_KEYS = ("color", "exposure", "contrast", "printresponse", "denoise", "localcontrast", "shadows_highlights", "tonecurve", "lablook", "colormixer", "colortoning")
-AFTER_KEYS = ("sharpening", "grainsharp")            # on the whole scan, after the colour, before the crop
+AFTER_KEYS = ("toneequalizer", "colorbalancergb", "sharpening", "grainsharp", "diffuse")            # on the whole scan, after the colour, before the crop
 CROPPED_KEYS = ("edgecolor", "halation")             # on the cropped picture
 BLENDABLE = PIXEL_KEYS + AFTER_KEYS + CROPPED_KEYS
 

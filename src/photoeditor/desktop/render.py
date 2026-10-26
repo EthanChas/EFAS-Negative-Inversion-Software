@@ -53,6 +53,11 @@ from ..features.lut.logic import (
 from ..features.edgebleed import logic as edge_logic
 from ..features.edgecolor import logic as ec_logic
 from ..features.grainsharp import logic as gs_logic
+from ..features.colorbalancergb import logic as cbr_logic
+from ..features.diffuse import logic as dif_logic
+from ..features.gpu import colorbalance as gpu_colorbalance
+from ..features.gpu import diffuse as gpu_diffuse
+from ..features.toneequalizer import logic as teq_logic
 from ..features.masks import state as mask_state
 from ..features.masks.frame import FrameMap
 from ..features.retouchdt import logic as rt_logic
@@ -205,6 +210,72 @@ class EditParams:
     gs_amount: float = 0.0
     gs_size: float = 1.2
     gs_midtones: float = 0.5
+    dif_iterations: float = 1.0
+    dif_radius_center: float = 0.0
+    dif_radius: float = 8.0
+    dif_first: float = 0.0
+    dif_second: float = 0.0
+    dif_third: float = 0.0
+    dif_fourth: float = 0.0
+    dif_aniso_first: float = 0.0
+    dif_aniso_second: float = 0.0
+    dif_aniso_third: float = 0.0
+    dif_aniso_fourth: float = 0.0
+    dif_sharpness: float = 0.0
+    dif_regularization: float = 0.0
+    dif_variance_threshold: float = 0.0
+    dif_threshold: float = 0.0
+    teq_band0: float = 0.0
+    teq_band1: float = 0.0
+    teq_band2: float = 0.0
+    teq_band3: float = 0.0
+    teq_band4: float = 0.0
+    teq_band5: float = 0.0
+    teq_band6: float = 0.0
+    teq_band7: float = 0.0
+    teq_band8: float = 0.0
+    teq_smoothing: float = 0.0
+    teq_exposure_boost: float = 0.0
+    teq_contrast_boost: float = 0.0
+    teq_method: float = 4.0
+    teq_details: float = 4.0
+    teq_iterations: float = 1.0
+    teq_blending: float = 5.0
+    teq_feathering: float = 1.0
+    teq_quantization: float = 0.0
+    cbr_shadows_Y: float = 0.0
+    cbr_shadows_C: float = 0.0
+    cbr_shadows_H: float = 0.0
+    cbr_midtones_Y: float = 0.0
+    cbr_midtones_C: float = 0.0
+    cbr_midtones_H: float = 0.0
+    cbr_highlights_Y: float = 0.0
+    cbr_highlights_C: float = 0.0
+    cbr_highlights_H: float = 0.0
+    cbr_global_Y: float = 0.0
+    cbr_global_C: float = 0.0
+    cbr_global_H: float = 0.0
+    cbr_shadows_weight: float = 1.0
+    cbr_white_fulcrum: float = 0.0
+    cbr_highlights_weight: float = 1.0
+    cbr_chroma_shadows: float = 0.0
+    cbr_chroma_highlights: float = 0.0
+    cbr_chroma_global: float = 0.0
+    cbr_chroma_midtones: float = 0.0
+    cbr_saturation_global: float = 0.0
+    cbr_saturation_highlights: float = 0.0
+    cbr_saturation_midtones: float = 0.0
+    cbr_saturation_shadows: float = 0.0
+    cbr_hue_angle: float = 0.0
+    cbr_brilliance_global: float = 0.0
+    cbr_brilliance_highlights: float = 0.0
+    cbr_brilliance_midtones: float = 0.0
+    cbr_brilliance_shadows: float = 0.0
+    cbr_mask_grey_fulcrum: float = 0.1845
+    cbr_vibrance: float = 0.0
+    cbr_grey_fulcrum: float = 0.1845
+    cbr_contrast: float = 0.0
+    cbr_formula: float = 1.0
     scan_width: int = 0   # the width of the original scan this picture is made from (0: the picture is the scan), so a grain size in scan pixels can be turned into this picture's pixels
     vignette: float = 0.0
     vignette_size: float = 0.5
@@ -222,6 +293,7 @@ class EditParams:
     masks_json: str = ""      # the photo's drawn masks as JSON (a string, so it is hashable and a change of any shape draws the picture again); "" when there are none
     retouch_json: str = ""    # the Retouch module's settings as JSON ("" when it has no shapes): hashable, so any change draws the picture again
     retouch_view: str = ""    # what the Retouch panel is showing (see features/retouchdt VIEWS)
+    teq_show_mask: bool = False   # show the Tone Equalizer's luminance mask instead of the result (a view, not an edit)
     retouch_view_of: int = 0  # ... for which Retouch (0 the module, else the id of one of its copies)
     instances: tuple = ()     # the copies of modules (features/instances frozen()): ((module key, id, on, ((field, value), ...)), ...)
     lens: tuple = ()          # the lens corrections to make (features/lenscorrect spec()): (colour fringes, vignetting, distance, camera and lens as the EXIF names them, focal length, aperture), () for none
@@ -353,10 +425,77 @@ class EditParams:
             gs_amount=float(getattr(s, "gs_amount", 0.0)),
             gs_size=float(getattr(s, "gs_size", 1.2)),
             gs_midtones=float(getattr(s, "gs_midtones", 0.5)),
+            dif_iterations=float(getattr(s, "dif_iterations", 1.0)),
+            dif_radius_center=float(getattr(s, "dif_radius_center", 0.0)),
+            dif_radius=float(getattr(s, "dif_radius", 8.0)),
+            dif_first=float(getattr(s, "dif_first", 0.0)),
+            dif_second=float(getattr(s, "dif_second", 0.0)),
+            dif_third=float(getattr(s, "dif_third", 0.0)),
+            dif_fourth=float(getattr(s, "dif_fourth", 0.0)),
+            dif_aniso_first=float(getattr(s, "dif_aniso_first", 0.0)),
+            dif_aniso_second=float(getattr(s, "dif_aniso_second", 0.0)),
+            dif_aniso_third=float(getattr(s, "dif_aniso_third", 0.0)),
+            dif_aniso_fourth=float(getattr(s, "dif_aniso_fourth", 0.0)),
+            dif_sharpness=float(getattr(s, "dif_sharpness", 0.0)),
+            dif_regularization=float(getattr(s, "dif_regularization", 0.0)),
+            dif_variance_threshold=float(getattr(s, "dif_variance_threshold", 0.0)),
+            dif_threshold=float(getattr(s, "dif_threshold", 0.0)),
+            teq_band0=float(getattr(s, "teq_band0", 0.0)),
+            teq_band1=float(getattr(s, "teq_band1", 0.0)),
+            teq_band2=float(getattr(s, "teq_band2", 0.0)),
+            teq_band3=float(getattr(s, "teq_band3", 0.0)),
+            teq_band4=float(getattr(s, "teq_band4", 0.0)),
+            teq_band5=float(getattr(s, "teq_band5", 0.0)),
+            teq_band6=float(getattr(s, "teq_band6", 0.0)),
+            teq_band7=float(getattr(s, "teq_band7", 0.0)),
+            teq_band8=float(getattr(s, "teq_band8", 0.0)),
+            teq_smoothing=float(getattr(s, "teq_smoothing", 0.0)),
+            teq_exposure_boost=float(getattr(s, "teq_exposure_boost", 0.0)),
+            teq_contrast_boost=float(getattr(s, "teq_contrast_boost", 0.0)),
+            teq_method=float(getattr(s, "teq_method", 4.0)),
+            teq_details=float(getattr(s, "teq_details", 4.0)),
+            teq_iterations=float(getattr(s, "teq_iterations", 1.0)),
+            teq_blending=float(getattr(s, "teq_blending", 5.0)),
+            teq_feathering=float(getattr(s, "teq_feathering", 1.0)),
+            teq_quantization=float(getattr(s, "teq_quantization", 0.0)),
+            cbr_shadows_Y=float(getattr(s, "cbr_shadows_Y", 0.0)),
+            cbr_shadows_C=float(getattr(s, "cbr_shadows_C", 0.0)),
+            cbr_shadows_H=float(getattr(s, "cbr_shadows_H", 0.0)),
+            cbr_midtones_Y=float(getattr(s, "cbr_midtones_Y", 0.0)),
+            cbr_midtones_C=float(getattr(s, "cbr_midtones_C", 0.0)),
+            cbr_midtones_H=float(getattr(s, "cbr_midtones_H", 0.0)),
+            cbr_highlights_Y=float(getattr(s, "cbr_highlights_Y", 0.0)),
+            cbr_highlights_C=float(getattr(s, "cbr_highlights_C", 0.0)),
+            cbr_highlights_H=float(getattr(s, "cbr_highlights_H", 0.0)),
+            cbr_global_Y=float(getattr(s, "cbr_global_Y", 0.0)),
+            cbr_global_C=float(getattr(s, "cbr_global_C", 0.0)),
+            cbr_global_H=float(getattr(s, "cbr_global_H", 0.0)),
+            cbr_shadows_weight=float(getattr(s, "cbr_shadows_weight", 1.0)),
+            cbr_white_fulcrum=float(getattr(s, "cbr_white_fulcrum", 0.0)),
+            cbr_highlights_weight=float(getattr(s, "cbr_highlights_weight", 1.0)),
+            cbr_chroma_shadows=float(getattr(s, "cbr_chroma_shadows", 0.0)),
+            cbr_chroma_highlights=float(getattr(s, "cbr_chroma_highlights", 0.0)),
+            cbr_chroma_global=float(getattr(s, "cbr_chroma_global", 0.0)),
+            cbr_chroma_midtones=float(getattr(s, "cbr_chroma_midtones", 0.0)),
+            cbr_saturation_global=float(getattr(s, "cbr_saturation_global", 0.0)),
+            cbr_saturation_highlights=float(getattr(s, "cbr_saturation_highlights", 0.0)),
+            cbr_saturation_midtones=float(getattr(s, "cbr_saturation_midtones", 0.0)),
+            cbr_saturation_shadows=float(getattr(s, "cbr_saturation_shadows", 0.0)),
+            cbr_hue_angle=float(getattr(s, "cbr_hue_angle", 0.0)),
+            cbr_brilliance_global=float(getattr(s, "cbr_brilliance_global", 0.0)),
+            cbr_brilliance_highlights=float(getattr(s, "cbr_brilliance_highlights", 0.0)),
+            cbr_brilliance_midtones=float(getattr(s, "cbr_brilliance_midtones", 0.0)),
+            cbr_brilliance_shadows=float(getattr(s, "cbr_brilliance_shadows", 0.0)),
+            cbr_mask_grey_fulcrum=float(getattr(s, "cbr_mask_grey_fulcrum", 0.1845)),
+            cbr_vibrance=float(getattr(s, "cbr_vibrance", 0.0)),
+            cbr_grey_fulcrum=float(getattr(s, "cbr_grey_fulcrum", 0.1845)),
+            cbr_contrast=float(getattr(s, "cbr_contrast", 0.0)),
+            cbr_formula=float(getattr(s, "cbr_formula", 1.0)),
             masks_json=mask_state.masks_json(getattr(s, "masks", None)),
             retouch_json=rt_logic.to_json(getattr(s, "retouch", None)),
             retouch_view=str(getattr(s, "retouch_view", "") or ""),
             retouch_view_of=int(getattr(s, "retouch_view_of", 0) or 0),
+            teq_show_mask=bool(getattr(s, "teq_show_mask", False)),
             instances=inst_logic.frozen(getattr(s, "instances", None)),
             lens=lens_logic.spec(getattr(s, "lens_corr", None), getattr(s, "lens_shot", None)),
             blends=mask_state.blends_tuple(getattr(s, "blends", None)),
@@ -874,6 +1013,9 @@ class Renderer:
             hal_active = not hal_logic.is_neutral(hal_values)
             gs_values = {k: getattr(params, k) for k in gs_logic.KEYS}
             gs_active = not gs_logic.is_neutral(gs_values)
+            teq_active = not teq_logic.is_neutral({k: getattr(params, k) for k in teq_logic.KEYS})       # the three darktable modules that work on the whole picture after the colour (see below)
+            cbr_active = not cbr_logic.is_neutral({k: getattr(params, k) for k in cbr_logic.KEYS})
+            dif_active = not dif_logic.is_neutral({k: getattr(params, k) for k in dif_logic.KEYS})
             rt_settings = rt_logic.from_json(params.retouch_json)
             rt_copies = [(i, rt_logic.from_json(values.get("settings", ""))) for i, values in inst_logic.thawed(params.instances).get("retouch", ())]
             rt_active = (rt_settings.active() or any(c.active() for _i, c in rt_copies) or params.retouch_view == "scale") and (live is None or "retouch" in live)
@@ -919,7 +1061,7 @@ class Renderer:
             color_active = not color_is_neutral(color_values, color_response)
             mixing = bool(params.shadows or params.highlights or params.saturation or denoise or local or camera_matrix or color_active)
             wide = pixels16 is not None
-            keeps_16 = not (blender.any() or rt_active or ec_active or hal_active or gs_active or params.sharpen_amount or params.vignette or watermark_active(params.wm_film) or params.border > 0
+            keeps_16 = not (blender.any() or rt_active or ec_active or hal_active or gs_active or teq_active or cbr_active or dif_active or params.sharpen_amount or params.vignette or watermark_active(params.wm_film) or params.border > 0
                             or params.marks.wanted(params.wm_info, params.wm_camera, params.wm_lens, watermark_active(params.wm_film)))   # nothing after the colour stages needs 8 bits
             deep_ok = deep and wide and keeps_16
             hold_16 = wide and self.wide_mixing and (gpu_pipeline.wide_ok() or not gpu_pipeline.usable(frame.shape))   # the picture stays 16-bit through the mixing stages
@@ -1002,6 +1144,26 @@ class Renderer:
             if rt_active:   # Retouch (darktable's): clone, heal, blur and fill on the shapes drawn for it, on the finished colours and before the sharpening
                 pixels = self._retouch_stage(pixels, [(0, rt_settings)] + rt_copies, params, blender, source.shape[1])
 
+            def after_colour(key, logic, live_name, always, **extra):
+                """A darktable module that works on the whole picture after the colour and before the crop (and each copy of it), blended through its Mask box. `always`: a preview made while
+                another module is dragged keeps it; a heavy one waits for its own slider."""
+                nonlocal pixels
+                if not (live is None or always or live_name in live):
+                    return
+                values = {k: getattr(params, k) for k in logic.KEYS}
+                if not logic.is_neutral(values):
+                    pixels = blender.blend(key, pixels, logic.APPLY(pixels, values, **extra))
+                for copy_id, copy_values in blender.instances.get(key, ()):
+                    values_i = {k: getattr(dataclasses.replace(params, **copy_values), k) for k in logic.KEYS}
+                    if not logic.is_neutral(values_i):
+                        pixels = blender.blend(inst_logic.instance_key(key, copy_id), pixels, logic.APPLY(pixels, values_i, **extra))
+
+            if params.teq_show_mask:     # the Tone Equalizer's "display exposure mask": the mask the correction is read from, as a grey picture
+                pixels = teq_logic.mask_picture(pixels, {k: getattr(params, k) for k in teq_logic.KEYS})
+            else:
+                after_colour("toneequalizer", teq_logic, teq_logic.LIVE, True)       # relight by brightness, then grade (darktable's tone equalizer, then color balance rgb), then sharpen
+                after_colour("colorbalancergb", cbr_logic, cbr_logic.LIVE, gpu_colorbalance.usable(pixels.shape))   # (a preview made while another slider is dragged keeps it only when the card does it)
+
             if params.sharpen_amount and (live is None or params.sharpen_method in live):
                 sharpened = apply_sharpening(
                     pixels, params.sharpen_amount, params.sharpen_radius, params.sharpen_masking, params.sharpen_method
@@ -1021,6 +1183,8 @@ class Renderer:
                 if not gs_logic.is_neutral(values_i) and (live is None or gs_logic.LIVE in live):
                     pixels = blender.blend(inst_logic.instance_key("grainsharp", copy_id), pixels,
                                            gs_logic.apply_grain_sharpening(pixels, values_i, source.shape[1] / params.scan_width if params.scan_width else 1.0))
+
+            after_colour("diffuse", dif_logic, dif_logic.LIVE, gpu_diffuse.usable(pixels.shape), zoom=(params.scan_width / source.shape[1]) if params.scan_width else 1.0)   # (on the processor it waits for the slider to be let go, as darktable's fast pipe does)
 
             image = apply_crop(pixels, rect)
             stats = compute_stats(self._inside_frame(image, film_frame, rect)) if want_stats else None
