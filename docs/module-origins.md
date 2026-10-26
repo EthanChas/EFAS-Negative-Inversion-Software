@@ -1,10 +1,10 @@
 # Where each module comes from
 
-Every module's header says where it comes from, in brackets after its name: **(darktable)**, **(NegPy)**, **(EFAS)** or, for the one module that has a part of each, **(NegPy & EFAS)**. It is the honest label for a project that is built from other people's work: the interface and the layout of the modules follow darktable's as a whole, but this table is about the *module itself*.
+Every module's header says where it comes from, in brackets after its name: **(darktable)**, **(NegPy)**, **(EFAS)** or, for the two modules that have a part of each, **(NegPy & EFAS)**. It is the honest label for a project that is built from other people's work: the interface and the layout of the modules follow darktable's as a whole, but this table is about the *module itself*.
 
 - **(darktable)**: the module is ported from, or follows closely, darktable's own module of that kind.
 - **(NegPy)**: the module is ported from, or adapted from, NegPy's (GPL-3.0).
-- **(NegPy & EFAS)**: Negative. Its **NegPy Conversion** is ported from NegPy; its **Original** conversion was made for EFAS.
+- **(NegPy & EFAS)**: Negative and Sharpening. Negative's **NegPy Conversion** is ported from NegPy; its **Original** conversion was made for EFAS. Sharpening's four methods are NegPy's; what EFAS built round them is its own.
 - **(EFAS)**: the module was made for EFAS. It may look like darktable's (all of them are laid out the way darktable lays modules out), but its logic is EFAS's own.
 
 The tag is only in the header. The module's own title (which picks its icon and colour, and which Find, the Classroom and the history use) is unchanged, so nothing that looks a module up by name is affected. A copy of a module (multiple instances) carries the tag of the module it was copied from.
@@ -12,7 +12,7 @@ The tag is only in the header. The module's own title (which picks its icon and 
 | Module | Origin | What it took |
 |---|---|---|
 | Negative | NegPy & EFAS | The NegPy Conversion takes NegPy's inversion and metering approach, the film type heuristic, the print-stage approach behind the NegPy Conversion, and the film crosstalk profiles it bundles. The *Original* conversion is EFAS's own |
-| Sharpening | NegPy | Its four sharpening methods (features/sharpening/logic.py) |
+| Sharpening | NegPy & EFAS | NegPy's four sharpening methods (Unsharp Mask, Deconvolution, Surface Blur, Wavelet; features/sharpening/logic.py). EFAS added the Mask box, copies of the module, the 16-bit path and the link to the Grain Report, and Grain Sharpening is a separate EFAS module |
 | Chroma Denoise | NegPy | Its chroma-only denoise (features/denoise/logic.py) |
 | Dust & Scratches | NegPy | Its dust and scratch repair (features/retouch/logic.py) and clone tool |
 | Local Contrast | NegPy | Its CLAHE on lightness (features/localcontrast/logic.py) |

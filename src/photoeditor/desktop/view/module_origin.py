@@ -6,19 +6,23 @@ which the search and the Classroom use) is unchanged.
 """
 
 DARKTABLE, NEGPY, EFAS = "darktable", "NegPy", "EFAS"
-BOTH = "NegPy & EFAS"     # a module with a part of each: Negative has NegPy's conversion and EFAS's own Original one
+BOTH = "NegPy & EFAS"     # a module with a part of each: Negative has NegPy's conversion and EFAS's own Original one; Sharpening has NegPy's methods and EFAS's own ways of using them
 
 ORIGINS: dict[str, str] = {
     # ported from darktable
     "Retouch": DARKTABLE, "Masks": DARKTABLE, "Watermark": DARKTABLE, "Tagging": DARKTABLE, "Tags": DARKTABLE,
     # ported from NegPy
-    "Negative": BOTH, "Sharpening": NEGPY, "Chroma Denoise": NEGPY, "Dust & Scratches": NEGPY, "Local Contrast": NEGPY, "Flat Field": NEGPY, "Print Response": NEGPY, "Color Toning": NEGPY,
+    "Negative": BOTH, "Sharpening": BOTH, "Chroma Denoise": NEGPY, "Dust & Scratches": NEGPY, "Local Contrast": NEGPY, "Flat Field": NEGPY, "Print Response": NEGPY, "Color Toning": NEGPY,
     # made for EFAS
     "Exposure": EFAS, "Tone Curve": EFAS, "Color": EFAS, "White Balance": EFAS, "Contrast": EFAS, "Shadows & Highlights": EFAS, "Color Mixer": EFAS, "Halation": EFAS,
     "Grain Sharpening": EFAS, "Edge Bleed": EFAS, "Edge Color": EFAS, "Lab Look": EFAS, "AI Dust Detection": EFAS, "Error marking": EFAS, "Crop & Rotate": EFAS, "Finishing": EFAS,
 }
 
-_WORDS = {DARKTABLE: "Ported from darktable", NEGPY: "Ported from NegPy", EFAS: "Made for EFAS", BOTH: "The NegPy Conversion is ported from NegPy; the Original conversion was made for EFAS"}
+_WORDS = {DARKTABLE: "Ported from darktable", NEGPY: "Ported from NegPy", EFAS: "Made for EFAS"}
+_BOTH_WORDS = {
+    "Negative": "The NegPy Conversion is ported from NegPy; the Original conversion was made for EFAS",
+    "Sharpening": "The four sharpening methods are ported from NegPy; masks, copies and the 16-bit path were made for EFAS",
+}
 
 
 def origin_of(title: str) -> str:
@@ -40,4 +44,5 @@ def with_origin(shown: str, title: str) -> str:
 
 def tooltip(title: str) -> str:
     origin = ORIGINS.get(title, "")
-    return _WORDS[origin] + (": see docs/module-origins.md for what it took" if origin in (DARKTABLE, NEGPY, BOTH) else "") if origin else ""
+    words = _BOTH_WORDS[title] if origin == BOTH else _WORDS.get(origin, "")
+    return words + (": see docs/module-origins.md for what it took" if origin in (DARKTABLE, NEGPY, BOTH) else "")
