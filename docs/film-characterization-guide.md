@@ -68,6 +68,10 @@ EFAS fits three representations (an interpolated curve, a toe/straight-line/shou
 
 Profiles are plain JSON files in the `film_profiles` folder of your data folder (`~/.photoeditor`), version 1. Unknown future fields are kept when a profile is opened and saved.
 
+### Profiles that come with EFAS
+
+Three *supplied* black-and-white profiles come with EFAS, the first time the film profiles are used: **Fomapan 100 - Microphen 5 min, 7 min and 11 min (Foma data sheet)**. They are the characteristic curves printed in the maker's technical data sheet for Fomapan 100 (daylight 5500 K, 1/20 s, Microphen at 20 C), read off the printed chart to about +-0.03 density by `tools/make_fomapan_profiles.py` (the chart itself is not included, only the numbers). Choose the one for the development your roll had. They include base and fog, they are the maker's curves and not measured by EFAS, and other rolls, developers and scanners differ, so a curve you measure yourself is better when you can. They are put in your folder once; if you delete or change them they are not put back.
+
 ## The curve-informed inversion (optional)
 
 In the Convert tab, **Inversion method** can be switched from *Standard* to *Curve-informed (experimental)* once a profile and a sampled film base exist.

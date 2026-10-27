@@ -1,0 +1,267 @@
+{
+ "format": "efas-film-profile",
+ "version": 1,
+ "identity": {
+  "id": "foma-fomapan-100-microphen-5min",
+  "name": "Fomapan 100 - Microphen 5 min (Foma data sheet)",
+  "film_stock": "Foma Fomapan 100",
+  "process": "Microphen at 20 C, 5 min",
+  "notes": "The characteristic curve of Foma's Fomapan 100 technical data sheet for this development, read off the printed chart (+-0.03 density): daylight 5500 K, 1/20 s, Microphen at 20 C, 5 minutes. The density includes base and fog. Supplied by the maker's chart, not measured by EFAS, and other rolls and developers differ.",
+  "created": "2026-10-27T16:25:28",
+  "modified": "2026-10-27T16:25:28",
+  "derived_from": ""
+ },
+ "kind": "supplied",
+ "base": {
+  "dmin_from_curve": [
+   0.15844861660079063
+  ]
+ },
+ "curves": {
+  "K": {
+   "x": [
+    -3.163265306122449,
+    -3.0952380952380953,
+    -3.0272108843537415,
+    -2.9183673469387754,
+    -2.8503401360544216,
+    -2.7823129251700682,
+    -2.7142857142857144,
+    -2.6462585034013606,
+    -2.564625850340136,
+    -2.496598639455782,
+    -2.428571428571429,
+    -2.3333333333333335,
+    -2.2653061224489797,
+    -2.197278911564626,
+    -2.129251700680272,
+    -2.061224489795918,
+    -1.9523809523809523,
+    -1.8843537414965987,
+    -1.816326530612245,
+    -1.748299319727891,
+    -1.6802721088435375,
+    -1.6122448979591837,
+    -1.5442176870748299,
+    -1.4761904761904763,
+    -1.4081632653061225,
+    -1.3401360544217686,
+    -1.2448979591836735,
+    -1.1768707482993197,
+    -1.1088435374149659,
+    -1.0408163265306123,
+    -0.9319727891156462,
+    -0.8639455782312924,
+    -0.795918367346939,
+    -0.7278911564625852,
+    -0.6598639455782314,
+    -0.5918367346938775,
+    -0.4557823129251699
+   ],
+   "y": [
+    0.15844861660079063,
+    0.1843873517786565,
+    0.2297990042411951,
+    0.30698208041958036,
+    0.36077922077922076,
+    0.4081605528973954,
+    0.45728124334681686,
+    0.5111724723874258,
+    0.5717810760667907,
+    0.6208856717053437,
+    0.6746857980728945,
+    0.7434355179704015,
+    0.7971044580419578,
+    0.8457625536680979,
+    0.8939467849223948,
+    0.9477430921746468,
+    1.0145454545454542,
+    1.0786220095693784,
+    1.1303030303030308,
+    1.1797760210803692,
+    1.2333289919249806,
+    1.2829768270944746,
+    1.330930678819861,
+    1.3838942307692306,
+    1.4313460470283281,
+    1.479208556149733,
+    1.5419712918660287,
+    1.588412291933419,
+    1.630578512396694,
+    1.6785123966942146,
+    1.751318181818182,
+    1.7931339152650625,
+    1.8349494949494949,
+    1.8809749951540995,
+    1.928181818181818,
+    1.984418256640479,
+    2.0574152542372888
+   ],
+   "sigma": [
+    0.03,
+    0.03,
+    0.03,
+    0.03,
+    0.03,
+    0.03,
+    0.03,
+    0.03,
+    0.03,
+    0.03,
+    0.03,
+    0.03,
+    0.03,
+    0.03,
+    0.03,
+    0.03,
+    0.03,
+    0.03,
+    0.03,
+    0.03,
+    0.03,
+    0.03,
+    0.03,
+    0.03,
+    0.03,
+    0.03,
+    0.03,
+    0.03,
+    0.03,
+    0.03,
+    0.03,
+    0.03,
+    0.03,
+    0.03,
+    0.03,
+    0.03,
+    0.03
+   ],
+   "used": [
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true
+   ],
+   "scale": "relative",
+   "unit": "log relative exposure",
+   "fits": {
+    "softplus": {
+     "params": {
+      "gamma": 0.7977821743728636,
+      "x0": -1.283490757827844,
+      "dmax": 3.217252344533734,
+      "toe": 7.672908087566357,
+      "shoulder": 1.23759510108115
+     },
+     "std_errors": {
+      "gamma": 0.22573173057555904,
+      "x0": 1.2111116063845562,
+      "dmax": 2.6960047532850018,
+      "toe": 5.904024505498298,
+      "shoulder": 3.1296293498585106
+     },
+     "quality": "poor",
+     "rms": 0.004755297447180524,
+     "max_abs": 0.01554194964230593,
+     "chi2_red": 0.029051235799061794,
+     "runs_p": 0.004625081325014489,
+     "loo_rms": 0.005791923552911963,
+     "dof": 32,
+     "reasons": [
+      "the residuals have a systematic pattern: the model shape does not match the curve"
+     ]
+    },
+    "richards": {
+     "params": {
+      "dmax": 2.6625693642745585,
+      "rate": 0.8408393897833848,
+      "xm": -5.53658257967927,
+      "nu": 0.05
+     },
+     "std_errors": {
+      "dmax": Infinity,
+      "rate": Infinity,
+      "xm": Infinity,
+      "nu": Infinity
+     },
+     "quality": "poor",
+     "rms": 0.02133882586749525,
+     "max_abs": 0.05341221821368347,
+     "chi2_red": 0.5672654245091422,
+     "runs_p": 7.0705776463188886e-06,
+     "loo_rms": 0.02394830153611139,
+     "dof": 33,
+     "reasons": [
+      "the data do not pin down every parameter",
+      "the residuals have a systematic pattern: the model shape does not match the curve",
+      "nu reached its limit: the data cannot determine it"
+     ]
+    }
+   },
+   "chosen": "pchip",
+   "support": [
+    -3.163265306122449,
+    -0.4557823129251699
+   ],
+   "notes": [
+    "No parametric model passed the quality checks, so the interpolated curve is recommended."
+   ]
+  }
+ },
+ "calibration": {
+  "origin": "manufacturer data sheet, digitised from the printed chart",
+  "source": "Foma Bohemia, Fomapan 100 technical data sheet",
+  "tool": "tools/make_fomapan_profiles.py"
+ },
+ "conditions": {
+  "illuminant": "Daylight 5500 K, 1/20 s",
+  "densitometry": "as printed on the data sheet (diffuse visual density)",
+  "developer": "Microphen 20 C",
+  "minutes": 5
+ },
+ "validity": {
+  "log_exposure_range": [
+   -3.163265306122449,
+   -0.4557823129251699
+  ],
+  "density_range": [
+   0.15844861660079063,
+   2.0574152542372888
+  ]
+ },
+ "uncertainty": {},
+ "limits": "A profile describes the roll, exposure and processing it was made from. Other rolls of the same film can behave differently."
+}

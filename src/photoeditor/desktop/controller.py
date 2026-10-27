@@ -4838,7 +4838,13 @@ class AppController(QObject):
         self.measurement_changed.emit()
 
     def profile_store(self) -> fpmod.ProfileStore:
-        return fpmod.ProfileStore(fpmod.profiles_dir(app_data_dir()))
+        store = fpmod.ProfileStore(fpmod.profiles_dir(app_data_dir()))
+        if not getattr(self, "_bundled_profiles_installed", False) and os.environ.get("PHOTOEDITOR_BUNDLED_PROFILES", "on") != "off":
+            self._bundled_profiles_installed = True
+            from ..features.densitometry import bundled
+
+            bundled.install(store)     # the profiles that come with EFAS (a maker's printed curves), put in the person's folder once
+        return store
 
     def setup_store(self) -> fpmod.SetupStore:
         return fpmod.SetupStore(fpmod.setups_dir(app_data_dir()))
