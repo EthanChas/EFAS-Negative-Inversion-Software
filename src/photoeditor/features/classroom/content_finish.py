@@ -179,7 +179,7 @@ Judging a picture from one preview is hard, because the eye adapts: after a minu
 
 ## Before & after
 
-**Before & after** (`\`) splits the picture so you can compare your edit with the original scan, which is a quick way to check that you have not drifted from where you started.
+**Before & after** (`\`) splits the picture so you can compare your edit with the picture right after inversion, which is a quick way to check that you have not drifted from where you started. The list beside the button lets you compare with any step of the History instead ("3. Exposure set to +0.60 EV"), so you can see what a later step did. Both sides are made at full resolution (HQ is switched on while the split is up and back as it was when it closes), so the Before is as sharp as the After.
 
 ## Contact sheets
 

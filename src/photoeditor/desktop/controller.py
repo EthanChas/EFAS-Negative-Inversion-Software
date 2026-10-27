@@ -5087,10 +5087,39 @@ class AppController(QObject):
         values = proof_logic.cell_values(kind, current, row, col)
         return self.apply_look(values, f"{proof_logic.KINDS[kind].title}: {proof_logic.describe(kind, values)}")
 
-    def render_split_before(self):
-        """The 'before' of Before & After: the photo right after the negative is inverted (the Negative tab's own settings kept, every edit after it
-        left out), framed exactly like the edit - crop, rotation, border - so the two line up under the divider."""
-        return self._render_neutral(keep_inversion=True, keep_frame=True)
+    # what frames a picture: the history step shown as the "before" keeps the edit's own, so the two sides line up under the divider
+    _FRAME_FIELDS = ("crop_rect", "rotation_quarter_turns", "flip_h", "flip_v", "fine_rotation", "distortion", "keystone_v", "keystone_h", "lens_corr")
+
+    def split_sources(self) -> list[str]:
+        """The pictures the 'before' of Before & After can be: the history steps, as the History panel numbers them (the first, "right after inversion", is always there)."""
+        return [f"{i + 1}. {entry.description}" for i, entry in enumerate(self.state.history)]
+
+    def render_split_before(self, source: int | None = None, hq: bool = False):
+        """The 'before' of Before & After. With `source` None: the photo right after the negative is inverted (the Negative tab's own settings kept, every edit after it left out), framed exactly
+        like the edit - crop, rotation, border - so the two line up under the divider. With a history step's index: the photo as it was after that step (everything it had), in the edit's frame.
+        `hq`: made from the full-resolution picture, as the HQ render of the edit is, so the two are as sharp. The last picture is kept while nothing it depends on changes."""
+        s = self.state
+        base = self._render_base()
+        if base is None:
+            return None
+        step = source if source is not None and 0 <= source < len(s.history) else None
+        if step is None:
+            params = self._neutral_params(keep_inversion=True, keep_frame=True)
+        else:
+            entry = s.history[step]
+            changes = {f.name: copy.deepcopy(getattr(entry, f.name)) for f in dataclasses.fields(entry) if f.name != "description" and hasattr(s, f.name)}
+            changes.update({k: getattr(s, k) for k in self._FRAME_FIELDS})
+            params = EditParams.from_state(dataclasses.replace(s, **changes))
+        picture = self.hq_source() if hq else base
+        key = (params, step, bool(hq), id(picture), self._token(), id(self._ff) if step is not None else 0)
+        cached = getattr(self, "_split_cache", None)
+        if cached is not None and cached[0] == key:
+            return cached[1]
+        image, _pre, _stats, _overlay = self._renderer.render(
+            picture, params, ("split", step, bool(hq), self._token()), base.shape[1], None, want_stats=False, overlay=False, flatfield=self._ff if step is not None else None
+        )
+        self._split_cache = (key, image)
+        return image
 
     # ------------------------------------------------------------ the grain report
     _GRAIN_MODULES = {"sharpen": ("Sharpening", "sharpen_amount"), "denoise": ("Chroma Denoise", "chroma_denoise"), "local": ("Local Contrast", "local_contrast"),
@@ -5156,10 +5185,8 @@ class AppController(QObject):
         )
         return effect, first
 
-    def _render_neutral(self, keep_inversion: bool, keep_frame: bool = False):
-        base = self._render_base() if keep_inversion else self._negative_base()
-        if base is None:
-            return None
+    def _neutral_params(self, keep_inversion: bool, keep_frame: bool = False):
+        """The edit with every module put back to nothing (Negative's own settings kept when `keep_inversion`)."""
         params = dataclasses.replace(
             EditParams.from_state(self.state),
             exposure_ev=0.0, tone_curve_points=tuple(tuple(p) for p in DEFAULT_POINTS), tone_curve_red=tuple(DEFAULT_POINTS), tone_curve_green=tuple(DEFAULT_POINTS), tone_curve_blue=tuple(DEFAULT_POINTS),
@@ -5171,6 +5198,13 @@ class AppController(QObject):
         )
         if not keep_inversion:
             params = dataclasses.replace(params, negative_inverted=False, film_type="auto", invert_r=0.0, invert_g=0.0, invert_b=0.0, crop_rect=None, distortion=0.0, keystone_v=0.0, keystone_h=0.0)
+        return params
+
+    def _render_neutral(self, keep_inversion: bool, keep_frame: bool = False):
+        base = self._render_base() if keep_inversion else self._negative_base()
+        if base is None:
+            return None
+        params = self._neutral_params(keep_inversion, keep_frame)
         image, _pre, _stats, _overlay = self._renderer.render(
             base, params, ("original" if keep_inversion else "raw", keep_frame, self._token()), base.shape[1], None, want_stats=False, overlay=False, flatfield=None
         )

@@ -1131,6 +1131,15 @@ class AppWindow(QMainWindow):
         )
         self._split_btn.toggled.connect(self.set_split)
         bottom_row.addWidget(self._split_btn, 0)
+        self._split_source = None                        # which picture is the "before": None, right after inversion, or the index of a history step
+        self._split_forced_hq = False                    # Before & After switched HQ on (so both sides are sharp) and will switch it off again when it closes
+        self._split_box = QComboBox()
+        self._split_box.setToolTip("What the left side (Before) shows: the picture right after inversion, or the picture as it was after any step of the History. The After side is the edit as it is now.")
+        self._split_box.setMinimumWidth(170)
+        self._split_box.setMaximumWidth(260)
+        self._split_box.activated.connect(self._on_split_source)
+        self._split_box.hide()
+        bottom_row.addWidget(self._split_box, 0)
 
         left_col.addLayout(bottom_row, 0)
 
@@ -1367,6 +1376,7 @@ class AppWindow(QMainWindow):
         self._advanced.profile_imported.connect(self._on_profile_imported)
         self._negative_tool.inversion_requested.connect(self._on_inversion_requested)
         self._negative_tool.compare_requested.connect(self._on_compare_requested)
+        self.controller.history_changed.connect(self._refresh_split_sources)
         self._negative_tool.film_reference_requested.connect(self.show_film_reference)
         self.controller.inversion_changed.connect(self._sync_inversion)
         self._advanced.set_transfer(app_settings.get("scan_transfer"))
@@ -3435,6 +3445,8 @@ class AppWindow(QMainWindow):
         self.close_proof()
         if self._split:
             self._split = False
+            self._split_source = None
+            self._split_forced_hq = False
             self._sync_split_widgets(False)
             self._image_view.set_split(None)
         self._region_drawing = False
@@ -4074,8 +4086,17 @@ class AppWindow(QMainWindow):
             return
         if on:
             self.close_proof()
+            if not state.hq_enabled and self._hq_btn.isEnabled():     # both sides are made from the full-resolution picture: switch HQ on for as long as the split is up
+                self._split_forced_hq = True
+                self._hq_btn.setChecked(True)
+        elif self._split_forced_hq:
+            self._split_forced_hq = False
+            if state.hq_enabled:
+                self._hq_btn.setChecked(False)
         self._split = on
+        self._split_source = None
         self._sync_split_widgets(on)
+        self._refresh_split_sources()
         self._refresh_split()
 
     def _sync_split_widgets(self, on: bool) -> None:
@@ -4083,13 +4104,34 @@ class AppWindow(QMainWindow):
             widget.blockSignals(True)
             widget.setChecked(on)
             widget.blockSignals(False)
+        self._split_box.setVisible(on)
+
+    def _refresh_split_sources(self, *_args) -> None:
+        """The choices for the Before side: right after inversion, then each history step. The choice stays while its step is still there."""
+        self._split_box.blockSignals(True)
+        self._split_box.clear()
+        self._split_box.addItem("Right after inversion", None)
+        for i, text in enumerate(self.controller.split_sources()):
+            self._split_box.addItem(text if len(text) <= 44 else text[:43] + "...", i)
+        if self._split_source is not None and self._split_source >= len(self.controller.state.history):
+            self._split_source = None
+        self._split_box.setCurrentIndex(0 if self._split_source is None else self._split_box.findData(self._split_source))
+        self._split_box.blockSignals(False)
+
+    def _on_split_source(self, _index: int) -> None:
+        self._split_source = self._split_box.currentData()
+        self._refresh_split()
 
     def _refresh_split(self) -> None:
         """Draw the split's before side again (the edit changed, or the framing did)."""
         if not self._split:
             self._image_view.set_split(None)
             return
-        before = self.controller.render_split_before()
+        QApplication.setOverrideCursor(QCursor(Qt.CursorShape.WaitCursor))
+        try:
+            before = self.controller.render_split_before(self._split_source, hq=self.controller.state.hq_enabled)
+        finally:
+            QApplication.restoreOverrideCursor()
         self._image_view.set_split(before)
 
     def _on_reverted(self) -> None:
