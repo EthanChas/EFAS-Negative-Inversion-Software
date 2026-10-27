@@ -52,7 +52,7 @@ class MaskEditor(QObject):
         controller.masks_changed.connect(self._masks_changed)
         controller.retouch_changed.connect(self._masks_changed)
         controller.image_adjusted.connect(self._image_changed)
-        controller.file_changed.connect(self.stop)
+        controller.file_changed.connect(self._photo_changed)
 
         manager.draw_requested.connect(self.draw_free)
         manager.picked.connect(self.manager_picked)
@@ -176,6 +176,12 @@ class MaskEditor(QObject):
             self.show_module(key, False)
 
     # ------------------------------------------------------------ giving the picture up
+    def _photo_changed(self, *_args) -> None:
+        """Another photo: the tool is put down and the yellow of a shown mask goes too (it was the old photo's)."""
+        self._show_key = None
+        self.view.set_mask_display(None)
+        self.stop()
+
     def stop(self, *_args) -> None:
         """Put the mask tool down (another picture tool is taking over, or the photo changed)."""
         self.tool.cancel()
