@@ -126,3 +126,16 @@ def zone_shares(rgb: np.ndarray) -> list[float]:
     z = zones(rgb)
     counts = np.bincount(z.ravel(), minlength=ZONE_COUNT).astype(np.float64)
     return (counts / max(counts.sum(), 1.0)).tolist()
+
+
+def zone_highlight(rgb: np.ndarray, zone: int) -> np.ndarray:
+    """One zone shown alone: an (h, w, 4) RGBA picture that darkens everything outside the zone and draws a white line round the zone's regions, so the part of the picture in that zone stands out
+    (hovering a zone on the scope's strip)."""
+    inside = zones(rgb) == int(zone)
+    padded = np.pad(inside, 1, constant_values=False)
+    eroded = np.logical_and.reduce([padded[dy:dy + inside.shape[0], dx:dx + inside.shape[1]] for dy in range(3) for dx in range(3)])
+    edge = inside & ~eroded
+    out = np.zeros(inside.shape + (4,), dtype=np.uint8)
+    out[~inside] = (0, 0, 0, 170)
+    out[edge] = (255, 255, 255, 255)
+    return out

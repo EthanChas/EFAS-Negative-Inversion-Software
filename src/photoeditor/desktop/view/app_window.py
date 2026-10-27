@@ -143,7 +143,8 @@ from . import module_style
 from .bug_report_dialog import BugReportDialog
 from .bevel_widgets import CaptionButton
 from ...features.scopes import logic as scope_logic
-from .scope_view import ScopeView
+from . import fold
+from .scope_view import ScopeView, ZoneStrip
 from .segmented import SegmentedControl, add_steppers_in
 from .slider_row import SliderRow
 from .find_dialog import FindDialog
@@ -554,6 +555,11 @@ class AppWindow(QMainWindow):
                 self._add_blend_box(key, panel)
         for panel in (self._crop_tool, self._dust_tool, self._retouch_tool, self._ai_dust_tool, self._error_marks_panel, self._flatfield_tool):
             add_steppers_in(panel)
+        folded = fold.folded_state()   # the titled groups inside a module fold, as in NegPy's modules
+        for scope, panel, start_closed in (("negative", self._negative_tool, ("COLOR TRIM",)), ("lablook", self._lab_look_tool, ()), ("crop", self._crop_tool, ()), ("edgebleed", self._edge_tool, ()),
+                                           ("canisterwm", self._canister_tool, ()), ("watermark", self._watermark_tool, ())):
+            for section in fold.fold_sections(panel.body(), scope, folded, start_closed):
+                section.folded.connect(fold.remember)
         for signal in (
             self.controller.module_presets_changed, self.controller.modules_enabled_changed, self.controller.history_changed, self.controller.image_adjusted,
             self.controller.image_preview_changed, self.controller.reverted, self.controller.file_changed,
@@ -1278,6 +1284,12 @@ class AppWindow(QMainWindow):
         self._scope_view.setFixedHeight(190)
         self._scope_view.hide()
         body.addWidget(self._scope_view)
+        self._hover_zone = -1
+        self._zone_strip = ZoneStrip()      # under a scope: hover a zone to see where it is in the picture, double-click for the zone map
+        self._zone_strip.hide()
+        self._zone_strip.zone_hovered.connect(self._on_zone_hovered)
+        self._zone_strip.zone_map_toggled.connect(self._zones_btn.toggle)
+        body.addWidget(self._zone_strip)
 
         self._graph_reading_label = QLabel("Hover the graph for a reading.")
         self._graph_reading_label.setProperty("role", "hint")
@@ -3821,10 +3833,23 @@ class AppWindow(QMainWindow):
             self._zones_btn.setToolTip(self._zones_tip)
         self._update_zones()
 
+    def _on_zone_hovered(self, zone: int) -> None:
+        """The pointer is over a zone of the strip (-1: it left): show where that zone is in the picture, or go back to the zone map (or nothing)."""
+        self._hover_zone = zone
+        self._update_zones()
+
     def _update_zones(self) -> None:
-        """The zone map of the picture on the screen (when it is on), and each zone's share in the button's tip."""
+        """What the zone overlay shows now: the zone being hovered on the strip alone, else the zone map when it is on, else nothing; and each zone's share in the tips."""
         pixels = self.controller.state.image_rgb
-        if not self._zones_btn.isChecked() or pixels is None:
+        if pixels is None:
+            return
+        if self._zone_strip.isVisible():
+            self._zone_strip.set_shares(scope_logic.zone_shares(pixels))
+        if self._hover_zone >= 0:
+            self._image_view.set_zone_overlay(scope_logic.zone_highlight(pixels, self._hover_zone))
+            return
+        if not self._zones_btn.isChecked():
+            self._image_view.set_zone_overlay(None)
             return
         self._image_view.set_zone_overlay(scope_logic.zone_overlay(pixels))
         shares = scope_logic.zone_shares(pixels)
@@ -3835,6 +3860,9 @@ class AppWindow(QMainWindow):
         key = self._graph_choice.currentData()
         self._histogram_panel.setVisible(key == "histogram")
         self._scope_view.setVisible(key != "histogram")
+        self._zone_strip.setVisible(key != "histogram")
+        if key == "histogram":
+            self._on_zone_hovered(-1)
         if key != "histogram":
             self._scope_view.set_mode(key)
         self._update_scope()

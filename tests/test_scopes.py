@@ -134,6 +134,18 @@ win._zones_btn.setChecked(True); pump(0.5)
 assert win._image_view._label._zone is not None and "VIII" in win._zones_btn.toolTip()
 win._zones_btn.setChecked(False); pump(0.3)
 assert win._image_view._label._zone is None
+# the strip under a scope: hovering a zone shows where it is, leaving puts the picture back
+assert win._zone_strip.isVisible()
+win._zone_strip.zone_hovered.emit(4); pump(0.2)
+assert win._image_view._label._zone is not None
+win._zone_strip.zone_hovered.emit(-1); pump(0.2)
+assert win._image_view._label._zone is None
+win._zone_strip.zone_map_toggled.emit(); pump(0.4)
+assert win._zones_btn.isChecked() and win._image_view._label._zone is not None
+win._zone_strip.zone_map_toggled.emit(); pump(0.3)
+assert not win._zones_btn.isChecked() and win._image_view._label._zone is None
+win._graph_choice.setCurrentIndex(0); pump(0.2)
+assert win._zone_strip.isHidden()
 print("ok")
 '''
 
@@ -146,3 +158,39 @@ def test_the_graph_choice_and_the_zone_map_in_the_window():
     env = dict(os.environ, PYTHONPATH=src + os.pathsep + os.environ.get("PYTHONPATH", ""))
     r = subprocess.run([sys.executable, "-X", "faulthandler", "-c", _WINDOW], env=env, capture_output=True, text=True, timeout=300)
     assert r.returncode == 0 and "ok" in r.stdout, r.stdout[-2000:] + r.stderr[-3000:]
+
+
+def test_a_hovered_zone_is_shown_alone_with_its_outline():
+    r = ramp(40, 256)
+    hl = S.zone_highlight(r, 5)
+    assert hl.shape == (40, 256, 4) and hl.dtype == np.uint8
+    z = S.zones(r)
+    assert (hl[z != 5][:, 3] == 170).all() or (hl[(z != 5)][:, 3] >= 170).all(), "everything outside the zone is darkened"
+    inner = hl[10:30, 120:136]          # the middle of zone V (values 117 to 139) has neither a wash nor a line
+    assert (inner[..., 3] == 0).sum() > 0 and (hl[..., :3][hl[..., 3] == 255] == 255).all()
+    assert ((hl[..., 3] == 255).sum()) > 0, "its regions have a white outline"
+    empty = S.zone_highlight(np.zeros((8, 8, 3), np.uint8), 10)
+    assert (empty[..., 3] == 170).all(), "a zone nothing is in darkens the whole picture"
+
+
+def test_the_zone_strip_says_which_zone_the_pointer_is_over():
+    _app()
+    from PyQt6.QtCore import QPointF, QEvent, Qt
+    from PyQt6.QtGui import QMouseEvent
+    from photoeditor.desktop.view.scope_view import ZoneStrip
+    strip = ZoneStrip()
+    strip.resize(220, 24)
+    strip.show()
+    seen, toggles = [], []
+    strip.zone_hovered.connect(seen.append)
+    strip.zone_map_toggled.connect(lambda: toggles.append(1))
+    move = lambda x: strip.mouseMoveEvent(QMouseEvent(QEvent.Type.MouseMove, QPointF(x, 10), QPointF(x, 10), Qt.MouseButton.NoButton, Qt.MouseButton.NoButton, Qt.KeyboardModifier.NoModifier))
+    move(5); move(8); move(61); move(215)
+    assert seen == [0, 3, 10], seen
+    strip.leaveEvent(None)
+    assert seen[-1] == -1 and strip.hovered() == -1
+    strip.set_shares([0.1] * 10 + [0.0])
+    assert "Zone" in (move(41) or strip.toolTip()) and "10% of the picture" in strip.toolTip()
+    strip.mouseDoubleClickEvent(None)
+    assert toggles == [1]
+    assert strip.grab().toImage().width() == 220

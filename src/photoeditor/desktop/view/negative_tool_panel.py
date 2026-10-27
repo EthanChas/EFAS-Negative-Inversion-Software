@@ -311,6 +311,9 @@ class NegativeToolPanel(CollapsiblePanel):
         self._cast = SliderRow("Color cast", min_value=0.0, max_value=1.0, reset_value=1.0)
         self._cast.setToolTip("1 removes the film's color cast completely; 0 keeps it. The red, green and blue are stretched together as it goes down.")
         body.addWidget(self._cast)
+        self._meter_reset = QPushButton("Reset Metering")
+        self._meter_reset.clicked.connect(self.metering_reset_requested)
+        body.addWidget(self._meter_reset)
         wb_title = QLabel("WHITE / BLACK POINT")
         wb_title.setProperty("role", "subtitle")
         self._wb_title = wb_title
@@ -343,9 +346,6 @@ class NegativeToolPanel(CollapsiblePanel):
         self._black = SliderRow("Black point")
         body.addWidget(self._white)
         body.addWidget(self._black)
-        self._meter_reset = QPushButton("Reset Metering")
-        self._meter_reset.clicked.connect(self.metering_reset_requested)
-        body.addWidget(self._meter_reset)
         self._metering = Metering()
         for row in (self._margin, self._range, self._cast, self._white, self._black, *self._print_rows.values(), *self._trim_rows, *self._nor_rows.values()):
             row.value_changed.connect(self._on_metering_slider)

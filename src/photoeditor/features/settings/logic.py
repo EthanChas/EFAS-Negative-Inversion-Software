@@ -53,6 +53,7 @@ DEFAULTS: dict[str, Any] = {
     "slideshow_video_fps": 30,
     "ffmpeg_path": "",
     "hotstack_folders": [],
+    "folded_sections": {},     # which sections inside the modules the person closed (True) or opened (False), by "module/Title"
     "tether_camera": "practice",
     "tether_sdk_dir": "",
     "tether_folder": "",
@@ -109,6 +110,8 @@ def _clean(data: Any) -> dict[str, Any]:
     for key in ("tether_sdk_dir", "tether_folder", "live_date_folder"):   # the folder of Canon's own SDK, where tethered pictures are saved, where Finish Session puts its day folders
         if isinstance(data.get(key), str):
             out[key] = data[key].strip()[:500]
+    if isinstance(data.get("folded_sections"), dict):
+        out["folded_sections"] = {str(k)[:120]: v for k, v in list(data["folded_sections"].items())[:400] if isinstance(v, bool)}
     if isinstance(data.get("tether_prefix"), str) and data["tether_prefix"].strip():
         out["tether_prefix"] = data["tether_prefix"].strip()[:40]
     settle = data.get("tether_settle")   # seconds to wait after the shutter button, for the rig to stop shaking

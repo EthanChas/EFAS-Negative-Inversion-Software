@@ -101,8 +101,10 @@ _WINDOW = textwrap.dedent(r'''
         return panel.findChildren(SectionDivider)
     neg = [m for m in win.findChildren(CollapsiblePanel) if m._title == "Negative"][0]
     crop = [m for m in win.findChildren(CollapsiblePanel) if m._title == "Crop & Rotate"][0]
-    assert len(dividers(neg)) >= 5, len(dividers(neg))
-    assert len(dividers(crop)) >= 4, len(dividers(crop))
+    from photoeditor.desktop.view.fold import FoldSection
+    sections = lambda panel: panel.findChildren(FoldSection)
+    assert len(sections(neg)) >= 5 and len(sections(crop)) >= 3, (len(sections(neg)), len(sections(crop)))   # (the folding sections are the lines between a module's groups now)
+    assert all(not d.isVisibleTo(neg) for d in dividers(neg)), "the old lines are put away where a section's title stands in for them"
     simple = [m for m in win.findChildren(CollapsiblePanel) if m._title == "Contrast"][0]
     assert dividers(simple) == [], "a one-section module gets no lines"
     print("ok")

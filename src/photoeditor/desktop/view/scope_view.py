@@ -3,7 +3,7 @@
 import math
 
 import numpy as np
-from PyQt6.QtCore import QPointF, QRectF, Qt
+from PyQt6.QtCore import QPointF, QRectF, Qt, pyqtSignal
 from PyQt6.QtGui import QColor, QFont, QImage, QPainter, QPen
 from PyQt6.QtWidgets import QWidget
 
@@ -109,3 +109,71 @@ class ScopeView(QWidget):
             painter.drawRect(QRectF(x - 4, y - 4, 8, 8))
             painter.setPen(label)
             painter.drawText(QRectF(x + 5, y - 7, 14, 14), int(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter), name)
+
+
+class ZoneStrip(QWidget):
+    """The eleven zones (0 black to X white) as a row of cells under a scope. Hovering one says which (zone_hovered, -1 when the pointer leaves) so the picture can show where that zone is;
+    a double-click toggles the zone map."""
+
+    zone_hovered = pyqtSignal(int)
+    zone_map_toggled = pyqtSignal()
+
+    def __init__(self, parent: QWidget | None = None):
+        super().__init__(parent)
+        self.setFixedHeight(24)
+        self.setMouseTracking(True)
+        self._hover = -1
+        self._shares: list[float] = []
+        self._base_tip = "Hover a zone to see where it is in the picture; double-click for the zone map"
+        self.setToolTip(self._base_tip)
+
+    def hovered(self) -> int:
+        return self._hover
+
+    def set_shares(self, shares: list[float] | None) -> None:
+        self._shares = list(shares or [])
+        self.update()
+
+    def _cell(self, index: int) -> QRectF:
+        w = self.width() / float(scopes.ZONE_COUNT)
+        return QRectF(index * w, 0, w, self.height())
+
+    def _zone_at(self, x: float) -> int:
+        return max(0, min(scopes.ZONE_COUNT - 1, int(x / max(self.width(), 1) * scopes.ZONE_COUNT)))
+
+    def mouseMoveEvent(self, event) -> None:
+        zone = self._zone_at(event.position().x())
+        if zone != self._hover:
+            self._hover = zone
+            share = f"  ({100 * self._shares[zone]:.0f}% of the picture)" if zone < len(self._shares) else ""
+            self.setToolTip(f"Zone {scopes.ZONE_NAMES[zone]}{share}\n{self._base_tip}")
+            self.zone_hovered.emit(zone)
+            self.update()
+
+    def leaveEvent(self, event) -> None:
+        if self._hover != -1:
+            self._hover = -1
+            self.zone_hovered.emit(-1)
+            self.update()
+
+    def mouseDoubleClickEvent(self, event) -> None:
+        self.zone_map_toggled.emit()
+
+    def paintEvent(self, event) -> None:
+        painter = QPainter(self)
+        font = QFont(painter.font())
+        font.setPointSizeF(max(font.pointSizeF() - 1.5, 6.5))
+        painter.setFont(font)
+        peak = max(self._shares) if self._shares else 0.0
+        for i in range(scopes.ZONE_COUNT):
+            cell = self._cell(i)
+            level = int(round((i + 0.5) / scopes.ZONE_COUNT * 255))
+            painter.fillRect(cell, QColor(level, level, level))
+            if peak > 0 and i < len(self._shares):     # how much of the picture is in the zone: a bar up from the bottom of the cell
+                painter.fillRect(QRectF(cell.left(), cell.bottom() - 3, cell.width() * self._shares[i] / peak, 3), QColor(THEME.accent_primary))
+            painter.setPen(QColor(0, 0, 0) if level > 120 else QColor(255, 255, 255))
+            painter.drawText(cell, int(Qt.AlignmentFlag.AlignCenter), scopes.ZONE_NAMES[i])
+        if self._hover >= 0:
+            painter.setPen(QPen(QColor(THEME.accent_hover), 2))
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.drawRect(self._cell(self._hover).adjusted(1, 1, -1, -1))
