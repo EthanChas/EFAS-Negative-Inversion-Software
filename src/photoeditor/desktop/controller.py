@@ -1552,6 +1552,7 @@ class AppController(QObject):
             return False
         label = f"{self.module_title(key)} preset '{name}'"
         if self.apply_look({**panel_defaults(key), **values}, label):
+            self._module_preset_in_use[(self.state.image_path, key)] = name      # (its name goes in the module's header, as a stored preset's does)
             self._save_edit_state()
             self.module_presets_changed.emit(key)
             self.notice.emit(f"Applied {label}")
@@ -4024,6 +4025,41 @@ class AppController(QObject):
             return True
         return False
 
+    def reset_fields(self, values: dict, label: str) -> bool:
+        """Put edit-state fields back to the given values as one undoable step: how the modules that are not presets (Crop & Rotate, Dust & Scratches, Retouch, AI Dust) reset."""
+        s = self.state
+        if s.preview_rgb is None:
+            return False
+        if not self._auto_busy:
+            self._drop_auto_run()
+        for key, value in values.items():
+            setattr(s, key, copy.deepcopy(value))
+        self._last_logged_crop = s.crop_rect
+        self._retouch_order = [] if "heal_strokes" in values else self._retouch_order
+        self._log(label)
+        self._restore_entry(s.history[-1])
+        self._finish_restore()
+        self.notice.emit(label)
+        return True
+
+    def reset_geometry(self) -> bool:
+        """Crop & Rotate back to its defaults: no crop, no turn or flip, no straightening, distortion, keystone or lens corrections."""
+        return self.reset_fields({"crop_rect": None, "rotation_quarter_turns": 0, "flip_h": False, "flip_v": False, "fine_rotation": 0.0, "distortion": 0.0, "keystone_v": 0.0, "keystone_h": 0.0, "lens_corr": {}},
+                                 "Reset Crop & Rotate")
+
+    def reset_dust(self) -> bool:
+        """Dust & Scratches back to its defaults: detection off at its default strength, the manual repairs and the detections put aside cleared."""
+        d = AppState()
+        return self.reset_fields({k: getattr(d, k) for k in ("dust_auto", "dust_threshold", "dust_size", "scratch_lines", "scratch_sensitivity", "heal_strokes", "clone_strokes", "dust_excluded")}, "Reset Dust & Scratches")
+
+    def reset_ai_dust(self) -> bool:
+        d = AppState()
+        return self.reset_fields({k: getattr(d, k) for k in ("ai_dust", "ai_threshold", "ai_grow")}, "Reset AI Dust")
+
+    def reset_retouch(self) -> bool:
+        """Retouch: every shape and the view put away."""
+        return self.reset_fields({"retouch_json": "", "retouch_view": ""}, "Reset Retouch")
+
     def module_preset_names(self, key: str) -> list[str]:
         return module_store.names(key)
 
@@ -4031,7 +4067,15 @@ class AppController(QObject):
         """The preset last loaded (or stored) on this module of the open photo - None when there is none, or it has been deleted since."""
         path = self.state.image_path
         name = self._module_preset_in_use.get((path, key)) if path is not None else None
-        return name if name is not None and module_store.get(key, name) is not None else None
+        return name if name is not None and self._module_preset_values(key, name) is not None else None
+
+    def _module_preset_values(self, key: str, name: str) -> dict | None:
+        """The values of a preset of this module: one that was stored, or one that comes with the module (darktable's, a paper's), which is read-only."""
+        saved = module_store.get(key, name)
+        if saved is not None:
+            return saved
+        built = module_builtin.get(key, name)
+        return None if built is None else {**panel_defaults(key), **built}
 
     def module_preset_modified(self, key: str) -> bool:
         """True when the module's values no longer match the preset loaded on it - the cue for the Update Preset button."""

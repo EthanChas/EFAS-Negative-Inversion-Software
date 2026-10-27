@@ -1446,6 +1446,7 @@ class AppWindow(QMainWindow):
         self._crop_tool.straighten_tool_toggled.connect(self._on_straighten_tool_toggled)
         self._crop_tool.corners_tool_toggled.connect(self._on_corners_tool_toggled)
         self._crop_tool.crop_cleared.connect(self._on_crop_cleared)
+        self._crop_tool.enable_reset_button("Put Crop & Rotate back to its defaults: no crop, turn, flip, straightening, distortion, keystone or lens correction").clicked.connect(self._on_reset_geometry)
         self._crop_tool.auto_crop_requested.connect(self._on_auto_crop)
         self._crop_tool.gradient_crop_requested.connect(self._on_gradient_crop)
         self._crop_tool.auto_adjust_changed.connect(self.controller.adjust_auto_crop)
@@ -1496,6 +1497,7 @@ class AppWindow(QMainWindow):
         self._dust_tool.overlay_toggled.connect(self.controller.set_show_detections)
         self._dust_tool.undo_requested.connect(self.controller.undo_last_retouch)
         self._dust_tool.clear_requested.connect(self.controller.clear_retouch)
+        self._dust_tool.enable_reset_button("Put Dust & Scratches back to its defaults: detection off, the manual repairs cleared").clicked.connect(lambda _c=False: self.controller.reset_dust())
         self.controller.scratches_changed.connect(self._dust_tool.set_manual_count)
         self._dust_tool.restore_deleted_requested.connect(self.controller.reset_deleted_detections)
         self.controller.detections_deleted_changed.connect(self._dust_tool.set_deleted_count)
@@ -1508,8 +1510,10 @@ class AppWindow(QMainWindow):
         self.controller.notice.connect(self._coord_label.setText)
 
         self._retouch_tool = RetouchPanel()
+        self._retouch_tool.enable_reset_button("Put Retouch back to its defaults: every shape taken off").clicked.connect(lambda _c=False: self.controller.reset_retouch())
         self._retouch_picked = 0
         self._ai_dust_tool = AiDustPanel()
+        self._ai_dust_tool.enable_reset_button("Put AI Dust back to its defaults: off").clicked.connect(lambda _c=False: self.controller.reset_ai_dust())
         self._ai_dust_tool.changed.connect(self.controller.set_ai_dust)
         self._ai_dust_tool.cancel_requested.connect(self.controller.cancel_ai_dust)
         self.controller.ai_dust_status.connect(self._refresh_ai_dust_panel)
@@ -1520,6 +1524,7 @@ class AppWindow(QMainWindow):
         self._error_marks_panel.toggled.connect(lambda expanded: None if expanded else self._put_down_error_tool())
         self._error_marks_panel.visibility_toggled.connect(self.set_error_marks_visible)
         self._error_marks_panel.clear_requested.connect(self._on_clear_error_marks)
+        self._error_marks_panel.enable_reset_button("Remove every error mark from this photo").clicked.connect(lambda _c=False: self._on_clear_error_marks())
         self._image_view.error_mark_drawn.connect(self._on_error_mark_drawn)
         self._image_view.error_mark_context.connect(self._on_error_mark_context)
         self._image_view.set_error_marks_visible(app_settings.get("error_marks_visible"))
@@ -5271,6 +5276,10 @@ class AppWindow(QMainWindow):
     def _on_crop_cleared(self) -> None:
         self.controller.set_crop_rect(None)
         self._image_view.clear_crop_selection()
+
+    def _on_reset_geometry(self) -> None:
+        if self.controller.reset_geometry():
+            self._image_view.clear_crop_selection()
 
     def toggle_panels(self) -> None:
         """Tab key - hide the left panels, the right sidebar and the filmstrip
