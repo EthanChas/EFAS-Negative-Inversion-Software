@@ -339,7 +339,8 @@ class ProfileStore(_JsonStore):
                 p = self.load(ident)
             except ProfileError:
                 continue
-            out.append({"id": p.id, "name": p.name, "kind": p.kind, "film": p.identity_text(), "modified": p.modified, "usable": p.usable_for_inversion()})
+            out.append({"id": p.id, "name": p.name, "kind": p.kind, "film": p.identity_text(), "modified": p.modified, "usable": p.usable_for_inversion(),
+                        "bw_only": set(p.curves) <= {"K"}})      # a black-and-white film's profile: it is no use for a colour negative
         return sorted(out, key=lambda r: (r["name"].lower(), r["id"]))
 
     def duplicate(self, ident: str, name: str | None = None) -> FilmProfile:

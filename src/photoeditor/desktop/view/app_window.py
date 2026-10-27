@@ -1402,6 +1402,7 @@ class AppWindow(QMainWindow):
         self.controller.history_changed.connect(self._refresh_split_sources)
         self._negative_tool.film_reference_requested.connect(self.show_film_reference)
         self.controller.inversion_changed.connect(self._sync_inversion)
+        self.controller.negative_state_changed.connect(self._sync_inversion)     # the film type decides which film profiles are offered
         self._advanced.set_transfer(app_settings.get("scan_transfer"))
         self._negative_tool.advanced_toggled.connect(self._on_advanced_toggled)
         self._negative_tool.set_advanced(app_settings.get("advanced_mode"))

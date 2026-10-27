@@ -4871,7 +4871,7 @@ class AppController(QObject):
         return {
             "engine": s.inversion_engine, "profile_id": s.inversion_profile, "profile_name": name, "error": self._curve_error,
             "covered": res.covered if res is not None else None, "poor": res.poorly_determined if res is not None else None,
-            "notes": list(res.notes) if res is not None else [], "base_ready": s.linear_base is not None,
+            "notes": list(res.notes) if res is not None else [], "base_ready": s.linear_base is not None, "bw": self.is_black_and_white(),
         }
 
     def set_inversion_engine(self, engine: str, profile_id: str = "", setup_id: str = "") -> str:
