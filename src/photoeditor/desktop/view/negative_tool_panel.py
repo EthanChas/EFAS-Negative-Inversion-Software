@@ -14,6 +14,7 @@ from ...theme.tokens import THEME
 from .collapsible_panel import CollapsiblePanel
 from .dividers import add_divider
 from . import panel_icons
+from .segmented import SegmentedControl, add_steppers_in
 from .slider_row import SliderRow
 
 _MODE_LABELS = {
@@ -319,9 +320,9 @@ class NegativeToolPanel(CollapsiblePanel):
         channel_label.setFixedWidth(80)
         self._channel_label = channel_label
         channel_row.addWidget(channel_label)
-        self._channel = QComboBox()
-        for label in ("All channels", "Red", "Green", "Blue"):
-            self._channel.addItem(label)
+        self._channel = SegmentedControl()
+        for label, color in (("All", None), ("Red", "#e0524b"), ("Green", "#4fb86a"), ("Blue", "#4f86e0")):
+            self._channel.addItem(label, label, color)
         self._channel.setToolTip("All channels moves the points together; Red, Green or Blue trims just that channel on top")
         self._channel.currentIndexChanged.connect(self._on_channel_changed)
         channel_row.addWidget(self._channel, 1)

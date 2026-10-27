@@ -142,6 +142,7 @@ from .removal_dialogs import RemovedPhotosDialog, confirm_delete_from_disk
 from . import module_style
 from .bug_report_dialog import BugReportDialog
 from .bevel_widgets import CaptionButton
+from .segmented import add_steppers_in
 from .slider_row import SliderRow
 from .find_dialog import FindDialog
 from ...features.find import logic as find_logic
@@ -546,8 +547,11 @@ class AppWindow(QMainWindow):
             ("watermark", self._watermark_tool), ("canisterwm", self._canister_tool), ("finishing", self._finishing_tool),
         ):
             self._module_menus.attach(panel, key)
+            add_steppers_in(panel)   # ‹ › either side of each of its dropdowns
             if key in BLENDABLE:
                 self._add_blend_box(key, panel)
+        for panel in (self._crop_tool, self._dust_tool, self._retouch_tool, self._ai_dust_tool, self._error_marks_panel, self._flatfield_tool):
+            add_steppers_in(panel)
         for signal in (
             self.controller.module_presets_changed, self.controller.modules_enabled_changed, self.controller.history_changed, self.controller.image_adjusted,
             self.controller.image_preview_changed, self.controller.reverted, self.controller.file_changed,
