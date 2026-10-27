@@ -1,6 +1,6 @@
 # NegPy Conversion (film & paper)
 
-Convert tab > Conversion > **Method**. Two choices: **NegPy Conversion (film & paper)**, the default, and **Original (stretch)**, the conversion EFAS used before. Photos that were edited before NegPy Conversion existed keep Original; photos that were only opened, never edited, and new photos get NegPy Conversion. The choice is saved per photo and goes into presets with the rest of the metering. This page says what NegPy Conversion does, why, and how far to trust it.
+Convert tab > Conversion > **Method**. Three choices: **NegPy Conversion (film & paper)**, the default, **Original (stretch)**, the conversion EFAS used before, and **NegPy 0.56 (old)**, NegPy's own conversion as that version made it (the last section). Photos that were edited before NegPy Conversion existed keep Original; photos that were only opened, never edited, and new photos get NegPy Conversion. The choice is saved per photo and goes into presets with the rest of the metering. This page says what NegPy Conversion does, why, and how far to trust it.
 
 ## Why a second conversion
 
@@ -70,3 +70,14 @@ Step 1 turns the scan back into light, so it has to use the curve the scan was m
 The curves differ most in the darkest codes, which on a negative are the densest parts and become the positive's highlights. Reading a BT.709 scan as sRGB overstates density there by up to 0.46, and by about 0.2 at the median of a typical frame.
 
 A photo edited before this was a setting keeps sRGB, the reading it was edited with, so its picture does not change. To move it to the correct curve, set Encoding to **Automatic** (or press Reset Metering); the picture will change, and Grade and Print density may need a touch. The film curve defaults (Film curve 0.4, the generic S-shape) were tuned before this fix; judge them on your own RAW scans.
+
+## NegPy 0.56 (old)
+
+**NegPy 0.56 (old)** is a numpy port of NegPy 0.56.0's conversion (`features/negative/negpy056.py`), kept beside the NegPy Conversion because NegPy changed this part later (0.58 retuned the print tone, made Auto Grade and Auto Density read textured parts only, and added a shadow reach floor) and a photo converted with 0.56 has a look of its own. It follows NegPy's own code, and is checked against it: the same scene through NegPy 0.56.0's normalization and print stages and through the port gives the same picture to float precision, for colour and black-and-white negatives.
+
+- **Bounds, not a film model.** Each channel is stretched between the 0.01st and 99.99th percentile of its log density (the dense end read from a chroma-gated set of neutral pixels), so the film's orange mask is gone whatever its strength. There is no crosstalk matrix, film curve or sampled film base: the bounds come from the picture.
+- **The metering region matters.** Black and white are read from the metering region (the frame less its Margin, or a region you draw), as NegPy reads its analysis area. For a scan with the film's rebate in it, draw the region on the picture only, or the clear rebate and the sprocket holes set the bounds and the picture comes out dark.
+- **Cast Removal, Auto Density and Auto Grade** are NegPy's: red and blue are fitted to green through the picture's own neutral greys (Color cast 1 is NegPy's default strength of 0.5), the picture's middle is metered over the whole region, and the grade is a literal ISO-R value of 115 that the picture's range adjusts.
+- **Controls.** Encoding, Grade (each +0.1 is 7 ISO-R points harder), Print density, Paper toe, Paper shoulder, Color cast, and the Margin and Draw Region of the metering. Choosing the method puts those at NegPy's own defaults.
+- **A RAW file in the camera's own primaries.** NegPy works on the sensor's own channels, never converted to a colour space, so for NegPy's look tick Settings > Image decoding > **Invert negatives before the camera's colour matrix** (it opens a RAW file in the camera's own primaries). This conversion then does not apply the camera's colour matrix afterwards, as NegPy does not.
+- **Not available for slides** (they keep the other methods).

@@ -1,6 +1,6 @@
 # Diffuse or Sharpen (Detail tab)
 
-darktable's **diffuse or sharpen**, ported with its controls, its ranges, its tooltips and all of its presets. It simulates the diffusion of light with a heat-transfer model, and so it can apply an iterative edge-oriented blur, inpaint damaged parts of the picture, or remove blur with a blind deconvolution. In darktable it is the module behind "lens deblur", "dehaze", "denoise", "bloom" and the sharpening presets, and here too.
+darktable's **diffuse or sharpen**, ported with its controls, its ranges, its tooltips and all of its presets. It simulates the diffusion of light with a heat-transfer model, and so it can apply an iterative edge-oriented blur, inpaint damaged parts of the picture, or remove blur with a blind deconvolution. In darktable it is the module behind "lens deblur", "dehaze" and the sharpening presets, and here too.
 
 ## How it works
 
@@ -18,6 +18,6 @@ The picture is cut into wavelet scales (a B-spline decomposition, as the contras
 
 ## The presets
 
-The module's Presets menu lists darktable's: **lens deblur** (soft, medium, hard), **dehaze** (default, extra contrast), **denoise** (fine, medium, coarse), **surface blur**, **artistic effects** (bloom, simulate watercolor, simulate line drawing), **sharpen demosaicing** (no AA filter, AA filter), **local contrast** (normal, fine, fast), **inpaint highlights**, and **sharpness** (fast, normal, strong). Applying one is one undoable step and sets every control of the module.
+The module's Presets menu lists darktable's (less its denoise and artistic effects presets, which are left out): **lens deblur** (soft, medium, hard), **dehaze** (default, extra contrast), **surface blur**, **sharpen demosaicing** (no AA filter, AA filter), **local contrast** (normal, fine, fast), **inpaint highlights**, and **sharpness** (fast, normal, strong). Applying one is one undoable step and sets every control of the module.
 
 Code: `features/diffuse/logic.py`, `desktop/view/diffuse_panel.py`, `tests/test_diffuse_logic.py`.

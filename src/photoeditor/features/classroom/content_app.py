@@ -121,7 +121,7 @@ By default you edit a **preview**: a reduced copy of the scan, so sliders respon
 
 ## Looking at the picture
 
-**Before & after** (`\`) splits the picture so you can compare your edit with the picture right after inversion, or with the picture as it was after any step of the History (the list beside the button chooses). Both sides are made from the full-resolution picture, so HQ is switched on while it is up. **Focus peaking** (`Ctrl+Shift+F`) paints the sharp edges of the picture, which makes it easy to judge whether a scan is in focus and where the focus falls. **Error marks** (`Shift+E`) show or hide the faults you marked. **Hide the panels** (`Tab`) gives the picture the whole window.
+**Before & after** (`\`) splits the picture so you can compare your edit with the picture right after inversion, or with the picture as it was after any step of the History (the list beside the button chooses). Both sides are made from the full-resolution picture, so HQ is switched on while it is up. **Focus peaking** (`Ctrl+Shift+F`) paints the sharp edges of the picture, which makes it easy to judge whether a scan is in focus and where the focus falls. **Error marks** (`Alt+E`) show or hide the faults you marked. **Hide the panels** (`Tab`) gives the picture the whole window.
 
 The proofing tools, **test strip** (`Shift+T`) and **ring-around** (`Shift+F`), show variations side by side: see [[proofing-tools]].
 

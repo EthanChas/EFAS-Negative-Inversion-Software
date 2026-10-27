@@ -205,11 +205,16 @@ class NegativeToolPanel(CollapsiblePanel):
         self._conversion = QComboBox()
         self._conversion.addItem("NegPy Conversion (film & paper)", "print")
         self._conversion.addItem("Original (stretch)", "standard")
+        self._conversion.addItem("NegPy 0.56 (old)", "negpy056")
         self._conversion.setToolTip(
             "NegPy Conversion treats the film, the scene and the paper separately: it takes out the dyes' crosstalk, puts back part of the film's toe and shoulder, balances the "
             "channels, and prints through a paper curve with a toe and a shoulder, so highlights roll off instead of clipping. Original is the earlier conversion: it "
-            "stretches each colour channel in a straight line between its darkest and lightest readings. Photos edited before NegPy Conversion existed keep Original.")
-        self._conversion.currentIndexChanged.connect(self._on_metering_slider)
+            "stretches each colour channel in a straight line between its darkest and lightest readings. Photos edited before NegPy Conversion existed keep Original. "
+            "NegPy 0.56 (old) is NegPy's own conversion as that version made it (before NegPy retuned its print tone and metering in 0.58): the film's orange mask is taken out by "
+            "stretching each channel to its own bounds, Cast Removal fits red and blue to green through the picture's greys, and Auto Density and Auto Grade read the whole picture. "
+            "Draw the metering region on the picture alone when the scan includes the film's rebate, and for NegPy's colours tick Settings > Image decoding > Invert negatives before the camera's colour matrix, so a RAW file is opened in the camera's own primaries.")
+        self._last_engine = "print"
+        self._conversion.currentIndexChanged.connect(self._on_conversion_changed)
         conv_row.addWidget(self._conversion, 1)
         body.addLayout(conv_row)
         film_row = QHBoxLayout()
@@ -525,6 +530,7 @@ class NegativeToolPanel(CollapsiblePanel):
         for w in widgets:
             w.blockSignals(True)
         self._conversion.setCurrentIndex(max(0, self._conversion.findData(metering.engine)))
+        self._last_engine = metering.engine
         if self._film.findData(metering.film) < 0:   # a profile that is no longer there reads as the generic one
             self._film.addItem(f"{metering.film} (missing: generic used)", metering.film)
         self._film.setCurrentIndex(self._film.findData(metering.film))
@@ -548,12 +554,14 @@ class NegativeToolPanel(CollapsiblePanel):
     def _sync_engine_controls(self, engine: str) -> None:
         """The NegPy Conversion has its own film, encoding, grade and density; the stretch's range clip, colour cast and white / black points belong to Original. Each set is put away (not greyed)
         under the other conversion, and comes back with it."""
-        modern = engine == "print"
-        for w in (self._film_label, self._film, self._encoding_label, self._encoding, *self._print_rows.values(), *self._trim_rows):
+        modern, old = engine == "print", engine == "negpy056"
+        for w in (self._film_label, self._film, *self._trim_rows, self._print_rows["crosstalk"], self._print_rows["film_curve"]):
             w.setVisible(modern)
-        original_only = (self._range, self._cast, self._wb_title, self._channel_label, self._white, self._black, self._channel, *self._droppers.values())
-        for w in original_only:
-            w.setVisible(not modern)
+        for w in (self._encoding_label, self._encoding, self._print_rows["grade"], self._print_rows["density"], self._print_rows["paper_toe"], self._print_rows["paper_shoulder"]):
+            w.setVisible(modern or old)
+        for w in (self._range, self._wb_title, self._channel_label, self._white, self._black, self._channel, *self._droppers.values()):
+            w.setVisible(engine == "standard")
+        self._cast.setVisible(engine in ("standard", "negpy056"))     # (for NegPy 0.56 (old) it is Cast Removal: 1 is NegPy's default of 0.5)
 
     def set_region_draw_active(self, active: bool) -> None:
         """Sync the Draw Region button without emitting anything."""
@@ -586,6 +594,23 @@ class NegativeToolPanel(CollapsiblePanel):
         self._sync_engine_controls(engine)
         return dataclasses.replace(m, film=self._film.currentData() or "generic", transfer=self._encoding.currentData() or "auto", buffer=self._margin.value(), range_clip=self._range.value(), cast_removal=self._cast.value(), engine=engine,
                                    grade_trim=tuple(row.value() for row in self._trim_rows), **{key: row.value() for key, row in self._print_rows.items()})
+
+    def _on_conversion_changed(self, _index: int) -> None:
+        """Another conversion was chosen. NegPy 0.56 (old) meters Auto Grade and Auto Density itself, so it starts from its own defaults: the Grade, Print density and paper sliders (which
+        hold the values NegPy Conversion was set to) go to zero and Color cast to 1 (NegPy's own Cast Removal of 0.5)."""
+        engine = self._conversion.currentData()
+        if engine == "negpy056" and self._last_engine != "negpy056":
+            rows = self._print_rows
+            for key in ("grade", "density", "paper_toe", "paper_shoulder"):
+                rows[key].blockSignals(True)
+                rows[key].set_value(0.0)
+                rows[key].blockSignals(False)
+            self._cast.blockSignals(True)
+            self._cast.set_value(1.0)
+            self._cast.blockSignals(False)
+        self._last_engine = engine
+        self._sync_engine_controls(engine)
+        self._on_metering_slider(0.0)
 
     def _on_metering_slider(self, _value: float) -> None:
         self._metering = self._collect()

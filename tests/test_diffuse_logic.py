@@ -89,10 +89,9 @@ def test_a_large_picture_is_cut_into_strips_that_agree_with_the_whole(monkeypatc
     assert inner.mean() < 0.5 and inner.max() <= 12, (inner.mean(), inner.max())
 
 
-def test_darktables_presets_are_all_here_and_make_the_picture_change():
-    expected = ["lens deblur | soft", "lens deblur | medium", "lens deblur | hard", "dehaze | default", "dehaze | extra contrast", "denoise | fine", "denoise | medium",
-                "denoise | coarse", "surface blur", "artistic effects | bloom", "sharpen demosaicing | no AA filter", "sharpen demosaicing | AA filter",
-                "artistic effects | simulate watercolor", "artistic effects | simulate line drawing", "local contrast | normal", "local contrast | fine", "inpaint highlights",
+def test_the_presets_are_all_here_and_make_the_picture_change():
+    expected = ["lens deblur | soft", "lens deblur | medium", "lens deblur | hard", "dehaze | default", "dehaze | extra contrast",
+                "surface blur", "sharpen demosaicing | no AA filter", "sharpen demosaicing | AA filter", "local contrast | normal", "local contrast | fine", "inpaint highlights",
                 "sharpness | fast", "sharpness | normal", "sharpness | strong", "local contrast | fast"]
     assert sorted(D.PRESETS) == sorted(expected)
     for name, preset in D.PRESETS.items():
@@ -102,5 +101,5 @@ def test_darktables_presets_are_all_here_and_make_the_picture_change():
             assert low <= value <= high, (name, key, value)
     assert D.PRESETS["sharpness | strong"]["dif_iterations"] == 6 and D.PRESETS["inpaint highlights"]["dif_threshold"] == 1.41
     img = _edge()
-    for name in ("sharpness | fast", "artistic effects | bloom", "surface blur"):
+    for name in ("sharpness | fast", "dehaze | default", "surface blur"):
         assert not np.array_equal(D.apply_diffuse(img, D.PRESETS[name], zoom=4.0), img), name

@@ -1,4 +1,4 @@
-"""The histogram stays in view while the sidebar scrolls; Log and Split; a black-and-white negative greys the Color graph out; Shift+E; Find reaches presets."""
+"""The histogram stays in view while the sidebar scrolls; Log and Split; a black-and-white negative greys the Color graph out; Alt+E; Find reaches presets."""
 import os
 import subprocess
 import sys
@@ -12,7 +12,7 @@ SRC = str(Path(__file__).resolve().parents[1] / "src")
 
 def test_shift_e_is_the_default_for_error_marks_and_clashes_with_nothing():
     action = K.BY_ID["error_marks"]
-    assert action.default == "Shift+E" and action.kind == "menu" and action.category == "Viewing"
+    assert action.default == "Alt+E" and action.kind == "menu" and action.category == "Viewing"
     assert K.conflicts(K.bindings(None)) == {}
 
 
@@ -124,14 +124,14 @@ _SCRIPT = textwrap.dedent(r'''
     c.state.detected_mode = ProcessMode.C41; c.negative_state_changed.emit(); pump(0.2)
     assert not c.is_black_and_white() and win._color_btn.isEnabled() and win._color_btn.isChecked()
 
-    # --- Shift+E shows and hides the error marks
+    # --- Alt+E shows and hides the error marks
     action = win._error_marks_action
-    assert action.shortcut() == QKeySequence("Shift+E")
+    assert action.shortcut() == QKeySequence("Alt+E")
     was = action.isChecked()
     win.activateWindow(); win.setFocus()
-    QTest.keyClick(win, Qt.Key.Key_E, Qt.KeyboardModifier.ShiftModifier); pump(0.2)
-    assert action.isChecked() != was, "Shift+E toggled the error marks"
-    QTest.keyClick(win, Qt.Key.Key_E, Qt.KeyboardModifier.ShiftModifier); pump(0.2)
+    QTest.keyClick(win, Qt.Key.Key_E, Qt.KeyboardModifier.AltModifier); pump(0.2)
+    assert action.isChecked() != was, "Alt+E toggled the error marks"
+    QTest.keyClick(win, Qt.Key.Key_E, Qt.KeyboardModifier.AltModifier); pump(0.2)
     assert action.isChecked() == was
 
     # --- Find reaches presets

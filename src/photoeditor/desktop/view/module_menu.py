@@ -54,7 +54,9 @@ class ModuleMenus(QObject):
             groups: dict[str, QMenu] = {}
             for name in built:
                 head, _, tail = name.partition(" | ")
-                target = groups.setdefault(head, menu.addMenu(head)) if tail else menu
+                if tail and head not in groups:
+                    groups[head] = menu.addMenu(head)
+                target = groups[head] if tail else menu
                 action = target.addAction(tail or name)
                 action.setEnabled(has_photo)
                 action.setToolTip(f"Built-in preset '{name}'" + (" (ported from darktable)" if key in ("diffuse", "toneequalizer", "colorbalancergb") else ""))

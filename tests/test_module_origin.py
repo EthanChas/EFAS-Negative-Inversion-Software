@@ -57,7 +57,7 @@ _SCRIPT = textwrap.dedent(r"""
     assert win._module_search.result_titles() == [], "searching still goes by the plain titles"
     # the conversion's name
     box = win._negative_tool._conversion
-    assert [box.itemText(i) for i in range(box.count())] == ["NegPy Conversion (film & paper)", "Original (stretch)"] and box.itemData(0) == "print"
+    assert [box.itemText(i) for i in range(box.count())] == ["NegPy Conversion (film & paper)", "Original (stretch)", "NegPy 0.56 (old)"] and box.itemData(0) == "print" and box.itemData(2) == "negpy056"
     print("OK")
 """)
 

@@ -16,7 +16,7 @@ _FIELDS_NAMES = {
     "engine": "conversion", "crosstalk": "dye crosstalk", "film_curve": "film curve", "grade": "print grade", "density": "print density",
     "paper_toe": "paper toe", "paper_shoulder": "paper shoulder", "grade_trim": "colour crossover", "film": "film profile", "transfer": "scan encoding",
 }
-ENGINES = ("print", "standard")   # "print" is NegPy Conversion (film and paper: features/negative/printengine.py), "standard" is Original (a straight stretch of each channel)
+ENGINES = ("print", "standard", "negpy056")   # "print" is NegPy Conversion (film and paper: features/negative/printengine.py), "standard" is Original (a straight stretch of each channel), "negpy056" is NegPy 0.56 (old): NegPy's own conversion as that version made it (features/negative/negpy056.py)
 DEFAULT_ENGINE = "print"
 TRANSFERS = ("auto", "srgb", "bt709", "linear")   # how the scan's codes were made from light; "auto" reads it from the file (RAW decoded by EFAS: bt709, anything else: srgb)
 
@@ -47,7 +47,7 @@ class Metering:
     black: float = 0.0
     white_trim: tuple[float, float, float] = (0.0, 0.0, 0.0)
     black_trim: tuple[float, float, float] = (0.0, 0.0, 0.0)
-    engine: str = DEFAULT_ENGINE    # "print" (NegPy Conversion) or "standard" (Original)
+    engine: str = DEFAULT_ENGINE    # "print" (NegPy Conversion), "standard" (Original) or "negpy056" (NegPy 0.56 (old))
     film: str = "generic"            # print engine: the crosstalk profile (printengine.profiles(): generic, none, a bundled film's file name, or user:<file>)
     transfer: str = "auto"          # print engine: how the scan was encoded (TRANSFERS). Photos saved before this was a setting have "srgb", the reading they were edited with
     crosstalk: float = 1.0          # print engine: how much of the dyes' crosstalk is taken out

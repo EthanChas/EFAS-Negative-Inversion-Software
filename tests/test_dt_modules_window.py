@@ -77,7 +77,7 @@ _SCRIPT = textwrap.dedent(r"""
     assert win._color_balance_tool.values()["cbr_saturation_global"] == 0.6
     graded = s.image_rgb.copy()
     # darktable's presets are in the module's menu list and apply as one step
-    assert "basic colorfulness | standard" in c.module_darktable_presets("colorbalancergb") and len(c.module_darktable_presets("diffuse")) == 21
+    assert "basic colorfulness | standard" in c.module_darktable_presets("colorbalancergb") and len(c.module_darktable_presets("diffuse")) == 15
     assert c.apply_darktable_module_preset("colorbalancergb", "basic colorfulness | legacy"); pump(4)
     assert s.cbr_formula == 0.0 and s.cbr_saturation_global == 0.0 and s.cbr_chroma_global == 0.2 and not np.array_equal(s.image_rgb, graded), "the preset sets what it names and the module's defaults for the rest"
     c.undo(); pump(3)

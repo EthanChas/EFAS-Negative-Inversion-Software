@@ -28,7 +28,7 @@ from ..features.colormix.logic import KEYS as COLOR_KEYS
 from ..features.colormix.logic import apply_color
 from ..features.colormix.logic import is_neutral as color_is_neutral
 from ..features.lablook.logic import apply_lab_tone
-from ..features.negative import printengine
+from ..features.negative import negpy056, printengine
 from ..features.negative.metering import MAX_BUFFER, Metering
 from ..features.lookpresets.modules import off_overrides
 from ..features.aidust import logic as aidust
@@ -583,6 +583,19 @@ def print_settings(m: Metering) -> "printengine.Settings":
                                 transfer=transfer)
 
 
+def density_settings(m: Metering) -> "printengine.Settings":
+    """The settings the scan is turned into a density image with: the Print Engine's, except that NegPy 0.56 (old) takes out no dye crosstalk (NegPy 0.56 has none by default)."""
+    s = print_settings(m)
+    return dataclasses.replace(s, unmix_strength=0.0) if m.engine == "negpy056" else s
+
+
+def negpy056_settings(m: Metering, black_and_white: bool) -> "negpy056.Settings":
+    """NegPy 0.56's print settings for a photo's metering: Grade 0 is ISO R 115 (about grade 2 paper), each +0.1 is 7 points harder; Print density 0 is NegPy's 1.0; Color cast 1 is NegPy's
+    default Cast Removal of 0.5."""
+    return negpy056.Settings(grade=min(max(115.0 - 70.0 * m.grade, negpy056.ISO_R_MIN), negpy056.ISO_R_MAX), density=1.0 + m.density, cast_removal=0.5 * min(max(m.cast_removal, 0.0), 1.0),
+                             toe=m.paper_toe, shoulder=m.paper_shoulder, black_and_white=black_and_white)
+
+
 def _source_is_raw(s) -> bool:
     """Whether the edit state `s` is for a RAW file (its scan was decoded by EFAS): said outright (`source_raw`, for a saved state with no path) or by the file's extension."""
     flag = getattr(s, "source_raw", None)
@@ -742,6 +755,10 @@ class Renderer:
                 sampled = None if base is None else printengine.base_density(base, settings, 255.0)
                 block = analysis_region(pixels, rect, params.metering.buffer)
                 self._invert_lut = printengine.build_lut(block, settings, sampled)
+            elif params.metering.engine == "negpy056":      # (a sampled film base is not used: NegPy 0.56 reads its bounds off the picture)
+                grid = negpy056.grid_from_codes(pixels, rect, params.metering.buffer, printengine.DENSITY_SCALE)
+                plan = negpy056.plan_from_grid(grid, negpy056_settings(params.metering, params.film_type == "bw"))
+                self._invert_lut = negpy056.build_lut(plan, printengine.DENSITY_SCALE)
             else:
                 self._invert_lut = compute_invert_lut(pixels, rect, base, params.metering)
             self._invert_key = key
@@ -1002,7 +1019,7 @@ class Renderer:
         with self.lock:
             scale = source.shape[1] / base_width
             source16 = None
-            camera_matrix = camera.matrix_of(source)  # a RAW opened in the camera's primaries: its colour matrix goes on after the inversion
+            camera_matrix = None if params.metering.engine == "negpy056" else camera.matrix_of(source)  # a RAW opened in the camera's primaries: its colour matrix goes on after the inversion (NegPy 0.56 (old) never applies it: its picture is in the sensor's own primaries)
             if params.lens:   # the lens corrections come first (colour fringes, then vignetting unless a flat field has it): the rest works on the corrected picture
                 source = self._lens_corrected(source, token, params.lens, flatfield is not None)
                 token = (token, params.lens, flatfield is not None)
@@ -1050,9 +1067,9 @@ class Renderer:
                 geometry(flip_vertical)
             film_frame = self._film_frame(pixels, pixels16, params, token) if want_stats else None      # (for the histogram: the clear film border is no part of the picture)
             pixels, pixels16 = self._fix_edges(pixels, pixels16, params, edge_values, token, retouched, scale)   # the border's light, its holder and holes: repaired before the conversion reads the picture
-            if params.negative_inverted and params.metering.engine == "print":
+            if params.negative_inverted and params.metering.engine in ("print", "negpy056"):
                 deep = deep and pixels16 is not None   # an 8-bit source has no more levels to keep, whatever depth the density image is held at
-                pixels16 = self._density_image(pixels16 if pixels16 is not None else pixels, print_settings(params.metering))
+                pixels16 = self._density_image(pixels16 if pixels16 is not None else pixels, density_settings(params.metering))
             frame = pixels16 if pixels16 is not None else pixels
             rect = _scale_rect(params.crop_rect, scale, frame.shape[1], frame.shape[0])
             blender = MaskBlender(params, source.shape[:2], lambda m: self._geometry(m, params, nearest=False), rect, scale)   # each module's Mask box (see features/masks)

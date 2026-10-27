@@ -37,7 +37,7 @@ def card(monkeypatch):
 def test_the_card_gives_the_processors_picture_for_darktables_presets(card):
     img = _picture()
     before = G.STATS["runs"]
-    for name in ("sharpness | normal", "surface blur", "lens deblur | soft", "artistic effects | bloom", "denoise | fine"):
+    for name in ("sharpness | normal", "surface blur", "lens deblur | soft", "dehaze | default", "local contrast | fine"):
         on_card = D.apply_diffuse(img, D.PRESETS[name])
         assert G.STATS["runs"] > before, f"{name} ran on the card"
         before = G.STATS["runs"]
