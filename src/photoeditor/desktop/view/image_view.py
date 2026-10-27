@@ -103,6 +103,8 @@ class _ImageLabel(QLabel):
         self._range_buf: np.ndarray | None = None
         self._range_grid = QBrush(_grid_pixmap())
         self._peak: QImage | None = None
+        self._zone: QImage | None = None      # the zone map: an opaque false-colour picture drawn over the image
+        self._zone_buf: np.ndarray | None = None
         self._clone_source: tuple[float, float] | None = None
         self._clone_offset: tuple[float, float] | None = None
         self._peak_buf: np.ndarray | None = None
@@ -534,6 +536,16 @@ class _ImageLabel(QLabel):
         p.drawImage(0, 0, lattice)
         p.end()
         painter.drawImage(region.topLeft(), img)
+
+    def set_zone_overlay(self, rgba: np.ndarray | None) -> None:
+        """The zone map: an (h, w, 4) opaque RGBA false-colour picture of the brightness, stretched over the image."""
+        if rgba is None:
+            self._zone = self._zone_buf = None
+        else:
+            self._zone_buf = np.ascontiguousarray(rgba)
+            h, w = self._zone_buf.shape[:2]
+            self._zone = QImage(self._zone_buf.data, w, h, w * 4, QImage.Format.Format_RGBA8888)
+        self.update()
 
     def set_peaking_overlay(self, rgba: np.ndarray | None) -> None:
         """Focus peaking marks: an (h, w, 4) RGBA (blue, green, yellow by how sharp), stretched over the image."""
@@ -1188,6 +1200,10 @@ class _ImageLabel(QLabel):
             painter = QPainter(self)
             self._paint_range(painter, event.rect().intersected(self.rect()))
             painter.end()
+        if self._zone is not None and not self._crop_mode:
+            painter = QPainter(self)
+            painter.drawImage(QRectF(self.rect()), self._zone)
+            painter.end()
         if self._peak is not None and not self._crop_mode:
             painter = QPainter(self)
             painter.drawImage(QRectF(self.rect()), self._peak)
@@ -1397,6 +1413,9 @@ class ImageView(QWidget):
 
     def set_peaking_overlay(self, rgba: np.ndarray | None) -> None:
         self._label.set_peaking_overlay(rgba)
+
+    def set_zone_overlay(self, rgba: np.ndarray | None) -> None:
+        self._label.set_zone_overlay(rgba)
 
     def set_range_overlay(self, rgba: np.ndarray | None) -> None:
         self._label.set_range_overlay(rgba)

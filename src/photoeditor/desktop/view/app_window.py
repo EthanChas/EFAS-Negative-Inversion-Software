@@ -142,7 +142,9 @@ from .removal_dialogs import RemovedPhotosDialog, confirm_delete_from_disk
 from . import module_style
 from .bug_report_dialog import BugReportDialog
 from .bevel_widgets import CaptionButton
-from .segmented import add_steppers_in
+from ...features.scopes import logic as scope_logic
+from .scope_view import ScopeView
+from .segmented import SegmentedControl, add_steppers_in
 from .slider_row import SliderRow
 from .find_dialog import FindDialog
 from ...features.find import logic as find_logic
@@ -1122,6 +1124,14 @@ class AppWindow(QMainWindow):
         self._image_view.peaking_slider.level_changed.connect(self._on_peaking_level)
         bottom_row.addWidget(self._peaking_btn, 0)
 
+        self._zones_btn = QPushButton("Zones")
+        self._zones_btn.setCheckable(True)
+        self._zones_btn.setToolTip("Zone map: colour the picture by brightness in eleven zones (0 black to X white; V is the middle grey) to see at a glance what is crushed, what is a middle tone and "
+                                   "what is blown. It follows your edits; hover for each zone's share of the picture.")
+        self._zones_tip = self._zones_btn.toolTip()
+        self._zones_btn.toggled.connect(self._on_zones_toggled)
+        bottom_row.addWidget(self._zones_btn, 0)
+
         self._hq_btn = QPushButton("HQ")
         self._hq_btn.setCheckable(True)
         self._hq_btn.setToolTip(
@@ -1256,7 +1266,18 @@ class AppWindow(QMainWindow):
         self._histogram_panel.range_selected.connect(self._on_range_selected)
         self._histogram_panel.range_cleared.connect(self._on_range_cleared)
         self._histogram_panel.clip_toggled.connect(self._on_histogram_clip_toggled)
+        self._graph_choice = SegmentedControl()      # the picture's tones read as a histogram, a waveform, an RGB parade or a vectorscope
+        for label, key, tip in (("Histogram", "histogram", "How many pixels have each brightness"), ("Waveform", "waveform", "The picture laid out as it is across: each column of the graph holds the brightnesses of that column of the picture"),
+                                ("Parade", "parade", "The red, green and blue waveforms side by side: a colour cast is one channel sitting above or below the others"),
+                                ("Vector", "vector", "Every pixel plotted by hue (the angle) and saturation (the distance from the middle); the dashed line is where skin tones fall")):
+            self._graph_choice.addItem(label, key, None, tip)
+        self._graph_choice.currentIndexChanged.connect(self._on_graph_choice)
+        body.addWidget(self._graph_choice)
         body.addWidget(self._histogram_panel)
+        self._scope_view = ScopeView()
+        self._scope_view.setFixedHeight(190)
+        self._scope_view.hide()
+        body.addWidget(self._scope_view)
 
         self._graph_reading_label = QLabel("Hover the graph for a reading.")
         self._graph_reading_label.setProperty("role", "hint")
@@ -3585,6 +3606,8 @@ class AppWindow(QMainWindow):
         self._histogram_panel.clear_selection()
         self._image_view.set_range_overlay(None)
         self._histogram_panel.set_data(state.histogram, state.luminance_histogram)
+        self._update_scope()
+        self._update_zones()
         self._stats_panel.set_stats(state.channel_stats, state.exposure_label, state.luminance["avg"], state.readout)
         self._refresh_scan_grading()
         self._coord_label.setText("Move the mouse over the image to inspect a pixel.")
@@ -3792,6 +3815,36 @@ class AppWindow(QMainWindow):
             if self._preview_allowed() or self.controller.state.image_rgb is not None:
                 self._image_view.update_pixels(self.controller.state.image_rgb)
 
+    def _on_zones_toggled(self, on: bool) -> None:
+        if not on:
+            self._image_view.set_zone_overlay(None)
+            self._zones_btn.setToolTip(self._zones_tip)
+        self._update_zones()
+
+    def _update_zones(self) -> None:
+        """The zone map of the picture on the screen (when it is on), and each zone's share in the button's tip."""
+        pixels = self.controller.state.image_rgb
+        if not self._zones_btn.isChecked() or pixels is None:
+            return
+        self._image_view.set_zone_overlay(scope_logic.zone_overlay(pixels))
+        shares = scope_logic.zone_shares(pixels)
+        self._zones_btn.setToolTip(self._zones_tip + "\n\n" + "   ".join(f"{name}: {100 * share:.0f}%" for name, share in zip(scope_logic.ZONE_NAMES, shares)))
+
+    def _on_graph_choice(self, _index: int) -> None:
+        """Histogram, Waveform, Parade or Vector: the graph above the readings."""
+        key = self._graph_choice.currentData()
+        self._histogram_panel.setVisible(key == "histogram")
+        self._scope_view.setVisible(key != "histogram")
+        if key != "histogram":
+            self._scope_view.set_mode(key)
+        self._update_scope()
+
+    def _update_scope(self) -> None:
+        """Redraw the scope (when one is showing) from the picture on the screen."""
+        if self._scope_view.isHidden():
+            return
+        self._scope_view.set_picture(self.controller.state.image_rgb)
+
     def _on_image_adjusted(self) -> None:
         self._preset_previewing = False
         state = self.controller.state
@@ -3805,6 +3858,8 @@ class AppWindow(QMainWindow):
         self._refresh_export_hints()
         self._refresh_size_label()
         self._histogram_panel.set_data(state.histogram, state.luminance_histogram)
+        self._update_scope()
+        self._update_zones()
         self._stats_panel.set_stats(state.channel_stats, state.exposure_label, state.luminance["avg"], state.readout)
         self._refresh_scan_grading()
         self._filmstrip.update_active_thumbnail(state.image_rgb)
