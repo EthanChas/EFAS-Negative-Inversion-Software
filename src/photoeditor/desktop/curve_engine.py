@@ -76,10 +76,14 @@ def setup_for_photo(conn, path: str, data_dir: str) -> tuple[CurveSetup, dict] |
 
 
 def preview_positive(scan: LinearScan, setup: CurveSetup, white=None):
-    """Run the inversion on a (preview-size) linear scan. Returns the InversionResult and the display-encoded 16-bit positive."""
+    """Run the inversion on a (preview-size) linear scan, with the print stage's black point. `white` is what is stored with a photo (the white reference and the black point,
+    six numbers); nothing, or a white reference alone (kept by an earlier version), finds both from the picture. Returns the InversionResult and the display-encoded 16-bit positive."""
+    given, black = inversion.split_reference(white)
+    if white is None or len(white) < 6:
+        given, black = None, inversion.AUTO
     res = inversion.invert_with_curves(
-        scan.rgb, setup.v_base, setup.models, floor=scan.info.floor(), flare=setup.flare, white=white,
-        reference_region=margin_region(scan.rgb.shape),
+        scan.rgb, setup.v_base, setup.models, floor=scan.info.floor(), flare=setup.flare, white=given,
+        reference_region=margin_region(scan.rgb.shape), black=black,
     )
     return res, inversion.to_uint16(res.positive)
 

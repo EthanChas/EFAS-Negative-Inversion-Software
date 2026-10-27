@@ -291,8 +291,8 @@ def _curve_source(path: str, conn, full, params, flatfield):
     if found is None:
         return full, params, flatfield
     setup, row = found
-    if not row["white"]:
-        raise curve_engine.CurveEngineUnavailable("The curve-informed inversion was saved without a white reference. Open the photo once, then export again.")
+    if len(row["white"]) < 6:
+        raise curve_engine.CurveEngineUnavailable("The curve-informed inversion was saved without its white reference and print black point (an earlier version saved the white alone). Open the photo once, then export again.")
     del full
     return curve_engine.full_positive(path, setup, row["white"]), dataclasses.replace(params, negative_inverted=False), None
 

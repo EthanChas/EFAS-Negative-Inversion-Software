@@ -1,10 +1,12 @@
 """Curve-informed negative inversion and the numbers for comparing it with the existing inversion (docs/sensitometry-tier2-design.md, section 9).
 
-Four steps, each of a different kind, and never mixed:
+Five steps, each of a different kind, and never mixed:
   1. measured     density above the film base, from the linear scan;
   2. estimated    the exposure that density implies, through the profile's measured curve (out-of-range densities are clamped, never extrapolated);
   3. reconstructed that exposure divided by a white reference (an assumption: the scene and its light are unknown);
-  4. rendered     the display encoding, applied last.
+  4. printed      optional: a black point (the print stage). A scene seldom spans more than a stop or two of exposure, so the reconstructed picture on its own looks grey: a
+                  print puts its blackest tone at paper black. The black point is, per channel, a low percentile of the picture, and it is stored with the white reference;
+  5. rendered     the display encoding, applied last.
 
 Numpy only, no Qt/UI imports.
 """
@@ -20,6 +22,9 @@ CHUNK = 600_000
 FLAT_RATIO = 0.15
 ASSUMED_SIGMA_D = 0.01
 WHITE_PERCENTILE = 99.5
+BLACK_PERCENTILE = 0.5     # the print stage's black point: this percentile of each channel's reconstructed exposure
+MAX_BLACK = 0.9            # never more than this share of white (a picture with no darks in it is not stretched to nothing)
+AUTO = "auto"              # `black` asks for the print stage's black point to be found from the picture
 OETF_LINEAR_BELOW = 0.0031308
 
 
@@ -55,6 +60,30 @@ class InversionResult:
     covered: float
     poorly_determined: tuple[float, float, float]
     notes: tuple[str, ...]
+    black: tuple[float, float, float] = (0.0, 0.0, 0.0)     # the print stage's black point (0: none)
+
+    @property
+    def saved_white(self) -> tuple[float, ...]:
+        """What is stored with a photo so the export matches the screen: the white reference and the black point (six numbers)."""
+        return tuple(self.white) + tuple(self.black)
+
+
+def split_reference(white) -> tuple[tuple | None, tuple[float, float, float]]:
+    """A stored reference as (white, black): three numbers are a white reference alone (no print stage), six are the white and the black point; None for nothing stored."""
+    if white is None or len(white) == 0:
+        return None, (0.0, 0.0, 0.0)
+    values = [float(x) for x in white]
+    if len(values) >= 6:
+        return tuple(values[:3]), tuple(min(MAX_BLACK, max(0.0, b)) for b in values[3:6])
+    return tuple(values[:3]), (0.0, 0.0, 0.0)
+
+
+def print_stage(positive: np.ndarray, black) -> np.ndarray:
+    """The reconstructed picture with its black point put at zero and white left at one."""
+    b = np.asarray(black, dtype=np.float32)
+    if not b.any():
+        return positive
+    return np.clip((positive - b) / (1.0 - b), 0.0, None).astype(np.float32)
 
 
 def _density(v: np.ndarray, v_base, floor, flare):
@@ -71,8 +100,10 @@ def _density(v: np.ndarray, v_base, floor, flare):
 
 
 def invert_with_curves(v: np.ndarray, v_base, models: dict, floor=(1e-6, 1e-6, 1e-6), flare=None, white=None,
-                       white_percentile: float = WHITE_PERCENTILE, reference_region=None) -> InversionResult:
+                       white_percentile: float = WHITE_PERCENTILE, reference_region=None, black=(0.0, 0.0, 0.0)) -> InversionResult:
     """Invert the linear scan `v` (HxWx3) with each channel's measured curve.
+
+    `black` is the print stage's black point per channel (zero: no print stage), or AUTO to take the BLACK_PERCENTILE of the picture (of `reference_region`, when given).
 
     `white` is the per-channel relative exposure that should come out as 1.0: None takes the `white_percentile` of the picture (or of
     `reference_region`, a (y1, y2, x1, x2) slice, when given). That choice is an assumption and is reported in `notes`. The coverage and
@@ -115,6 +146,16 @@ def invert_with_curves(v: np.ndarray, v_base, models: dict, floor=(1e-6, 1e-6, 1
     if np.any(white_ref <= 0) or not np.isfinite(white_ref).all():
         raise InversionError("the white reference is not usable")
     positive = (expo / white_ref).astype(np.float32).reshape(h, w, 3)
+    if isinstance(black, str) and black == AUTO:
+        pref = positive
+        if reference_region is not None:
+            y1, y2, x1, x2 = reference_region
+            pref = positive[y1:y2, x1:x2]
+        black = tuple(min(MAX_BLACK, max(0.0, float(b))) for b in np.percentile(pref.reshape(-1, 3), BLACK_PERCENTILE, axis=0))
+        notes.append(f"The print stage puts the {BLACK_PERCENTILE:g}th percentile of each channel at black. A scene seldom spans the film's whole exposure range, so without it "
+                     "the picture looks grey; it is an assumption about the scene, like the white reference.")
+    black = tuple(float(b) for b in black)
+    positive = print_stage(positive, black)
     stat, flatz = status, flat_zone
     if reference_region is not None:
         y1, y2, x1, x2 = reference_region
@@ -130,7 +171,7 @@ def invert_with_curves(v: np.ndarray, v_base, models: dict, floor=(1e-6, 1e-6, 1
     if max(poor) > 0.02:
         notes.append(f"Up to {max(poor) * 100:.0f}% of the picture sits where the curve is nearly flat (the toe or shoulder), so a small density error there means a large "
                      f"exposure error (about {ASSUMED_SIGMA_D / (FLAT_RATIO):.2f} log units at the flattest allowed point for {ASSUMED_SIGMA_D:g} density of uncertainty).")
-    return InversionResult(positive, x.reshape(h, w, 3), dd.reshape(h, w, 3), tuple(float(s) for s in white_ref), below, above, covered, poor, tuple(notes))
+    return InversionResult(positive, x.reshape(h, w, 3), dd.reshape(h, w, 3), tuple(float(s) for s in white_ref), below, above, covered, poor, tuple(notes), black)
 
 
 def invert_to_uint16(v: np.ndarray, v_base, models: dict, floor, white, flare=None) -> np.ndarray:
@@ -139,7 +180,8 @@ def invert_to_uint16(v: np.ndarray, v_base, models: dict, floor, white, flare=No
     v = np.asarray(v)
     if v.ndim != 3 or v.shape[2] != 3:
         raise InversionError("the scan must be an HxWx3 array")
-    white_ref = np.asarray(white, dtype=np.float64)
+    white3, black = split_reference(white)
+    white_ref = np.asarray(white3 if white3 is not None else white, dtype=np.float64)
     if np.any(white_ref <= 0) or not np.isfinite(white_ref).all():
         raise InversionError("the white reference is not usable")
     h, w = v.shape[:2]
@@ -153,7 +195,7 @@ def invert_to_uint16(v: np.ndarray, v_base, models: dict, floor, white, flare=No
             m = models[ch]
             xc, _st = invert_curve(m.curve, d[:, c], m.support[0], m.support[1])
             e[:, c] = np.power(10.0, xc.astype(np.float32).astype(np.float64))
-        out[y:y + rows] = to_uint16((e / white_ref).astype(np.float32)).reshape(-1, w, 3)
+        out[y:y + rows] = to_uint16(print_stage((e / white_ref).astype(np.float32), black)).reshape(-1, w, 3)
     return out
 
 

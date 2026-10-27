@@ -92,7 +92,7 @@ _SCRIPT = textwrap.dedent(r'''
     saved_after = json.dumps(edit_store.load_edit_state(c.database(), first) or {}, sort_keys=True, default=str)
     assert saved_after == saved_before
     row = edit_store.get_inversion(c.database(), first)
-    assert row["engine"] == "curve" and row["profile_id"] == profile.id and len(row["white"]) == 3
+    assert row["engine"] == "curve" and row["profile_id"] == profile.id and len(row["white"]) == 6 and all(0.0 <= b < 1.0 for b in row["white"][3:])
     # export uses the same method and the original size
     conn = edit_store.connect(os.path.join(data, "photo-edits.db"))
     full_curve, _ = render_full_resolution(first, conn)

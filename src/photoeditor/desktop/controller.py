@@ -4927,10 +4927,10 @@ class AppController(QObject):
             self._curve_error = str(exc)
             self.inversion_changed.emit()
             return str(exc)
-        s.curve_positive16, s.curve_result, s.curve_white = positive, res, res.white
+        s.curve_positive16, s.curve_result, s.curve_white = positive, res, res.saved_white
         s.inversion_engine, s.inversion_profile = "curve", profile_id
         self._curve_error = ""
-        edit_store.set_inversion(self._db, path, "curve", profile_id, setup_id, res.white)
+        edit_store.set_inversion(self._db, path, "curve", profile_id, setup_id, res.saved_white)
         self._curve_full = None
         self._renderer.reset()
         self._recompute_image()

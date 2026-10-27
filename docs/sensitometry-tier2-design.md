@@ -184,7 +184,8 @@ Chain, each step labelled by what it is:
 1. **Measured**: `dD_c = log10(v_base,c / v_c)` per channel (flare-corrected if a setup profile with `phi` and a clear sample are in use).
 2. **Estimated exposure**: `x_c = f_c^-1(dD_c)`, the inverse of the profile's monotone curve for that channel (PCHIP or a supported fit). Density below the curve's lowest measured value or above its highest is **out of support**: it is clamped to the supported end (never extrapolated silently) and counted.
 3. **Reconstructed positive**: `E_c = 10^(x_c)`, divided by a white reference per channel (the 99.5th percentile of `E_c` over the picture region by default, or a user-picked neutral). The white reference is an *assumption*, because the original scene and light are unknown, and it is the part that fixes colour balance.
-4. **Aesthetic rendering**: the sRGB OETF for display. [D]
+4. **Print stage** (added later, optional in the code, on in the editor): `P_c = clip((E_c / W_c - B_c) / (1 - B_c), 0, ...)` with the black point `B_c` the 0.5th percentile of the reconstructed picture per channel (at most 0.9). A scene seldom spans the film's whole exposure range, so the reconstruction on its own is grey; a print puts the blackest tone at paper black. `B_c` is an assumption like `W_c` and is stored with it (six numbers), so export matches the preview. A white alone (an earlier version's) is read as no print stage.
+5. **Aesthetic rendering**: the sRGB OETF for display. [D]
 
 What this does not recover: layer spectral sensitivities, dye cross-talk, processing differences from the profile's, the light source of the original scene. The result is **film-band relative exposure**, not scene colorimetry. Where no usable profile is selected the engine is unavailable and the existing inversion runs, with the reason shown.
 

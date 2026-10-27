@@ -236,3 +236,28 @@ def test_a_curve_from_a_different_family_is_still_recovered():
     healthy = (x_true > -3.0) & (x_true < -0.6)
     err = (res.log_exposure - x_true)[healthy]
     assert np.sqrt(np.mean(err ** 2)) < 0.08 and np.abs(err).max() < 0.3
+
+
+def test_the_print_stage_puts_black_at_zero_and_keeps_white_and_matches_the_export():
+    """A scene that spans only part of the film's exposure range comes out grey; the print stage's black point (a low percentile of each channel) is stored with the white
+    reference, and the export, which is given those six numbers, makes the same picture as the screen."""
+    models = inversion.channel_models(measured_profile())
+    x = scene(lo=-1.4, hi=-0.5)                      # a narrow scene: under one stop of the film's range
+    v = V_BASE * 10.0 ** (-np.stack([true_curves()[c](x[..., i]) for i, c in enumerate("RGB")], axis=-1))
+    plain = inversion.invert_with_curves(v, V_BASE, models, floor=FLOOR)
+    printed = inversion.invert_with_curves(v, V_BASE, models, floor=FLOOR, black=inversion.AUTO)
+    assert plain.black == (0.0, 0.0, 0.0) and all(b > 0.05 for b in printed.black), (plain.black, printed.black)
+    lo = np.percentile(printed.positive.reshape(-1, 3), 0.5, axis=0)
+    assert lo.max() < 0.01, "the darkest tones are at black"
+    assert abs(np.percentile(printed.positive.reshape(-1, 3), 99.5, axis=0) - 1.0).max() < 0.02, "white stays white"
+    assert plain.positive.min() > printed.positive.min() and len(printed.saved_white) == 6 and printed.saved_white[:3] == printed.white
+    ref = inversion.to_uint16(printed.positive)
+    exported = inversion.invert_to_uint16(v, V_BASE, models, FLOOR, printed.saved_white)
+    assert np.array_equal(ref, exported), "the export, given the stored numbers, matches the preview exactly"
+    assert not np.array_equal(inversion.invert_to_uint16(v, V_BASE, models, FLOOR, printed.white), exported), "a white alone (an earlier version's) has no print stage"
+
+
+def test_a_stored_reference_is_read_as_white_alone_or_white_and_black():
+    assert inversion.split_reference(None) == (None, (0.0, 0.0, 0.0)) and inversion.split_reference([]) == (None, (0.0, 0.0, 0.0))
+    assert inversion.split_reference([1.0, 2.0, 3.0]) == ((1.0, 2.0, 3.0), (0.0, 0.0, 0.0))
+    assert inversion.split_reference([1, 2, 3, 0.1, 0.2, 5.0]) == ((1.0, 2.0, 3.0), (0.1, 0.2, inversion.MAX_BLACK)), "a black point is kept below MAX_BLACK"
