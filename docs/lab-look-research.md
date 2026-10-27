@@ -1,6 +1,6 @@
 # What a "lab look" is
 
-Notes behind the **Lab Look** module and the Scanners (EFAS Original) presets: what a minilab's scan adds to a negative, from what labs, photographers and the scanners' makers have published. Most of it is hands-on description, not measurement, and it varies from lab to lab (an operator stands at the machine and nudges frames), so read it as tendencies.
+Notes behind the **Lab Look** module and its Scanner colour (the scanner looks were also presets once; they are only Lab Look's now): what a minilab's scan adds to a negative, from what labs, photographers and the scanners' makers have published. Most of it is hands-on description, not measurement, and it varies from lab to lab (an operator stands at the machine and nudges frames), so read it as tendencies.
 
 ## A lab scan is a finished print, not a measurement
 

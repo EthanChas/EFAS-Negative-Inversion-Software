@@ -1,5 +1,5 @@
 """Turning a scanner-look or film-look preset from another program's published list of presets (JSON files of tone, saturation, fade, glow and colour-balance settings) into
-an EFAS look - the conversion that made the built-in Scanners (EFAS Original) and Film Stocks presets, kept as code so the rule is written down and testable. No Qt imports.
+an EFAS look - the conversion that made the built-in Film Stocks presets (and the scanner looks that were presets once), kept as code so the rule is written down and testable. No Qt imports.
 
 Tone, saturation, fade, glow and the colour balance of the shadows, midtones and highlights carry over (the last three into the Lab Look module, which keeps the three tonal
 ranges apart as the originals do). The colour lookup table a preset names, its tone profile and its toning method have no equivalent in EFAS and are left out. The values are

@@ -1,4 +1,4 @@
-"""Rebuild the built-in Scanners (EFAS Original) and Film Stocks presets from a folder of scanner-look and film-look preset files: python tools/build_presets.py path/to/folder
+"""Rebuild the built-in Film Stocks presets from a folder of scanner-look and film-look preset files: python tools/build_presets.py path/to/folder
 
 Each source file is converted by src/photoeditor/features/lookpresets/lookconvert.py (the rule is in docs/presets.md); the names and descriptions stay as they are in the two JSON
 files in src/photoeditor/assets/presets/, so only the slider values are rewritten."""

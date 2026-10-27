@@ -23,12 +23,9 @@ def test_the_builtin_presets_include_the_lab_scanner_looks():
 
 
 def test_every_builtin_look_uses_only_fields_a_look_can_hold():
-    import json
-
     from photoeditor.features.lookpresets.modules import LOOK_KEYS
 
-    raw = json.loads((builtin.PRESET_DIR / "lab-scanners.json").read_text(encoding="utf-8"))
-    for item in raw["presets"]:
+    for item in (i for i in builtin.load() if i["name"].startswith("Scanners (EFAS Original)/")):     # (the tests' own scanner set: see conftest)
         assert item["description"] and set(item["look"]) <= set(LOOK_KEYS), (item["name"], set(item["look"]) - set(LOOK_KEYS))
 
 

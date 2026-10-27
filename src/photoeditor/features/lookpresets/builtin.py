@@ -1,6 +1,10 @@
 """The presets that come with EFAS: read-only, kept as JSON files in assets/presets, each {"presets": [{"name": "Folder/Name", "description": str, "look": {...}}]}.
-Names are paths (see features/presettree): "Scanners (EFAS Original)/Frontier 100" is Frontier 100 in the folder Scanners (EFAS Original). No Qt imports."""
+Names are paths (see features/presettree): "Film Stocks/Kodak/Portra" is Portra in the folder Kodak in the folder Film Stocks. No Qt imports.
+
+A scanner's colour is not a preset: it is Lab Look's Scanner colour, so a look never brings a second one on top of it. PHOTOEDITOR_EXTRA_PRESETS names one more folder of the same kind of files to read (the tests use it
+for their own sets of presets)."""
 import json
+import os
 from pathlib import Path
 from typing import Any
 
@@ -17,10 +21,13 @@ def load() -> list[dict[str, Any]]:
         return _cache
     out: list[dict[str, Any]] = []
     seen: set[str] = set()
-    try:
-        files = sorted(PRESET_DIR.glob("*.json"), key=lambda p: p.name.casefold())
-    except OSError:
-        files = []
+    folders = [PRESET_DIR] + ([Path(os.environ["PHOTOEDITOR_EXTRA_PRESETS"])] if os.environ.get("PHOTOEDITOR_EXTRA_PRESETS") else [])
+    files = []
+    for folder in folders:
+        try:
+            files += sorted(folder.glob("*.json"), key=lambda p: p.name.casefold())
+        except OSError:
+            continue
     for path in files:
         try:
             raw = json.loads(path.read_text(encoding="utf-8"))

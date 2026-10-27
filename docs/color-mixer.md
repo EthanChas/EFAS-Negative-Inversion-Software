@@ -41,7 +41,7 @@ The ranges are smooth windows on the hue wheel (a raised cosine, 60 degrees eith
 
 **These are estimates.** The directions follow how labs, photographers and the scanners' makers describe each machine (docs/lab-look-research.md): the Frontier cooler and more saturated with golden skin, the Noritsu softer with a tendency toward green in the shadows. Nothing published gives the sizes, so they are kept small (a cast of 0.01 in OKLab is a gentle tint) and open to change as better measurements come in; the Amount slider lets you take as much or as little as you like. They are not a copy of any scanner's or program's colour tables.
 
-The Scanners (EFAS Original) and Film Stocks presets set the scanner colour from the colour table named in the preset they were converted from (Frontier, Crystal and Pakon have stand-ins; Natural is none), so, for example, Kodak Gold and the Frontier look come with the Frontier response.
+The presets that come with EFAS leave the scanner colour at None: it is Lab Look's own setting, chosen by hand, so a preset never stacks a second scanner response on top of it.
 
 ## Color Toning
 
