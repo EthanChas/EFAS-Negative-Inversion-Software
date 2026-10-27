@@ -69,6 +69,10 @@ class ToolRail(QWidget):
         if frame is not None:
             frame.setVisible(visible)
 
+    def tab_visible(self, tab_id: str) -> bool:
+        frame = self._frames.get(tab_id)
+        return frame is not None and not frame.isHidden()
+
     def set_tab_checked(self, tab_id: str, checked: bool) -> None:
         """Sync a tab's checked look to an external toggle without
         re-emitting tab_toggled - setChecked() alone never fires clicked(),

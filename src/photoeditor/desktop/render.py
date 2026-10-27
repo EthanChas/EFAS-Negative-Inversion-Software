@@ -32,7 +32,7 @@ from ..features.negative import printengine
 from ..features.negative.metering import MAX_BUFFER, Metering
 from ..features.lookpresets.modules import off_overrides
 from ..features.aidust import logic as aidust
-from ..features.watermark.marks import Marks, apply_marks
+from ..features.watermark.marks import MARKS_MODULES, Marks, apply_marks
 from ..features.watermark.logic import apply_watermark, is_active as watermark_active
 from ..features.exposure.logic import apply_exposure
 from ..features.finishing.logic import apply_border, apply_vignette, is_active as finishing_active
@@ -310,8 +310,11 @@ class EditParams:
         params = cls._from_state(s)
         off = tuple(getattr(s, "modules_off", None) or ())
         if off:
-            extra = {"marks": Marks()} if "watermark" in off else {}
-            params = dataclasses.replace(params, **off_overrides(off), **extra)
+            marks = params.marks
+            for module in MARKS_MODULES:
+                if module in off:
+                    marks = marks.cleared(module)       # the Watermark module's marker, or the Canister Watermark module's text, camera and lens text and dragged canister
+            params = dataclasses.replace(params, **off_overrides(off), marks=marks)
         return params
 
     @classmethod

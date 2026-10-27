@@ -2,8 +2,9 @@
 
 import dataclasses
 
+from . import dtmark
 from .logic import SIZES, canister_parts, long_side_fraction
-from .marks import CANISTER_SIZE_RANGE, CUSTOM, INFO_SIZE_RANGE, LOGO_SIZE_RANGE, TEXT_SIZE_RANGE, Marks, mark_parts
+from .marks import CANISTER_SIZE_RANGE, CUSTOM, INFO_SIZE_RANGE, TEXT_SIZE_RANGE, Marks, mark_parts
 
 EDITABLE = ("canister", "logo", "text", "info")
 LABELS = {"canister": "Canister", "logo": "Logo", "text": "Text", "info": "Camera and lens"}
@@ -40,14 +41,16 @@ def edit(marks: Marks, name: str, cx: float, cy: float, ratio: float = 1.0, cani
     if name == "text":
         return dataclasses.replace(marks, text_position=CUSTOM, text_x=cx, text_y=cy, text_size=_clamp(marks.text_size * ratio, *TEXT_SIZE_RANGE))
     if name == "logo":
-        size = _clamp(marks.logo_size * ratio, *LOGO_SIZE_RANGE)
-        if shape is not None:   # the marker stays where its Position menu puts it and is moved from there: the X and Y sliders show how far
-            home = next((p for p in mark_parts(shape, dataclasses.replace(marks, logo_size=size, logo_dx=0.0, logo_dy=0.0), variables=variables) if p.name == "logo"), None)
+        scale = _clamp(marks.logo_scale * ratio, *dtmark.SCALE_RANGE)
+        if shape is not None:   # the marker stays aligned where Alignment puts it and is moved from there: the X and Y offsets show how far, as shares of the base width and height
+            home = next((p for p in mark_parts(shape, dataclasses.replace(marks, logo_scale=scale, logo_xoff=0.0, logo_yoff=0.0), variables=variables) if p.name == "logo"), None)
             if home is not None:
                 ih, iw = shape[:2]
                 x, y, w, h = home.box
-                return dataclasses.replace(marks, logo_size=size, logo_dx=_clamp(cx - (x + w / 2) / iw, -1.0, 1.0), logo_dy=_clamp(cy - (y + h / 2) / ih, -1.0, 1.0))
-        return dataclasses.replace(marks, logo_position=CUSTOM, logo_x=cx, logo_y=cy, logo_size=size, logo_dx=0.0, logo_dy=0.0)
+                wbase, hbase = dtmark.offset_bases(marks.logo_base, iw, ih)
+                return dataclasses.replace(marks, logo_scale=scale, logo_xoff=round(_clamp((cx * iw - (x + w / 2)) / wbase, *dtmark.OFFSET_RANGE), 4),
+                                           logo_yoff=round(_clamp((cy * ih - (y + h / 2)) / hbase, *dtmark.OFFSET_RANGE), 4))
+        return dataclasses.replace(marks, logo_scale=scale)
     if name == "info":
         return dataclasses.replace(marks, info_position=CUSTOM, info_x=cx, info_y=cy, info_size=_clamp(marks.info_size * ratio, *INFO_SIZE_RANGE))
     if name == "canister":

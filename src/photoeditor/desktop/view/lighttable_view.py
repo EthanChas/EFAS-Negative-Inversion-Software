@@ -280,6 +280,7 @@ class LighttableView(QWidget):
     export_requested = pyqtSignal(list)
     copy_settings_requested = pyqtSignal(str)
     paste_settings_requested = pyqtSignal(list)
+    set_settings_requested = pyqtSignal(list)
     refresh_requested = pyqtSignal()
     reveal_requested = pyqtSignal(str)
     remove_requested = pyqtSignal(list)
@@ -686,6 +687,10 @@ class LighttableView(QWidget):
         self._paste_btn = QPushButton("Paste Settings to Selected")
         self._paste_btn.clicked.connect(lambda: self.paste_settings_requested.emit(self.selected_paths()))
         body.addWidget(self._paste_btn)
+        self._set_btn = QPushButton("Set Settings for Selected...")
+        self._set_btn.setToolTip("Choose settings, such as the film type, and set them on every selected photo at once (for photos the auto-detection gets wrong)")
+        self._set_btn.clicked.connect(lambda: self.set_settings_requested.emit(self.selected_paths()))
+        body.addWidget(self._set_btn)
         self._reveal_btn = QPushButton("Show in Folder")
         self._reveal_btn.clicked.connect(self._emit_reveal)
         body.addWidget(self._reveal_btn)
@@ -1097,6 +1102,7 @@ class LighttableView(QWidget):
         self._copy_btn.setEnabled(n == 1)
         self._refresh_retake_action()
         self._paste_btn.setEnabled(n >= 1)
+        self._set_btn.setEnabled(n >= 1)
         row = self._current_row() if n <= 1 else None
         if n > 1:
             self._info.setText(f"{n} photos selected.\n\nRate, flag, export or paste settings on all of them with the buttons below.")

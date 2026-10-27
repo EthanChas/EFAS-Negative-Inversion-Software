@@ -207,6 +207,17 @@ class MaskManagerPanel(CollapsiblePanel):
                 return
             stack.extend(item.child(i) for i in range(item.childCount()))
 
+    def all_ids(self) -> list[int]:
+        """Every shape there is, groups' members included, each once."""
+        ids: list[int] = []
+        for f in (*self._ms.shapes(), *self._ms.groups()):
+            ids += [i for i in self._ms.flatten(f.id) if i not in ids]
+        return ids
+
+    def show_all(self) -> None:
+        """Show every mask on the picture (the panel was opened): the tree's own picking is left as it is."""
+        self.picked.emit(self.all_ids(), 0)
+
     def drawing(self, kind: str | None) -> None:
         """Show which draw button is armed (the picture is waiting for a click)."""
         for k, b in self._draw_buttons.items():
@@ -243,14 +254,14 @@ class MaskManagerPanel(CollapsiblePanel):
                 leaf.setIcon(0, QIcon(panel_icons.pixmap(_FOLDER_ICONS[key], 16, THEME.text_primary)))
             sub.setText(0, f"{_FOLDER_TITLES[key]} ({len(self._detections[key])})")
 
-        groups = self._folder(None, "Groups", "mask-group")
+        groups = self._folder(None, "Groups", "mask-group", {"kind": "folder", "view": "groups"})     # a click on a folder shows all it holds
         for g in self._ms.groups():
             gi = self._form_item(groups, g, {"kind": "form", "id": g.id, "group": 0})
             for p in g.points:
                 child = self._ms.get(p["formid"])
                 if child is not None:
                     self._form_item(gi, child, {"kind": "member", "id": child.id, "group": g.id}, p)
-        shapes = self._folder(None, "Shapes")
+        shapes = self._folder(None, "Shapes", None, {"kind": "folder", "view": "shapes"})
         for f in self._ms.shapes():
             self._form_item(shapes, f, {"kind": "form", "id": f.id, "group": 0})
         if not self._ms.groups():
@@ -331,7 +342,10 @@ class MaskManagerPanel(CollapsiblePanel):
             return
         self.detection_picked.emit("", None)
         ids, parent = [], 0
-        if len(forms) == 1 and forms[0]["kind"] == "form" and (self._ms.get(forms[0]["id"]) or M.Form).type == M.GROUP:
+        if not forms and folder in ("shapes", "groups"):      # the Shapes or Groups folder was clicked: all of what it holds is shown on the picture
+            for f in (self._ms.shapes() if folder == "shapes" else self._ms.groups()):
+                ids += [i for i in self._ms.flatten(f.id) if i not in ids]
+        elif len(forms) == 1 and forms[0]["kind"] == "form" and (self._ms.get(forms[0]["id"]) or M.Form).type == M.GROUP:
             ids, parent = self._ms.flatten(forms[0]["id"]), forms[0]["id"]
         else:
             for d in forms:

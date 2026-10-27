@@ -15,7 +15,7 @@ ORIGINS: dict[str, str] = {
     "Negative": BOTH, "Sharpening": BOTH, "Chroma Denoise": NEGPY, "Dust & Scratches": NEGPY, "Local Contrast": NEGPY, "Flat Field": NEGPY, "Print Response": NEGPY, "Color Toning": NEGPY,
     # made for EFAS
     "Exposure": EFAS, "Tone Curve": EFAS, "Color": EFAS, "White Balance": EFAS, "Contrast": EFAS, "Shadows & Highlights": EFAS, "Color Mixer": EFAS, "Halation": EFAS,
-    "Grain Sharpening": EFAS, "Edge Bleed": EFAS, "Edge Color": EFAS, "Lab Look": EFAS, "AI Dust Detection": EFAS, "Error marking": EFAS, "Crop & Rotate": EFAS, "Finishing": EFAS,
+    "Grain Sharpening": EFAS, "Canister Watermark": EFAS, "Edge Bleed": EFAS, "Edge Color": EFAS, "Lab Look": EFAS, "AI Dust Detection": EFAS, "Error marking": EFAS, "Crop & Rotate": EFAS, "Finishing": EFAS,
 }
 
 _WORDS = {DARKTABLE: "Ported from darktable", NEGPY: "Ported from NegPy", EFAS: "Made for EFAS"}

@@ -82,7 +82,7 @@ _SCRIPT = textwrap.dedent(r"""
     bare = Filmstrip()
     menu = bare.build_selection_menu(chosen)
     texts = [a.text() for a in menu.actions() if a.text()]
-    assert texts == ["Rate 3 photos", "Flag 3 photos", "Paste Settings to 3 photos", "Remove 3 photos from Workbench", "Move 3 photos to Folder...", "Delete 3 photos from Disk..."], texts
+    assert texts == ["Rate 3 photos", "Flag 3 photos", "Paste Settings to 3 photos", "Set Settings for 3 photos...", "Remove 3 photos from Workbench", "Move 3 photos to Folder...", "Delete 3 photos from Disk..."], texts
     assert not next(a for a in menu.actions() if a.text().startswith("Paste")).isEnabled(), "nothing has been copied"
     got = []
     bare.remove_requested.connect(got.append); bare.move_requested.connect(got.append); bare.delete_requested.connect(got.append)

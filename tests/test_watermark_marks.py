@@ -30,9 +30,9 @@ def test_marks_round_trip_and_validation():
     assert Marks.from_dict({"text_color": "#AABBCC"}).text_color == "#aabbcc"
     assert Marks().to_dict() == {}
     bad = Marks.from_dict({"text_size": "x", "text_color": "red", "text_position": "nowhere", "text_rotation": 999, "canister_x": 0.5, "canister_y": -3, "text_bold": 1,
-                           "logo_position": "custom", "text_align": "diagonal", "canister_size": 0.01, "mystery": 1})
+                           "info_position": "custom", "text_align": "diagonal", "canister_size": 0.01, "mystery": 1})
     assert bad.text_size == Marks().text_size and bad.text_color == "white" and bad.text_position == Marks().text_position
-    assert bad.text_rotation == 180.0 and bad.canister_x == -1.0 and bad.text_bold is True and bad.logo_position == CUSTOM
+    assert bad.text_rotation == 180.0 and bad.canister_x == -1.0 and bad.text_bold is True and bad.info_position == CUSTOM
     assert bad.text_align == "auto" and bad.canister_size == 0.05
     assert Marks.from_dict(None) == Marks() and Marks.from_dict("junk") == Marks()
 
@@ -166,7 +166,7 @@ def test_png_logo(tmp_path):
     px[:, :, 0] = 255
     px[:, :, 3] = 255
     Image.fromarray(px, "RGBA").save(logo)
-    m = Marks(logo=str(logo), logo_size=0.3, logo_opacity=1.0, logo_position="center")
+    m = Marks(logo=str(logo), logo_scale=30, logo_base="smaller", logo_opacity=1.0, logo_align=4)
     part = mark_parts(GREY.shape, m)[0]
     assert part.name == "logo" and part.box[2] == 2 * part.box[3] and part.box[2] == round(400 * 0.3)
     out = apply_marks(GREY, m)
@@ -177,7 +177,6 @@ def test_png_logo(tmp_path):
     assert logoimage.check(str(tmp_path / "x.txt")) is not None
     (tmp_path / "bad.png").write_bytes(b"not a picture")
     assert logoimage.check(str(tmp_path / "bad.png")) is not None
-    assert not Marks(logo=str(tmp_path / "bad.png")).has_logo() or True
     assert apply_marks(GREY, Marks(logo=str(tmp_path / "bad.png"))) is not None
 
 
@@ -192,21 +191,21 @@ _SVG_SCRIPT = textwrap.dedent(r'''
     svg = os.path.join(d, "mark.svg")
     open(svg, "w").write('<svg xmlns="http://www.w3.org/2000/svg" width="200" height="100" viewBox="0 0 200 100"><rect width="200" height="100" fill="#00ff00"/></svg>')
     grey = np.full((400, 600, 3), 120, np.uint8)
-    assert logoimage.check(svg) is None and abs(logoimage.svg_aspect(svg) - 2.0) < 1e-6
-    m = Marks(logo=svg, logo_size=0.5, logo_opacity=1.0, logo_position="center")
+    assert logoimage.check(svg) is None
+    m = Marks(logo=svg, logo_scale=50, logo_base="smaller", logo_opacity=1.0, logo_align=4)
     part = mark_parts(grey.shape, m)[0]
     x, y, w, h = part.box
     assert w == 200 and h == 100, part.box
     out = apply_marks(grey, m)
     assert tuple(out[y + 50, x + 100]) == (0, 255, 0), out[y + 50, x + 100]
-    half = apply_marks(grey, Marks(logo=svg, logo_size=0.5, logo_opacity=0.5, logo_position="center"))
+    half = apply_marks(grey, Marks(logo=svg, logo_scale=50, logo_base="smaller", logo_opacity=0.5, logo_align=4))
     assert 120 < half[y + 50, x + 100][1] < 255
     # sharp at any size: a bigger logo is drawn bigger, not stretched from a small bitmap
     big = mark_parts((2000, 3000, 3), m)[0].box
     assert big[2] == 1000
     # transparent areas stay transparent
     open(os.path.join(d, "ring.svg"), "w").write('<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"><circle cx="50" cy="50" r="40" fill="none" stroke="#ff0000" stroke-width="10"/></svg>')
-    ring = Marks(logo=os.path.join(d, "ring.svg"), logo_size=0.5, logo_opacity=1.0, logo_position="center")
+    ring = Marks(logo=os.path.join(d, "ring.svg"), logo_scale=50, logo_base="smaller", logo_opacity=1.0, logo_align=4)
     p = mark_parts(grey.shape, ring)[0]
     r = apply_marks(grey, ring)
     cx, cy = p.x + p.box[2] // 2, p.y + p.box[3] // 2

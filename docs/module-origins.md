@@ -21,13 +21,14 @@ The tag is only in the header. The module's own title (which picks its icon and 
 | Color Toning | NegPy | The idea of split toning: a hue and a strength for the shadows, midtones and highlights |
 | Retouch | darktable | Ported 1:1: the shapes, the wavelet scales, clone, heal, blur and fill, and the panel |
 | Masks | darktable | The drawn masks (circle, ellipse, path, brush, gradient), their groups and keys, the Masks panel, and the AI object mask (darktable's models and steps) |
-| Watermark | darktable | The watermark variables (`$(EXIF.MAKER)` and the rest) and SVG markers, so darktable's own SVG files work |
+| Watermark | darktable | The module itself, with darktable's arithmetic for the marker's size (scale on, scale, the advanced options), alignment, offsets and rotation, its drawing and its blending; the watermark variables (`$(EXIF.MAKER)` and the rest) and SVG markers, so darktable's own SVG files work |
 | Diffuse or Sharpen | darktable | The whole module (`features/diffuse/logic.py`): the wavelet decomposition, the anisotropic heat-diffusion step, its four speeds and anisotropies, the edge controls, the luminance threshold that inpaints highlights, and all of darktable's presets for it. See [diffuse-or-sharpen.md](diffuse-or-sharpen.md) |
 | Tone Equalizer | darktable | The whole module (`features/toneequalizer/logic.py`): the nine nodes and their curve, the luminance estimators, the guided and exposure-independent guided filters, the mask compensation and the wands, and darktable's presets. See [tone-equalizer.md](tone-equalizer.md) |
 | Color Balance RGB | darktable | The whole module (`features/colorbalancergb/logic.py`): the grading in Filmlight Yrg, the four ways, the masks, perceptual saturation and brilliance in JzAzBz or darktable UCS with their gamut maps, and darktable's presets. See [color-balance-rgb.md](color-balance-rgb.md) |
 | Tagging, Tags | darktable | The tagging module's layout: tags on the photo, and the tag dictionary below |
 | Exposure, Tone Curve, Color, White Balance, Contrast, Shadows & Highlights, Color Mixer | EFAS | Made for EFAS (laid out like darktable's modules) |
 | Halation, Grain Sharpening, Edge Bleed, Edge Color, Lab Look, Finishing | EFAS | Made for EFAS, from its own research |
+| Canister Watermark | EFAS | EFAS's original watermarking (a 3D film canister, the camera and lens text and the old text mark), kept as a module of its own beside darktable's Watermark |
 | AI Dust Detection | EFAS | A small neural network (FilmDefectNet, the author's own) |
 | Error marking | EFAS | Made for EFAS |
 | Crop & Rotate | EFAS | Made for EFAS; only the composition guides' geometry is ported from NegPy |

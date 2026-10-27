@@ -9,6 +9,6 @@ As in darktable, a module can be copied. The two-squares button in the header of
 - Saved with the photo (the `instances` column), in the undo history, in exports; not in presets (a preset applies to the module itself).
 - The **Enabled** tab (the power button at the top of the tool tabs) lists the modules and copies that are on and not at their defaults.
 
-Not copyable yet: Negative, Color (white balance and saturation), Tone Curve, Print Response, Lab Look, Crop & Rotate, Dust & Scratches (one set of repairs per photo), Finishing, Watermark.
+Not copyable yet: Negative, Color (white balance and saturation), Tone Curve, Print Response, Lab Look, Crop & Rotate, Dust & Scratches (one set of repairs per photo), Finishing, Watermark, Canister Watermark.
 
 Code: `features/instances/logic.py`, `desktop/view/instance_panel.py`, `desktop/mask_blend.py` and `desktop/render.py` (the steps), `desktop/controller.py` (`add_instance` and the rest); tests `test_instances.py`, `test_instances_window.py`, `test_retouch_copies.py`.

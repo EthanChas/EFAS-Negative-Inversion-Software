@@ -409,5 +409,5 @@ def test_the_watermark_credit_carries_the_programs_real_name():
     from photoeditor.features.watermark.logic import CREDIT
 
     assert CREDIT == "Edited with EFAS Negative Inversion Software" and payload.NEGPY_SOFTWARE == "EFAS Negative Inversion Software"
-    source = (Path(__file__).resolve().parents[1] / "src" / "photoeditor" / "desktop" / "view" / "watermark_panel.py").read_text(encoding="utf-8")
+    source = (Path(__file__).resolve().parents[1] / "src" / "photoeditor" / "desktop" / "view" / "canister_panel.py").read_text(encoding="utf-8")
     assert "Ethans Negative Inversion App" not in source and source.count("EFAS Negative Inversion Software") == 2

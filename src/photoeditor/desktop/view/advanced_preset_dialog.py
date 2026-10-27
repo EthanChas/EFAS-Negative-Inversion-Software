@@ -119,7 +119,7 @@ class AdvancedPresetDialog(QDialog):
         holder = QWidget()
         col = QVBoxLayout(holder)
         col.setSpacing(THEME.space_md)
-        self._boxes = [_ModuleBox(spec, look) for spec in MODULES]
+        self._boxes = [_ModuleBox(spec, look) for spec in MODULES if spec.fields]
         for box in self._boxes:
             col.addWidget(box)
         col.addStretch(1)

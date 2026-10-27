@@ -57,7 +57,7 @@ class ModuleMenus(QObject):
                 target = groups.setdefault(head, menu.addMenu(head)) if tail else menu
                 action = target.addAction(tail or name)
                 action.setEnabled(has_photo)
-                action.setToolTip(f"darktable's preset '{name}'")
+                action.setToolTip(f"Built-in preset '{name}'" + (" (ported from darktable)" if key in ("diffuse", "toneequalizer", "colorbalancergb") else ""))
                 action.triggered.connect(lambda _c=False, n=name: c.apply_darktable_module_preset(key, n))
         menu.addSeparator()
         if active is not None and c.module_preset_modified(key):

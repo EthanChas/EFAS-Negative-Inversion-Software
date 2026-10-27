@@ -195,13 +195,13 @@ def test_a_narrow_button_with_one_letter_on_it_still_shows_the_letter(app, theme
     """The Bold and Italic buttons of the Watermark tab (and the guide's turn arrow) are 28-30 pixels wide: the theme's button padding used to leave no room for the letter."""
     from PyQt6.QtWidgets import QPushButton, QWidget
 
-    from photoeditor.desktop.view.watermark_panel import _style_button
+    from photoeditor.desktop.view.watermark_panel import style_button
     from photoeditor.theme import runtime
 
     runtime.apply(app, {"theme": theme, "theme_accent": "Blue", "theme_text_scale": 100})
     host = QWidget()
     host.resize(200, 90)
-    bold, italic = _style_button("B", "Bold", bold=True), _style_button("I", "Italic", italic=True)
+    bold, italic = style_button("B", "Bold", bold=True), style_button("I", "Italic", italic=True)
     plain = QPushButton("B")   # what it was: the usual padding in the same width
     plain.setFixedWidth(30)
     for i, button in enumerate((bold, italic, plain)):

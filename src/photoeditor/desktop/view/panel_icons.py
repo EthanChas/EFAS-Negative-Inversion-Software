@@ -28,8 +28,8 @@ BY_TAB = {"active": "power", "negative": "film", "correction": "crop", "exposure
 OTHER = {"dropper": "pipette", "folder": "folder", "folder_open": "folder-open", "play": "play", "pause": "pause", "previous": "skip-back", "next": "skip-forward", "fullscreen": "maximize", "restart": "rotate-ccw", "search": "search"}
 # EFAS's own icons for the masks and Retouch, in the same style (not part of the Lucide import)
 OWN = frozenset({"mask-circle", "mask-ellipse", "mask-path", "mask-brush", "mask-gradient", "mask-group", "mask-eye", "mask-eye-off", "mask-edit", "mask-invert", "mask-trash", "mask-dust",
-                 "mask-hair", "mask-scratch", "mask-manual", "mask-clone", "mask-heal", "mask-blur", "mask-fill", "mask-source", "mask-cut", "mask-paste", "mask-layers", "mask-levels", "mask-ai", "tone-equalizer", "color-balance", "diffuse"})
-OWN_TITLES = {"Retouch": "mask-heal", "Tone Equalizer": "tone-equalizer", "Color Balance RGB": "color-balance", "Diffuse or Sharpen": "diffuse"}
+                 "mask-hair", "mask-scratch", "mask-manual", "mask-clone", "mask-heal", "mask-blur", "mask-fill", "mask-source", "mask-cut", "mask-paste", "mask-layers", "mask-levels", "mask-ai", "tone-equalizer", "color-balance", "diffuse", "canister"})
+OWN_TITLES = {"Retouch": "mask-heal", "Tone Equalizer": "tone-equalizer", "Color Balance RGB": "color-balance", "Diffuse or Sharpen": "diffuse", "Canister Watermark": "canister"}
 NAMES = frozenset(BY_TITLE.values()) | frozenset(BY_TAB.values()) | frozenset(OTHER.values())
 
 _cache: dict[tuple, QImage] = {}   # images, not pixmaps: a pixmap that outlives the application crashes Qt on some platforms when the program exits

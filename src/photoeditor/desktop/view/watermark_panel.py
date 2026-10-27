@@ -6,53 +6,23 @@ from PyQt6.QtCore import QStringListModel, Qt, QTimer, pyqtSignal
 from PyQt6.QtCore import QUrl
 from PyQt6.QtGui import QColor, QDesktopServices, QFont, QIcon, QPixmap
 from PyQt6.QtWidgets import (
+    QButtonGroup,
     QCheckBox,
     QColorDialog,
     QComboBox,
-    QCompleter,
     QFileDialog,
+    QGridLayout,
     QHBoxLayout,
     QLabel,
     QLineEdit,
     QMessageBox,
-    QPlainTextEdit,
     QPushButton,
     QToolButton,
-    QVBoxLayout,
     QWidget,
 )
 
-from ...features.watermark import fonts, library, logoimage
-from ...features.watermark.logic import (
-    DEFAULT_POSITION,
-    DEFAULT_SIZE,
-    DEFAULT_TEXTURE,
-    FILMS,
-    POSITIONS,
-    SIZES,
-    TEXTURES,
-    WATERMARK_OFF,
-)
-from ...features.metadata import presets as autofill
-from ...features.metadata import suggest
-from ...features.watermark.marks import (
-    ALIGNS,
-    COLORS,
-    CUSTOM,
-    INFO_SIZE_RANGE,
-    LETTER_SPACING_RANGE,
-    LINE_SPACING_RANGE,
-    LOGO_SIZE_RANGE,
-    LOGO_SIZE_SLIDER,
-    MARKER_TEXT_MAX,
-    OUTLINE_RANGE,
-    PLACES,
-    ROTATION_RANGE,
-    TEXT_MAX,
-    TEXT_SIZE_RANGE,
-    Marks,
-    text_as_marker,
-)
+from ...features.watermark import dtmark, fonts, library, logoimage
+from ...features.watermark.marks import COLORS, MARKER_TEXT_MAX, ROTATION_RANGE, Marks
 from ...theme.tokens import THEME
 from .collapsible_panel import CollapsiblePanel
 from .slider_row import SliderRow
@@ -61,11 +31,8 @@ _MARKS_SETTLE_MS = 250
 _FONT_SCAN_DELAY_MS = 800
 _FILE_ITEM = "__file__"
 _CUSTOM_COLOR_ITEM = 2
-
-
-def _share(slider: SliderRow) -> float:
-    """A percentage slider as a 0-1 fraction, rounded so 2.8% is exactly 0.028 and an unchanged value never looks like an edit."""
-    return round(slider.value() / 100.0, 4)
+_LABEL_W = 108   # wide enough for darktable's longest caption, "marker reference"
+_ALIGN_GLYPHS = ("↖", "↑", "↗", "←", "●", "→", "↙", "↓", "↘")   # the 3 x 3 grid of Alignment, row by row
 
 
 def _swatch(color: str) -> QIcon:
@@ -172,7 +139,7 @@ class FontCombo(QComboBox):
         self.value_changed.emit()
 
 
-def _style_button(text: str, tip: str, bold: bool = False, italic: bool = False) -> QPushButton:
+def style_button(text: str, tip: str, bold: bool = False, italic: bool = False) -> QPushButton:
     button = QPushButton(text)
     button.setCheckable(True)
     button.setFixedWidth(30)
@@ -185,10 +152,27 @@ def _style_button(text: str, tip: str, bold: bool = False, italic: bool = False)
     return button
 
 
-class CanisterWatermarkPanel(CollapsiblePanel):
-    """The Watermark tab."""
+def subtitle(text: str) -> QLabel:
+    label = QLabel(text)
+    label.setProperty("role", "subtitle")
+    return label
 
-    changed = pyqtSignal(str, str, str, str, bool, str, str)
+
+def labeled(body, label: str, *widgets: QWidget, width: int = 80) -> QLabel:
+    row = QHBoxLayout()
+    name = QLabel(label)
+    name.setFixedWidth(width)
+    row.addWidget(name)
+    for i, widget in enumerate(widgets):
+        row.addWidget(widget, 1 if i == 0 else 0)
+    body.addLayout(row)
+    return name
+
+
+class WatermarkPanel(CollapsiblePanel):
+    """The Watermark module, as darktable's: a marker (an SVG or a picture from the watermarks folder) with its text, font and colour, its opacity, and where it goes - Scale on, Scale, Rotation,
+    Alignment and the X and Y offsets (dtmark.py). Every control is darktable's, in darktable's order."""
+
     marks_changed = pyqtSignal(object)
     edit_on_picture_toggled = pyqtSignal(bool)
     variables_requested = pyqtSignal()   # show the list of $(NAME) variables for the open photo
@@ -198,31 +182,28 @@ class CanisterWatermarkPanel(CollapsiblePanel):
         super().__init__(
             "Watermark",
             help_text=(
-                "Four marks you can use together, all part of the finished image (so they are in exports too).\n\n"
-                "Canister: a 3D film canister over the picture, like a stamp. Film picks the label, Texture the body, Size how big it is "
-                "and Position where it sits; None removes it.\n\n"
-                "Camera and lens: the two lines written in white (with a tiny credit line). Beside a canister they sit next to it; "
-                "without one, or with Next to the canister turned off, they are a block of their own with their own position, size, colour and font.\n\n"
-                "Marker: an SVG (stays sharp at any size) or a picture such as a PNG with a transparent background, chosen from your watermarks folder (Add... puts a file there). "
-                "An SVG can hold $(WATERMARK_TEXT), $(WATERMARK_COLOR) and font variables, filled in from the Text, Colour and Font here, and $(CAMERA), $(EXIF.YEAR) and the other "
-                "variables of the photo (Variables... lists them), the way darktable's watermarks do.\n\n"
-                "Move and resize on the picture: tick it, then drag a mark to move it and drag a corner to resize it. The mark's Position menu "
-                "switches to Custom as soon as you move it; pick a position from the menu to put it back."
+                "Puts a marker over the picture, as darktable's Watermark module does. The marker is an SVG (it stays sharp at any size) or a picture such as a PNG with a transparent "
+                "background, chosen from your watermarks folder (Add... puts a file there; Reload looks again).\n\n"
+                "An SVG can hold $(WATERMARK_TEXT), $(WATERMARK_COLOR) and the font variables, filled in from the Text, Font and Color here, and $(CAMERA), $(EXIF.YEAR) and the other "
+                "variables of the photo (Variables... lists them).\n\n"
+                "Placement is measured on the cropped picture. Scale on says what the marker's size is a share of: the image (its longer side against the picture's width or height), the "
+                "larger or smaller border of the picture, the picture's height, or - Advanced - any picture dimension against the marker's width or height. Scale multiplies that. "
+                "Alignment puts the marker on one of nine places, X offset and Y offset move it from there as shares of the picture, and Rotation turns it about its middle.\n\n"
+                "Move and resize on the picture: tick it, then drag the marker to move it and drag a corner to resize it."
             ),
             collapsible=True,
             start_expanded=False,
             parent=parent,
         )
         self._base = Marks()
-        self._last_size = DEFAULT_SIZE
-        self._last_position = DEFAULT_POSITION
-        self._completers: dict[str, QStringListModel] = {}
+        self._logo_path = ""
+        self._listed = None   # the markers found in the watermarks folders at the last look
+        self._captions: dict[QComboBox, QLabel] = {}
         body = self.body()
         body.setSpacing(THEME.space_sm)
-
-        self._build_canister(body)
-        self._build_info(body)
-        self._build_logo(body)
+        self._build_marker(body)
+        self._build_look(body)
+        self._build_placement(body)
 
         self._mark_settle = QTimer(self)
         self._mark_settle.setSingleShot(True)
@@ -230,119 +211,34 @@ class CanisterWatermarkPanel(CollapsiblePanel):
         self._mark_settle.timeout.connect(self._emit_marks)
         self._fonts_ready.connect(self._apply_families)
         QTimer.singleShot(_FONT_SCAN_DELAY_MS, self._start_font_scan)
-        self.set_values(WATERMARK_OFF, DEFAULT_TEXTURE, DEFAULT_SIZE, DEFAULT_POSITION, False, "", "")
         self.set_marks(Marks())
 
     # ---- building -------------------------------------------------------------------------------------------------------------------
 
-    @staticmethod
-    def _subtitle(text: str) -> QLabel:
-        label = QLabel(text)
-        label.setProperty("role", "subtitle")
-        return label
-
-    @staticmethod
-    def _labeled(body, label: str, *widgets: QWidget) -> None:
-        row = QHBoxLayout()
-        name = QLabel(label)
-        name.setFixedWidth(80)
-        row.addWidget(name)
-        for i, widget in enumerate(widgets):
-            row.addWidget(widget, 1 if i == 0 else 0)
-        body.addLayout(row)
-
-    def _add_row(self, body, label: str, items: list[tuple[str, str]], tip: str, on_change=None) -> QComboBox:
-        combo = QComboBox()
-        for text, key in items:
-            combo.addItem(text, key)
-        combo.setToolTip(tip)
-        combo.currentIndexChanged.connect(on_change or self._on_changed)
-        self._labeled(body, label, combo)
-        return combo
-
-    def _add_text(self, body, label: str, placeholder: str, kind: str | None = None) -> QLineEdit:
-        edit = QLineEdit()
-        edit.setPlaceholderText(placeholder)
-        if kind:
-            model = QStringListModel(suggest.suggestions(kind), edit)
-            completer = QCompleter(model, edit)
-            completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
-            completer.setFilterMode(Qt.MatchFlag.MatchContains)
-            edit.setCompleter(completer)
-            self._completers[kind] = model
-        edit.editingFinished.connect(self._on_text_finished)
-        self._labeled(body, label, edit)
-        return edit
-
     def _slider(self, body, label: str, low: float, high: float, reset: float, decimals: int, step: float, tip: str, spin_range: tuple[float, float] | None = None) -> SliderRow:
-        slider = SliderRow(label, min_value=low, max_value=high, reset_value=reset, decimals=decimals, step=step,
+        slider = SliderRow(label, min_value=low, max_value=high, reset_value=reset, decimals=decimals, step=step, label_width=_LABEL_W,
                            spin_min=spin_range[0] if spin_range else None, spin_max=spin_range[1] if spin_range else None)
         slider.setToolTip(tip)
         slider.value_changed.connect(self._on_mark_slider)
         body.addWidget(slider)
         return slider
 
-    def _check(self, body, text: str, tip: str, on_toggle=None) -> QCheckBox:
-        box = QCheckBox(text)
-        box.setToolTip(tip)
-        box.toggled.connect(on_toggle or self._emit_marks)
-        body.addWidget(box)
-        return box
-
-    def _font_row(self, body, tip: str, with_italic: bool = True):
-        combo = FontCombo()
+    def _combo(self, body, label: str, items: dict[str, str], tip: str) -> QComboBox:
+        combo = QComboBox()
+        for key, text in items.items():
+            combo.addItem(text, key)
         combo.setToolTip(tip)
-        combo.value_changed.connect(self._emit_marks)
-        bold = _style_button("B", "Bold", bold=True)
-        bold.toggled.connect(self._emit_marks)
-        widgets = [combo, bold]
-        italic = None
-        if with_italic:
-            italic = _style_button("I", "Italic", italic=True)
-            italic.toggled.connect(self._emit_marks)
-            widgets.append(italic)
-        self._labeled(body, "Font", *widgets)
-        return combo, bold, italic
+        combo.currentIndexChanged.connect(self._on_choice)
+        self._captions[combo] = labeled(body, label, combo, width=_LABEL_W)
+        return combo
 
-    def _build_canister(self, body) -> None:
-        body.addWidget(self._subtitle("CANISTER"))
-        self._film = self._add_row(body, "Film", [("None", WATERMARK_OFF)] + [(label, key) for key, label in FILMS.items()],
-                                   "Which film's canister label to show. None removes the canister.")
-        self._texture = self._add_row(body, "Texture", [(label, key) for key, label in TEXTURES.items()], "The canister body's material.")
-        self._size = self._add_row(body, "Size", [(label, key) for key, (label, _f) in SIZES.items()] + [("Custom", CUSTOM)],
-                                   "How large the canister is, relative to the picture's shorter side. Custom appears once you resize it on the picture.",
-                                   lambda _i: self._on_canister_combo("size"))
-        self._position = self._add_row(body, "Position", [(label, key) for key, label in POSITIONS.items()] + [("Custom", CUSTOM)],
-                                       "Where the canister sits on the picture. Custom appears once you move it on the picture.",
-                                       lambda _i: self._on_canister_combo("position"))
-
-    def _build_info(self, body) -> None:
-        body.addWidget(self._subtitle("CAMERA AND LENS"))
-        self._info = QCheckBox("Add Camera and Lens")
-        self._info.setToolTip("Write the camera and lens in white, with \"Edited with EFAS Negative Inversion Software\" in tiny text underneath.")
-        self._info.toggled.connect(self._on_info_toggled)
-        body.addWidget(self._info)
-        self._camera = self._add_text(body, "Camera", "e.g. Pentax K1000", kind="camera")
-        self._lens = self._add_text(body, "Lens", "e.g. SMC Pentax-M 50mm f/2", kind="lens")
-        self._camera.completer().activated.connect(lambda _t: self._on_camera_picked())
-        self._info_beside = self._check(body, "Next to the canister", "With a canister showing, put the text beside it. Untick to place the text on its own, wherever you like.",
-                                        self._on_info_toggled)
-        self._info_credit = self._check(body, "Credit line", "The tiny \"Edited with EFAS Negative Inversion Software\" line under the text.")
-        self._info_position = self._add_row(body, "Position", [(label, key) for key, label in PLACES.items()], "Where the camera and lens text sits (when not beside the canister).", self._emit_marks)
-        self._info_size = self._slider(body, "Size", INFO_SIZE_RANGE[0] * 100, INFO_SIZE_RANGE[1] * 100, Marks().info_size * 100, 1, 0.1,
-                                       "Height of the letters, as a percentage of the picture's shorter side.")
-        self._info_color = ColorCombo()
-        self._info_color.setToolTip("Colour of the camera and lens text.")
-        self._info_color.value_changed.connect(self._emit_marks)
-        self._labeled(body, "Color", self._info_color)
-        self._info_font, self._info_bold, _unused = self._font_row(body, "The font for the camera and lens text.", with_italic=False)
-        self._info_style_widgets = [self._info_position, self._info_size, self._info_color, self._info_font, self._info_bold]
-
-    def _build_logo(self, body) -> None:
-        body.addWidget(self._subtitle("MARKER (SVG OR PICTURE)"))
+    def _build_marker(self, body) -> None:
         row = QHBoxLayout()
+        name = QLabel("marker")
+        name.setFixedWidth(_LABEL_W)
+        row.addWidget(name)
         self._marker_combo = QComboBox()
-        self._marker_combo.setToolTip("A file from your watermarks folder: an SVG (stays sharp at any size) or a picture such as a PNG with a transparent background. "
+        self._marker_combo.setToolTip("SVG and picture markers in your watermarks folder (Open Folder) and the samples that come with EFAS. "
                                       "Add... puts a file there; a file you drop into the folder yourself shows after Reload.")
         self._marker_combo.currentIndexChanged.connect(self._on_marker_picked)
         row.addWidget(self._marker_combo, 1)
@@ -369,57 +265,83 @@ class CanisterWatermarkPanel(CollapsiblePanel):
         self._logo_name.setProperty("role", "hint")
         self._logo_name.setWordWrap(True)
         body.addWidget(self._logo_name)
-        self._logo_text = QLineEdit()
-        self._logo_text.setPlaceholderText("Text for the marker, e.g. (c) $(EXIF.YEAR) Your Name")
-        self._logo_text.setMaxLength(MARKER_TEXT_MAX)
-        self._logo_text.setToolTip("The words an SVG marker writes where it has $(WATERMARK_TEXT). Variables such as $(CAMERA) or $(EXIF.YEAR) work here too (Variables... lists them).")
-        self._logo_text.textEdited.connect(self._on_mark_slider)
-        self._labeled(body, "Text", self._logo_text)
-        self._logo_font, self._logo_bold, self._logo_italic = self._font_row(body, "The font an SVG marker writes its text in ($(WATERMARK_FONT_FAMILY), $(WATERMARK_FONT_STYLE), $(WATERMARK_FONT_WEIGHT)).")
-        self._logo_color = ColorCombo()
-        self._logo_color.setToolTip("The colour an SVG marker uses where it has $(WATERMARK_COLOR).")
-        self._logo_color.value_changed.connect(self._emit_marks)
-        self._labeled(body, "Color", self._logo_color)
-        self._logo_size = self._slider(body, "Size", LOGO_SIZE_SLIDER[0] * 100, LOGO_SIZE_SLIDER[1] * 100, Marks().logo_size * 100, 0, 1,
-                                       "The marker's size as a percentage of the picture (see Scale on). The slider goes to 500%; type any size, up to 10000%, in the box beside it.",
-                                       spin_range=(LOGO_SIZE_RANGE[0] * 100, LOGO_SIZE_RANGE[1] * 100))
-        self._logo_scale_on = self._add_row(body, "Scale on", [(label, key) for key, label in logoimage.SCALE_ON.items()],
-                                            "What the size is a percentage of. Shorter side: the marker's longer side against the picture's shorter side (the same look in portrait and landscape). "
-                                            "Longer side: against the picture's longer side. Width, Height: the marker's own width or height against the picture's.", self._emit_marks)
-        self._logo_opacity = self._slider(body, "Opacity", 0, 100, Marks().logo_opacity * 100, 0, 5, "How see-through the marker is.")
-        self._logo_rotation = self._slider(body, "Rotate", ROTATION_RANGE[0], ROTATION_RANGE[1], 0, 0, 1, "Turn the marker clockwise, in degrees.")
-        self._logo_position = self._add_row(body, "Position", [(label, key) for key, label in PLACES.items()],
-                                            "Where the marker sits on the picture. Custom appears for a marker placed by an earlier version.", self._emit_marks)
-        self._logo_x = self._slider(body, "Move X", -100, 100, 0, 1, 0.5, "Move the marker sideways from its Position, as a percentage of the picture's width (right is plus). Dragging the marker on the picture sets this.")
-        self._logo_y = self._slider(body, "Move Y", -100, 100, 0, 1, 0.5, "Move the marker up (minus) or down (plus) from its Position, as a percentage of the picture's height. Dragging the marker on the picture sets this.")
-        self._edit_box = QCheckBox("Move and resize on the picture")
-        self._edit_box.setToolTip("Drag a watermark on the picture to move it (the marker's Move X and Move Y follow); drag a corner to resize it. This works for the marker, the canister and the camera and lens text.")
-        self._edit_box.toggled.connect(self.edit_on_picture_toggled)
-        body.addWidget(self._edit_box)
 
-        self._old_text = QLabel("")
-        self._old_text.setProperty("role", "hint")
-        self._old_text.setWordWrap(True)
-        body.addWidget(self._old_text)
-        old_row = QHBoxLayout()
-        self._old_text_convert = QPushButton("Make it a Marker")
-        self._old_text_convert.setToolTip("Rewrite the old text watermark as the simple-text marker (one line, about the same size, colour, font and place), where it can be edited")
-        self._old_text_convert.clicked.connect(self._convert_old_text)
-        old_row.addWidget(self._old_text_convert, 1)
-        self._old_text_remove = QPushButton("Remove It")
-        self._old_text_remove.setToolTip("Take the old text watermark off this photo")
-        self._old_text_remove.clicked.connect(self._remove_old_text)
-        old_row.addWidget(self._old_text_remove, 1)
-        self._old_text_row = old_row
-        body.addLayout(old_row)
-        self._logo_path = ""
-        self._listed = None   # the markers found in the watermarks folders at the last look
+    def _build_look(self, body) -> None:
+        self._logo_text = QLineEdit()
+        self._logo_text.setPlaceholderText("content, e.g. (c) $(EXIF.YEAR) Your Name")
+        self._logo_text.setMaxLength(MARKER_TEXT_MAX)
+        self._logo_text.setToolTip("text string, tag: $(WATERMARK_TEXT). Variables such as $(CAMERA) or $(EXIF.YEAR) work here too (Variables... lists them).")
+        self._logo_text.textEdited.connect(self._on_mark_slider)
+        labeled(body, "text", self._logo_text, width=_LABEL_W)
+        self._logo_font = FontCombo()
+        self._logo_font.setToolTip("text font, tags:\n$(WATERMARK_FONT_FAMILY)\n$(WATERMARK_FONT_STYLE)\n$(WATERMARK_FONT_WEIGHT)")
+        self._logo_font.value_changed.connect(self._emit_marks)
+        self._logo_bold = style_button("B", "Bold: $(WATERMARK_FONT_WEIGHT)", bold=True)
+        self._logo_bold.toggled.connect(self._emit_marks)
+        self._logo_italic = style_button("I", "Italic: $(WATERMARK_FONT_STYLE)", italic=True)
+        self._logo_italic.toggled.connect(self._emit_marks)
+        labeled(body, "font", self._logo_font, self._logo_bold, self._logo_italic, width=_LABEL_W)
+        self._logo_color = ColorCombo()
+        self._logo_color.setToolTip("watermark color, tag:\n$(WATERMARK_COLOR)")
+        self._logo_color.value_changed.connect(self._emit_marks)
+        labeled(body, "color", self._logo_color, width=_LABEL_W)
         self._marker_style_widgets = {
             "WATERMARK_TEXT": [self._logo_text],
             "WATERMARK_COLOR": [self._logo_color],
             "WATERMARK_FONT_FAMILY": [self._logo_font, self._logo_bold, self._logo_italic],
         }
-        self._refresh_markers()
+        self._opacity = self._slider(body, "opacity", 0, 100, 100, 0, 1, "the opacity of the watermark")
+        self._opacity.set_suffix("%")
+
+    def _build_placement(self, body) -> None:
+        body.addWidget(subtitle("PLACEMENT"))
+        self._rotation = self._slider(body, "rotation", ROTATION_RANGE[0], ROTATION_RANGE[1], 0, 0, 1, "the rotation of the watermark, in degrees (clockwise is plus), about the middle of the marker")
+        self._rotation.set_suffix("°")
+        self._scale = self._slider(body, "scale", dtmark.SCALE_RANGE[0], 100.0, 100, 0, 1, "the scale of the watermark. The slider goes to 100%; type any size up to 500% in the box beside it.",
+                                   spin_range=dtmark.SCALE_RANGE)
+        self._scale.set_suffix("%")
+        self._base_combo = self._combo(body, "scale on", dtmark.BASES,
+                                       "choose how to scale the watermark\n"
+                                       "• image: scale watermark relative to whole image\n"
+                                       "• larger border: scale larger watermark border relative to larger image border\n"
+                                       "• smaller border: scale larger watermark border relative to smaller image border\n"
+                                       "• height: scale watermark height to image height\n"
+                                       "• advanced options: choose watermark and image dimensions independently")
+        self._img_combo = self._combo(body, "scale marker to", dtmark.IMAGE_SIDES, "reference image dimension against which to scale the watermark")
+        self._svg_combo = self._combo(body, "marker reference", dtmark.MARKER_SIDES, "watermark dimension to scale")
+        self._advanced_widgets = [self._img_combo, self._svg_combo]
+
+        grid_row = QHBoxLayout()
+        name = QLabel("alignment")
+        name.setFixedWidth(_LABEL_W)
+        grid_row.addWidget(name)
+        grid = QGridLayout()
+        grid.setSpacing(3)
+        self._align_group = QButtonGroup(self)
+        self._align_group.setExclusive(True)
+        self._align_buttons = []
+        for i, glyph in enumerate(_ALIGN_GLYPHS):
+            button = QToolButton()
+            button.setText(glyph)
+            button.setCheckable(True)
+            button.setFixedSize(30, 24)
+            button.setToolTip("align the watermark: " + dtmark.ALIGNMENTS[i])
+            self._align_group.addButton(button, i)
+            grid.addWidget(button, i // 3, i % 3)
+            self._align_buttons.append(button)
+        self._align_group.idClicked.connect(lambda _i: self._emit_marks())
+        grid_row.addLayout(grid)
+        grid_row.addStretch(1)
+        body.addLayout(grid_row)
+
+        self._xoff = self._slider(body, "x offset", dtmark.OFFSET_RANGE[0], dtmark.OFFSET_RANGE[1], 0, 3, 0.001,
+                                  "move the watermark sideways from its alignment, as a share of the picture's base width (right is plus). Dragging the marker on the picture sets this.")
+        self._yoff = self._slider(body, "y offset", dtmark.OFFSET_RANGE[0], dtmark.OFFSET_RANGE[1], 0, 3, 0.001,
+                                  "move the watermark up (minus) or down (plus) from its alignment, as a share of the picture's base height. Dragging the marker on the picture sets this.")
+        self._edit_box = QCheckBox("Move and resize on the picture")
+        self._edit_box.setToolTip("Drag the marker on the picture to move it (X offset and Y offset follow); drag a corner to resize it (Scale follows).")
+        self._edit_box.toggled.connect(self.edit_on_picture_toggled)
+        body.addWidget(self._edit_box)
 
     def _start_font_scan(self) -> None:
         def work() -> None:
@@ -435,73 +357,57 @@ class CanisterWatermarkPanel(CollapsiblePanel):
         threading.Thread(target=work, daemon=True).start()
 
     def _apply_families(self, families) -> None:
-        for combo in (self._info_font, self._logo_font):
-            combo.populate(list(families))
+        self._logo_font.populate(list(families))
 
     # ---- the marks ------------------------------------------------------------------------------------------------------------------
 
     def marks(self) -> Marks:
+        """The marks with this module's fields as the controls show them (the other module's are as they were last set)."""
         return dataclasses.replace(
             self._base,
-            logo=self._logo_path, logo_size=_share(self._logo_size), logo_opacity=_share(self._logo_opacity), logo_position=self._logo_position.currentData(),
-            logo_rotation=round(float(self._logo_rotation.value()), 2), logo_scale_on=self._logo_scale_on.currentData(), logo_text=self._logo_text.text().strip()[:MARKER_TEXT_MAX],
-            logo_color=self._logo_color.value(), logo_font=self._logo_font.value(), logo_bold=self._logo_bold.isChecked(), logo_italic=self._logo_italic.isChecked(),
-            logo_dx=round(float(self._logo_x.value()) / 100.0, 4), logo_dy=round(float(self._logo_y.value()) / 100.0, 4),
-            info_beside=self._info_beside.isChecked(), info_credit=self._info_credit.isChecked(), info_position=self._info_position.currentData(),
-            info_size=_share(self._info_size), info_color=self._info_color.value(), info_font=self._info_font.value(), info_bold=self._info_bold.isChecked(),
+            logo=self._logo_path, logo_opacity=round(self._opacity.value() / 100.0, 4), logo_scale=round(float(self._scale.value()), 3), logo_base=self._base_combo.currentData(),
+            logo_img=self._img_combo.currentData(), logo_svg=self._svg_combo.currentData(), logo_align=max(0, self._align_group.checkedId()),
+            logo_xoff=round(float(self._xoff.value()), 4), logo_yoff=round(float(self._yoff.value()), 4), logo_rotation=round(float(self._rotation.value()), 2),
+            logo_text=self._logo_text.text().strip()[:MARKER_TEXT_MAX], logo_color=self._logo_color.value(), logo_font=self._logo_font.value(),
+            logo_bold=self._logo_bold.isChecked(), logo_italic=self._logo_italic.isChecked(),
         )
 
     def set_marks(self, marks: Marks) -> None:
-        """Show these marks without emitting - a new photo, a history step, or a watermark just dragged on the picture."""
+        """Show these marks without emitting - a new photo, a history step, or a marker just dragged on the picture."""
         self._mark_settle.stop()
         self._base = marks
-        widgets = (self._logo_size, self._logo_opacity, self._logo_x, self._logo_y,
-                   self._logo_position, self._info_beside, self._info_credit, self._info_position, self._info_size, self._info_bold,
-                   self._logo_rotation, self._logo_scale_on, self._logo_text, self._logo_bold, self._logo_italic)
-        for w in widgets:
+        blocked = (self._scale, self._opacity, self._xoff, self._yoff, self._rotation, self._base_combo, self._img_combo, self._svg_combo, self._logo_text, self._logo_bold,
+                   self._logo_italic, self._align_group)
+        for w in blocked:
             w.blockSignals(True)
-        self._logo_size.set_value(marks.logo_size * 100)
-        self._logo_opacity.set_value(marks.logo_opacity * 100)
-        self._logo_position.setCurrentIndex(max(0, self._logo_position.findData(marks.logo_position)))
-        self._logo_rotation.set_value(marks.logo_rotation)
-        self._logo_x.set_value(marks.logo_dx * 100)
-        self._logo_y.set_value(marks.logo_dy * 100)
-        self._logo_scale_on.setCurrentIndex(max(0, self._logo_scale_on.findData(marks.logo_scale_on)))
+        self._scale.set_value(marks.logo_scale)
+        self._opacity.set_value(marks.logo_opacity * 100)
+        self._xoff.set_value(marks.logo_xoff)
+        self._yoff.set_value(marks.logo_yoff)
+        self._rotation.set_value(marks.logo_rotation)
+        for combo, value in ((self._base_combo, marks.logo_base), (self._img_combo, marks.logo_img), (self._svg_combo, marks.logo_svg)):
+            combo.setCurrentIndex(max(0, combo.findData(value)))
         self._logo_text.setText(marks.logo_text)
         self._logo_bold.setChecked(marks.logo_bold)
         self._logo_italic.setChecked(marks.logo_italic)
-        self._info_beside.setChecked(marks.info_beside)
-        self._info_credit.setChecked(marks.info_credit)
-        self._info_position.setCurrentIndex(max(0, self._info_position.findData(marks.info_position)))
-        self._info_size.set_value(marks.info_size * 100)
-        self._info_bold.setChecked(marks.info_bold)
-        for w in widgets:
+        self._align_buttons[marks.logo_align].setChecked(True)
+        for w in blocked:
             w.blockSignals(False)
-        self._info_color.set_value(marks.info_color)
-        self._info_font.set_value(marks.info_font)
         self._logo_color.set_value(marks.logo_color)
         self._logo_font.set_value(marks.logo_font)
         self._logo_path = marks.logo
         self._refresh_markers(rescan=False)
-        self._show_old_text(marks)
-        self._apply_canister_custom()
-        self._sync_custom_items()
-        self._sync_enabled()
+        self._sync_advanced()
 
-    def _sync_custom_items(self) -> None:
-        """A position menu's Custom entry can only be chosen by dragging: it is greyed out unless it is the current choice."""
-        for combo in (self._logo_position, self._info_position, self._position, self._size):
-            i = combo.findData(CUSTOM)
-            item = combo.model().item(i) if i >= 0 else None
-            if item is not None:
-                item.setEnabled(combo.currentIndex() == i)
+    def reset(self) -> None:
+        self.set_marks(Marks())
 
-    def _apply_canister_custom(self) -> None:
-        """Show Custom in the canister's menus when it has been dragged or resized."""
-        for combo, custom, last in ((self._position, self._base.has_custom_canister(), self._last_position), (self._size, self._base.canister_size > 0, self._last_size)):
-            combo.blockSignals(True)
-            combo.setCurrentIndex(max(0, combo.findData(CUSTOM if custom else last)))
-            combo.blockSignals(False)
+    def _sync_advanced(self) -> None:
+        """The two Advanced controls show only with Scale on "advanced options", as in darktable."""
+        advanced = self._base_combo.currentData() == "advanced"
+        for combo in self._advanced_widgets:
+            combo.setVisible(advanced)
+            self._captions[combo].setVisible(advanced)
 
     def _refresh_markers(self, select: str | None = None, rescan: bool = True) -> None:
         """Fill the Marker list from the watermarks folders (and keep the marker chosen, whether or not it is in them). `rescan` False reuses the last look at the folders."""
@@ -523,7 +429,7 @@ class CanisterWatermarkPanel(CollapsiblePanel):
         self._show_logo_name()
 
     def _show_logo_name(self) -> None:
-        """Say what the chosen marker is, and switch on the controls it can use (an SVG that has no $(WATERMARK_TEXT) has no use for a Text box)."""
+        """Say what the chosen marker is, and switch on the controls it can use (an SVG that has no $(WATERMARK_TEXT) has no use for a text box)."""
         used: set[str] = set()
         if not self._logo_path:
             self._logo_name.setText("No marker chosen.")
@@ -547,40 +453,8 @@ class CanisterWatermarkPanel(CollapsiblePanel):
         found = [label for key, label in names.items() if key in used]
         return f"It takes its {', '.join(found)} from the controls below." if found else "It has its own text and colours."
 
-    def _show_old_text(self, marks: Marks) -> None:
-        """A photo that was given a Text watermark by an earlier version still shows it; say so, and offer to turn it into a marker or take it off."""
-        has = marks.has_text()
-        shown = (f"This photo has a text watermark from an earlier version: \"{' '.join(marks.text.split())[:60]}\". It is still drawn, but it can only be made into a marker (where it can be "
-                 "edited) or removed.") if has else ""
-        self._old_text.setText(shown)
-        for widget in (self._old_text, self._old_text_convert, self._old_text_remove):
-            widget.setVisible(has)
-        self._old_text_convert.setEnabled(has and not marks.logo)
-        self._old_text_convert.setToolTip("Rewrite the old text watermark as the simple-text marker (one line, about the same size, colour, font and place), where it can be edited." + (
-            "" if not marks.logo else " Choose None for the marker first: a photo has one marker."))
-
-    def _convert_old_text(self) -> None:
-        self._base = text_as_marker(self._base)
-        self.set_marks(self._base)
-        self.marks_changed.emit(self._base)
-
-    def _remove_old_text(self) -> None:
-        self._base = dataclasses.replace(self._base, text="")
-        self.set_marks(self._base)
-        self.marks_changed.emit(self._base)
-
-    def _first_marker_defaults(self, was_empty: bool) -> None:
-        """The first marker chosen on a photo starts as darktable's does: sized to fit the picture (100% of its width, or of its height for a tall one)."""
-        if was_empty and self._logo_path:
-            self._logo_scale_on.blockSignals(True)
-            self._logo_scale_on.setCurrentIndex(max(0, self._logo_scale_on.findData("fit")))
-            self._logo_scale_on.blockSignals(False)
-            self._logo_size.set_value(100)
-
     def _on_marker_picked(self, _index: int) -> None:
-        was_empty = not self._logo_path
         self._logo_path = self._marker_combo.currentData() or ""
-        self._first_marker_defaults(was_empty)
         self._show_logo_name()
         self._emit_marks()
 
@@ -602,9 +476,7 @@ class CanisterWatermarkPanel(CollapsiblePanel):
             except (OSError, ValueError) as exc:
                 QMessageBox.warning(self, "Marker", str(exc) or "That file could not be added.")
                 return
-        was_empty = not self._logo_path
         self._refresh_markers(name)
-        self._first_marker_defaults(was_empty)
         self._emit_marks()
 
     def _open_marker_folder(self) -> None:
@@ -613,10 +485,13 @@ class CanisterWatermarkPanel(CollapsiblePanel):
     def _on_mark_slider(self, *_args) -> None:
         self._mark_settle.start()
 
+    def _on_choice(self, *_args) -> None:
+        self._sync_advanced()
+        self._emit_marks()
+
     def _emit_marks(self, *_args) -> None:
         self._mark_settle.stop()
         self._base = self.marks()
-        self._sync_custom_items()
         self.marks_changed.emit(self._base)
 
     def set_edit_on_picture(self, on: bool) -> None:
@@ -626,95 +501,3 @@ class CanisterWatermarkPanel(CollapsiblePanel):
 
     def edit_on_picture(self) -> bool:
         return self._edit_box.isChecked()
-
-    # ---- the canister and the camera/lens text --------------------------------------------------------------------------------------
-
-    def values(self) -> tuple[str, str, str, str, bool, str, str]:
-        size, position = self._size.currentData(), self._position.currentData()
-        return (
-            self._film.currentData(), self._texture.currentData(), self._last_size if size == CUSTOM else size, self._last_position if position == CUSTOM else position,
-            self._info.isChecked(), self._camera.text().strip(), self._lens.text().strip(),
-        )
-
-    def set_values(
-        self, film: str, texture: str, size: str, position: str, info: bool = False, camera: str = "", lens: str = ""
-    ) -> None:
-        """Show these values without emitting - used when a file opens or a history entry is restored."""
-        self._last_size, self._last_position = size, position
-        for combo, key in ((self._film, film), (self._texture, texture), (self._size, size), (self._position, position)):
-            i = combo.findData(key)
-            combo.blockSignals(True)
-            combo.setCurrentIndex(max(0, i))
-            combo.blockSignals(False)
-        self._info.blockSignals(True)
-        self._info.setChecked(info)
-        self._info.blockSignals(False)
-        self._camera.setText(camera)
-        self._lens.setText(lens)
-        self._apply_canister_custom()
-        self._sync_custom_items()
-        self._sync_enabled()
-
-    def reset(self) -> None:
-        self.set_values(WATERMARK_OFF, DEFAULT_TEXTURE, DEFAULT_SIZE, DEFAULT_POSITION, False, "", "")
-        self.set_marks(Marks())
-
-    def _sync_enabled(self) -> None:
-        canister = self._film.currentData() != WATERMARK_OFF
-        info = self._info.isChecked()
-        for widget in (self._texture, self._size, self._position):
-            widget.setEnabled(canister)
-        for edit in (self._camera, self._lens):
-            edit.setEnabled(info)
-        self._info_beside.setEnabled(canister and info)
-        self._info_credit.setEnabled(info)
-        alone = info and not (canister and self._info_beside.isChecked())
-        for widget in self._info_style_widgets:
-            widget.setEnabled(alone)
-
-    def _on_changed(self, _value=None) -> None:
-        self._sync_enabled()
-        self.changed.emit(*self.values())
-
-    def _on_info_toggled(self, _checked=None) -> None:
-        self._sync_enabled()
-        self.changed.emit(*self.values())
-        self._emit_marks()
-
-    def _on_canister_combo(self, which: str) -> None:
-        """The user picked a size or position from a canister menu: a real choice replaces whatever was dragged out on the picture."""
-        combo = self._size if which == "size" else self._position
-        data = combo.currentData()
-        if data == CUSTOM:
-            return
-        cleared = False
-        if which == "size":
-            self._last_size = data
-            if self._base.canister_size:
-                self._base, cleared = dataclasses.replace(self._base, canister_size=0.0), True
-        else:
-            self._last_position = data
-            if self._base.has_custom_canister():
-                self._base, cleared = dataclasses.replace(self._base, canister_x=-1.0, canister_y=-1.0), True
-        self._sync_custom_items()
-        self._sync_enabled()
-        self.changed.emit(*self.values())
-        if cleared:
-            self.marks_changed.emit(self.marks())
-
-    def _on_camera_picked(self) -> None:
-        """Picking a camera preset fills in its usual lens - only into an empty lens field, so a lens already typed is never overwritten."""
-        if not self._lens.text().strip():
-            lens = autofill.camera_lens(self._camera.text())
-            if lens:
-                self._lens.setText(lens)
-
-    def refresh_suggestions(self) -> None:
-        """The gear presets changed (the Roll Card's Presets section): offer the new lists."""
-        for kind, model in self._completers.items():
-            model.setStringList(suggest.suggestions(kind))
-
-    def _on_text_finished(self) -> None:
-        self._on_camera_picked()
-        if self._info.isChecked():
-            self.changed.emit(*self.values())

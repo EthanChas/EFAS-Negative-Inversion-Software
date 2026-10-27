@@ -78,7 +78,7 @@ from ..features.lookpresets import module_builtin
 from ..features.lablook import logic as lab_look_logic
 from ..features.printresponse import logic as print_response_logic
 from ..features.geometry import corners as corners_logic
-from ..features.watermark.marks import Marks
+from ..features.watermark.marks import MARKS_MODULES, Marks
 from ..features.open_image.logic import is_raw
 from ..features.open_image.processor import load_image_rgb, make_preview_rgb, to_uint8
 from ..features.support import applog
@@ -1140,9 +1140,12 @@ class AppController(QObject):
             extra = ", with camera/lens text" if info else ""
             self._log(f"Canister watermark: {wm.FILMS[film]}, {wm.TEXTURES[texture].lower()}, {wm.SIZES[size][0].lower()}, {wm.POSITIONS[position].lower()}{extra}")
 
-    def set_marks(self, marks: Marks) -> None:
-        """The text, logo and camera/lens watermarks, and where the canister has been dragged to (the Watermark tab)."""
+    def set_marks(self, marks: Marks, module: str | None = None) -> None:
+        """The marker, text and camera/lens watermarks, and where the canister has been dragged to. `module` ("watermark" or "canisterwm"): only the fields that module owns are taken from
+        `marks`, the rest stay as they are (each of the two panels knows only its own)."""
         s = self.state
+        if module is not None:
+            marks = s.marks.with_part(module, marks)
         if s.preview_rgb is None or marks == s.marks:
             return
         before, s.marks = s.marks, marks
@@ -3890,7 +3893,7 @@ class AppController(QObject):
                 return abs(a - b) < 1e-9
             return a == b
 
-        return any(not same(v, defaults[k]) for k, v in values.items() if k in defaults and k not in ("metering", "marks"))
+        return any(not same(v, defaults[k]) for k, v in values.items() if k in defaults and k not in ("metering", "marks")) or (key in MARKS_MODULES and bool(s.marks.part(key)))
 
     def module_title(self, key: str) -> str:
         base, instance_id = inst_logic.split_key(key)
@@ -3994,8 +3997,8 @@ class AppController(QObject):
                 out[curve_key] = [list(p) for p in out[curve_key]]
         if key == "negative":
             out["metering"] = dataclasses.replace(self.state.metering, rect=None).to_dict()
-        if key == "watermark":
-            out["marks"] = self.state.marks.to_dict()
+        if key in MARKS_MODULES:
+            out["marks"] = self.state.marks.part(key)
         return out
 
     def reset_module(self, key: str) -> bool:
@@ -4006,8 +4009,8 @@ class AppController(QObject):
         if key == "negative":
             values["negative_inverted"] = self.state.detected_mode != ProcessMode.E6
             self.state.metering = Metering()
-        if key == "watermark":
-            values["marks"] = {}
+        if key in MARKS_MODULES:
+            values["marks"] = self.state.marks.cleared(key).to_dict()
         self._put_blend(key, mask_blend.Blend())   # a module's Mask box goes back to off with the rest of it
         if self.apply_look(values, f"Reset {self.module_title(key)}"):
             self._module_preset_in_use.pop((self.state.image_path, key), None)
@@ -4033,6 +4036,8 @@ class AppController(QObject):
         current = self.module_values(key)
         if saved is None or current is None:
             return False
+        if name is not None and key in MARKS_MODULES and "marks" in saved:     # (a preset made before the module was split holds all the marks: only its own part counts)
+            saved = {**saved, "marks": Marks.from_dict(saved["marks"]).part(key)}
         return any(not _same_value(current.get(k), v) for k, v in saved.items() if k in current)
 
     def update_module_preset(self, key: str) -> bool:
@@ -4063,6 +4068,8 @@ class AppController(QObject):
             self.notice.emit(f"Preset '{name}' was not found")
             return False
         label = f"{self.module_title(key)} preset '{name}'"
+        if key in MARKS_MODULES and "marks" in values:     # a preset of one module leaves what the other keeps in the marks alone
+            values = {**values, "marks": self.state.marks.with_part(key, values["marks"]).to_dict()}
         if self.apply_look(values, label):
             self._module_preset_in_use[(self.state.image_path, key)] = name
             self._save_edit_state()
@@ -4430,10 +4437,20 @@ class AppController(QObject):
         self.notice.emit(f"Copied settings from {os.path.basename(path)}")
         return True
 
-    def paste_settings_to_paths(self, paths: list[str]) -> int:
-        """Apply the copied look to these photos: the open one live, the others straight into their saved edits (crops, rotation and
+    def set_settings_on_paths(self, paths: list[str], values: dict) -> int:
+        """Set chosen settings (film type, exposure...) on these photos, leaving everything else of each as it is. Choosing a film type by hand also inverts (colour or B&W
+        negative) or does not invert (slide) as the Film type menu does; Auto-detect leaves that as each photo has it, since the detection is made when a photo is opened.
+        Returns how many photos changed."""
+        values = dict(values)
+        film = values.get("film_type")
+        if film in ("c41", "bw", "e6") and "negative_inverted" not in values:
+            values["negative_inverted"] = film in ("c41", "bw")
+        return self.paste_settings_to_paths(paths, values, "Set settings")
+
+    def paste_settings_to_paths(self, paths: list[str], look: dict | None = None, label: str = "Pasted settings") -> int:
+        """Apply the copied look (or `look`) to these photos: the open one live, the others straight into their saved edits (crops, rotation and
         retouching are kept). Returns how many changed."""
-        look = self._copied_look
+        look = self._copied_look if look is None else look
         if look is None or not paths:
             return 0
         from .export_worker import default_edit_state
@@ -4445,7 +4462,7 @@ class AppController(QObject):
         by_folder: dict[str, list] = {}
         for path in paths:
             if path == self.state.image_path:
-                done += 1 if self.apply_look(look, "Pasted settings") else 0
+                done += 1 if self.apply_look(look, label) else 0
                 continue
             saved = edit_store.load_edit_state(self._db, path)
             if saved is None:
@@ -4457,9 +4474,9 @@ class AppController(QObject):
             if state["crop_rect"] is None:
                 xmp.write_sidecar(path, state, (1, 1))
             done += 1
-        self.notice.emit(f"Pasted settings on {done} photo{'s' if done != 1 else ''}")
+        self.notice.emit(f"{label} on {done} photo{'s' if done != 1 else ''}")
         for folder, ops in by_folder.items():
-            roll_undo.record(self._db, folder, "Pasted settings", ops)
+            roll_undo.record(self._db, folder, label, ops)
         if by_folder:
             self.roll_undo_changed.emit()
         return done

@@ -147,7 +147,7 @@ def clean_module_values(module: str, raw: Any, notes: set[str] | None = None) ->
     if module not in PANEL_MODULES:
         return {}
     specs = {f.key: f for f in panel_fields(module)}
-    return _clean_values(raw, specs, notes if notes is not None else set(), marks=module == "watermark", metering=module == "negative")
+    return _clean_values(raw, specs, notes if notes is not None else set(), marks=module in ("watermark", "canisterwm"), metering=module == "negative")
 
 
 # ------------------------------------------------------------ building and reading a file

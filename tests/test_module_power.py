@@ -27,7 +27,7 @@ class _Saved:
 def test_every_module_but_negative_can_be_switched_off():
     assert "negative" not in M.SWITCHABLE and set(M.SWITCHABLE) == set(M.PANEL_MODULES) - {"negative"}
     assert M.off_overrides(["negative"]) == {}, "the inversion cannot be switched off"
-    over = M.off_overrides(["exposure", "tonecurve", "watermark", "sharpening", "color"])
+    over = M.off_overrides(["exposure", "tonecurve", "canisterwm", "sharpening", "color"])
     assert over["exposure_ev"] == 0.0 and over["wm_film"] == "off" and over["sharpen_amount"] == 0.0
     assert over["saturation"] == over["temperature"] == over["tint"] == 0.0
     assert over["tone_curve_points"] == tuple(tuple(p) for p in DEFAULT_POINTS)
@@ -38,7 +38,7 @@ def test_an_off_module_is_made_as_if_untouched_and_its_settings_are_kept():
                    tone_curve_points=[(0, 0), (128, 90), (255, 255)])
     on = EditParams.from_state(saved)
     assert (on.exposure_ev, on.contrast, on.saturation) == (1.2, 0.4, 0.5) and on.wm_film == "portra"
-    saved.modules_off = ["exposure", "color", "watermark", "tonecurve", "finishing"]
+    saved.modules_off = ["exposure", "color", "canisterwm", "tonecurve", "finishing"]
     off = EditParams.from_state(saved)
     assert off.exposure_ev == 0.0 and off.saturation == 0.0 and off.wm_film == "off" and off.vignette == 0.0
     assert off.tone_curve_points == tuple(tuple(p) for p in DEFAULT_POINTS)

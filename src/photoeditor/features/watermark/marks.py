@@ -1,4 +1,8 @@
-"""Watermarks that are not the canister - a block of text, a logo (SVG or picture) and the camera/lens text on its own, laid over the finished picture."""
+"""The watermarks that are not the canister, laid over the finished picture: the marker (an SVG or a picture - the Watermark module, darktable's: dtmark.py), and EFAS's own
+text, camera/lens text and dragged-canister place (the Canister Watermark module).
+
+`Marks` holds both, because both are kept, copied and drawn together. Each module owns some of its fields (`MARKER_FIELDS` for the Watermark module, the rest for Canister Watermark): a
+module's preset, reset and on/off light touch only its own (`part`, `with_part`, `cleared`)."""
 
 import dataclasses
 import math
@@ -9,23 +13,20 @@ from typing import Any, Mapping
 
 import numpy as np
 
-from . import fonts, library, logoimage
+from . import dtmark, fonts, library, logoimage
 from . import variables as wmvars
 from .logic import CREDIT, MARGIN, POSITIONS, Part, _blend
 
 CUSTOM = "custom"
 PLACES = {**POSITIONS, CUSTOM: "Custom"}
 DEFAULT_TEXT_POSITION = "bottom_right"
-DEFAULT_LOGO_POSITION = "bottom_left"
 DEFAULT_INFO_POSITION = "bottom_left"
 TEXT_SIZE_RANGE = (0.01, 0.15)
-LOGO_SIZE_RANGE = (0.01, 100.0)   # what a marker's size may be: from 1% to 10000% of what it is a share of (see Scale on) - far more than anyone needs, so it is never in the way
-LOGO_SIZE_SLIDER = (0.01, 5.0)    # what the slider covers (1% to 500%); the box beside it takes any size in the range above
 INFO_SIZE_RANGE = (0.01, 0.10)
 CANISTER_SIZE_RANGE = (0.05, 0.95)
 LINE_SPACING_RANGE = (0.0, 1.0)
 LETTER_SPACING_RANGE = (-0.1, 0.6)
-ROTATION_RANGE = (-180.0, 180.0)
+ROTATION_RANGE = dtmark.ROTATE_RANGE
 OUTLINE_RANGE = (0.0, 1.0)
 COLORS = {"white": "White", "black": "Black"}
 ALIGNS = {"auto": "Automatic", "left": "Left", "center": "Centre", "right": "Right"}
@@ -88,17 +89,17 @@ class Marks:
     text_outline: float = 0.0
     text_x: float = 0.5
     text_y: float = 0.9
-    # a logo (SVG or picture)
+    # the marker (SVG or picture), with darktable's settings (dtmark.py)
     logo: str = ""
-    logo_size: float = 0.18
-    logo_opacity: float = 0.9
-    logo_position: str = DEFAULT_LOGO_POSITION
-    logo_x: float = 0.15
-    logo_y: float = 0.9
-    logo_rotation: float = 0.0
-    logo_dx: float = 0.0   # how far the marker is moved from where its Position puts it, as a share of the picture's width (dragging it on the picture, or the X slider)
-    logo_dy: float = 0.0   # ... and of its height (the Y slider)
-    logo_scale_on: str = logoimage.DEFAULT_SCALE_ON   # what the size is a share of (logoimage.SCALE_ON)
+    logo_opacity: float = 1.0                  # 0-1 (darktable: 0-100%)
+    logo_scale: float = 100.0                  # percent, 1-500
+    logo_base: str = dtmark.DEFAULT_BASE       # Scale on (dtmark.BASES)
+    logo_img: str = dtmark.DEFAULT_IMAGE_SIDE      # with Scale on "advanced": the picture's dimension (dtmark.IMAGE_SIDES) ...
+    logo_svg: str = dtmark.DEFAULT_MARKER_SIDE     # ... and the marker's (dtmark.MARKER_SIDES)
+    logo_align: int = dtmark.DEFAULT_ALIGNMENT     # 0-8, row by row from the top left
+    logo_xoff: float = 0.0                     # -1 to 1: a share of the base width
+    logo_yoff: float = 0.0                     # ... and of the base height
+    logo_rotation: float = 0.0                 # degrees, clockwise
     # what an SVG marker takes for its $(WATERMARK_TEXT), $(WATERMARK_COLOR), $(WATERMARK_FONT_FAMILY), $(WATERMARK_FONT_STYLE) and $(WATERMARK_FONT_WEIGHT) (darktable's variables)
     logo_text: str = ""
     logo_color: str = "white"
@@ -131,6 +132,21 @@ class Marks:
     def has_custom_canister(self) -> bool:
         return self.canister_x >= 0 and self.canister_y >= 0
 
+    def part(self, module: str) -> dict[str, Any]:
+        """What one module owns of this, as a dict of what differs from the defaults (the Watermark module: the marker; Canister Watermark: the rest)."""
+        keep = _owned(module)
+        return {k: v for k, v in self.to_dict().items() if k in keep}
+
+    def with_part(self, module: str, other: "Marks | dict | None") -> "Marks":
+        """This, with the fields one module owns taken from `other` (whose other fields are ignored)."""
+        other = Marks.from_dict(other)
+        keep = _owned(module)
+        return dataclasses.replace(self, **{f.name: getattr(other, f.name) for f in dataclasses.fields(self) if f.name in keep})
+
+    def cleared(self, module: str) -> "Marks":
+        """This, with the fields one module owns put back to the defaults."""
+        return self.with_part(module, Marks())
+
     def info_alone(self, info: bool, camera: str, lens: str, canister_on: bool) -> bool:
         """Is the camera/lens text drawn by itself (not beside the canister)?"""
         return bool(info and (camera.strip() or lens.strip()) and (not canister_on or not self.info_beside))
@@ -143,9 +159,13 @@ class Marks:
         return self.active() or self.info_alone(info, camera, lens, canister_on)
 
     def to_dict(self) -> dict[str, Any]:
-        """Only what differs from the defaults, so a photo without marks stores {}."""
+        """Only what differs from the defaults, so a photo without marks stores {}. A marker also stores the version of its settings (`v`), which tells a marker set up by the Watermark
+        module of this version (darktable's settings) from one an earlier version made (a share of the picture, a position and a margin): see _upgrade."""
         base = Marks()
-        return {f.name: getattr(self, f.name) for f in dataclasses.fields(self) if getattr(self, f.name) != getattr(base, f.name)}
+        out = {f.name: getattr(self, f.name) for f in dataclasses.fields(self) if getattr(self, f.name) != getattr(base, f.name)}
+        if self.logo:
+            out["v"] = MARKER_VERSION
+        return out
 
     @classmethod
     def from_dict(cls, data: Any) -> "Marks":
@@ -155,6 +175,7 @@ class Marks:
         if not isinstance(data, dict):
             return cls()
         d = cls()
+        data = _upgrade(data)
         kw: dict[str, Any] = {}
         for f in dataclasses.fields(cls):
             name, default, raw = f.name, getattr(d, f.name), data.get(f.name)
@@ -170,8 +191,14 @@ class Marks:
                 kw[name] = _text(raw, TEXT_MAX)
             elif name == "logo_text":
                 kw[name] = _text(raw, MARKER_TEXT_MAX)
-            elif name == "logo_scale_on":
-                kw[name] = _choice(raw, logoimage.SCALE_ON, default)
+            elif name == "logo_base":
+                kw[name] = _choice(raw, dtmark.BASES, default)
+            elif name == "logo_img":
+                kw[name] = _choice(raw, dtmark.IMAGE_SIDES, default)
+            elif name == "logo_svg":
+                kw[name] = _choice(raw, dtmark.MARKER_SIDES, default)
+            elif name == "logo_align":
+                kw[name] = int(_num(raw, 0, 8, default))
             elif name in ("logo", "text_font", "info_font", "logo_font"):
                 kw[name] = _text(raw, 260)
             elif isinstance(default, bool):
@@ -187,12 +214,71 @@ class Marks:
 _RANGES = {
     "text_size": TEXT_SIZE_RANGE, "text_opacity": (0.0, 1.0), "text_line_spacing": LINE_SPACING_RANGE, "text_letter_spacing": LETTER_SPACING_RANGE,
     "text_rotation": ROTATION_RANGE, "text_outline": OUTLINE_RANGE, "text_x": (0.0, 1.0), "text_y": (0.0, 1.0),
-    "logo_size": LOGO_SIZE_RANGE, "logo_opacity": (0.0, 1.0), "logo_x": (0.0, 1.0), "logo_y": (0.0, 1.0), "logo_rotation": ROTATION_RANGE, "logo_dx": (-1.0, 1.0), "logo_dy": (-1.0, 1.0),
+    "logo_opacity": (0.0, 1.0), "logo_scale": dtmark.SCALE_RANGE, "logo_xoff": dtmark.OFFSET_RANGE, "logo_yoff": dtmark.OFFSET_RANGE, "logo_rotation": ROTATION_RANGE,
     "canister_x": (-1.0, 1.0), "canister_y": (-1.0, 1.0), "canister_size": (0.0, CANISTER_SIZE_RANGE[1]),
     "info_size": INFO_SIZE_RANGE, "info_opacity": (0.0, 1.0), "info_x": (0.0, 1.0), "info_y": (0.0, 1.0),
 }
-_PLACE_FIELDS = ("text_position", "logo_position", "info_position")
+_PLACE_FIELDS = ("text_position", "info_position")
 _COLOR_FIELDS = ("text_color", "info_color", "logo_color")
+
+MARKER_VERSION = 2   # 1: an earlier version's marker (size as a share, a position, a margin); 2: darktable's settings
+WATERMARK, CANISTER = "watermark", "canisterwm"     # the two modules: darktable's Watermark (the marker) and EFAS's Canister Watermark (the rest)
+MARKS_MODULES = (WATERMARK, CANISTER)
+MARKER_FIELDS = frozenset({
+    "logo", "logo_opacity", "logo_scale", "logo_base", "logo_img", "logo_svg", "logo_align", "logo_xoff", "logo_yoff", "logo_rotation",
+    "logo_text", "logo_color", "logo_font", "logo_bold", "logo_italic",
+})
+
+
+def _owned(module: str) -> frozenset[str]:
+    names = {f.name for f in dataclasses.fields(Marks)}
+    if module == WATERMARK:
+        return MARKER_FIELDS | {"v"}
+    if module == CANISTER:
+        return frozenset(names - MARKER_FIELDS)
+    return frozenset()
+
+
+_LEGACY_MARKER_KEYS = ("logo_size", "logo_position", "logo_x", "logo_y", "logo_dx", "logo_dy", "logo_scale_on")
+_LEGACY_ALIGN = {"top_left": 0, "top_center": 1, "top_right": 2, "middle_left": 3, "center": 4, "middle_right": 5, "bottom_left": 6, "bottom_center": 7, "bottom_right": 8}
+
+
+def place_as_darktable(position: str, cx: float, cy: float, dx: float, dy: float, base: str) -> tuple[int, float, float]:
+    """(alignment, X offset, Y offset) for a place an earlier version described as a menu position (kept off the edge by a margin of 3% of the shorter side), or a centre (cx, cy) as
+    shares of the picture, and a move (dx, dy) as shares of its width and height. Offsets are shares of the base width and height, which depend on the picture's shape: a 3:2 frame is
+    assumed, so a place comes out right for the usual picture and close for any other."""
+    wide = 1.5                                  # width over height of the picture assumed
+    wb, hb = {"larger": (wide, wide), "smaller": (1.0, 1.0)}.get(base, (wide, 1.0))   # the base width and height, with the picture's height 1
+    margin = 0.03                               # of the shorter side (the height)
+    if position == "custom":
+        align, x, y = 4, (cx - 0.5) * wide / wb, (cy - 0.5) / hb
+    else:
+        align = _LEGACY_ALIGN.get(position, 6)
+        col, row = align % 3, align // 3
+        x = (margin / wb if col == 0 else -margin / wb if col == 2 else 0.0)
+        y = (margin / hb if row == 0 else -margin / hb if row == 2 else 0.0)
+    x += dx * wide / wb
+    y += dy / hb
+    return align, round(max(-1.0, min(1.0, x)), 4), round(max(-1.0, min(1.0, y)), 4)
+
+
+def _upgrade(data: dict) -> dict:
+    """A marker an earlier version set up (no `v`, with a size as a share of the picture, a position, a margin) as the same marker with darktable's settings. The size's meaning carries
+    over exactly: its shorter side is Smaller border, its longer side Larger border, fit the picture is Image, and width and height are Advanced with that dimension of the picture and the
+    marker; the position and the move become an alignment and offsets (place_as_darktable)."""
+    if not data.get("logo") or data.get("v") == MARKER_VERSION:
+        return {k: v for k, v in data.items() if k not in _LEGACY_MARKER_KEYS}
+    num = lambda key, default: _num(data.get(key), -1e9, 1e9, default)   # noqa: E731
+    size = num("logo_size", 0.18)
+    mode = data.get("logo_scale_on") if data.get("logo_scale_on") in ("fit", "short", "long", "width", "height") else "short"
+    base, img, svg = {"fit": ("image", "larger", "width"), "short": ("smaller", "larger", "width"), "long": ("larger", "larger", "width"),
+                      "width": ("advanced", "width", "width"), "height": ("advanced", "height", "height")}[mode]
+    position = data.get("logo_position") if data.get("logo_position") in (*_LEGACY_ALIGN, "custom") else "bottom_left"
+    align, x, y = place_as_darktable(position, num("logo_x", 0.15), num("logo_y", 0.9), num("logo_dx", 0.0), num("logo_dy", 0.0), base)
+    out = {k: v for k, v in data.items() if k not in _LEGACY_MARKER_KEYS}
+    out.update({"logo_scale": size * 100.0, "logo_base": base, "logo_img": img, "logo_svg": svg, "logo_align": align, "logo_xoff": x, "logo_yoff": y,
+                "logo_opacity": num("logo_opacity", 0.9), "v": MARKER_VERSION})
+    return out
 
 
 @dataclass(frozen=True)
@@ -339,54 +425,26 @@ def marker_variables(marks: Marks, variables: Mapping[str, str] | None = None) -
     return base
 
 
-def _logo_request(marks: Marks, iw: int, ih: int, natural: tuple[float, float]) -> tuple[str, int]:
-    """(how the size is read, the pixels) for the marker - see logoimage.SCALE_ON."""
-    if marks.logo_scale_on == "fit":   # darktable's default: a wide marker is a share of the picture's width, a tall one of its height
-        return ("width", max(4, round(iw * marks.logo_size))) if natural[0] >= natural[1] else ("height", max(4, round(ih * marks.logo_size)))
-    if marks.logo_scale_on == "long":
-        return "long", max(4, round(max(iw, ih) * marks.logo_size))
-    if marks.logo_scale_on == "width":
-        return "width", max(4, round(iw * marks.logo_size))
-    if marks.logo_scale_on == "height":
-        return "height", max(4, round(ih * marks.logo_size))
-    return "long", max(4, round(min(iw, ih) * marks.logo_size))
-
-
 TEXT_MARKER = "simple-text.svg"   # the sample marker that writes a line of text
 
 
 def text_as_marker(marks: Marks) -> Marks:
     """The old Text mark rewritten as the simple-text marker (an approximation: one line, its letters about as tall, the same colour, font, place and turn), so the text can be kept and edited
-    in the Marker section; the text mark itself is cleared."""
-    size = max(LOGO_SIZE_RANGE[0], min(LOGO_SIZE_RANGE[1], marks.text_size * 13.2))   # that marker's letters are 76 of its 1000 units
+    in the Watermark module; the text mark itself is cleared."""
+    size = max(dtmark.SCALE_RANGE[0], min(dtmark.SCALE_RANGE[1], marks.text_size * 13.2 * 100.0))   # that marker's letters are 76 of its 1000 units; its size is a share of the shorter side
+    align, x, y = place_as_darktable(marks.text_position, marks.text_x, marks.text_y, 0.0, 0.0, "smaller")
     return dataclasses.replace(
         marks, text="", logo=TEXT_MARKER, logo_text=" ".join(marks.text.split())[:MARKER_TEXT_MAX], logo_color=marks.text_color, logo_font=marks.text_font, logo_bold=marks.text_bold,
-        logo_italic=marks.text_italic, logo_size=size, logo_opacity=marks.text_opacity, logo_position=marks.text_position, logo_x=marks.text_x, logo_y=marks.text_y,
-        logo_rotation=marks.text_rotation, logo_scale_on="short", logo_dx=0.0, logo_dy=0.0,
+        logo_italic=marks.text_italic, logo_scale=size, logo_base="smaller", logo_opacity=marks.text_opacity, logo_align=align, logo_xoff=x, logo_yoff=y, logo_rotation=marks.text_rotation,
     )
 
 
-def _logo_part(marker: str, marks: Marks, iw: int, ih: int, margin: int, svg_vars: Mapping[str, str]) -> Part:
-    """The marker as a part of the watermark: drawn whole when it is a reasonable size; when it is many times the picture (the size has no limit) only the part on the picture is drawn, and
-    the part still says where the whole marker is, so it can be dragged and its box shown."""
-    natural = logoimage.natural_size(marker, svg_vars)
-    mode, px = _logo_request(marks, iw, ih, natural)
-    width, height = logoimage.drawn_size(natural, mode, px)
-    box_w, box_h = logoimage.turned_size(width, height, marks.logo_rotation) if marks.logo_rotation else (width, height)
-    if box_w * box_h <= logoimage.FULL_SPRITE_PIXELS:
-        rgb, alpha = logoimage.marker_sprite(marker, mode, px, marks.logo_opacity, svg_vars)
-        if marks.logo_rotation:
-            rgb, alpha = _rotate(rgb, alpha, marks.logo_rotation)
-        x, y = _where(marks.logo_position, marks.logo_x, marks.logo_y, iw, ih, alpha.shape[1], alpha.shape[0], margin)
-        return Part("logo", rgb, alpha, x + round(marks.logo_dx * iw), y + round(marks.logo_dy * ih))
-    x, y = _where(marks.logo_position, marks.logo_x, marks.logo_y, iw, ih, box_w, box_h, margin)
-    x, y = x + round(marks.logo_dx * iw), y + round(marks.logo_dy * ih)
-    x0, y0, x1, y1 = max(0, x), max(0, y), min(iw, x + box_w), min(ih, y + box_h)
-    if x1 <= x0 or y1 <= y0:   # all of it is off the picture
-        rgb, alpha = np.zeros((1, 1, 3), np.float32), np.zeros((1, 1), np.float32)
-        return Part("logo", rgb, alpha, max(0, min(iw - 1, x0)), max(0, min(ih - 1, y0)), (x, y, box_w, box_h))
-    rgb, alpha = logoimage.marker_window(marker, svg_vars, (width, height), marks.logo_rotation, (x + box_w / 2.0, y + box_h / 2.0), (x0, y0, x1, y1), marks.logo_opacity)
-    return Part("logo", rgb, alpha, x0, y0, (x, y, box_w, box_h))
+def _logo_part(marker: str, marks: Marks, iw: int, ih: int, svg_vars: Mapping[str, str]) -> Part:
+    """The marker as a part of the watermark, laid out and drawn the way darktable's Watermark module does (dtmark.py)."""
+    return dtmark.marker_part(
+        marker, svg_vars, iw, ih, base=marks.logo_base, image_side=marks.logo_img, marker_side=marks.logo_svg, scale_percent=marks.logo_scale, alignment=marks.logo_align,
+        xoffset=marks.logo_xoff, yoffset=marks.logo_yoff, rotate=marks.logo_rotation, opacity=marks.logo_opacity,
+    )
 
 
 def mark_parts(shape, marks: Marks, info: bool = False, camera: str = "", lens: str = "", canister_on: bool = False, variables: Mapping[str, str] | None = None) -> list[Part]:
@@ -398,7 +456,7 @@ def mark_parts(shape, marks: Marks, info: bool = False, camera: str = "", lens: 
     marker = library.resolve(marks.logo)
     if marker is not None:
         try:
-            parts.append(_logo_part(marker, marks, iw, ih, margin, marker_variables(marks, variables)))
+            parts.append(_logo_part(marker, marks, iw, ih, marker_variables(marks, variables)))
         except Exception:
             pass
     text = wmvars.expand(marks.text, variables or {}) if marks.has_text() else ""

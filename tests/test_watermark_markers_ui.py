@@ -52,7 +52,7 @@ _SCRIPT = textwrap.dedent(r'''
     assert tool._marker_combo.itemText(0) == "None" and "sample" in tool._marker_combo.itemText(names.index("simple-text.svg"))
     assert not tool._logo_text.isEnabled() and not tool._logo_color.isEnabled() and not tool._logo_font.isEnabled(), "no marker: nothing to set"
     tool._marker_combo.setCurrentIndex(names.index("simple-text.svg"))
-    assert s.marks.logo_scale_on == "fit" and s.marks.logo_size == 1.0, "the first marker starts as darktable's does: sized to fit the picture"
+    assert (s.marks.logo_base, s.marks.logo_scale, s.marks.logo_align) == ("image", 100.0, 4), "a marker starts as darktable's does: sized to the image at 100%, in the middle"
     assert s.marks.logo == "simple-text.svg" and tool._logo_text.isEnabled() and tool._logo_color.isEnabled() and tool._logo_font.isEnabled() and tool._logo_bold.isEnabled()
     assert "text, colour, font" in tool._logo_name.text(), tool._logo_name.text()
     tool._marker_combo.setCurrentIndex(names.index("film-frame-info.svg"))
@@ -61,16 +61,16 @@ _SCRIPT = textwrap.dedent(r'''
     # ---- the text, colour, size and rotation reach the picture
     tool._marker_combo.setCurrentIndex(names.index("simple-text.svg"))
     before = s.image_rgb.copy()
-    tool._logo_text.setText("(c) Me $(EXIF.YEAR-2026)"); tool._logo_color.set_value("#ff0000"); tool._logo_size.set_value(60); tool._logo_position.setCurrentIndex(tool._logo_position.findData("center"))
+    tool._logo_text.setText("(c) Me $(EXIF.YEAR-2026)"); tool._logo_color.set_value("#ff0000"); tool._scale.set_value(60); tool._align_buttons[4].click()
     tool._emit_marks()
-    assert s.marks.logo_text == "(c) Me $(EXIF.YEAR-2026)" and s.marks.logo_color == "#ff0000" and s.marks.logo_size == 0.6
+    assert s.marks.logo_text == "(c) Me $(EXIF.YEAR-2026)" and s.marks.logo_color == "#ff0000" and s.marks.logo_scale == 60.0
     assert pump(lambda: not np.array_equal(s.image_rgb, before)), "the marker is drawn"
     red = (s.image_rgb[..., 0].astype(int) - s.image_rgb[..., 1].astype(int) > 100).sum()
     assert red > 200, "in red"
-    tool._logo_scale_on.setCurrentIndex(tool._logo_scale_on.findData("width")); tool._logo_rotation.set_value(90); tool._emit_marks()
-    assert s.marks.logo_scale_on == "width" and s.marks.logo_rotation == 90.0
+    tool._base_combo.setCurrentIndex(tool._base_combo.findData("smaller")); tool._rotation.set_value(90); tool._emit_marks()
+    assert s.marks.logo_base == "smaller" and s.marks.logo_rotation == 90.0
     tool.set_marks(s.marks)   # what a history step does: the controls show what is stored
-    assert tool._logo_scale_on.currentData() == "width" and tool._logo_rotation.value() == 90 and tool._logo_text.text() == "(c) Me $(EXIF.YEAR-2026)" and tool._marker_combo.currentData() == "simple-text.svg"
+    assert tool._base_combo.currentData() == "smaller" and tool._rotation.value() == 90 and tool._logo_text.text() == "(c) Me $(EXIF.YEAR-2026)" and tool._marker_combo.currentData() == "simple-text.svg"
 
     # ---- a picture marker has its own colours; a marker that is not there is said to be missing and is not drawn
     png = os.path.join(work, "dot.png"); cv2.imwrite(png, np.full((40, 40, 4), 255, np.uint8))
@@ -78,7 +78,7 @@ _SCRIPT = textwrap.dedent(r'''
     tool._choose_logo()
     assert s.marks.logo == "dot.png" and os.path.isfile(os.path.join(library.user_dir(), "dot.png")) and "Picture marker" in tool._logo_name.text()
     assert not tool._logo_text.isEnabled() and not tool._logo_color.isEnabled()
-    tool.set_marks(Marks(logo="gone.svg", logo_size=0.5))
+    tool.set_marks(Marks(logo="gone.svg", logo_scale=50.0))
     assert "Missing: gone.svg" in tool._logo_name.text() and tool._marker_combo.currentData() == "gone.svg" and tool._marker_combo.currentText() == "Missing: gone.svg"
     assert not Marks(logo="gone.svg").has_logo()
     open(os.path.join(library.user_dir(), "gone.svg"), "w").write('<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"/>')
@@ -108,7 +108,7 @@ _SCRIPT = textwrap.dedent(r'''
     c.set_marks(Marks()); assert pump(lambda: not s.marks.has_logo() and not s.marks.has_text())
     plain = s.image_rgb.copy()
     assert c.apply_builtin_preset("Watermarks (EFAS Examples)/Film credit, bottom left, light")
-    assert s.marks.logo == "efas-film-credit.svg" and s.marks.logo_position == "bottom_left" and s.marks.logo_color == "white" and s.wm_film == "off" and not s.wm_info
+    assert s.marks.logo == "efas-film-credit.svg" and s.marks.logo_align == 6 and s.marks.logo_color == "white" and s.wm_film == "off" and not s.wm_info
     assert pump(lambda: not np.array_equal(s.image_rgb, plain)), "the film credit is drawn"
     tool.set_marks(s.marks); assert tool._marker_combo.currentData() == "efas-film-credit.svg" and tool._logo_color.isEnabled()
     one = s.image_rgb.copy()

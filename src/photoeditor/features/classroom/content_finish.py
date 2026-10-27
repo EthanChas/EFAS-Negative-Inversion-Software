@@ -26,31 +26,58 @@ NOTE: A vignette *fixes* nothing. If your corners are dark because of uneven sca
 
 **Border** surrounds the picture with a frame, in **white**, **black**, **grey** (a middle grey) or **warm paper** (a creamy off-white). Its width is a share of the picture's **shorter side**, up to 20%. The border is **added around** the picture rather than cut out of it: the finished picture is larger, by the border's width on every side. A thin white border mimics the border of a darkroom print and is lovely for sharing; a black one makes a picture look like a negative carrier's edge. Choose the colour to suit where it will be shown, not the picture.
 
-The finishing touches are applied before any watermark: see [[watermark-module]].
-""", keywords=("vignette", "border", "frame", "corners", "finishing", "print", "white border", "darken corners"), module="Finishing", see=("watermark-module", "flat-field-module")),
+The finishing touches are applied before any watermark: see [[watermark-module]] and [[canister-watermark-module]].
+""", keywords=("vignette", "border", "frame", "corners", "finishing", "print", "white border", "darken corners"), module="Finishing", see=("watermark-module", "canister-watermark-module", "flat-field-module")),
 
-    Lesson("watermark-module", "finish", "Watermark: canister, camera text and marker", "Understand the kinds of mark, how they position themselves, and how they become part of the exported picture.",
+    Lesson("watermark-module", "finish", "Watermark: a marker on the picture", "Put an SVG or picture marker on the finished picture, sized and placed the way darktable's Watermark module does.",
            r"""
-A **watermark** in EFAS is anything added to the finished picture that is *not* part of the photograph: a stamp, a caption, a copyright line, a logo. There are three kinds, and they can be combined. Everything you place here is **part of the finished image**, so it is in exports too. Because it is added at the very end, it does not affect the histogram or any measurement.
+The **Watermark** module is ported from darktable's: a **marker** (an SVG, which stays perfectly sharp at any size, or a picture such as a PNG with a transparent background) laid over the finished picture. Everything it puts there is **part of the finished image**, so it is in exports too. It is added after the crop, the vignette and Edge Color and before the border, so it does not affect the histogram or any measurement. EFAS's own older watermarks (the film canister and the camera and lens text) are a separate module, [[canister-watermark-module]].
 
-## The marks
+## The marker
 
-**Canister** is a 3D film canister placed over the picture like a stamp, a nod to where the picture came from. **Film** picks the label (the built-in stocks are Fomapan 200, Ilford Delta 400 and Kodak Gold 200), **Texture** the body of the canister (aluminium, plastic or scuffed), **Size** how big it is and **Position** where it sits. **None** removes it.
+Markers are files in a **watermarks folder** and are chosen by name from the **marker** list: **Add...** copies a file into the folder, **Open Folder** shows it, **Reload** looks again, and four samples come with EFAS. A preset that uses a marker remembers its name, so it works on any computer that has a file of that name. An SVG can be a **template**, the way darktable's watermarks are. Where it has `$(WATERMARK_TEXT)`, `$(WATERMARK_COLOR)` or the font variables, EFAS fills them in from the **text**, **font** and **color** here, and the general variables work too: `$(CAMERA)`, `$(EXIF.YEAR)`, `$(FILM)`, `$(FILE.NAME)` and more, taken from the Roll Card and the frame. So one file can write `(c) 2024 Your Name` or the film and camera of every frame in a roll. **Variables...** lists every name with its value for the open photo. A line of words, such as a copyright, is the **simple-text** marker. See [[watermark-variables]] for the details. **opacity** is how see-through it is.
 
-**Camera and lens** writes the two lines of the gear used, in white, with a tiny credit line, either beside a canister or, without one (or with **Next to the canister** turned off), as a block of its own with its own position, size, colour and font. The **Camera** and **Lens** boxes, when left empty, use the ones from the **Roll Card**, which is another reason to fill that in first ([[roll-card-lesson]]).
+## Sizing it: scale on
 
-**Marker** adds your own mark: an **SVG**, which stays perfectly sharp at any size, or a picture such as a **PNG** with a transparent background. Markers are files in a **watermarks folder** and are chosen by name from a list: **Add...** copies a file into the folder, **Open Folder** shows it, **Reload** looks again, and three samples come with EFAS. A preset that uses a marker remembers its name, so it works on any computer that has a file of that name. A line of words, such as a copyright, is the **simple-text** marker, with its own **Text**, **Font** and **Colour**. (There used to be a separate Text section; a photo that still has an old text watermark shows it, and the Marker section offers to make it a marker or remove it.)
+The size is worked out on the **cropped** picture, as darktable does it, and **scale** (1% to 500%) multiplies it. **scale on** chooses what the marker's size is measured against:
 
-An SVG can be a **template**, the way darktable's watermarks are. Where it has `$(WATERMARK_TEXT)`, `$(WATERMARK_COLOR)` or the font variables, EFAS fills them in from the marker's own **Text**, **Colour** and **Font**, and the general variables work too: `$(CAMERA)`, `$(EXIF.YEAR)`, `$(FILM)`, `$(FILE.NAME)` and more, taken from the Roll Card and the frame. So one file can write `(c) 2024 Your Name` or the film and camera of every frame in a roll. **Variables...** lists every name with its value for the open photo, and so does the marker's own Text. The camera, lens and ISO are the film camera's, from the Roll Card ([[roll-card-lesson]]). Text and quotes in a value cannot break the SVG, because everything put into it is made safe first. The **Size** slider covers 1% to 500%, and the box beside it takes any size you type, up to 10000%, so a strip can fill the width of the picture or a marker can be far bigger than it. **Scale on** chooses what the size is a share of: **Fit the picture** (the default for the first marker you choose, as in darktable: a wide marker's width, or a tall one's height, against the picture's, so 100% fits the picture), the picture's shorter side (the same look in portrait and landscape), its longer side, or the marker's width or height against the picture's, and **Rotate** turns the marker. See [[watermark-variables]] for the details.
+**image** measures a wide marker's width, or a tall one's height, against the picture's width or height, so 100% fits the picture the way a strip fits its width. **larger border** and **smaller border** measure the marker's longer side against the picture's longer or shorter side, and the smaller border gives the same look in portrait and landscape. **height** measures the marker's height against the picture's height. **advanced options** lets you choose both: **scale marker to** (the picture's width, height, larger or smaller border) and **marker reference** (the marker's width or height).
 
-## Placing the marks
+A marker's own size is counted in whole pixels, the way darktable counts it, so a strip stated as 100 by 5.5 is 100 by 6, and an SVG with no size stated is fitted into a large square.
 
-Each mark has a **Position** menu. For finer control the marker has **Move X** and **Move Y** sliders, which move it from its position, and **Move and resize on the picture** (just under them) lets you drag any mark with the mouse and drag a corner to resize it. When you drag a marker, its Move X and Move Y follow, so the mouse and the sliders do the same thing, and the Position stays where it was. Dragging the canister or the camera text changes its Position menu to **Custom**; choosing a position from the menu puts it back.
+## Placing it
+
+**alignment** is a grid of nine places, from the top left to the bottom right. **x offset** and **y offset** move the marker from its place as a share of the picture (of the base width and height: the picture's own, except on the larger and smaller border, where both are that border). **rotation** turns it clockwise about its middle, and alignment allows for the turn, so a turned marker still sits against the corner it is aligned to. **Move and resize on the picture** lets you drag the marker with the mouse (the offsets follow, and the alignment stays) and drag a corner to resize it (scale follows).
 
 ## Using it
 
 Keep a watermark **small and quiet** if it is a credit: bottom corner, modest size, modest opacity. A large stamp over the middle of a picture ruins it. For a copyright line that is meant to deter copying, remember that a mark in a corner can simply be cropped off; one that is part of the picture is harder to remove but also more intrusive. If you export a picture for printing, think about whether you want a mark on it at all, since a watermark is baked into the exported pixels and cannot be removed later (your original, as always, is untouched).
-""", keywords=("watermark", "canister", "text", "logo", "marker", "copyright", "camera", "lens", "signature", "svg", "png", "stamp", "credit"), module="Watermark", see=("watermark-variables", "roll-card-lesson", "exporting")),
+""", keywords=("watermark", "text", "logo", "marker", "copyright", "signature", "svg", "png", "stamp", "credit", "scale", "alignment", "offset", "rotate", "darktable"), module="Watermark", see=("watermark-variables", "canister-watermark-module", "roll-card-lesson", "exporting")),
+
+    Lesson("canister-watermark-module", "finish", "Canister Watermark: canister and camera text", "EFAS's own original watermark: a film canister over the picture and the camera and lens written beside it.",
+           r"""
+**Canister Watermark** is EFAS's original watermark, kept as a module of its own beside darktable's [[watermark-module]]. It adds something to the finished picture that is *not* part of the photograph: a stamp that says where the picture came from. It is **part of the finished image**, so it is in exports too, and because it is added at the very end it does not affect the histogram or any measurement.
+
+## The canister
+
+A 3D film canister is placed over the picture like a stamp. **Film** picks the label (the built-in stocks are Fomapan 200, Ilford Delta 400 and Kodak Gold 200), **Texture** the body of the canister (aluminium, plastic or scuffed), **Size** how big it is and **Position** where it sits. **None** removes it.
+
+## Camera and lens
+
+**Add Camera and Lens** writes the two lines of the gear used, in white, with a tiny credit line, either beside a canister or, without one (or with **Next to the canister** turned off), as a block of its own with its own position, size, colour and font. The **Camera** and **Lens** boxes, when left empty, use the ones from the **Roll Card**, which is another reason to fill that in first ([[roll-card-lesson]]).
+
+## Placing it
+
+**Move and resize on the picture** lets you drag the canister or the camera text with the mouse and drag a corner to resize it. Dragging changes the **Position** (or **Size**) menu to **Custom**; choosing a position from the menu puts it back.
+
+## The old text watermark
+
+Earlier versions had a separate Text mark. A photo that still has one shows it here, with buttons to make it a marker (the simple-text marker of the Watermark module, where it can be edited) or to remove it.
+
+## Using it
+
+Keep it **small and quiet**: a canister in a bottom corner at a modest size. A big stamp over the middle of a picture ruins it. A mark is baked into the exported pixels and cannot be removed later (your original, as always, is untouched).
+""", keywords=("canister", "film", "camera", "lens", "credit", "stamp", "watermark", "efas", "original", "text"), module="Canister Watermark", see=("watermark-module", "roll-card-lesson", "exporting")),
 
     Lesson("halation-module", "finish", "Halation: a simulated glow", "Understand what halation is, why a film scan already has it, and what the module's sliders do if you add more.",
            r"""
@@ -73,7 +100,7 @@ TIP: Be honest about it. A glow you add is a look you chose, not something the f
 
     Lesson("watermark-variables", "finish", "Watermark variables and SVG templates", "Write a watermark once that fills in the film, camera, year or file name of every picture, the way darktable's watermarks do.",
            r"""
-A watermark can write something different on every picture without you typing it each time. In the **Text** mark, in the marker's **Text** and inside an **SVG** marker, anything written as `$(NAME)` is replaced by what that name means for the picture: `(c) $(EXIF.YEAR) $(CAMERA)` becomes `(c) 1987 Pentax K1000`. This is the same idea, and the same `$(...)` writing, that darktable's watermark module uses, so an SVG made for darktable works here.
+A watermark can write something different on every picture without you typing it each time. In the Watermark module's **text** and inside an **SVG** marker, anything written as `$(NAME)` is replaced by what that name means for the picture: `(c) $(EXIF.YEAR) $(CAMERA)` becomes `(c) 1987 Pentax K1000`. This is the same idea, and the same `$(...)` writing, that darktable's watermark module uses, so an SVG made for darktable works here.
 
 ## What the names mean
 
@@ -85,7 +112,7 @@ A few small additions after the name change how it comes out. A minus sign gives
 
 ## Writing an SVG template
 
-Draw the SVG in any editor and put the variables where the changing words go, for example `<text fill="$(WATERMARK_COLOR)">$(WATERMARK_TEXT)</text>`. Leave room in the drawing for the longest text, since text outside it is cut off. Put the file in the **watermarks folder** (the Marker section's **Open Folder** opens it) and press **Reload**. EFAS reads the file as text, fills in the variables and then draws it, so everything stays sharp at any size. Every value is made safe for XML on its way in, so a quote or an ampersand in a film name cannot break the file, and a value that looks like a variable is only text. Four samples come with EFAS: a line of text, a copyright line, a film and camera line and the **EFAS film credit** (with the EFAS icon on its left), and the built-in presets under **Watermarks (EFAS Examples)** apply them with a position, size and colour already set.
+Draw the SVG in any editor and put the variables where the changing words go, for example `<text fill="$(WATERMARK_COLOR)">$(WATERMARK_TEXT)</text>`. Leave room in the drawing for the longest text, since text outside it is cut off. Put the file in the **watermarks folder** (the Watermark module's **Open Folder** opens it) and press **Reload**. EFAS reads the file as text, fills in the variables and then draws it, so everything stays sharp at any size. Every value is made safe for XML on its way in, so a quote or an ampersand in a film name cannot break the file, and a value that looks like a variable is only text. Four samples come with EFAS: a line of text, a copyright line, a film and camera line and the **EFAS film credit** (with the EFAS icon on its left), and the built-in presets under **Watermarks (EFAS Examples)** apply them with a position, size and colour already set.
 
 If you already have SVGs from darktable, copy them into the watermarks folder: they work as they are. The names darktable accepts are understood, including the underscore spellings such as `$(EXIF_ISO)` and `$(EXIF_FOCAL_LENGTH)`, which give just the number as in darktable, and `$(Xmp.dc.creator)` gives the Artist the scanning camera wrote into the file. In EFAS the camera, lens and ISO are the film's, from the Roll Card, and the exposure comes from the Roll Card's Exposure box, so `1/125 f/8` there gives `1/125` and `8`.
 

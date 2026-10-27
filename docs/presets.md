@@ -139,6 +139,8 @@ Five examples of [watermarks](watermarks.md) that write the picture's own detail
 
 Darkroom papers, ported from NegPy's paper profiles (GPL-3.0): **Foma Fomabrom Variant**, **Foma Fomatone MG Classic**, **Ilford Multigrade RC**, **Ilford Multigrade FB Classic** (in the *B&W* folder), **Kodak Endura Premier** and **Fujicolor Crystal Archive** (in *Colour (RA4)*), and **Neutral (default)** to go back. Each sets the five sliders of the **Print Response** module (Snap, Toe, Toe width, Shoulder, Shoulder width) and nothing else, so it adds a paper's tone curve to whatever look you have.
 
+They are in the **Print Response** module's own **Presets** menu as well (grouped *B&W* and *Colour (RA4)*), since they only set its sliders, and applying one from either place is the same.
+
 NegPy describes a paper by constants of its own characteristic curve (maximum and minimum density, how sharp the toe and the shoulder are, the midtone gamma). Print Response has five sliders instead, so the values here were **fitted**: `tools/fit_negpy_papers.py` runs NegPy's own curve code for neutral paper and for each paper at NegPy's default grade, with black point compensation on and Paper White off, turns both into display tones, and finds the slider values that make EFAS's neutral picture look like the same picture printed on that paper. The fit is within 0.1 to 0.4 of 255 tone levels everywhere. The papers differ from neutral only by 2 to 5 levels (rms), so these are subtle: they are a paper's *character*, a little more snap in the midtones and a softer shoulder, not a different picture.
 
 Only the tone curve is carried over. NegPy's colour terms (the RA4 papers' channel gamma, dye matrix and base tint) and each B&W paper's lith colour path have no place in Print Response, and NegPy's own note says its values were loosely mapped from published datasheets, not calibrated (the Fuji paper is a rough estimate, as no curve is published for it).
@@ -156,3 +158,8 @@ The **Presets** menu in the header of **Diffuse or Sharpen**, **Tone Equalizer**
 Built-in presets are JSON files in `src/photoeditor/assets/presets/`. Each file holds `{"presets": [{"name": "Folder/Name", "description": "...", "look": {...}}]}`, where `look` uses the slider keys of the Presets and Print Response modules (see `features/lookpresets/modules.py`). A new file in that folder appears in the Built-in Presets list the next time EFAS starts.
 
 `tools/build_presets.py <folder>` rewrites the slider values of the built-in Scanners (EFAS Original) and Film Stocks presets from a folder of source files, using the conversion above.
+
+
+## Setting settings on several photos at once
+
+Select several photos (in the Workbench or the filmstrip) and choose **Set Settings for Selected...** (or right-click the selection > **Set Settings for N photos...**). Tick each setting to set and give it a value, for example **Film type** = *Color negative (C41)* for photos the auto-detection got wrong; unticked settings stay as each photo has them, and each photo keeps its own crop, rotation and dust repairs. Choosing a film type by hand also sets whether the photo is inverted, as the Film type menu does. It is one undoable step for the roll (the roll's Undo button), and the open photo changes live.

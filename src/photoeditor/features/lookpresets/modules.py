@@ -191,7 +191,8 @@ MODULES: tuple[ModuleSpec, ...] = (
         FieldSpec("border", "Border", "float", 0.0, 0.0, BORDER_MAX),
         FieldSpec("border_color", "Border color", "choice", DEFAULT_BORDER_COLOR, choices=tuple((k, k.title()) for k in BORDER_COLORS)),
     )),
-    ModuleSpec("watermark", "Watermark", (
+    ModuleSpec("watermark", "Watermark"),    # (darktable's: the marker is kept in the photo's marks, not in fields of its own - see watermark/marks.py)
+    ModuleSpec("canisterwm", "Canister Watermark", (
         FieldSpec("wm_film", "Canister", "choice", WATERMARK_OFF, choices=((WATERMARK_OFF, "Off"),) + tuple(FILMS.items())),
         FieldSpec("wm_texture", "Texture", "choice", DEFAULT_TEXTURE, choices=tuple(TEXTURES.items())),
         FieldSpec("wm_size", "Size", "choice", DEFAULT_SIZE, choices=tuple((k, v[0]) for k, v in SIZES.items())),
@@ -226,6 +227,7 @@ PANEL_MODULES: dict[str, tuple[str, tuple[str, ...]]] = {
     "denoise": ("Chroma Denoise", ("denoise",)),
     "negative": ("Negative", ("negative",)),
     "watermark": ("Watermark", ("watermark",)),
+    "canisterwm": ("Canister Watermark", ("canisterwm",)),
     "finishing": ("Finishing", ("finishing",)),
 }
 

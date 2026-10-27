@@ -94,7 +94,8 @@ from ...features.whitebalance.logic import range_overlay, range_share
 from ...features.contactsheet.logic import SheetOptions
 from ...features.metadata.roll import RollCard
 from .roll_card_panel import RollCardTab
-from .watermark_panel import CanisterWatermarkPanel
+from .canister_panel import CanisterWatermarkPanel
+from .watermark_panel import WatermarkPanel
 from . import wheel_guard
 from .color_tool_panel import ColorToolPanel
 from .crop_tool_panel import CropToolPanel
@@ -116,6 +117,7 @@ from .lighttable_view import LighttableView
 from ..paths import old_thumbnail_dirs, system_thumbnail_dir, thumbnail_cache_dir
 from .uninstall_dialog import UninstallDialog
 from .advanced_preset_dialog import AdvancedPresetDialog
+from .batch_settings_dialog import BatchSettingsDialog
 from .ai_dust_panel import AiDustPanel
 from .look_presets_panel import LookPresetsPanel
 from .watermark_variables_dialog import WatermarkVariablesDialog
@@ -500,6 +502,7 @@ class AppWindow(QMainWindow):
         self._lighttable.copy_settings_requested.connect(self.controller.copy_settings_from_path)
         self._lighttable_paste = lambda paths: self.controller.paste_settings_to_paths(paths) and self._lighttable_reload_rows()
         self._lighttable.paste_settings_requested.connect(self._lighttable_paste)
+        self._lighttable.set_settings_requested.connect(self._on_set_settings)
         self._lighttable.refresh_requested.connect(lambda: self.lighttable_refresh(force=True))
         self._lighttable.reveal_requested.connect(self._reveal_in_folder)
         self._lighttable.remove_requested.connect(self.remove_photos)
@@ -540,7 +543,7 @@ class AppWindow(QMainWindow):
             ("shadows_highlights", self._shadows_highlights_tool), ("color", self._color_tool), ("sharpening", self._sharpening_tool), ("grainsharp", self._grainsharp_tool),
             ("diffuse", self._diffuse_tool), ("toneequalizer", self._tone_eq_tool), ("colorbalancergb", self._color_balance_tool),
             ("localcontrast", self._local_contrast_tool), ("denoise", self._denoise_tool), ("negative", self._negative_tool),
-            ("watermark", self._watermark_tool), ("finishing", self._finishing_tool),
+            ("watermark", self._watermark_tool), ("canisterwm", self._canister_tool), ("finishing", self._finishing_tool),
         ):
             self._module_menus.attach(panel, key)
             if key in BLENDABLE:
@@ -573,6 +576,7 @@ class AppWindow(QMainWindow):
         self._filmstrip.rate_requested.connect(self._on_lighttable_rate)
         self._filmstrip.flag_requested.connect(self._on_lighttable_flag)
         self._filmstrip.paste_requested.connect(lambda paths: self._lighttable_paste(paths))
+        self._filmstrip.set_settings_requested.connect(self._on_set_settings)
         self._filmstrip.set_paste_filter(lambda: self.controller._copied_look is not None)
         self._filmstrip.move_requested.connect(self._folder_actions.move_photos)
         self.controller.flag_changed.connect(self._filmstrip.set_flag)
@@ -1277,6 +1281,12 @@ class AppWindow(QMainWindow):
         self._tool_rail.set_tab_visible("plugins", False)
         self._tool_rail.tab_toggled.connect(self._on_tool_tab_toggled)
         tool_row.addWidget(self._tool_rail, 0, Qt.AlignmentFlag.AlignTop)
+        self._tab_actions: dict[str, QAction] = {}      # Ctrl+1 ... Ctrl+9: go to a tool tab (the keys are set in apply_keybinds)
+        for tab_id in ("active", "negative", "correction", "exposure", "color", "detail", "watermark", "metadata", "plugins"):
+            tab_action = QAction(self)
+            tab_action.triggered.connect(lambda _c=False, t=tab_id: self.go_to_tool_tab(t))
+            self.addAction(tab_action)
+            self._tab_actions[tab_id] = tab_action
 
         tools_content = QWidget()
         tools_col = QVBoxLayout(tools_content)
@@ -1585,9 +1595,13 @@ class AppWindow(QMainWindow):
         self._finishing_tool = FinishingPanel()
         self._finishing_tool.changed.connect(self.controller.set_finishing)
         self._finishing_tool.preview_requested.connect(self.controller.preview_finishing)
-        self._watermark_tool = CanisterWatermarkPanel()
-        self._watermark_tool.changed.connect(self.controller.set_watermark)
-        self._watermark_tool.marks_changed.connect(self.controller.set_marks)
+        self._watermark_tool = WatermarkPanel()                    # darktable's Watermark: the marker
+        self._watermark_tool.marks_changed.connect(lambda marks: self.controller.set_marks(marks, "watermark"))
+        self._canister_tool = CanisterWatermarkPanel()             # EFAS's own: the canister, the camera and lens text, the old text mark
+        self._canister_tool.changed.connect(self.controller.set_watermark)
+        self._canister_tool.marks_changed.connect(lambda marks: self.controller.set_marks(marks, "canisterwm"))
+        self._canister_tool.marks_replaced.connect(self._on_marks_replaced)
+        self._canister_tool.edit_on_picture_toggled.connect(self._on_mark_editing_toggled)
         self._mark_editing = False
         self._watermark_tool.edit_on_picture_toggled.connect(self._on_mark_editing_toggled)
         self._watermark_tool.variables_requested.connect(self._show_watermark_variables)
@@ -1598,6 +1612,7 @@ class AppWindow(QMainWindow):
         watermark_col.setSpacing(THEME.space_sm)
         watermark_col.addWidget(self._finishing_tool)
         watermark_col.addWidget(self._watermark_tool)
+        watermark_col.addWidget(self._canister_tool)
         watermark_col.addStretch(1)
 
         watermark_scroll = _ToolListScroll()
@@ -2642,6 +2657,7 @@ class AppWindow(QMainWindow):
             (self._redo_action, ("redo", "redo_alt")), (self._auto_crop_action, ("auto_crop",)), (self._gradient_crop_action, ("gradient_crop",)), (self._reset_action, ("reset_edits",)),
             (self._peaking_action, ("peaking",)), (self._error_marks_action, ("error_marks",)), (self._hq_action, ("hq",)), (self._copy_settings_action, ("copy_settings",)),
             (self._paste_settings_action, ("paste_settings",)), (self._shortcuts_action, ("shortcuts_menu",)), (self._find_action, ("find",)),
+            *((tab_action, (f"tab_{tab_id}",)) for tab_id, tab_action in self._tab_actions.items()),
         ):
             action.setShortcuts([k for i in ids for k in seq(i)])
         w = current.get("workbench", "")
@@ -3015,7 +3031,7 @@ class AppWindow(QMainWindow):
         m.element_changed.connect(lambda group, form, changes: c.set_mask_element(group, form, "Changed a mask in a group", **changes))
         m.opacity_preview.connect(lambda group, form, value: c.set_mask_element(group, form, None, opacity=value))
         m.opacity_committed.connect(lambda group, form, value: c.set_mask_element(group, form, "Changed a mask's opacity", opacity=value))
-        m.toggled.connect(lambda expanded: None if expanded else self._put_down_masks())
+        m.toggled.connect(lambda expanded: m.show_all() if expanded else self._put_down_masks())     # opening the Masks panel shows all the masks on the picture
         m.property_changed.connect(self._on_mask_property)
         m.smoothing_changed.connect(lambda level: setattr(self._mask_editor.tool, "smoothing", {"low": 0.002, "medium": 0.004, "high": 0.008}.get(level, 0.004)))
         m.detection_picked.connect(self._on_detection_picked)
@@ -3433,7 +3449,7 @@ class AppWindow(QMainWindow):
         c = self.controller
         path = c.state.image_path
         self._metadata_tab.refresh_suggestions()
-        self._watermark_tool.refresh_suggestions()
+        self._canister_tool.refresh_suggestions()
         self._metadata_tab.set_state(c.state.roll, c.state.metadata, c.frame_position(), os.path.dirname(path) if path else "")
 
     def _on_roll_changed(self) -> None:
@@ -3512,10 +3528,10 @@ class AppWindow(QMainWindow):
             tool.reset()
             tool.set_values(values)
         self._tone_eq_tool.put_mask_display(False)
-        self._watermark_tool.set_values(
+        self._canister_tool.set_values(
             state.wm_film, state.wm_texture, state.wm_size, state.wm_position, state.wm_info, state.wm_camera, state.wm_lens
         )
-        self._watermark_tool.set_marks(state.marks)
+        self._show_watermark_marks(state.marks)
         self._finishing_tool.set_values(state.vignette, state.vignette_size, state.border, state.border_color)
         self._sync_roll_card()
         self._sharpening_tool.reset()
@@ -3786,6 +3802,19 @@ class AppWindow(QMainWindow):
 
     def _on_mark_editing_toggled(self, on: bool) -> None:
         self._mark_editing = on
+        for panel in (self._watermark_tool, self._canister_tool):     # both modules have the box: it is one setting
+            panel.set_edit_on_picture(on)
+        self._refresh_mark_boxes()
+
+    def _show_watermark_marks(self, marks) -> None:
+        """Show the marks in both watermark modules (the Watermark module takes the marker's part, Canister Watermark the rest)."""
+        self._watermark_tool.set_marks(marks)
+        self._canister_tool.set_marks(marks)
+
+    def _on_marks_replaced(self, marks) -> None:
+        """The old text watermark was made into a marker: whole marks, taking in both modules."""
+        self.controller.set_marks(marks)
+        self._show_watermark_marks(self.controller.state.marks)
         self._refresh_mark_boxes()
 
     def _show_watermark_variables(self) -> None:
@@ -3812,7 +3841,7 @@ class AppWindow(QMainWindow):
             return
         h, w, b = wm_layout.unframe_shape(s.image_rgb.shape, s.border)
         self.controller.edit_mark(name, (cx - b) / w, (cy - b) / h, ratio, (h, w))
-        self._watermark_tool.set_marks(self.controller.state.marks)
+        self._show_watermark_marks(self.controller.state.marks)
         self._refresh_mark_boxes()
 
     def _on_image_preview_changed(self) -> None:
@@ -3985,6 +4014,17 @@ class AppWindow(QMainWindow):
         )
         if answer == QMessageBox.StandardButton.Yes:
             (self.controller.apply_builtin_preset_to_folder if builtin else self.controller.apply_look_preset_to_folder)(name)
+
+    def _on_set_settings(self, paths: list) -> None:
+        """Set Settings for the selected photos: choose settings (the film type first), then put them on every selected photo."""
+        if not paths:
+            return
+        dialog = BatchSettingsDialog(len(paths), self)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        values = dialog.values()
+        if values and self.controller.set_settings_on_paths(list(paths), values):
+            self._lighttable_reload_rows()
 
     def _on_paste_settings_to_folder(self) -> None:
         path = self.controller.state.image_path
@@ -4173,10 +4213,10 @@ class AppWindow(QMainWindow):
         self._diffuse_tool.set_values(self.controller._dif_values())
         self._tone_eq_tool.set_values(self.controller._teq_values())
         self._color_balance_tool.set_values(self.controller._cbr_values())
-        self._watermark_tool.set_values(
+        self._canister_tool.set_values(
             state.wm_film, state.wm_texture, state.wm_size, state.wm_position, state.wm_info, state.wm_camera, state.wm_lens
         )
-        self._watermark_tool.set_marks(state.marks)
+        self._show_watermark_marks(state.marks)
         self._finishing_tool.set_values(state.vignette, state.vignette_size, state.border, state.border_color)
         self._sharpening_tool.set_values(
             state.sharpen_amount, state.sharpen_radius, state.sharpen_masking, state.sharpen_method
@@ -4819,6 +4859,18 @@ class AppWindow(QMainWindow):
                     self._tool_rail.set_tab_checked(tab_id, True)
                     self._on_tool_tab_toggled(tab_id, True)
                 return
+
+    def go_to_tool_tab(self, tab_id: str) -> None:
+        """Ctrl+1 ... Ctrl+9: open that tool tab (Enabled modules, Convert, Frame & Clean, Tone, Color, Detail, Finish, Roll Card, Plugins), closing the one that was open. Nothing in the
+        Workbench, which has no tool tabs, and nothing for the Plugins tab while it is hidden."""
+        if self.lighttable_active() or tab_id not in self._tab_actions:
+            return
+        if tab_id != "active" and tab_id not in self._tool_tab_panels():
+            return
+        if tab_id == "plugins" and not self._tool_rail.tab_visible("plugins"):
+            return
+        self._tool_rail.set_tab_checked(tab_id, True)
+        self._on_tool_tab_toggled(tab_id, True)
 
     def _toggle_active_tab(self, checked: bool) -> None:
         """The Enabled modules tab (the power button): every module that is on and doing something to this photo, gathered into one list - as darktable's active modules - whichever tab it lives in."""
