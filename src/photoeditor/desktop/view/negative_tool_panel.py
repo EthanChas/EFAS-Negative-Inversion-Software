@@ -6,6 +6,7 @@ from PyQt6.QtWidgets import QCheckBox, QComboBox, QHBoxLayout, QInputDialog, QLa
 
 from ...features.densitometry.quality import COLOURS as QUALITY_COLOURS
 from ...features.negative import lightsource, printengine
+from ...features.negative import noritsu as noritsu_logic
 from ...features.presettree import logic as preset_tree
 from ...features.negative.logic import FILM_TYPE_LABELS, FILM_TYPES, ProcessMode
 from ...features.negative.metering import DEFAULT_BUFFER, MAX_BUFFER, Metering
@@ -51,6 +52,7 @@ class NegativeToolPanel(CollapsiblePanel):
     region_draw_toggled = pyqtSignal(bool)
     region_cleared = pyqtSignal()
     metering_reset_requested = pyqtSignal()
+    noritsu_suggest_requested = pyqtSignal(str)
     advanced_toggled = pyqtSignal(bool)
     auto_base_requested = pyqtSignal()
     roll_base_requested = pyqtSignal()
@@ -206,13 +208,16 @@ class NegativeToolPanel(CollapsiblePanel):
         self._conversion.addItem("NegPy Conversion (film & paper)", "print")
         self._conversion.addItem("Original (stretch)", "standard")
         self._conversion.addItem("NegPy 0.56 (old)", "negpy056")
+        self._conversion.addItem("Noritsu look (noritsu-tool)", "noritsu")
         self._conversion.setToolTip(
             "NegPy Conversion treats the film, the scene and the paper separately: it takes out the dyes' crosstalk, puts back part of the film's toe and shoulder, balances the "
             "channels, and prints through a paper curve with a toe and a shoulder, so highlights roll off instead of clipping. Original is the earlier conversion: it "
             "stretches each colour channel in a straight line between its darkest and lightest readings. Photos edited before NegPy Conversion existed keep Original. "
             "NegPy 0.56 (old) is NegPy's own conversion as that version made it (before NegPy retuned its print tone and metering in 0.58): the film's orange mask is taken out by "
             "stretching each channel to its own bounds, Cast Removal fits red and blue to green through the picture's greys, and Auto Density and Auto Grade read the whole picture. "
-            "Draw the metering region on the picture alone when the scan includes the film's rebate, and for NegPy's colours tick Settings > Image decoding > Invert negatives before the camera's colour matrix, so a RAW file is opened in the camera's own primaries.")
+            "Draw the metering region on the picture alone when the scan includes the film's rebate, and for NegPy's colours tick Settings > Image decoding > Invert negatives before the camera's colour matrix, so a RAW file is opened in the camera's own primaries. "
+            "Noritsu look is a port of noritsu-tool: the scan is inverted in density space as a Noritsu LS-600 minilab does it (Dmin from the film's rebate, Dmax from a percentile of the film, an automatic white balance) "
+            "and rendered with a Noritsu-flavoured tone curve, from a per-stock profile fitted to real LS-600 prints if you pick one.")
         self._last_engine = "print"
         self._conversion.currentIndexChanged.connect(self._on_conversion_changed)
         conv_row.addWidget(self._conversion, 1)
@@ -270,6 +275,7 @@ class NegativeToolPanel(CollapsiblePanel):
         for key, row in self._print_rows.items():
             row.setToolTip(tips[key])
             body.addWidget(row)
+        self._build_noritsu(body)
         self._trim_rows = [SliderRow(f"{name} grade", min_value=-0.3, max_value=0.3, reset_value=0.0) for name in ("Red", "Green", "Blue")]
         for name, row in zip(("red", "green", "blue"), self._trim_rows):
             row.setToolTip(f"Contrast of the {name} layer on its own, around the picture's middle. Fixes colour crossover: when shadows lean one colour and highlights lean "
@@ -340,7 +346,7 @@ class NegativeToolPanel(CollapsiblePanel):
         self._meter_reset.clicked.connect(self.metering_reset_requested)
         body.addWidget(self._meter_reset)
         self._metering = Metering()
-        for row in (self._margin, self._range, self._cast, self._white, self._black, *self._print_rows.values(), *self._trim_rows):
+        for row in (self._margin, self._range, self._cast, self._white, self._black, *self._print_rows.values(), *self._trim_rows, *self._nor_rows.values()):
             row.value_changed.connect(self._on_metering_slider)
         self._pending_metering: Metering | None = None
         self._meter_preview_timer = QTimer(self)
@@ -526,7 +532,8 @@ class NegativeToolPanel(CollapsiblePanel):
     def set_metering(self, metering: Metering) -> None:
         """Show a Metering in the controls without emitting anything."""
         self._metering = metering
-        widgets = (self._margin, self._range, self._cast, self._white, self._black, self._conversion, self._film, self._encoding, *self._print_rows.values(), *self._trim_rows)
+        widgets = (self._margin, self._range, self._cast, self._white, self._black, self._conversion, self._film, self._encoding, *self._print_rows.values(), *self._trim_rows, *self._nor_rows.values(),
+                   self._nor_stock, self._nor_lab, self._nor_real_curve, self._nor_border, self._nor_auto_wb)
         for w in widgets:
             w.blockSignals(True)
         self._conversion.setCurrentIndex(max(0, self._conversion.findData(metering.engine)))
@@ -539,6 +546,13 @@ class NegativeToolPanel(CollapsiblePanel):
             row.set_value(getattr(metering, key))
         for row, value in zip(self._trim_rows, metering.grade_trim):
             row.set_value(value)
+        for key, row in self._nor_rows.items():
+            row.set_value(getattr(metering, key))
+        self._nor_stock.setCurrentIndex(max(0, self._nor_stock.findData(metering.nor_stock)))
+        self._nor_lab.setChecked(metering.nor_lab)
+        self._nor_real_curve.setChecked(metering.nor_real_curve)
+        self._nor_border.setChecked(metering.nor_border)
+        self._nor_auto_wb.setChecked(metering.nor_auto_wb)
         self._sync_engine_controls(metering.engine)
         self._margin.set_value(metering.buffer)
         self._range.set_value(metering.range_clip)
@@ -548,13 +562,17 @@ class NegativeToolPanel(CollapsiblePanel):
             w.blockSignals(False)
         self._region_clear.setEnabled(metering.rect is not None)
         self._region_label.setText(
-            "Reading your region." if metering.rect is not None else "Reading the whole frame, less the margin."
+            "Reading your region." if metering.rect is not None else ("Reading the whole film, cropped to the film frame." if metering.engine == "noritsu" else "Reading the whole frame, less the margin.")
         )
 
     def _sync_engine_controls(self, engine: str) -> None:
         """The NegPy Conversion has its own film, encoding, grade and density; the stretch's range clip, colour cast and white / black points belong to Original. Each set is put away (not greyed)
         under the other conversion, and comes back with it."""
-        modern, old = engine == "print", engine == "negpy056"
+        modern, old, noritsu = engine == "print", engine == "negpy056", engine == "noritsu"
+        for w in self._nor_widgets:
+            w.setVisible(noritsu)
+        self._margin.setVisible(not noritsu)       # (noritsu-tool reads the whole film; only a drawn region narrows it)
+        self._real_curve_rows_enabled()
         for w in (self._film_label, self._film, *self._trim_rows, self._print_rows["crosstalk"], self._print_rows["film_curve"]):
             w.setVisible(modern)
         for w in (self._encoding_label, self._encoding, self._print_rows["grade"], self._print_rows["density"], self._print_rows["paper_toe"], self._print_rows["paper_shoulder"]):
@@ -593,7 +611,95 @@ class NegativeToolPanel(CollapsiblePanel):
         engine = self._conversion.currentData() or "standard"
         self._sync_engine_controls(engine)
         return dataclasses.replace(m, film=self._film.currentData() or "generic", transfer=self._encoding.currentData() or "auto", buffer=self._margin.value(), range_clip=self._range.value(), cast_removal=self._cast.value(), engine=engine,
-                                   grade_trim=tuple(row.value() for row in self._trim_rows), **{key: row.value() for key, row in self._print_rows.items()})
+                                   grade_trim=tuple(row.value() for row in self._trim_rows), **{key: row.value() for key, row in self._print_rows.items()}, **{key: row.value() for key, row in self._nor_rows.items()},
+                                   nor_stock=self._nor_stock.currentData() or "", nor_lab=self._nor_lab.isChecked(), nor_real_curve=self._nor_real_curve.isChecked(), nor_border=self._nor_border.isChecked(),
+                                   nor_auto_wb=self._nor_auto_wb.isChecked())
+
+    def _build_noritsu(self, body) -> None:
+        """The controls of the Noritsu look (a port of noritsu-tool: its --stock, --lab, --real-curve, --contrast, --toe, --gamma, --sat, --dmin-pct, --dmax-pct, --no-border and --no-auto-wb)."""
+        title = QLabel("NORITSU LOOK")
+        title.setProperty("role", "subtitle")
+        body.addWidget(title)
+        self._nor_widgets: list[QWidget] = [title]
+        stock_row = QWidget()
+        stock_layout = QHBoxLayout(stock_row)
+        stock_layout.setContentsMargins(0, 0, 0, 0)
+        stock_label = QLabel("Stock")
+        stock_label.setFixedWidth(80)
+        stock_layout.addWidget(stock_label)
+        self._nor_stock = QComboBox()
+        self._nor_stock.addItem("None (use the sliders)", "")
+        for stock, name in noritsu_logic.STOCK_NAMES.items():
+            self._nor_stock.addItem(name, stock)
+        self._nor_stock.setToolTip("A per-stock profile fitted to real LS-600 scans of that film. It replaces the automatic white balance and the tone curve, so Contrast, Toe, Gamma and the real-curve choice do nothing while one is on.")
+        self._nor_stock.currentIndexChanged.connect(self._on_metering_slider)
+        stock_layout.addWidget(self._nor_stock, 1)
+        body.addWidget(stock_row)
+        self._nor_widgets.append(stock_row)
+        self._nor_lab = QCheckBox("Lab mode")
+        self._nor_lab.setToolTip("Closer to what a Noritsu lab tech delivers: contrast 0.90, gamma 0.90, toe 0.04, saturation 0.95 and the LS-600's own tone curve (noritsu-tool's --lab).")
+        self._nor_real_curve = QCheckBox("Real LS-600 tone curve")
+        self._nor_real_curve.setToolTip("The LS-600's own 20-point tone curve instead of the synthetic S-curve (noritsu-tool's --real-curve). Lab mode uses it too.")
+        self._nor_border = QCheckBox("Dmin from the rebate")
+        self._nor_border.setToolTip("Take the film base (the orange mask) from the film's unexposed rebate when it looks like one; otherwise, or when this is off, from a low percentile of the film.")
+        self._nor_auto_wb = QCheckBox("Automatic white balance")
+        self._nor_auto_wb.setToolTip("Neutralize the residual colour cast so the picture's average renders neutral (the Noritsu automatic white balance).")
+        for box in (self._nor_lab, self._nor_real_curve, self._nor_border, self._nor_auto_wb):
+            box.toggled.connect(self._on_metering_slider)
+            body.addWidget(box)
+            self._nor_widgets.append(box)
+        specs = {
+            "nor_contrast": ("Contrast", 0.5, 2.0, 1.05, "Tone-curve contrast: above 1 is punchier, below 1 is flatter."),
+            "nor_toe": ("Toe", 0.0, 0.2, 0.02, "Shadow lift."),
+            "nor_gamma": ("Gamma", 0.4, 1.6, 0.98, "Midtone gamma applied after the S-curve: lower lifts a thin negative."),
+            "nor_sat": ("Saturation", 0.0, 2.0, 1.0, "Saturation around luma (1 leaves it)."),
+            "nor_dmin_pct": ("Dmin %", 0.0, 10.0, 0.5, "The percentile of the film Dmin is read at when the rebate is not used."),
+            "nor_dmax_pct": ("Dmax %", 90.0, 100.0, 99.8, "The percentile of the film Dmax is read at: lower it (98) for a thin negative, raise it (99.5) for a dense one."),
+        }
+        self._nor_rows: dict[str, SliderRow] = {}
+        for key, (label, low, high, default, tip) in specs.items():
+            row = SliderRow(label, min_value=low, max_value=high, reset_value=default, decimals=2, step=0.01 if high <= 2.0 else 0.1)
+            row.setToolTip(tip)
+            self._nor_rows[key] = row
+            body.addWidget(row)
+            self._nor_widgets.append(row)
+        suggest_row = QWidget()
+        suggest_layout = QHBoxLayout(suggest_row)
+        suggest_layout.setContentsMargins(0, 0, 0, 0)
+        self._nor_look = QComboBox()
+        for look, preset in noritsu_logic.LOOK_PRESETS.items():
+            self._nor_look.addItem(preset["label"], look)
+        suggest_layout.addWidget(self._nor_look, 1)
+        self._nor_suggest = QPushButton("Suggest")
+        self._nor_suggest.setToolTip("Read this scan's density (thin, normal or dense) and set Gamma, Dmax %, Contrast, Saturation and Toe the way noritsu-tool suggests for the look chosen here.")
+        self._nor_suggest.clicked.connect(lambda: self.noritsu_suggest_requested.emit(self._nor_look.currentData()))
+        suggest_layout.addWidget(self._nor_suggest)
+        body.addWidget(suggest_row)
+        self._nor_widgets.append(suggest_row)
+        self._nor_note = QLabel("")
+        self._nor_note.setProperty("role", "hint")
+        self._nor_note.setWordWrap(True)
+        body.addWidget(self._nor_note)
+        self._nor_widgets.append(self._nor_note)
+
+    def _real_curve_rows_enabled(self) -> None:
+        """A stock profile or the real curve replaces the synthetic S-curve: its Contrast, Toe and Gamma do nothing then."""
+        synthetic = not (self._nor_stock.currentData() or self._nor_real_curve.isChecked() or self._nor_lab.isChecked())
+        for key in ("nor_contrast", "nor_toe", "nor_gamma"):
+            self._nor_rows[key].setEnabled(synthetic)
+        self._nor_rows["nor_sat"].setEnabled(not self._nor_lab.isChecked())
+
+    def show_noritsu_suggestion(self, params: dict | None) -> None:
+        """Set the sliders to noritsu-tool's suggestion for this scan (None: nothing has been read yet)."""
+        if params is None:
+            self._nor_note.setText("Choose the Noritsu look and let the picture draw once, then Suggest.")
+            return
+        for key, name in (("nor_gamma", "gamma"), ("nor_dmax_pct", "dmax_pct"), ("nor_contrast", "contrast"), ("nor_sat", "saturation"), ("nor_toe", "toe")):
+            self._nor_rows[key].blockSignals(True)
+            self._nor_rows[key].set_value(params[name])
+            self._nor_rows[key].blockSignals(False)
+        self._nor_note.setText(f"{params['classification'].capitalize()} negative: {params['description']} ({params['confidence']:.0%} sure).")
+        self._on_metering_slider(0.0)
 
     def _on_conversion_changed(self, _index: int) -> None:
         """Another conversion was chosen. NegPy 0.56 (old) meters Auto Grade and Auto Density itself, so it starts from its own defaults: the Grade, Print density and paper sliders (which

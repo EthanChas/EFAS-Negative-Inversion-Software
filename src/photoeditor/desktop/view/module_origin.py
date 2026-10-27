@@ -20,7 +20,7 @@ ORIGINS: dict[str, str] = {
 
 _WORDS = {DARKTABLE: "Ported from darktable", NEGPY: "Ported from NegPy", EFAS: "Made for EFAS"}
 _BOTH_WORDS = {
-    "Negative": "The NegPy Conversion and NegPy 0.56 (old) are ported from NegPy; the Original conversion was made for EFAS",
+    "Negative": "The NegPy Conversion and NegPy 0.56 (old) are ported from NegPy, the Noritsu look from noritsu-tool; the Original conversion was made for EFAS",
     "Sharpening": "The four sharpening methods are ported from NegPy; masks, copies and the 16-bit path were made for EFAS",
 }
 

@@ -15,8 +15,11 @@ _FIELDS_NAMES = {
     "white": "white point", "black": "black point", "white_trim": "white point trim", "black_trim": "black point trim",
     "engine": "conversion", "crosstalk": "dye crosstalk", "film_curve": "film curve", "grade": "print grade", "density": "print density",
     "paper_toe": "paper toe", "paper_shoulder": "paper shoulder", "grade_trim": "colour crossover", "film": "film profile", "transfer": "scan encoding",
+    "nor_stock": "Noritsu stock profile", "nor_lab": "Noritsu lab mode", "nor_real_curve": "Noritsu real curve", "nor_contrast": "Noritsu contrast", "nor_toe": "Noritsu toe",
+    "nor_gamma": "Noritsu gamma", "nor_sat": "Noritsu saturation", "nor_dmin_pct": "Noritsu Dmin percentile", "nor_dmax_pct": "Noritsu Dmax percentile", "nor_border": "Noritsu rebate Dmin",
+    "nor_auto_wb": "Noritsu auto white balance",
 }
-ENGINES = ("print", "standard", "negpy056")   # "print" is NegPy Conversion (film and paper: features/negative/printengine.py), "standard" is Original (a straight stretch of each channel), "negpy056" is NegPy 0.56 (old): NegPy's own conversion as that version made it (features/negative/negpy056.py)
+ENGINES = ("print", "standard", "negpy056", "noritsu")   # "noritsu" is the Noritsu look (features/negative/noritsu.py: a port of noritsu-tool), "print" is NegPy Conversion (film and paper: features/negative/printengine.py), "standard" is Original (a straight stretch of each channel), "negpy056" is NegPy 0.56 (old): NegPy's own conversion as that version made it (features/negative/negpy056.py)
 DEFAULT_ENGINE = "print"
 TRANSFERS = ("auto", "srgb", "bt709", "linear")   # how the scan's codes were made from light; "auto" reads it from the file (RAW decoded by EFAS: bt709, anything else: srgb)
 
@@ -57,6 +60,17 @@ class Metering:
     paper_toe: float = 0.0
     paper_shoulder: float = 0.0
     grade_trim: tuple[float, float, float] = (0.0, 0.0, 0.0)   # print engine: per-layer grade (red, green, blue), for colour crossover
+    nor_stock: str = ""              # Noritsu: a per-stock calibration profile ("" for none: portra160, portra400 or superia800)
+    nor_lab: bool = False            # Noritsu: lab mode (contrast 0.90, gamma 0.90, toe 0.04, saturation 0.95, the real tone curve)
+    nor_real_curve: bool = False     # Noritsu: the LS-600's own 20-point tone curve instead of the synthetic S-curve
+    nor_contrast: float = 1.05
+    nor_toe: float = 0.02
+    nor_gamma: float = 0.98
+    nor_sat: float = 1.0
+    nor_dmin_pct: float = 0.5        # Noritsu: the percentile Dmin is read at (when the rebate is not used)
+    nor_dmax_pct: float = 99.8       # Noritsu: the percentile Dmax is read at; lower for a thin negative
+    nor_border: bool = True          # Noritsu: Dmin from the film rebate when it looks like the orange mask
+    nor_auto_wb: bool = True         # Noritsu: neutralize the residual cast of the picture's average
 
     def is_default(self) -> bool:
         return self == Metering()
@@ -113,6 +127,10 @@ class Metering:
             grade=_num(data.get("grade"), -0.5, 0.5, 0.0), density=_num(data.get("density"), -1.0, 1.0, 0.0),
             paper_toe=_num(data.get("paper_toe"), -1.0, 1.0, 0.0), paper_shoulder=_num(data.get("paper_shoulder"), -1.0, 1.0, 0.0),
             grade_trim=tuple(max(-0.3, min(0.3, v)) for v in _triple(data.get("grade_trim"))),
+            nor_stock=data["nor_stock"] if data.get("nor_stock") in ("portra160", "portra400", "superia800") else "", nor_lab=data.get("nor_lab") is True, nor_real_curve=data.get("nor_real_curve") is True,
+            nor_contrast=_num(data.get("nor_contrast"), 0.5, 2.0, 1.05), nor_toe=_num(data.get("nor_toe"), 0.0, 0.2, 0.02), nor_gamma=_num(data.get("nor_gamma"), 0.4, 1.6, 0.98),
+            nor_sat=_num(data.get("nor_sat"), 0.0, 2.0, 1.0), nor_dmin_pct=_num(data.get("nor_dmin_pct"), 0.0, 10.0, 0.5), nor_dmax_pct=_num(data.get("nor_dmax_pct"), 90.0, 100.0, 99.8),
+            nor_border=data.get("nor_border") is not False, nor_auto_wb=data.get("nor_auto_wb") is not False,
         )
 
 

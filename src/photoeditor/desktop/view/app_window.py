@@ -1383,6 +1383,7 @@ class AppWindow(QMainWindow):
         self._negative_tool.region_draw_toggled.connect(self._on_region_draw_toggled)
         self._negative_tool.region_cleared.connect(lambda: self.controller.set_metering_rect(None))
         self._negative_tool.metering_reset_requested.connect(self._on_metering_reset)
+        self._negative_tool.noritsu_suggest_requested.connect(lambda look: self._negative_tool.show_noritsu_suggestion(self.controller.noritsu_suggestion(look)))
         self._negative_tool.rgb_preview_requested.connect(self.controller.preview_invert_rgb)
         self.controller.negative_state_changed.connect(self._sync_negative_panel)
         negative_tools_col.addWidget(self._negative_tool)

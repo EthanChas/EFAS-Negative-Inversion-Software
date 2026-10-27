@@ -1010,6 +1010,10 @@ class AppController(QObject):
             self._last_logged_denoise = amount
             self._log(f"Chroma denoise set to {amount:.2f}")
 
+    def noritsu_suggestion(self, look: str) -> dict | None:
+        """The Noritsu look's suggested settings for this photo in a look (balanced, punchy or soft), read from the scan it was last drawn from."""
+        return self._renderer.noritsu_suggestion(look)
+
     def preview_metering(self, metering: Metering) -> None:
         if self.state.preview_rgb is None:
             return

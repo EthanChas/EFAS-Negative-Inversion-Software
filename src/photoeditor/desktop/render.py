@@ -28,7 +28,7 @@ from ..features.colormix.logic import KEYS as COLOR_KEYS
 from ..features.colormix.logic import apply_color
 from ..features.colormix.logic import is_neutral as color_is_neutral
 from ..features.lablook.logic import apply_lab_tone
-from ..features.negative import negpy056, printengine
+from ..features.negative import negpy056, noritsu, printengine
 from ..features.negative.metering import MAX_BUFFER, Metering
 from ..features.lookpresets.modules import off_overrides
 from ..features.aidust import logic as aidust
@@ -586,7 +586,7 @@ def print_settings(m: Metering) -> "printengine.Settings":
 def density_settings(m: Metering) -> "printengine.Settings":
     """The settings the scan is turned into a density image with: the Print Engine's, except that NegPy 0.56 (old) takes out no dye crosstalk (NegPy 0.56 has none by default)."""
     s = print_settings(m)
-    return dataclasses.replace(s, unmix_strength=0.0) if m.engine == "negpy056" else s
+    return dataclasses.replace(s, unmix_strength=0.0) if m.engine in ("negpy056", "noritsu") else s
 
 
 def negpy056_settings(m: Metering, black_and_white: bool) -> "negpy056.Settings":
@@ -594,6 +594,12 @@ def negpy056_settings(m: Metering, black_and_white: bool) -> "negpy056.Settings"
     default Cast Removal of 0.5."""
     return negpy056.Settings(grade=min(max(115.0 - 70.0 * m.grade, negpy056.ISO_R_MIN), negpy056.ISO_R_MAX), density=1.0 + m.density, cast_removal=0.5 * min(max(m.cast_removal, 0.0), 1.0),
                              toe=m.paper_toe, shoulder=m.paper_shoulder, black_and_white=black_and_white)
+
+
+def noritsu_settings(m: Metering) -> "noritsu.Settings":
+    """noritsu-tool's options for a photo's metering (see features/negative/noritsu.py)."""
+    return noritsu.Settings(stock=m.nor_stock, lab=m.nor_lab, real_curve=m.nor_real_curve, contrast=m.nor_contrast, toe=m.nor_toe, gamma=m.nor_gamma, saturation=m.nor_sat, dmin_pct=m.nor_dmin_pct,
+                            dmax_pct=m.nor_dmax_pct, use_border=m.nor_border, auto_wb=m.nor_auto_wb)
 
 
 def _source_is_raw(s) -> bool:
@@ -612,6 +618,7 @@ class Renderer:
         self.wide_mixing = True   # keep a 16-bit scan 16-bit through the mixing stages (False gives the older 8-bit path: the tests compare the two)
         self.lock = threading.RLock()
         self._invert_lut = None
+        self._noritsu_density = None   # the density the Noritsu look last read its statistics from (for its Suggest settings)
         self._invert_key = None
         self._retouch: OrderedDict = OrderedDict()
         self.ai_prob_lookup = None
@@ -743,6 +750,12 @@ class Renderer:
         self._density = (key, pixels, codes)  # holding the source keeps its id from being reused
         return codes
 
+    def noritsu_suggestion(self, look: str) -> dict | None:
+        """noritsu-tool's suggested settings (gamma, Dmax percentile, contrast, saturation, toe) for the scan the Noritsu look last read, in a preferred look; None before it has read one."""
+        with self.lock:
+            density = self._noritsu_density
+        return None if density is None else noritsu.suggest_params(noritsu.estimate_neg_density(density), look)
+
     def _get_invert_lut(self, pixels, params: EditParams, rect, token):
         key = (token, pixels.dtype.str, params.film_type == "bw", params.rotation_quarter_turns, params.flip_h, params.flip_v, params.crop_rect, params.film_base, params.metering)
         if self._invert_lut is None or self._invert_key != key:
@@ -759,6 +772,11 @@ class Renderer:
                 grid = negpy056.grid_from_codes(pixels, rect, params.metering.buffer, printengine.DENSITY_SCALE)
                 plan = negpy056.plan_from_grid(grid, negpy056_settings(params.metering, params.film_type == "bw"))
                 self._invert_lut = negpy056.build_lut(plan, printengine.DENSITY_SCALE)
+            elif params.metering.engine == "noritsu":      # (noritsu-tool reads the whole film, rebate included, for Dmin: only a region the person drew narrows it)
+                drawn = None if params.metering.rect is None else rect
+                self._noritsu_density = noritsu.analysis_density(pixels, drawn, printengine.DENSITY_SCALE)
+                plan = noritsu.plan_from_density(self._noritsu_density, noritsu_settings(params.metering), border=drawn is None)
+                self._invert_lut = noritsu.build_lut(plan, printengine.DENSITY_SCALE)
             else:
                 self._invert_lut = compute_invert_lut(pixels, rect, base, params.metering)
             self._invert_key = key
@@ -905,7 +923,7 @@ class Renderer:
         return rt_logic.process(pixels, settings, ctx)
 
     def _tone_staged(self, p: EditParams, blender: MaskBlender, base_ramp, pixels, pixels16, wide: bool, camera_matrix, scale: float, denoise: bool, local: bool,
-                     color_values: dict, color_response: str, tone, lab) -> np.ndarray:
+                     color_values: dict, color_response: str, tone, lab, noritsu_sat: float = 1.0) -> np.ndarray:
         """The tone and colour of the picture made one module at a time, so that any of them can be blended through its mask (darktable blends each module into what it was given).
 
         The same stages in the same order as the fused path (conversion, white balance, exposure, contrast, print response, camera matrix, chroma denoise, local contrast, shadows and
@@ -954,7 +972,7 @@ class Renderer:
                 if key in ramp_of_copy:
                     ramp(inst_logic.instance_key(key, copy_id), ramp_of_copy[key](dataclasses.replace(p, **values)))
         flush(running)
-        pixels = cur["px"]
+        pixels = noritsu.saturate_pixels(cur["px"], noritsu_sat)
         if camera_matrix:
             pixels = camera.apply_matrix(pixels, camera_matrix)
 
@@ -1019,7 +1037,7 @@ class Renderer:
         with self.lock:
             scale = source.shape[1] / base_width
             source16 = None
-            camera_matrix = None if params.metering.engine == "negpy056" else camera.matrix_of(source)  # a RAW opened in the camera's primaries: its colour matrix goes on after the inversion (NegPy 0.56 (old) never applies it: its picture is in the sensor's own primaries)
+            camera_matrix = None if params.metering.engine in ("negpy056", "noritsu") else camera.matrix_of(source)  # a RAW opened in the camera's primaries: its colour matrix goes on after the inversion (NegPy 0.56 (old) never applies it: its picture is in the sensor's own primaries)
             if params.lens:   # the lens corrections come first (colour fringes, then vignetting unless a flat field has it): the rest works on the corrected picture
                 source = self._lens_corrected(source, token, params.lens, flatfield is not None)
                 token = (token, params.lens, flatfield is not None)
@@ -1067,7 +1085,7 @@ class Renderer:
                 geometry(flip_vertical)
             film_frame = self._film_frame(pixels, pixels16, params, token) if want_stats else None      # (for the histogram: the clear film border is no part of the picture)
             pixels, pixels16 = self._fix_edges(pixels, pixels16, params, edge_values, token, retouched, scale)   # the border's light, its holder and holes: repaired before the conversion reads the picture
-            if params.negative_inverted and params.metering.engine in ("print", "negpy056"):
+            if params.negative_inverted and params.metering.engine in ("print", "negpy056", "noritsu"):
                 deep = deep and pixels16 is not None   # an 8-bit source has no more levels to keep, whatever depth the density image is held at
                 pixels16 = self._density_image(pixels16 if pixels16 is not None else pixels, density_settings(params.metering))
             frame = pixels16 if pixels16 is not None else pixels
@@ -1079,7 +1097,8 @@ class Renderer:
             color_values = {k: getattr(params, k) for k in COLOR_KEYS}
             color_response = params.lab_response if params.lab_response_amount > 0 else "none"
             color_active = not color_is_neutral(color_values, color_response)
-            mixing = bool(params.shadows or params.highlights or params.saturation or denoise or local or camera_matrix or color_active)
+            noritsu_sat = noritsu_settings(params.metering).effective().saturation if (params.negative_inverted and params.metering.engine == "noritsu") else 1.0   # (the Noritsu look's saturation mixes the channels: it cannot be part of the conversion's table)
+            mixing = bool(params.shadows or params.highlights or params.saturation or denoise or local or camera_matrix or color_active or abs(noritsu_sat - 1.0) > 1e-4)
             wide = pixels16 is not None
             keeps_16 = not (blender.any() or rt_active or ec_active or hal_active or gs_active or teq_active or cbr_active or dif_active or params.sharpen_amount or params.vignette or watermark_active(params.wm_film) or params.border > 0
                             or params.marks.wanted(params.wm_info, params.wm_camera, params.wm_lens, watermark_active(params.wm_film)))   # nothing after the colour stages needs 8 bits
@@ -1115,7 +1134,7 @@ class Renderer:
             lab_gm = (params.lab_gm_shadows, params.lab_gm_mids, params.lab_gm_highs)
             lab = lambda r: apply_lab_tone(r, params.lab_fade, lab_by, lab_gm, params.lab_glow)   # the lab look comes last, after the tone curve
             if blender.staged():
-                pixels = self._tone_staged(params, blender, base_ramp, pixels, pixels16, wide, camera_matrix, scale, denoise, local, color_values, color_response, tone, lab)
+                pixels = self._tone_staged(params, blender, base_ramp, pixels, pixels16, wide, camera_matrix, scale, denoise, local, color_values, color_response, tone, lab, noritsu_sat)
             elif mixing:
                 if hold_16:
                     pixels = apply_wide_lut(pixels16, wide_ramp_to_lut16(ramp))
@@ -1125,6 +1144,7 @@ class Renderer:
                     pre = ramp_to_lut(ramp)
                     if not is_identity(pre):
                         pixels = apply_channel_lut(pixels, pre)
+                pixels = noritsu.saturate_pixels(pixels, noritsu_sat)
                 if camera_matrix:
                     pixels = camera.apply_matrix(pixels, camera_matrix)
                 if denoise:

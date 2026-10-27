@@ -1,6 +1,6 @@
 # NegPy Conversion (film & paper)
 
-Convert tab > Conversion > **Method**. Three choices: **NegPy Conversion (film & paper)**, the default, **Original (stretch)**, the conversion EFAS used before, and **NegPy 0.56 (old)**, NegPy's own conversion as that version made it (the last section). Photos that were edited before NegPy Conversion existed keep Original; photos that were only opened, never edited, and new photos get NegPy Conversion. The choice is saved per photo and goes into presets with the rest of the metering. This page says what NegPy Conversion does, why, and how far to trust it.
+Convert tab > Conversion > **Method**. Four choices: **NegPy Conversion (film & paper)**, the default, **Original (stretch)**, the conversion EFAS used before, **NegPy 0.56 (old)**, NegPy's own conversion as that version made it, and the **Noritsu look**, a port of noritsu-tool (the last sections). Photos that were edited before NegPy Conversion existed keep Original; photos that were only opened, never edited, and new photos get NegPy Conversion. The choice is saved per photo and goes into presets with the rest of the metering. This page says what NegPy Conversion does, why, and how far to trust it.
 
 ## Why a second conversion
 
@@ -81,3 +81,18 @@ A photo edited before this was a setting keeps sRGB, the reading it was edited w
 - **Controls.** Encoding, Grade (each +0.1 is 7 ISO-R points harder), Print density, Paper toe, Paper shoulder, Color cast, and the Margin and Draw Region of the metering. Choosing the method puts those at NegPy's own defaults.
 - **A RAW file in the camera's own primaries.** NegPy works on the sensor's own channels, never converted to a colour space, so for NegPy's look tick Settings > Image decoding > **Invert negatives before the camera's colour matrix** (it opens a RAW file in the camera's own primaries). This conversion then does not apply the camera's colour matrix afterwards, as NegPy does not.
 - **Not available for slides** (they keep the other methods).
+
+## Noritsu look
+
+The **Noritsu look** is a numpy port of [noritsu-tool](https://github.com/rohanpandula/noritsu-tool) (MIT; `features/negative/noritsu.py`), a tool that inverts a C-41 scan the way a Noritsu LS-600 minilab scanner does and renders it with a Noritsu-flavoured tone curve. It follows noritsu-tool's modules one for one, with the same names, maths and numbers, and is checked against its own code: the same scan through noritsu-tool's `process_negative` and through the port gives the same picture to within 4e-6 of full scale, for every combination of options tried (default, lab mode, real curve, each stock profile, no rebate, no auto white balance, other percentiles).
+
+1. **Density.** The scan is read as density, D = -log10(transmittance) (EFAS holds the scan as density codes already, and takes out its scan encoding first, so this is the same step).
+2. **The film.** The statistics come from the whole film, cropped to the film frame (the clear margins and the black scan bars are dropped, as noritsu-tool's `crop_to_film` does), not from a metering region; only a region you draw narrows them.
+3. **Dmin and Dmax.** Dmin, the orange mask, is the median of the film's rebate (the outer 3%) when that looks like mask (uniform, blue densest), otherwise a low percentile (0.5) of the film; Dmax is a high percentile (99.8, lower for a thin negative) of the film. Each channel is normalized from [Dmin, Dmax] to [0, 1].
+4. **White balance.** The residual cast is neutralized so that the picture's average is neutral (Automatic white balance).
+5. **The tone curve.** A synthetic Noritsu S-curve (contrast 1.05, toe 0.02, gamma 0.98), or the LS-600's own 20-point curve (Real LS-600 tone curve), or - when a **Stock** is chosen - the per-stock profile noritsu-tool fitted to real LS-600 scans (Portra 160, Portra 400, Superia 800), which replaces the white balance and the curve. **Lab mode** is contrast 0.90, gamma 0.90, toe 0.04, saturation 0.95 and the real curve.
+6. **Saturation** around luma (a BT.601 Y, Cb, Cr), after the tone curve.
+
+**Suggest** is noritsu-tool's `autoparam`: it reads the scan's density range (thin below 0.9, dense above 1.5) and sets Gamma, Dmax %, Contrast, Saturation and Toe for the look chosen beside it (Balanced, Punchy or Soft).
+
+What is not ported: reading an LS-600 RAW dump, its ICE (infrared dust) clean-up, and fitting a profile from a pair of pictures (EFAS has its own RAW decoding and dust tools). Statistics from a scan bigger than two million pixels are read at every k-th pixel of every k-th row, which gives the same percentiles and means. As noritsu-tool does not apply a camera colour matrix, neither does this conversion; its output is used as the display picture (it is not encoded again), so the real curve and lab mode, which expect linear input, come out dark on a scan that is not linear.

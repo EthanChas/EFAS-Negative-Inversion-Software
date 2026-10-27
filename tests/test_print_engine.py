@@ -184,7 +184,7 @@ def test_the_dropdown_offers_modern_first_and_original_and_follows_the_photo():
         from photoeditor.features.negative.metering import Metering
         p = NegativeToolPanel()
         box = p._conversion
-        assert [box.itemText(i) for i in range(box.count())] == ["NegPy Conversion (film & paper)", "Original (stretch)", "NegPy 0.56 (old)"]
+        assert [box.itemText(i) for i in range(box.count())] == ["NegPy Conversion (film & paper)", "Original (stretch)", "NegPy 0.56 (old)", "Noritsu look (noritsu-tool)"]
         assert box.currentData() == "print", "NegPy Conversion is the default"
         assert not any(r.isHidden() for r in (*p._print_rows.values(), *p._trim_rows, p._film, p._encoding))
         got = []

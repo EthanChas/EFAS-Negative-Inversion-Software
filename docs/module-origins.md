@@ -11,7 +11,7 @@ The tag is only in the header. The module's own title (which picks its icon and 
 
 | Module | Origin | What it took |
 |---|---|---|
-| Negative | NegPy & EFAS | NegPy 0.56 (old) is NegPy 0.56.0's own conversion ported as it was (features/negative/negpy056.py, checked against NegPy's code). The NegPy Conversion takes NegPy's inversion and metering approach, the film type heuristic, the print-stage approach behind the NegPy Conversion, and the film crosstalk profiles it bundles. The *Original* conversion is EFAS's own |
+| Negative | NegPy & EFAS | The Noritsu look is a port of noritsu-tool (features/negative/noritsu.py, checked against its code; MIT, its licence is in assets/noritsu). NegPy 0.56 (old) is NegPy 0.56.0's own conversion ported as it was (features/negative/negpy056.py, checked against NegPy's code). The NegPy Conversion takes NegPy's inversion and metering approach, the film type heuristic, the print-stage approach behind the NegPy Conversion, and the film crosstalk profiles it bundles. The *Original* conversion is EFAS's own |
 | Sharpening | NegPy & EFAS | NegPy's four sharpening methods (Unsharp Mask, Deconvolution, Surface Blur, Wavelet; features/sharpening/logic.py). EFAS added the Mask box, copies of the module, the 16-bit path and the link to the Grain Report, and Grain Sharpening is a separate EFAS module |
 | Chroma Denoise | NegPy | Its chroma-only denoise (features/denoise/logic.py) |
 | Dust & Scratches | NegPy | Its dust and scratch repair (features/retouch/logic.py) and clone tool |
