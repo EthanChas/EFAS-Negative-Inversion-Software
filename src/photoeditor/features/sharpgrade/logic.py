@@ -19,7 +19,7 @@ SEVERITIES = (GOOD, WARNING, CRITICAL)
 WORDS = {GOOD: "Sharp", WARNING: "Soft", CRITICAL: "Blurred"}
 
 MAX_DIM = 700               # the frame is judged at most this wide on its long side
-OVERLAY_MAX_DIM = 1100      # the picture the overlay is drawn on
+OVERLAY_MAX_DIM = 2100      # the picture the overlay is drawn on, and the size its colours and hover readout are measured at (three times the size the grade is, with the same test scaled to it)
 
 _DENOISE_SIGMA = 1.2        # removed before locating edges, so sensor and grain noise are not mistaken for one
 _EDGE_PCT_SUBJECT = 95.0    # the strongest edges only: favours whatever the shot is focused on
@@ -66,6 +66,10 @@ def grade_sharpness(pixels: np.ndarray, max_dim: int = MAX_DIM, subject_aware: b
     h, w = gray.shape[:2]
     long_edge = max(h, w)
     scale = max_dim / long_edge if long_edge > max_dim else 1.0
+    # the test's own sizes (in pixels) are those of the grade's size, MAX_DIM; at a finer size they grow with it, so the same test is made at a finer scale (the grade itself is always at MAX_DIM,
+    # which its thresholds were found at: a finer scale reads higher, so only the overlay, which is stretched over its own range, uses one)
+    k = max(1.0, (min(max_dim, long_edge)) / MAX_DIM)
+    denoise_sigma, re_blur, min_edge_pixels, dilate_px = _DENOISE_SIGMA * k, max(3, int(round(_RE_BLUR_KSIZE * k)) | 1), int(_MIN_EDGE_PIXELS * k * k), max(1, int(round(_MASK_DILATE_PX * k)))
     small = cv2.resize(gray, (max(1, int(w * scale)), max(1, int(h * scale))), interpolation=cv2.INTER_AREA) if scale != 1.0 else gray
 
     sh, sw = small.shape[:2]
@@ -75,7 +79,7 @@ def grade_sharpness(pixels: np.ndarray, max_dim: int = MAX_DIM, subject_aware: b
 
     no_detail = _unjudged(CRITICAL, "No sharp detail found anywhere in the frame: check the focus.", small.shape)
 
-    den = cv2.GaussianBlur(g, (0, 0), _DENOISE_SIGMA)
+    den = cv2.GaussianBlur(g, (0, 0), denoise_sigma)
     gx = cv2.Sobel(den, cv2.CV_32F, 1, 0, ksize=3)
     gy = cv2.Sobel(den, cv2.CV_32F, 0, 1, ksize=3)
     mag = cv2.magnitude(gx, gy)
@@ -83,14 +87,14 @@ def grade_sharpness(pixels: np.ndarray, max_dim: int = MAX_DIM, subject_aware: b
     if thr <= 1e-6:
         return no_detail      # a genuinely featureless frame
 
-    bh = cv2.blur(g, (_RE_BLUR_KSIZE, 1))
-    bv = cv2.blur(g, (1, _RE_BLUR_KSIZE))
+    bh = cv2.blur(g, (re_blur, 1))
+    bv = cv2.blur(g, (1, re_blur))
     d_h, b_h = np.abs(np.diff(g, axis=1)), np.abs(np.diff(bh, axis=1))
     d_v, b_v = np.abs(np.diff(g, axis=0)), np.abs(np.diff(bv, axis=0))
 
     m_h = mag[:, :-1] >= thr
     m_v = mag[:-1, :] >= thr
-    if int(m_h.sum()) < _MIN_EDGE_PIXELS or int(m_v.sum()) < _MIN_EDGE_PIXELS:
+    if int(m_h.sum()) < min_edge_pixels or int(m_v.sum()) < min_edge_pixels:
         return no_detail
 
     s_h, s_v = float(d_h[m_h].sum()), float(d_v[m_v].sum())
@@ -115,7 +119,7 @@ def grade_sharpness(pixels: np.ndarray, max_dim: int = MAX_DIM, subject_aware: b
     judged = count > 0
     local = np.divide(total, count, out=np.zeros_like(total), where=judged)
 
-    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * _MASK_DILATE_PX + 1, 2 * _MASK_DILATE_PX + 1))
+    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * dilate_px + 1, 2 * dilate_px + 1))
     judged_wide = cv2.dilate(judged.astype(np.uint8), kernel) > 0
     local_wide = cv2.dilate(local, kernel)
     preview = np.full(small.shape, np.nan, dtype=np.float32)

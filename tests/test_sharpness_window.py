@@ -75,6 +75,18 @@ _SCRIPT = textwrap.dedent(r"""
     tinted = ov.view.pixmap().toImage()
     ov.toggle.setChecked(True); assert ov.toggle.text() == "Show Overlay" and ov.view.pixmap().toImage() != tinted
     ov.toggle.setChecked(False); assert ov.toggle.text() == "Show Original"
+    # --- the hover readout is the value under the pointer: the picture starts at the corner of its label even when the window is taller than it, so the pointer's place is the picture's
+    from PyQt6.QtCore import QEvent, QPointF, Qt
+    from PyQt6.QtGui import QMouseEvent
+    ov.resize(ov.width() + 300, ov.height() + 500); ov.show(); app.processEvents()
+    norm = ov.view._norm
+    ys, xs = np.nonzero(np.isfinite(norm))
+    assert ys.size, "something was judged"
+    px, py = int(xs[ys.size // 2]), int(ys[ys.size // 2])
+    assert ov.view.alignment() & Qt.AlignmentFlag.AlignTop and ov.view.alignment() & Qt.AlignmentFlag.AlignLeft
+    ov.view.mouseMoveEvent(QMouseEvent(QEvent.Type.MouseMove, QPointF(px, py), QPointF(px, py), Qt.MouseButton.NoButton, Qt.MouseButton.NoButton, Qt.KeyboardModifier.NoModifier))
+    assert ov.view._readout.text() == f"Sharpness: {round(float(norm[py, px]) * 100)}%", ov.view._readout.text()
+    assert max(norm.shape) > 1100, "the overlay is measured at a finer size than the grade"
 
     # --- the filmstrip marks the tiles, and can show only the soft ones
     from photoeditor.desktop.view.filmstrip import Filmstrip

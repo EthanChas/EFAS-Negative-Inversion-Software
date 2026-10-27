@@ -61,10 +61,11 @@ class SharpnessOverlayDialog(QDialog):
     def __init__(self, path: str, parent=None):
         super().__init__(parent)
         self.setWindowTitle(f"{os.path.basename(path)}: where the sharpness was measured")
-        pixels = load_for_grading(path, logic.OVERLAY_MAX_DIM)
-        result = logic.grade_sharpness(pixels)
+        pixels = load_for_grading(path)                                         # the full-resolution frame
+        result = logic.grade_sharpness(pixels)                                  # the grade, at the size its thresholds were found at
+        detail = logic.grade_sharpness(pixels, max_dim=logic.OVERLAY_MAX_DIM)   # where it was measured, at a fine size: the colours and the hover readout
         gray = logic.gray_frame(pixels)
-        norm = logic.overlay_norm(gray, result.preview)
+        norm = logic.overlay_norm(gray, detail.preview)
         self._plain, self._tinted = _pixmap(logic.plain_rgb(gray)), _pixmap(logic.tinted_rgb(gray, norm))
         col = QVBoxLayout(self)
         head = QLabel(f"{logic.WORDS[result.severity]}: {round(result.score)}/100. {result.detail}")
@@ -79,6 +80,7 @@ class SharpnessOverlayDialog(QDialog):
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         self.view = _OverlayView(norm)
+        self.view.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)     # the picture starts at the label's corner, so the pointer's position is the picture's
         self.view.setPixmap(self._tinted)
         scroll.setWidget(self.view)
         col.addWidget(scroll, 1)

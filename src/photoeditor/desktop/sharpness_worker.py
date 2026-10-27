@@ -30,7 +30,7 @@ class SharpnessWorker(QThread):
                 return
             self.progress.emit(i, total, os.path.basename(path))
             try:
-                result = logic.grade_sharpness(load_for_grading(path, logic.MAX_DIM))
+                result = logic.grade_sharpness(load_for_grading(path))
             except Exception as exc:    # one unreadable file must not stop the roll
                 self.frame_failed.emit(path, f"{type(exc).__name__}: {exc}")
                 continue
