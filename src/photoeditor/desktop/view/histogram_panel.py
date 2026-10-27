@@ -1,6 +1,6 @@
 import math
 
-from PyQt6.QtCore import QPointF, QRect, Qt, pyqtSignal
+from PyQt6.QtCore import QPointF, QRect, QRectF, Qt, pyqtSignal
 from PyQt6.QtGui import (
     QBrush, QColor, QMouseEvent, QPainter, QPainterPath, QPaintEvent, QPen, QPolygonF, QWheelEvent,
 )
@@ -23,6 +23,8 @@ _LEGEND_HEIGHT = 14
 _FULL_RANGE = (0.0, 255.0)
 _MIN_ZOOM_SPAN = 8.0
 _ZOOM_STEP = 0.85
+STYLES = {"chunky": "Chunky", "smooth": "Smooth", "bars": "Bars"}     # the ways the graph can be drawn; the first is the default
+_BAR_COUNT = 64                                                        # bars in the Bars style, across whatever range is shown
 _CLIP_SHADOW_COLOUR = "#3270ff"      # the colours the clipping marks on the picture use (features/whitebalance/logic.py)
 _CLIP_HIGHLIGHT_COLOUR = "#ff2828"
 
@@ -64,6 +66,7 @@ class HistogramPanel(BevelPanel):
         self._mode = "color"
         self._log = False
         self._split = False
+        self._style = "chunky"
         self._marker_value: float | None = None
         self._cursor_value: int | None = None
         self._zoom_min, self._zoom_max = _FULL_RANGE
@@ -99,6 +102,14 @@ class HistogramPanel(BevelPanel):
         """Colour mode: draw red, green and blue one above the other, each on its own scale, instead of blended on top of each other."""
         self._split = bool(on)
         self.update()
+
+    def set_style(self, style: str) -> None:
+        """How the graph is drawn: "chunky" (the value of every level, as it has always been), "smooth" (a smoothed curve with value bars) or "bars" (a bar graph in 64 steps)."""
+        self._style = style if style in STYLES else "chunky"
+        self.update()
+
+    def style(self) -> str:
+        return self._style
 
     def log_scale(self) -> bool:
         return self._log
@@ -290,29 +301,7 @@ class HistogramPanel(BevelPanel):
         self._draw_grid(painter, rect)
         self._draw_header(painter)
 
-        if self._mode == "exposure" and self._luminance_histogram:
-            peak = max(self._luminance_histogram) or 1
-            points = self._series_points(rect, self._luminance_histogram, peak)
-            self._fill_series(painter, rect, points, THEME.channel_luminance)
-            self._stroke_series(painter, points, THEME.channel_luminance)
-        elif self._mode == "color" and self._rgb_histogram and self._split:
-            for name, band in zip(("r", "g", "b"), self._bands(rect)):
-                counts = self._rgb_histogram[name]
-                points = self._series_points(band, counts, max(counts) or 1)
-                self._fill_series(painter, band, points, _CHANNEL_COLORS[name])
-                self._stroke_series(painter, points, _CHANNEL_COLORS[name])
-        elif self._mode == "color" and self._rgb_histogram:
-            peak = max(max(c) for c in self._rgb_histogram.values()) or 1
-            series = {
-                name: self._series_points(rect, counts, peak)
-                for name, counts in self._rgb_histogram.items()
-            }
-            painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_Screen)
-            for name, points in series.items():
-                self._fill_series(painter, rect, points, _CHANNEL_COLORS[name])
-            painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceOver)
-            for name, points in series.items():
-                self._stroke_series(painter, points, _CHANNEL_COLORS[name])
+        self._draw_data(painter, rect)
 
         if self._selection is not None and self._mode == "exposure":
             self._draw_selection(painter, rect)
@@ -322,6 +311,142 @@ class HistogramPanel(BevelPanel):
             self._draw_line(painter, rect, self._cursor_value, QColor(THEME.accent_primary), Qt.PenStyle.DashLine, 1)
 
         painter.end()
+
+    # ------------------------------------------------------------ the data, in the chosen style
+    def _draw_data(self, painter: QPainter, rect: QRect) -> None:
+        """The histogram itself: the luminance, the three channels one above the other (Split) or the three blended; chunky, smooth or as bars."""
+        style = self._style
+        if self._mode == "exposure" and self._luminance_histogram:
+            parts = [(rect, self._luminance_histogram, THEME.channel_luminance)]
+            blend = False
+        elif self._mode == "color" and self._rgb_histogram and self._split:
+            parts = [(band, self._rgb_histogram[name], _CHANNEL_COLORS[name]) for name, band in zip(("r", "g", "b"), self._bands(rect))]
+            blend = False
+        elif self._mode == "color" and self._rgb_histogram:
+            parts = [(rect, self._rgb_histogram[name], _CHANNEL_COLORS[name]) for name in ("r", "g", "b")]
+            blend = True
+        else:
+            return
+        if style == "bars":
+            self._draw_bars(painter, rect, parts, blend)
+            return
+        if style == "smooth":
+            parts = [(band, self._smoothed(counts), colour) for band, counts, colour in parts]
+        peak_all = max((max(counts) for _b, counts, _c in parts), default=0) or 1
+        series = []
+        for band, counts, colour in parts:
+            peak = peak_all if blend else (max(counts) or 1)         # blended channels share one scale; Split gives each its own
+            series.append((band, self._series_points(band, counts, peak), colour, peak))
+        if blend:
+            painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_Screen)
+            for band, points, colour, _peak in series:
+                self._fill_series(painter, band, points, colour, smooth=style == "smooth")
+            painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceOver)
+        else:
+            for band, points, colour, _peak in series:
+                self._fill_series(painter, band, points, colour, smooth=style == "smooth")
+        for band, points, colour, _peak in series:
+            self._stroke_series(painter, points, colour, smooth=style == "smooth")
+        if style == "smooth":       # the value bars go over the curve, so they show on a bright fill too
+            self._draw_value_bars(painter, rect, [(band, peak) for band, _p, _c, peak in series[: (3 if self._split and self._mode == "color" else 1)]])
+
+    def _smoothed(self, counts: list[int]) -> list[float]:
+        """The counts blurred with a gaussian, as wide as a hundred and twentieth of what is shown (never less than a level), the edges mirrored: a curve instead of a comb."""
+        lo = max(0, int(math.floor(self._zoom_min)))
+        hi = min(len(counts) - 1, int(math.ceil(self._zoom_max)))
+        sigma = max(1.2, (hi - lo) / 120.0)
+        radius = int(math.ceil(3 * sigma))
+        kernel = [math.exp(-0.5 * (i / sigma) ** 2) for i in range(-radius, radius + 1)]
+        total = sum(kernel)
+        kernel = [k / total for k in kernel]
+        n = len(counts)
+        out = []
+        for i in range(n):
+            acc = 0.0
+            for j, k in enumerate(kernel, -radius):
+                p = i + j
+                p = -p if p < 0 else (2 * (n - 1) - p if p > n - 1 else p)
+                acc += k * counts[min(max(p, 0), n - 1)]
+            out.append(acc)
+        return out
+
+    def _nice_values(self) -> list[int]:
+        """The levels the vertical bars stand at: round numbers inside what is shown, about eight at most."""
+        span = max(1.0, self._zoom_max - self._zoom_min)
+        step = next((s for s in (1, 2, 4, 8, 16, 32, 64) if span / s <= 8), 64)
+        first = int(math.ceil(self._zoom_min / step)) * step
+        return [v for v in range(first, int(self._zoom_max) + 1, step) if 0 <= v <= 255]
+
+    def _share_at(self, fraction: float, peak: float) -> float:
+        """The share of the tallest point's count that a height of `fraction` of the graph stands for, undoing the square root or the log the heights are drawn with."""
+        if self._log:
+            return math.expm1(fraction * math.log1p(peak)) / peak if peak else 0.0
+        return fraction * fraction
+
+    def _draw_value_bars(self, painter: QPainter, rect: QRect, bands: list[tuple[QRect, float]]) -> None:
+        """The smooth style's bars: a vertical bar at each round level with its number along the foot, and horizontal bars at 25, 50, 75 and 100% of the height (of the tallest point's
+        count, undoing the way the heights are drawn) with their percentages."""
+        font = painter.font()
+        font.setPointSize(THEME.font_size_small)
+        painter.setFont(font)
+        fine = QColor(THEME.text_muted)
+        fine.setAlpha(150)
+        painter.setPen(QPen(fine, 1))
+        values = self._nice_values()
+        for value in values:
+            x = int(self._x_for_value(rect, value))
+            painter.drawLine(x, rect.top(), x, rect.bottom())
+        fractions = (0.5, 1.0) if len(bands) > 1 else (0.25, 0.5, 0.75, 1.0)       # (Split has three short strips: fewer bars)
+        for band, peak in bands:
+            for fraction in fractions:
+                y = int(band.bottom() - fraction * band.height())
+                painter.setPen(QPen(fine, 1))
+                painter.drawLine(band.left(), y, band.right(), y)
+                text = f"{round(100 * self._share_at(fraction, peak))}%"
+                box = QRect(band.left() + 2, y + 1, painter.fontMetrics().horizontalAdvance(text) + 6, 11)
+                painter.fillRect(box, QColor(0, 0, 0, 120))
+                painter.setPen(QColor(THEME.text_primary))
+                painter.drawText(box, int(Qt.AlignmentFlag.AlignCenter), text)
+        painter.setPen(QColor(THEME.text_secondary))
+        for value in values:
+            x = int(self._x_for_value(rect, value))
+            painter.drawText(QRect(x - _AXIS_LABEL_WIDTH // 2, rect.bottom() + 2, _AXIS_LABEL_WIDTH, _AXIS_LABEL_HEIGHT), int(Qt.AlignmentFlag.AlignHCenter), str(value))
+
+    def _draw_bars(self, painter: QPainter, rect: QRect, parts: list, blend: bool) -> None:
+        """The bar style: the shown range cut into 64 bars, each as tall as the fullest level in it. With the channels blended each bar is three thin ones, red, green and blue; in Exposure
+        a bar has the grey of the tone it stands for."""
+        lo, hi = self._zoom_min, self._zoom_max
+        step = (hi - lo) / _BAR_COUNT
+        if step <= 0:
+            return
+        scale = math.log1p if self._log else math.sqrt
+        n_series = len(parts)
+        peaks = {id(counts): (max(counts) or 1) for _b, counts, _c in parts}
+        peak_all = max(peaks.values())
+        if blend:
+            painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_Screen)      # the channels mix where they overlap, as in the other styles
+        for k in range(_BAR_COUNT):
+            a, b = lo + k * step, lo + (k + 1) * step
+            i0, i1 = int(math.floor(a)), min(255, max(int(math.floor(a)), int(math.ceil(b)) - 1))
+            slot_left = self._x_for_value(rect, a - 0.5)
+            slot_right = self._x_for_value(rect, b - 0.5)
+            slot = max(1.0, slot_right - slot_left)
+            for index, (band, counts, colour) in enumerate(parts):
+                top_count = max(counts[max(0, i0): max(0, i1) + 1] or [0])
+                peak = peak_all if blend else peaks[id(counts)]
+                height = (scale(top_count) / (scale(peak) or 1.0)) * band.height()
+                if height < 1:
+                    continue
+                width, x = slot - 1.5, slot_left + 0.75
+                fill = QColor(colour)
+                if not blend and n_series == 1:
+                    grey = int(round(255 * ((a + b) / 2) / 255.0))
+                    fill = QColor(grey, grey, grey).lighter(110) if self._mode == "exposure" else fill
+                x = max(float(rect.left()), x)
+                painter.setPen(Qt.PenStyle.NoPen)
+                painter.setBrush(fill)
+                painter.drawRoundedRect(QRectF(x, band.bottom() - height, max(1.0, width), height), 1.5, 1.5)
+        painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceOver)
 
     def _draw_selection(self, painter: QPainter, rect: QRect) -> None:
         """The dragged-out span: a green band over the graph, with its limits and the share of the picture it covers."""
@@ -444,6 +569,8 @@ class HistogramPanel(BevelPanel):
         return [QRect(rect.left(), rect.top() + i * (height + gap), rect.width(), height) for i in range(3)]
 
     def _draw_grid(self, painter: QPainter, rect: QRect) -> None:
+        if self._style == "smooth" and (self._rgb_histogram or self._luminance_histogram):
+            return          # its value bars, with their numbers, are drawn with the curve (_draw_value_bars)
         painter.setPen(QPen(QColor(THEME.text_muted), 1, Qt.PenStyle.DotLine))
         for fraction in (0.0, 0.25, 0.5, 0.75, 1.0):
             x = rect.left() + fraction * rect.width()
@@ -487,13 +614,25 @@ class HistogramPanel(BevelPanel):
             for i in range(lo, hi + 1)
         ]
 
-    def _fill_series(self, painter: QPainter, rect: QRect, points: list[tuple[float, float]], color_hex: str) -> None:
+    @staticmethod
+    def _curve_to(path: QPainterPath, points: list[tuple[float, float]]) -> None:
+        """Carry the path through the points as a smooth curve (a Catmull-Rom spline, as cubic Beziers), from where the path is now to the last point."""
+        n = len(points)
+        for i in range(n - 1):
+            p0, p1, p2, p3 = points[max(0, i - 1)], points[i], points[i + 1], points[min(n - 1, i + 2)]
+            path.cubicTo(p1[0] + (p2[0] - p0[0]) / 6.0, p1[1] + (p2[1] - p0[1]) / 6.0, p2[0] - (p3[0] - p1[0]) / 6.0, p2[1] - (p3[1] - p1[1]) / 6.0, p2[0], p2[1])
+
+    def _fill_series(self, painter: QPainter, rect: QRect, points: list[tuple[float, float]], color_hex: str, smooth: bool = False) -> None:
         if not points:
             return
         path = QPainterPath()
         path.moveTo(points[0][0], rect.bottom())
-        for x, y in points:
-            path.lineTo(x, y)
+        if smooth:
+            path.lineTo(points[0][0], points[0][1])
+            self._curve_to(path, points)
+        else:
+            for x, y in points:
+                path.lineTo(x, y)
         path.lineTo(points[-1][0], rect.bottom())
         path.closeSubpath()
 
@@ -501,8 +640,15 @@ class HistogramPanel(BevelPanel):
         painter.setBrush(QBrush(QColor(color_hex)))
         painter.drawPath(path)
 
-    def _stroke_series(self, painter: QPainter, points: list[tuple[float, float]], color_hex: str) -> None:
+    def _stroke_series(self, painter: QPainter, points: list[tuple[float, float]], color_hex: str, smooth: bool = False) -> None:
         painter.setBrush(Qt.BrushStyle.NoBrush)
+        if smooth and points:
+            path = QPainterPath()
+            path.moveTo(*points[0])
+            self._curve_to(path, points)
+            painter.setPen(QPen(QColor(color_hex), 1.6))
+            painter.drawPath(path)
+            return
         painter.setPen(QPen(QColor(color_hex), 1))
         for (x1, y1), (x2, y2) in zip(points, points[1:]):
             painter.drawLine(int(x1), int(y1), int(x2), int(y2))

@@ -7,6 +7,8 @@ from typing import Any
 from ...theme.tokens import ACCENTS, TEXT_SCALE_RANGE
 from ..datadir import SETTINGS_FILE, app_data_dir
 
+HISTOGRAM_STYLES = ("chunky", "smooth", "bars")     # how the histogram is drawn; the first is the default
+
 DEMOSAIC_CHOICES: dict[str, tuple[str, str, str]] = {
     "linear": ("Fast (linear)", "LINEAR", "Quickest and softest - fine for a quick look."),
     "ppg": ("Balanced (PPG)", "PPG", "Fast, with decent edges."),
@@ -35,6 +37,7 @@ DEFAULTS: dict[str, Any] = {
     "error_marks_visible": True,
     "histogram_log": False,
     "histogram_split": False,
+    "histogram_style": "chunky",
     "hover_preview": True,
     "slideshow_interval": 5.0,
     "slideshow_transition": "fade",
@@ -91,6 +94,8 @@ def _clean(data: Any) -> dict[str, Any]:
     out = {k: (dict(v) if isinstance(v, dict) else list(v) if isinstance(v, list) else v) for k, v in DEFAULTS.items()}
     if not isinstance(data, dict):
         return out
+    if data.get("histogram_style") in HISTOGRAM_STYLES:
+        out["histogram_style"] = data["histogram_style"]
     if data.get("raw_demosaic") in DEMOSAIC_CHOICES:
         out["raw_demosaic"] = data["raw_demosaic"]
     for key in ("raw_auto_bright", "raw_linear", "auto_advance", "backup_auto", "check_updates", "advanced_mode", "scan_quality", "hover_modules", "module_colours", "workbench_library", "hq_always", "collapse_on_tab_change", "film_reference_online", "crop_roll_same_size", "hover_preview", "error_marks_visible", "histogram_log", "histogram_split"):

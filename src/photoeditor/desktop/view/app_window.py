@@ -102,6 +102,7 @@ from .debug_mode import DebugController
 from .exposure_tool_panel import ExposureToolPanel
 from .filmstrip import Filmstrip
 from .flatfield_panel import FlatFieldPanel
+from .histogram_panel import STYLES as HISTOGRAM_STYLES
 from .histogram_panel import HistogramPanel
 from .history_panel import HistoryPanel
 from .app_icon import APP_NAME, app_icon
@@ -1206,6 +1207,17 @@ class AppWindow(QMainWindow):
         self._hist_split_btn.setToolTip("Show red, green and blue one above the other, each on its own scale, instead of blended together (Color graph only)")
         self._hist_split_btn.toggled.connect(self._on_histogram_split_toggled)
         button_row.addWidget(self._hist_split_btn)
+        self._hist_style_btn = QPushButton("Style")
+        self._hist_style_btn.setToolTip("How the graph is drawn: Chunky (every level, as it has always been), Smooth (a smoothed curve with value bars) or Bars (a bar graph in 64 steps)")
+        style_menu = QMenu(self._hist_style_btn)
+        self._hist_style_actions = {}
+        for key, label in HISTOGRAM_STYLES.items():
+            action = style_menu.addAction(label)
+            action.setCheckable(True)
+            action.triggered.connect(lambda _c=False, k=key: self._on_histogram_style(k))
+            self._hist_style_actions[key] = action
+        self._hist_style_btn.setMenu(style_menu)
+        button_row.addWidget(self._hist_style_btn)
         self._mode_before_bw: str | None = None
         button_frame.layout().addLayout(button_row)
         body.addWidget(button_frame)
@@ -1230,6 +1242,7 @@ class AppWindow(QMainWindow):
         self._histogram_panel.setFixedHeight(150)
         self._histogram_panel.set_log(app_settings.get("histogram_log"))
         self._histogram_panel.set_split(app_settings.get("histogram_split"))
+        self._on_histogram_style(app_settings.get("histogram_style"), save=False)
         self._histogram_panel.bin_hovered.connect(self._on_bin_hovered)
         self._histogram_panel.hover_cleared.connect(self._on_graph_hover_cleared)
         self._histogram_panel.range_selected.connect(self._on_range_selected)
@@ -4740,6 +4753,16 @@ class AppWindow(QMainWindow):
     def _on_histogram_log_toggled(self, on: bool) -> None:
         app_settings.save({"histogram_log": bool(on)})
         self._histogram_panel.set_log(on)
+
+    def _on_histogram_style(self, style: str, save: bool = True) -> None:
+        if style not in HISTOGRAM_STYLES:
+            style = "chunky"
+        if save:
+            app_settings.save({"histogram_style": style})
+        self._histogram_panel.set_style(style)
+        self._hist_style_btn.setText(HISTOGRAM_STYLES[style])
+        for key, action in self._hist_style_actions.items():
+            action.setChecked(key == style)
 
     def _on_histogram_split_toggled(self, on: bool) -> None:
         app_settings.save({"histogram_split": bool(on)})
