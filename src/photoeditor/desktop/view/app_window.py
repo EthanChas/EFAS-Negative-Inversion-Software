@@ -145,6 +145,7 @@ from .bevel_widgets import CaptionButton
 from ...features.scopes import logic as scope_logic
 from . import fold
 from .scope_view import ScopeView, ZoneStrip
+from .tab_header import dress_tab
 from .segmented import SegmentedControl, add_steppers_in
 from .slider_row import SliderRow
 from .find_dialog import FindDialog
@@ -1715,6 +1716,19 @@ class AppWindow(QMainWindow):
         tool_row.addWidget(self._plugins_panel, 0)
         self._tab_columns = {"plugins": plugins_col, "exposure": tools_col, "correction": correction_col, "negative": negative_tools_col,
                              "watermark": watermark_col, "metadata": metadata_col, "color": color_col, "detail": detail_col}
+        # each tab opens with its name and what it is for, and its modules sit under named groups (after NegPy's tabs)
+        dress_tab(negative_tools_col, "negative", "Convert", "Turn the scan into a positive: the film, its base, and how it is metered and printed.")
+        dress_tab(correction_col, "correction", "Frame & Clean", "Crop and straighten the picture, then take the dust, scratches and marks off it.",
+                  (("Frame", self._crop_tool), ("Clean", self._dust_tool)))
+        dress_tab(tools_col, "exposure", "Tone", "How light the picture is, and how its brightness is spread from shadows to highlights.",
+                  (("Light", self._exposure_tool), ("Curves and response", self._tone_eq_tool)))
+        dress_tab(color_col, "color", "Color", "Balance the colour, mix it, and give the picture the character of a lab or a film.",
+                  (("Balance", self._color_tool), ("Mix and tone", self._color_mixer_tool), ("Look", self._lab_look_tool)))
+        dress_tab(detail_col, "detail", "Detail", "Take out colour noise and bring out texture and sharpness.",
+                  (("Noise", self._denoise_tool), ("Sharpness", self._local_contrast_tool)))
+        dress_tab(watermark_col, "watermark", "Finish", "The last touches: a border, a vignette and the marks written on the picture.")
+        dress_tab(metadata_col, "metadata", "Roll Card", "What the picture is: the roll, the film, the camera and the lens, and its tags.")
+        dress_tab(plugins_col, "plugins", "Plugins", "The tools that plugins add.")
 
         # Search: the box above the modules. Type, and the modules that match - from every tab - are gathered in a list of their own, in place of the tab that was showing; clear
         # it and each goes back to its tab (see module_search.py). The list is a tab panel with no button on the rail.
