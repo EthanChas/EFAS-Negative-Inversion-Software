@@ -93,3 +93,30 @@ def test_the_arrows_follow_the_dropdown_when_a_panel_hides_it():
     assert not box.isVisible()
     combo.setVisible(True)
     assert box.isVisible() and combo.isVisible()
+
+
+def test_the_highlight_slides_to_the_chosen_segment():
+    import time
+    app = _app()
+    seg = SegmentedControl()
+    for label in ("All", "Red", "Green", "Blue"):
+        seg.addItem(label, label)
+    seg.resize(300, 26)
+    seg.show()
+    app.processEvents(); app.processEvents(); time.sleep(0.05); app.processEvents()
+    start = seg._current()
+    assert abs(start.x() - seg._buttons[0].geometry().x()) < 1.5 and abs(start.width() - seg._buttons[0].width()) < 1.5
+    seg.setCurrentIndex(3)
+    assert seg.currentIndex() == 3 and seg._buttons[3].isChecked()
+    t0 = time.time()
+    while time.time() - t0 < 0.07:
+        app.processEvents(); time.sleep(0.005)
+    middle = seg._current()
+    target = seg._buttons[3].geometry()
+    assert start.x() < middle.x() < target.x(), (start.x(), middle.x(), target.x())
+    deadline = time.time() + 2
+    while seg._t < 1.0 and time.time() < deadline:
+        app.processEvents(); time.sleep(0.01)
+    assert abs(seg._current().x() - target.x()) < 1.5
+    image = seg.grab().toImage()
+    assert image.width() == 300 and len({image.pixel(x, 13) for x in range(0, 300, 7)}) > 2

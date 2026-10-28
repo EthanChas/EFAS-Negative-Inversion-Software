@@ -2,11 +2,14 @@
 title, so a long module reads as a few compartments you open when you need them. `fold_sections` makes them from a module's layout as it was built (a title is a label with role "subtitle");
 which are closed is remembered between sessions."""
 
-from PyQt6.QtCore import QEvent, QObject, Qt, QTimer, pyqtSignal
+from PyQt6.QtCore import QEasingCurve, QEvent, QObject, Qt, QTimer, QVariantAnimation, pyqtSignal
 from PyQt6.QtWidgets import QHBoxLayout, QLabel, QLayout, QLayoutItem, QToolButton, QVBoxLayout, QWidget
 
 from ...features.settings import logic as app_settings
 from .dividers import ROLE as DIVIDER_ROLE
+
+
+_NO_LIMIT = 16777215      # QWIDGETSIZE_MAX
 
 
 def _is_title(widget) -> bool:
@@ -50,6 +53,8 @@ class FoldSection(QWidget):
     """A title with a chevron, and the controls it folds."""
 
     folded = pyqtSignal(str, bool)       # (key, closed)
+    ANIMATE = True                       # the group slides open and shut (the tests that look at it straight after a click turn this off)
+    SLIDE_MS = 160
 
     def __init__(self, key: str, title: QLabel, extras: list[QLayoutItem], closed: bool = False, parent: QWidget | None = None):
         super().__init__(parent)
@@ -81,6 +86,11 @@ class FoldSection(QWidget):
         self._layout.setContentsMargins(0, 0, 0, 0)
         self._layout.setSpacing(4)
         outer.addWidget(self._body)
+        self._slide = QVariantAnimation(self)
+        self._slide.setDuration(self.SLIDE_MS)
+        self._slide.setEasingCurve(QEasingCurve.Type.OutCubic)
+        self._slide.valueChanged.connect(lambda h: self._body.setMaximumHeight(int(h)))
+        self._slide.finished.connect(self._slide_done)
         self._watch = _Watch(self)
         title.installEventFilter(self)
         title.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -115,13 +125,30 @@ class FoldSection(QWidget):
         if closed == self._closed:
             return
         self._closed = closed
-        self._apply()
+        self._apply(animate=True)
         if announce:
             self.folded.emit(self.key, closed)
 
-    def _apply(self) -> None:
-        self._body.setVisible(not self._closed)
+    def _apply(self, animate: bool = False) -> None:
         self._chevron.setArrowType(Qt.ArrowType.RightArrow if self._closed else Qt.ArrowType.DownArrow)
+        self._slide.stop()
+        if not (animate and self.ANIMATE and self.isVisible()):
+            self._body.setMaximumHeight(_NO_LIMIT)
+            self._body.setVisible(not self._closed)
+            return
+        if self._closed:       # slide shut from the height it has, then put it away
+            self._slide.setStartValue(float(self._body.height()))
+            self._slide.setEndValue(0.0)
+        else:                   # open from nothing to the height its controls ask for
+            self._body.setMaximumHeight(0)
+            self._body.setVisible(True)
+            self._slide.setStartValue(0.0)
+            self._slide.setEndValue(float(max(self._body.sizeHint().height(), 1)))
+        self._slide.start()
+
+    def _slide_done(self) -> None:
+        self._body.setMaximumHeight(_NO_LIMIT)
+        self._body.setVisible(not self._closed)
 
     def sync(self) -> None:
         """Show the section when any control in it is showing (the title does not count)."""

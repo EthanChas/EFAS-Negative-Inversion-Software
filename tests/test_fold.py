@@ -9,6 +9,7 @@ from photoeditor.desktop.view import fold
 from photoeditor.desktop.view.dividers import add_divider
 
 _APP = None
+fold.FoldSection.ANIMATE = False      # these tests look at the sections straight after a click: the slide has its own test
 
 
 def _app():
@@ -97,3 +98,30 @@ def test_which_sections_are_closed_is_kept(monkeypatch, tmp_path):
     host, body, w = _module()
     sections = fold.fold_sections(body, "demo", fold.folded_state(), ("COLOR TRIM",))
     assert [s.is_closed() for s in sections] == [False, True, False], "what was chosen beats the default"
+
+
+def test_a_section_slides_shut_and_open(monkeypatch, tmp_path):
+    import time
+    monkeypatch.setenv("PHOTOEDITOR_DATA_DIR", str(tmp_path))
+    app = _app()
+    monkeypatch.setattr(fold.FoldSection, "ANIMATE", True)
+    host, body, w = _module()
+    sections = fold.fold_sections(body, "demo", {})
+    host.show()
+    app.processEvents()
+    s = sections[0]
+    full = s._body.height()
+    assert full > 10 and s._body.isVisible()
+    s.toggle()
+    assert s.is_closed(), "the state changes at once, the picture follows"
+    from PyQt6.QtCore import QAbstractAnimation
+    assert s._slide.state() == QAbstractAnimation.State.Running and s._body.isVisible(), "it slides rather than snaps"
+    deadline = time.time() + 2
+    while s._body.isVisible() and time.time() < deadline:
+        app.processEvents(); time.sleep(0.01)
+    assert not s._body.isVisible() and s._body.maximumHeight() > 10_000
+    s.toggle()
+    deadline = time.time() + 2
+    while s._body.maximumHeight() < 10_000 and time.time() < deadline:
+        app.processEvents(); time.sleep(0.01)
+    assert s._body.isVisible() and s._body.height() >= full - 2

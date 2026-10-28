@@ -1,9 +1,12 @@
 """Two small controls after NegPy's: a segmented choice (one row of buttons, one lit) for a few either-or choices, and ‹ › arrows that step a dropdown to its neighbour choice (wrapping
 past the ends) without opening it."""
 
-from PyQt6.QtCore import QEvent, QObject, Qt, pyqtSignal
-from PyQt6.QtGui import QColor, QIcon, QPainter, QPixmap
-from PyQt6.QtWidgets import QAbstractButton, QButtonGroup, QComboBox, QHBoxLayout, QLayout, QPushButton, QToolButton, QWidget
+from PyQt6.QtCore import QEasingCurve, QEvent, QObject, QRectF, Qt, QTimer, QVariantAnimation, pyqtSignal
+from PyQt6.QtGui import QColor, QIcon, QPainter, QPen, QPixmap
+from PyQt6.QtWidgets import QComboBox, QHBoxLayout, QLayout, QPushButton, QToolButton, QWidget
+
+from ...theme.tokens import THEME
+from .module_style import STYLE
 
 
 def _dot(color: str, size: int = 10) -> QIcon:
@@ -19,43 +22,113 @@ def _dot(color: str, size: int = 10) -> QIcon:
 
 
 class SegmentedControl(QWidget):
-    """A row of buttons of which one is lit: the choices of a small either-or setting laid out side by side. It answers like the QComboBox it replaces (currentIndex, currentData,
-    setCurrentIndex, findData, count, itemText, itemData, currentIndexChanged), and blockSignals() holds back currentIndexChanged."""
+    """One track holding a few either-or choices, with a single highlight that slides from the old choice to the new one (NegPy's segmented choice). It answers like the QComboBox it replaces
+    (currentIndex, currentData, setCurrentIndex, findData, count, itemText, itemData, currentIndexChanged), and blockSignals() holds back currentIndexChanged."""
 
     currentIndexChanged = pyqtSignal(int)
+    SLIDE_MS = 170
 
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
         row = QHBoxLayout(self)
-        row.setContentsMargins(0, 0, 0, 0)
+        row.setContentsMargins(2, 2, 2, 2)
         row.setSpacing(0)
-        self._group = QButtonGroup(self)
-        self._group.setExclusive(True)
         self._buttons: list[QPushButton] = []
         self._data: list = []
         self._index = -1
+        self._from = QRectF()        # the highlight's place when the slide began and where it ends: the highlight is drawn between the two
+        self._to = QRectF()
+        self._t = 1.0
+        self._slide = QVariantAnimation(self)
+        self._slide.setDuration(self.SLIDE_MS)
+        self._slide.setEasingCurve(QEasingCurve.Type.OutCubic)
+        self._slide.setStartValue(0.0)
+        self._slide.setEndValue(1.0)
+        self._slide.valueChanged.connect(self._on_slide)
+        self.setObjectName("segmented")
+        self._restyle()
+        STYLE.changed.connect(self._restyle)
+
+    def _restyle(self) -> None:
+        """The segments are flat text over the track: only the track and the highlight are drawn, by this widget."""
+        self.setStyleSheet(f"#segmented QPushButton {{ background: transparent; border: none; padding: 3px 8px; color: {THEME.text_secondary}; }}"
+                           f"#segmented QPushButton:checked {{ color: {THEME.on_accent}; font-weight: bold; }}"
+                           f"#segmented QPushButton:hover:!checked {{ color: {THEME.text_primary}; }}")
 
     def addItem(self, text: str, data=None, color: str | None = None, tip: str = "") -> None:
         button = QPushButton(text)
         button.setCheckable(True)
-        button.setProperty("compact", True)
-        button.setProperty("segment", True)
+        button.setFlat(True)
+        button.setCursor(Qt.CursorShape.PointingHandCursor)
+        button.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         if color:
             button.setIcon(_dot(color))
         if tip:
             button.setToolTip(tip)
-        self._group.addButton(button, len(self._buttons))
         self.layout().addWidget(button, 1)
         self._buttons.append(button)
         self._data.append(data)
         button.clicked.connect(lambda _c=False, i=len(self._buttons) - 1: self.setCurrentIndex(i))
         if self._index < 0:
-            self._set(0)
+            self._set(0, animate=False)
 
-    def _set(self, index: int) -> None:
+    def _set(self, index: int, animate: bool = True) -> None:
         self._index = index
         for i, button in enumerate(self._buttons):
             button.setChecked(i == index)
+        self._move_highlight(animate)
+
+    def _target(self) -> QRectF:
+        if not 0 <= self._index < len(self._buttons):
+            return QRectF()
+        return QRectF(self._buttons[self._index].geometry())
+
+    def _current(self) -> QRectF:
+        """Where the highlight is drawn now: between where it started and where it is going."""
+        a, b, t = self._from, self._to, self._t
+        if a.isEmpty() or t >= 1.0:
+            return b
+        return QRectF(a.x() + (b.x() - a.x()) * t, a.y() + (b.y() - a.y()) * t, a.width() + (b.width() - a.width()) * t, a.height() + (b.height() - a.height()) * t)
+
+    def _move_highlight(self, animate: bool) -> None:
+        self._slide.stop()
+        self._from = self._current() if not self._to.isEmpty() else self._target()
+        self._to = self._target()
+        self._t = 1.0
+        if animate and self.isVisible() and not self._from.isEmpty() and self._from != self._to:
+            self._t = 0.0
+            self._slide.start()
+        self.update()
+
+    def _on_slide(self, value) -> None:
+        self._t = float(value)
+        self.update()
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        self._slide.stop()
+        self._t = 1.0
+        self._to = self._target()
+        self._from = self._to
+        self.update()
+
+    def showEvent(self, event) -> None:
+        super().showEvent(event)
+        QTimer.singleShot(0, lambda: self._move_highlight(False))      # (the segments have their places once the row is shown)
+
+    def paintEvent(self, event) -> None:
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        track = QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5)
+        radius = min(track.height() / 2.0, 12.0)
+        painter.setPen(QPen(QColor(THEME.border_color), 1))
+        painter.setBrush(QColor(THEME.bg_input))
+        painter.drawRoundedRect(track, radius, radius)
+        thumb = self._current()
+        if not thumb.isEmpty():
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(QColor(THEME.accent_primary))
+            painter.drawRoundedRect(thumb, max(radius - 2, 2), max(radius - 2, 2))
 
     def setCurrentIndex(self, index: int) -> None:
         if not 0 <= index < len(self._buttons):
