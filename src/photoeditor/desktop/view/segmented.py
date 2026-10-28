@@ -2,7 +2,7 @@
 past the ends) without opening it."""
 
 from PyQt6.QtCore import QEasingCurve, QEvent, QObject, QRectF, Qt, QTimer, QVariantAnimation, pyqtSignal
-from PyQt6.QtGui import QColor, QIcon, QPainter, QPen, QPixmap
+from PyQt6.QtGui import QColor, QIcon, QPainter, QPainterPath, QPen, QPixmap
 from PyQt6.QtWidgets import QComboBox, QHBoxLayout, QLayout, QPushButton, QToolButton, QWidget
 
 from ...theme.tokens import THEME
@@ -157,15 +157,35 @@ class SegmentedControl(QWidget):
         return self._data[index]
 
 
-def _stepper_button(text: str, tip: str) -> QToolButton:
-    button = QToolButton()
-    button.setText(text)
-    button.setToolTip(tip)
-    button.setAutoRaise(False)
-    button.setCursor(Qt.CursorShape.PointingHandCursor)
-    button.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-    button.setFixedWidth(24)
-    return button
+class _ArrowButton(QToolButton):
+    """A small bordered button with a chevron drawn in its exact middle (a text arrow sits high and small in a font): `direction` -1 points left, +1 right."""
+
+    def __init__(self, direction: int, tip: str):
+        super().__init__()
+        self._direction = direction
+        self.setToolTip(tip)
+        self.setAutoRaise(False)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.setFixedSize(26, 24)
+
+    def paintEvent(self, event) -> None:
+        super().paintEvent(event)       # (the button's box, from the frame's stylesheet)
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        colour = QColor(THEME.accent_hover if self.underMouse() else THEME.text_primary)
+        painter.setPen(QPen(colour, 2.0, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin))
+        cx, cy, half, reach = self.width() / 2.0, self.height() / 2.0, 5.0, 3.0
+        d = self._direction
+        path = QPainterPath()
+        path.moveTo(cx - d * reach, cy - half)
+        path.lineTo(cx + d * reach, cy)
+        path.lineTo(cx - d * reach, cy + half)
+        painter.drawPath(path)
+
+
+def _stepper_button(direction: int, tip: str) -> QToolButton:
+    return _ArrowButton(direction, tip)
 
 
 def _restyle_steppers(box: QWidget) -> None:
@@ -225,8 +245,8 @@ def add_steppers(combo: QComboBox) -> bool:
     row.setSpacing(3)
     _restyle_steppers(box)
     STYLE.changed.connect(lambda box=box: _restyle_steppers(box))
-    previous = _stepper_button("‹", "Previous choice")
-    following = _stepper_button("›", "Next choice")
+    previous = _stepper_button(-1, "Previous choice")
+    following = _stepper_button(1, "Next choice")
     hidden = combo.isHidden()
     holder.replaceWidget(combo, box)
     row.addWidget(previous)

@@ -3,13 +3,34 @@ title, so a long module reads as a few compartments you open when you need them.
 which are closed is remembered between sessions."""
 
 from PyQt6.QtCore import QEasingCurve, QEvent, QObject, Qt, QTimer, QVariantAnimation, pyqtSignal
+from PyQt6.QtGui import QColor, QPainter
 from PyQt6.QtWidgets import QHBoxLayout, QLabel, QLayout, QLayoutItem, QToolButton, QVBoxLayout, QWidget
 
 from ...features.settings import logic as app_settings
+from ...theme.tokens import THEME
+from . import panel_icons
 from .dividers import ROLE as DIVIDER_ROLE
 
 
 _NO_LIMIT = 16777215      # QWIDGETSIZE_MAX
+
+# the icon beside a section's title, by the title (an icon file of assets/icon)
+SECTION_ICONS = {
+    "film base": "film", "scan quality": "scan-line", "inversion method": "contrast", "conversion": "chart-spline", "noritsu look": "printer", "metering": "sun", "white / black point": "sun-moon",
+    "color trim": "palette", "on the scan": "scan-line", "on the picture": "frame", "straighten": "rotate-ccw", "distortion correction": "maximize", "lens correction": "focus", "keystone": "layout-grid",
+    "balance by tone": "color-balance", "scanner colour": "printer", "placement": "frame", "canister": "canister", "camera and lens": "camera",
+}
+
+
+class _Body(QWidget):
+    """The controls of a section, set in from the left with a thin accent rail and a faint tint down their side, so a group reads as belonging to its title."""
+
+    def paintEvent(self, event) -> None:
+        painter = QPainter(self)
+        painter.fillRect(4, 0, self.width() - 4, self.height(), QColor(255, 255, 255, 9))
+        rail = QColor(THEME.accent_primary)
+        rail.setAlpha(150)
+        painter.fillRect(3, 0, 2, self.height(), rail)
 
 
 def _is_title(widget) -> bool:
@@ -74,6 +95,12 @@ class FoldSection(QWidget):
         self._chevron.setToolTip("Fold or open this section")
         self._chevron.clicked.connect(self.toggle)
         head.addWidget(self._chevron)
+        icon_name = SECTION_ICONS.get(title.text().strip().lower())
+        if icon_name:
+            icon = QLabel()
+            icon.setPixmap(panel_icons.pixmap(icon_name, 14, THEME.text_secondary))
+            icon.setFixedWidth(18)
+            head.addWidget(icon)
         head.addWidget(title, 1)
         for item in extras:
             if item.widget() is not None:
@@ -81,9 +108,9 @@ class FoldSection(QWidget):
             elif item.layout() is not None:
                 head.addLayout(item.layout())
         outer.addLayout(head)
-        self._body = QWidget()
+        self._body = _Body()
         self._layout = QVBoxLayout(self._body)
-        self._layout.setContentsMargins(0, 0, 0, 0)
+        self._layout.setContentsMargins(12, 3, 0, 3)
         self._layout.setSpacing(4)
         outer.addWidget(self._body)
         self._slide = QVariantAnimation(self)
