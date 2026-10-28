@@ -161,10 +161,21 @@ def _stepper_button(text: str, tip: str) -> QToolButton:
     button = QToolButton()
     button.setText(text)
     button.setToolTip(tip)
-    button.setAutoRaise(True)
+    button.setAutoRaise(False)
+    button.setCursor(Qt.CursorShape.PointingHandCursor)
     button.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-    button.setFixedWidth(18)
+    button.setFixedWidth(24)
     return button
+
+
+def _restyle_steppers(box: QWidget) -> None:
+    """The dropdown and its two arrows sit in one rounded, grey, bordered frame; each arrow is a small raised button of its own and the dropdown inside has no edge of its own."""
+    box.setStyleSheet(
+        f"#stepcombo {{ background: {THEME.bg_input}; border: 1px solid {THEME.border_color}; border-radius: 7px; }}"
+        f"#stepcombo QComboBox {{ background: transparent; border: none; padding-left: 4px; }}"
+        f"#stepcombo QToolButton {{ background: {THEME.bg_button}; border: 1px solid {THEME.border_color}; border-radius: 5px; color: {THEME.text_primary}; font-weight: bold; padding: 0px; }}"
+        f"#stepcombo QToolButton:hover {{ background: {THEME.bg_hover}; border-color: {THEME.accent_primary}; }}"
+        f"#stepcombo QToolButton:pressed {{ background: {THEME.bg_pressed}; }}")
 
 
 def _layout_holding(widget: QWidget, layout: QLayout | None) -> QLayout | None:
@@ -207,9 +218,13 @@ def add_steppers(combo: QComboBox) -> bool:
     if holder is None:
         return False
     box = QWidget()
+    box.setObjectName("stepcombo")
+    box.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
     row = QHBoxLayout(box)
-    row.setContentsMargins(0, 0, 0, 0)
-    row.setSpacing(0)
+    row.setContentsMargins(3, 3, 3, 3)
+    row.setSpacing(3)
+    _restyle_steppers(box)
+    STYLE.changed.connect(lambda box=box: _restyle_steppers(box))
     previous = _stepper_button("‹", "Previous choice")
     following = _stepper_button("›", "Next choice")
     hidden = combo.isHidden()
