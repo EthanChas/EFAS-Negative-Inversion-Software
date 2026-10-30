@@ -414,6 +414,7 @@ class Plan:
     rng: np.ndarray
     gains: tuple[float, float, float]
     settings: Settings
+    film: object = None      # a film curve (features/negative/filmcurve) that straightens the scan's density before it is normalized: dmin, dmax and rng are in its units
 
 
 def analysis_density(codes: np.ndarray, rect=None, density_scale: float = DENSITY_SCALE) -> np.ndarray:
@@ -435,8 +436,10 @@ def analysis_density(codes: np.ndarray, rect=None, density_scale: float = DENSIT
     return density
 
 
-def plan_from_density(density: np.ndarray, settings: Settings, border: bool = True) -> Plan:
-    """invert_negative's Dmin / Dmax and process_negative's automatic white balance for a (cropped) density picture. `border` False leaves the rebate out (a drawn region has none)."""
+def plan_from_density(density: np.ndarray, settings: Settings, border: bool = True, film=None) -> Plan:
+    """invert_negative's Dmin / Dmax and process_negative's automatic white balance for a (cropped) density picture. `border` False leaves the rebate out (a drawn region has none).
+    `film` is a film curve (features/negative/filmcurve): the scan's density is read as usual, then Dmin, Dmax and the white balance are worked out on the straightened density (a
+    percentile keeps its place through a rising curve, so the two readings are the same pixels)."""
     s = settings.effective()
     mask_dmin = film_valid_mask(density, black_th=0.0)      # (black bars don't affect the minimum)
     mask_dmax = film_valid_mask(density, black_th=0.0005)   # (only true scan black is left out, not dense film: the densest negative pixels are the scene's brightest highlights)
@@ -446,22 +449,25 @@ def plan_from_density(density: np.ndarray, settings: Settings, border: bool = Tr
     dmax = estimate_dmax(density, s.dmax_pct, mask_dmax if mask_dmax.any() else None)
     dmin = np.asarray(dmin, dtype=np.float32)
     dmax = np.asarray(dmax, dtype=np.float32)
+    if film is not None:
+        dmin, dmax = film.values(dmin), film.values(dmax)
+        density = film.remap(density)
     rng = dmax - dmin
     rng = np.where(rng < 0.05, 0.05, rng).astype(np.float32)
 
     gains = (1.0, 1.0, 1.0)
     calibrated = bool(s.stock) and stock_profile(s.stock) is not None
     if s.auto_wb and not calibrated:
-        positive = normalize(density, dmin, rng)
+        positive = normalize(density, dmin, rng) if film is None else np.stack([film.print_positive(density[..., c], dmin[c], dmax[c], c) for c in range(3)], axis=-1)
         mean = np.clip(positive.reshape(-1, 3).mean(axis=0), 1e-4, None)
         target = mean.mean()
         gains = tuple(float(target / mean[c]) for c in range(3))
-    return Plan(dmin, dmax, rng, gains, settings)
+    return Plan(dmin, dmax, rng, gains, settings, film)
 
 
-def plan_from_codes(codes: np.ndarray, rect=None, settings: Settings | None = None, density_scale: float = DENSITY_SCALE) -> Plan:
+def plan_from_codes(codes: np.ndarray, rect=None, settings: Settings | None = None, density_scale: float = DENSITY_SCALE, film=None) -> Plan:
     settings = settings or Settings()
-    return plan_from_density(analysis_density(codes, rect, density_scale), settings, border=rect is None)
+    return plan_from_density(analysis_density(codes, rect, density_scale), settings, border=rect is None, film=film)
 
 
 def build_lut(plan: Plan, density_scale: float = DENSITY_SCALE) -> np.ndarray:
@@ -472,7 +478,10 @@ def build_lut(plan: Plan, density_scale: float = DENSITY_SCALE) -> np.ndarray:
     profile = stock_profile(s.stock) if s.stock else None
     lut = np.empty((3, 65536), dtype=np.float32)
     for c in range(3):
-        positive = np.clip((density - plan.dmin[c]) / plan.rng[c], 0.0, 1.0).astype(np.float32)
+        if plan.film is not None:
+            positive = plan.film.print_positive(plan.film(density, c), plan.dmin[c], plan.dmax[c], c)
+        else:
+            positive = np.clip((density - plan.dmin[c]) / plan.rng[c], 0.0, 1.0).astype(np.float32)
         if profile is not None:
             lut[c] = np.clip(_interp_table(positive, profile["lut"][c]), 0.0, 1.0) * 255.0      # (apply_calib's lookup, one channel)
         else:

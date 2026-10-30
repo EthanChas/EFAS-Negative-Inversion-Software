@@ -257,6 +257,23 @@ class NegativeToolPanel(CollapsiblePanel):
         self._encoding.currentIndexChanged.connect(self._on_metering_slider)
         encoding_row.addWidget(self._encoding, 1)
         body.addLayout(encoding_row)
+        curve_row = QHBoxLayout()
+        curve_label = QLabel("Curve")
+        curve_label.setFixedWidth(80)
+        self._curve_label = curve_label
+        curve_row.addWidget(curve_label)
+        self._film_profile = QComboBox()
+        self._film_profile.setToolTip(
+            "The film's own characteristic curve (a film profile: the maker's published curve, or one you measured), put back before the conversion. Original and the Noritsu look stretch "
+            "density in a straight line, so the film's toe and shoulder go into the picture as they are: shadows squeezed, highlights flattened. With a profile, each channel's density is "
+            "taken back to the exposure it implies through the curve and carried on along the curve's own straight section, and the stretch or the Noritsu tone curve works on that. "
+            "It counts fully with a sampled film base and about a third as much with an estimated one. None leaves the conversion as it was.")
+        self._film_profile.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
+        self._film_profile.setMinimumContentsLength(10)
+        self._film_profile.currentIndexChanged.connect(self._on_film_profile_changed)
+        curve_row.addWidget(self._film_profile, 1)
+        body.addLayout(curve_row)
+        self._fill_film_profiles()
         self._print_rows = {
             "crosstalk": SliderRow("Crosstalk", min_value=0.0, max_value=1.0, reset_value=1.0),
             "film_curve": SliderRow("Film curve", min_value=0.0, max_value=1.0, reset_value=0.4),
@@ -454,6 +471,9 @@ class NegativeToolPanel(CollapsiblePanel):
         self._inv_block = True
         # a black-and-white film's profile is offered for a black-and-white negative only (and stays in the list while a photo is using it)
         usable = [r for r in profiles if r["usable"] and (status.get("bw", True) or not r.get("bw_only") or r["id"] == status.get("profile_id"))]
+        self._profile_choices = [(f"{preset_tree.display(r['name'])} ({r['film']})", r["id"]) for r in usable]
+        if hasattr(self, "_film_profile"):
+            self._fill_film_profiles()
         self._engine_profile.clear()
         for r in usable:
             self._engine_profile.addItem(f"{preset_tree.display(r['name'])} ({r['film']})", r["id"])
@@ -483,6 +503,23 @@ class NegativeToolPanel(CollapsiblePanel):
             note = "The standard method is in use."
         self._engine_note.setText(note)
         self._inv_block = False
+
+    def _fill_film_profiles(self) -> None:
+        """The Curve menu: None, then the film profiles that can drive a conversion; the one the photo uses stays in it, named as missing, when it is no longer there."""
+        wanted = getattr(self, "_metering", Metering()).film_profile
+        self._film_profile.blockSignals(True)
+        self._film_profile.clear()
+        self._film_profile.addItem("None", "")
+        for label, ident in getattr(self, "_profile_choices", []):
+            self._film_profile.addItem(label, ident)
+        if wanted and self._film_profile.findData(wanted) < 0:
+            self._film_profile.addItem(f"{wanted} (missing: none used)", wanted)
+        self._film_profile.setCurrentIndex(max(0, self._film_profile.findData(wanted)))
+        self._film_profile.blockSignals(False)
+
+    def _on_film_profile_changed(self, _index: int) -> None:
+        self._sync_engine_controls(self._conversion.currentData() or "standard")
+        self._on_metering_slider(0.0)
 
     def set_quality(self, q) -> None:
         """The scan-quality verdict (features/densitometry/quality.ScanQuality), or None for nothing to show yet."""
@@ -533,10 +570,11 @@ class NegativeToolPanel(CollapsiblePanel):
     def set_metering(self, metering: Metering) -> None:
         """Show a Metering in the controls without emitting anything."""
         self._metering = metering
-        widgets = (self._margin, self._range, self._cast, self._white, self._black, self._conversion, self._film, self._encoding, *self._print_rows.values(), *self._trim_rows, *self._nor_rows.values(),
-                   self._nor_stock, self._nor_lab, self._nor_real_curve, self._nor_border, self._nor_auto_wb)
+        widgets = (self._margin, self._range, self._cast, self._white, self._black, self._conversion, self._film, self._encoding, self._film_profile, *self._print_rows.values(), *self._trim_rows,
+                   *self._nor_rows.values(), self._nor_stock, self._nor_lab, self._nor_real_curve, self._nor_border, self._nor_auto_wb)
         for w in widgets:
             w.blockSignals(True)
+        self._fill_film_profiles()
         self._conversion.setCurrentIndex(max(0, self._conversion.findData(metering.engine)))
         self._last_engine = metering.engine
         if self._film.findData(metering.film) < 0:   # a profile that is no longer there reads as the generic one
@@ -576,7 +614,12 @@ class NegativeToolPanel(CollapsiblePanel):
         self._real_curve_rows_enabled()
         for w in (self._film_label, self._film, *self._trim_rows, self._print_rows["crosstalk"], self._print_rows["film_curve"]):
             w.setVisible(modern)
-        for w in (self._encoding_label, self._encoding, self._print_rows["grade"], self._print_rows["density"], self._print_rows["paper_toe"], self._print_rows["paper_shoulder"]):
+        with_curve = engine in ("standard", "noritsu")
+        for w in (self._curve_label, self._film_profile):
+            w.setVisible(with_curve)
+        for w in (self._encoding_label, self._encoding):     # (a film curve needs the scan turned back into density correctly, so its encoding matters to Original and the Noritsu look too)
+            w.setVisible(modern or old or (with_curve and bool(self._film_profile.currentData())))
+        for w in (self._print_rows["grade"], self._print_rows["density"], self._print_rows["paper_toe"], self._print_rows["paper_shoulder"]):
             w.setVisible(modern or old)
         for w in (self._range, self._wb_title, self._channel_label, self._white, self._black, self._channel, *self._droppers.values()):
             w.setVisible(engine == "standard")
@@ -614,7 +657,7 @@ class NegativeToolPanel(CollapsiblePanel):
         return dataclasses.replace(m, film=self._film.currentData() or "generic", transfer=self._encoding.currentData() or "auto", buffer=self._margin.value(), range_clip=self._range.value(), cast_removal=self._cast.value(), engine=engine,
                                    grade_trim=tuple(row.value() for row in self._trim_rows), **{key: row.value() for key, row in self._print_rows.items()}, **{key: row.value() for key, row in self._nor_rows.items()},
                                    nor_stock=self._nor_stock.currentData() or "", nor_lab=self._nor_lab.isChecked(), nor_real_curve=self._nor_real_curve.isChecked(), nor_border=self._nor_border.isChecked(),
-                                   nor_auto_wb=self._nor_auto_wb.isChecked())
+                                   nor_auto_wb=self._nor_auto_wb.isChecked(), film_profile=self._film_profile.currentData() or "")
 
     def _build_noritsu(self, body) -> None:
         """The controls of the Noritsu look (a port of noritsu-tool: its --stock, --lab, --real-curve, --contrast, --toe, --gamma, --sat, --dmin-pct, --dmax-pct, --no-border and --no-auto-wb)."""

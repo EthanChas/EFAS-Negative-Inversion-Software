@@ -28,7 +28,7 @@ from ..features.colormix.logic import KEYS as COLOR_KEYS
 from ..features.colormix.logic import apply_color
 from ..features.colormix.logic import is_neutral as color_is_neutral
 from ..features.lablook.logic import apply_lab_tone
-from ..features.negative import negpy056, noritsu, printengine
+from ..features.negative import filmcurve, negpy056, noritsu, printengine
 from ..features.negative.metering import MAX_BUFFER, Metering
 from ..features.lookpresets.modules import off_overrides
 from ..features.aidust import logic as aidust
@@ -72,6 +72,7 @@ from ..features.negative.logic import (
     apply_channel_offsets,
     apply_invert_lut,
     compute_invert_lut,
+    compute_invert_lut_density,
     measure_reading,
     monochrome,
 )
@@ -583,10 +584,24 @@ def print_settings(m: Metering) -> "printengine.Settings":
                                 transfer=transfer)
 
 
+MIN_SAMPLED_BASE = 0.05      # the least density a film base can read as, for the film curve to trust it as a sampled one (any film base is denser than clear light)
+
+
+def film_curve_wanted(m: Metering) -> bool:
+    """Whether the conversion straightens the scan's density through a film profile first: Original and the Noritsu look can (see features/negative/filmcurve.py)."""
+    return bool(m.film_profile) and m.engine in ("standard", "noritsu") and filmcurve.profile_models(m.film_profile) is not None
+
+
 def density_settings(m: Metering) -> "printengine.Settings":
-    """The settings the scan is turned into a density image with: the Print Engine's, except that NegPy 0.56 (old) takes out no dye crosstalk (NegPy 0.56 has none by default)."""
+    """The settings the scan is turned into a density image with: the Print Engine's, except that NegPy 0.56 (old), the Noritsu look and Original with a film profile take out no dye
+    crosstalk (NegPy 0.56 has none by default)."""
     s = print_settings(m)
-    return dataclasses.replace(s, unmix_strength=0.0) if m.engine in ("negpy056", "noritsu") else s
+    return dataclasses.replace(s, unmix_strength=0.0) if (m.engine in ("negpy056", "noritsu") or film_curve_wanted(m)) else s
+
+
+def converts_in_density(m: Metering) -> bool:
+    """Whether the conversion reads the scan as a density image (the others read its codes as they are)."""
+    return m.engine in ("print", "negpy056", "noritsu") or film_curve_wanted(m)
 
 
 def negpy056_settings(m: Metering, black_and_white: bool) -> "negpy056.Settings":
@@ -756,8 +771,19 @@ class Renderer:
             density = self._noritsu_density
         return None if density is None else noritsu.suggest_params(noritsu.estimate_neg_density(density), look)
 
+    @staticmethod
+    def _film_curve_for(m: Metering, density: np.ndarray, base_density) -> "filmcurve.FilmCurve | None":
+        """The film curve (features/negative/filmcurve) of a photo's film profile for the Original and Noritsu conversions: the film base is the sampled one (as a density) when there is
+        one, else just under the thinnest readings of `density`, and the curve then counts for less (as it does in the NegPy Conversion). None when the photo has no usable profile."""
+        if not film_curve_wanted(m):
+            return None
+        sampled = base_density is not None and float(np.max(base_density)) >= MIN_SAMPLED_BASE   # (a sample that reads as clear light was clipped by the picture's own white: it says nothing)
+        base = np.asarray(base_density, dtype=np.float32) if sampled else printengine.estimate_base(density)
+        return filmcurve.build(filmcurve.profile_models(m.film_profile), base, sampled, m.film_profile)
+
     def _get_invert_lut(self, pixels, params: EditParams, rect, token):
-        key = (token, pixels.dtype.str, params.film_type == "bw", params.rotation_quarter_turns, params.flip_h, params.flip_v, params.crop_rect, params.film_base, params.metering)
+        key = (token, pixels.dtype.str, params.film_type == "bw", params.rotation_quarter_turns, params.flip_h, params.flip_v, params.crop_rect, params.film_base, params.metering,
+               filmcurve.profile_stamp(params.metering.film_profile) if params.metering.film_profile else None)
         if self._invert_lut is None or self._invert_key != key:
             base = params.film_base
             if base is not None and params.film_type == "bw":
@@ -775,8 +801,14 @@ class Renderer:
             elif params.metering.engine == "noritsu":      # (noritsu-tool reads the whole film, rebate included, for Dmin: only a region the person drew narrows it)
                 drawn = None if params.metering.rect is None else rect
                 self._noritsu_density = noritsu.analysis_density(pixels, drawn, printengine.DENSITY_SCALE)
-                plan = noritsu.plan_from_density(self._noritsu_density, noritsu_settings(params.metering), border=drawn is None)
+                base_d = None if base is None else printengine.base_density(base, density_settings(params.metering), 255.0)
+                film = self._film_curve_for(params.metering, self._noritsu_density, base_d)
+                plan = noritsu.plan_from_density(self._noritsu_density, noritsu_settings(params.metering), border=drawn is None, film=film)
                 self._invert_lut = noritsu.build_lut(plan, printengine.DENSITY_SCALE)
+            elif film_curve_wanted(params.metering):      # (Original with a film profile: its stretch is made on the density image, straightened through the film's curve)
+                base_d = None if base is None else printengine.base_density(base, density_settings(params.metering), 255.0)
+                film = self._film_curve_for(params.metering, analysis_region(pixels, rect, params.metering.buffer).astype(np.float32) / np.float32(printengine.DENSITY_SCALE), base_d)
+                self._invert_lut = compute_invert_lut_density(pixels, rect, base_d, params.metering, film, printengine.DENSITY_SCALE)
             else:
                 self._invert_lut = compute_invert_lut(pixels, rect, base, params.metering)
             self._invert_key = key
@@ -1085,7 +1117,7 @@ class Renderer:
                 geometry(flip_vertical)
             film_frame = self._film_frame(pixels, pixels16, params, token) if want_stats else None      # (for the histogram: the clear film border is no part of the picture)
             pixels, pixels16 = self._fix_edges(pixels, pixels16, params, edge_values, token, retouched, scale)   # the border's light, its holder and holes: repaired before the conversion reads the picture
-            if params.negative_inverted and params.metering.engine in ("print", "negpy056", "noritsu"):
+            if params.negative_inverted and converts_in_density(params.metering):
                 deep = deep and pixels16 is not None   # an 8-bit source has no more levels to keep, whatever depth the density image is held at
                 pixels16 = self._density_image(pixels16 if pixels16 is not None else pixels, density_settings(params.metering))
             frame = pixels16 if pixels16 is not None else pixels

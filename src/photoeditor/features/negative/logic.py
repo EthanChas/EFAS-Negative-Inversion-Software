@@ -129,6 +129,57 @@ def measure_reading(
     return floors, ceils
 
 
+def _cast_removed(floors: list[float], ceils: list[float], cast_removal: float) -> tuple[list[float], list[float]]:
+    """The floors and ceilings pulled toward their means by how little Color cast removes (1 leaves each channel its own)."""
+    if cast_removal < 1.0:
+        mean_floor, mean_ceil = sum(floors) / 3.0, sum(ceils) / 3.0
+        floors = [mean_floor + cast_removal * (f - mean_floor) for f in floors]
+        ceils = [mean_ceil + cast_removal * (c_ - mean_ceil) for c_ in ceils]
+    return floors, ceils
+
+
+def measure_reading_density(codes: np.ndarray, region: tuple[int, int, int, int] | None, base_density, metering: Metering | None, film, density_scale: float) -> tuple[list[float], list[float]]:
+    """measure_reading for a scan held as density codes (density = code / density_scale) and a film curve (features/negative/filmcurve) that straightens it: each channel's floor and
+    ceiling are read off the scan's density as usual, then taken through the film's curve, so the stretch lands where the film's straight section does rather than where its toe and
+    shoulder bend. `base_density` is a sampled film base's density per channel (or None)."""
+    m = metering or Metering()
+    crop = _analysis_region(codes, region, m.buffer).astype(np.float32) / np.float32(density_scale)
+    low_p = max(0.0, min(25.0, _FLOOR_DENSITY_PERCENTILE + m.range_clip * RANGE_STEP))
+    high_p = max(75.0, min(100.0, _CEIL_DENSITY_PERCENTILE - m.range_clip * RANGE_STEP))
+    floors, ceils = [], []
+    for c in range(3):
+        floor = float(np.percentile(crop[:, :, c], low_p))
+        ceil = float(np.percentile(crop[:, :, c], high_p))
+        if base_density is not None:
+            measured = float(base_density[c])
+            if ceil - measured > 0.15:
+                floor = measured
+        if film is not None:
+            floor, ceil = float(film(np.float32(floor), c)), float(film(np.float32(ceil), c))
+        floors.append(floor)
+        ceils.append(ceil)
+    return _cast_removed(floors, ceils, m.cast_removal)
+
+
+def compute_invert_lut_density(codes: np.ndarray, region: tuple[int, int, int, int] | None, base_density, metering: Metering | None, film, density_scale: float) -> np.ndarray:
+    """compute_invert_lut for a scan held as density codes: a (3, 65536) float table of display values (0-255) indexed by density code, the stretch of each channel's straightened
+    density between its floor and ceiling, with the white and black points moved as Original does."""
+    m = metering or Metering()
+    floors, ceils = measure_reading_density(codes, region, base_density, m, film, density_scale)
+    sample_density = np.arange(65536, dtype=np.float32) / np.float32(density_scale)
+    whites, blacks = m.white_points(), m.black_points()
+    lut = np.empty((3, 65536), dtype=np.float32)
+    for c in range(3):
+        span = max(ceils[c] - floors[c], _EPS)
+        floor = floors[c] + blacks[c] * POINT_SHIFT * span
+        ceil = ceils[c] - whites[c] * POINT_SHIFT * span
+        if film is not None:
+            lut[c] = film.print_positive(film(sample_density, c), floor, ceil, c) * 255.0
+        else:
+            lut[c] = np.clip((sample_density - floor) / max(ceil - floor, _EPS) * 255.0, 0, 255)
+    return lut
+
+
 analysis_region = _analysis_region  # the part of a picture the inversion reads (public name for the other engines)
 
 

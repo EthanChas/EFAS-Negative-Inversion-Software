@@ -17,7 +17,7 @@ _FIELDS_NAMES = {
     "paper_toe": "paper toe", "paper_shoulder": "paper shoulder", "grade_trim": "colour crossover", "film": "film profile", "transfer": "scan encoding",
     "nor_stock": "Noritsu stock profile", "nor_lab": "Noritsu lab mode", "nor_real_curve": "Noritsu real curve", "nor_contrast": "Noritsu contrast", "nor_toe": "Noritsu toe",
     "nor_gamma": "Noritsu gamma", "nor_sat": "Noritsu saturation", "nor_dmin_pct": "Noritsu Dmin percentile", "nor_dmax_pct": "Noritsu Dmax percentile", "nor_border": "Noritsu rebate Dmin",
-    "nor_auto_wb": "Noritsu auto white balance",
+    "nor_auto_wb": "Noritsu auto white balance", "film_profile": "film curve profile",
 }
 ENGINES = ("print", "standard", "negpy056", "noritsu")   # "noritsu" is the Noritsu look (features/negative/noritsu.py: a port of noritsu-tool), "print" is NegPy Conversion (film and paper: features/negative/printengine.py), "standard" is Original (a straight stretch of each channel), "negpy056" is NegPy 0.56 (old): NegPy's own conversion as that version made it (features/negative/negpy056.py)
 DEFAULT_ENGINE = "print"
@@ -71,6 +71,7 @@ class Metering:
     nor_dmax_pct: float = 99.8       # Noritsu: the percentile Dmax is read at; lower for a thin negative
     nor_border: bool = True          # Noritsu: Dmin from the film rebate when it looks like the orange mask
     nor_auto_wb: bool = True         # Noritsu: neutralize the residual cast of the picture's average
+    film_profile: str = ""           # Original and Noritsu: the id of a film profile (a characteristic curve) the scan is taken back through before the stretch or the tone curve ("" for none)
 
     def is_default(self) -> bool:
         return self == Metering()
@@ -131,6 +132,7 @@ class Metering:
             nor_contrast=_num(data.get("nor_contrast"), 0.5, 2.0, 1.05), nor_toe=_num(data.get("nor_toe"), 0.0, 0.2, 0.02), nor_gamma=_num(data.get("nor_gamma"), 0.4, 1.6, 0.98),
             nor_sat=_num(data.get("nor_sat"), 0.0, 2.0, 1.0), nor_dmin_pct=_num(data.get("nor_dmin_pct"), 0.0, 10.0, 0.5), nor_dmax_pct=_num(data.get("nor_dmax_pct"), 90.0, 100.0, 99.8),
             nor_border=data.get("nor_border") is not False, nor_auto_wb=data.get("nor_auto_wb") is not False,
+            film_profile=data["film_profile"] if isinstance(data.get("film_profile"), str) and 0 < len(data["film_profile"]) <= 120 else "",
         )
 
 

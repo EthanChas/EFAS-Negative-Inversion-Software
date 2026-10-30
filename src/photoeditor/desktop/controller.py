@@ -118,7 +118,7 @@ from ..features.datadir import BACKUP_DIR, EDITS_DB
 from .paths import app_data_dir, thumbnail_cache_dir
 from .ai_dust_worker import AiDustWorker
 from .mask_blend import MaskBlender
-from .render import EditParams, _scale_rect, RenderJob, Renderer, RenderOutput, RenderThread
+from .render import EditParams, _scale_rect, film_curve_wanted, RenderJob, Renderer, RenderOutput, RenderThread
 from .session import AppState, HistoryEntry, entry_from_json, entry_to_json
 
 HISTORY_LIMIT = 400   # steps kept per photo (the first one and the newest)
@@ -1061,6 +1061,8 @@ class AppController(QObject):
             message = f"The {what} point dropper works on an inverted negative: press Invert first."
         elif s.inversion_engine == "curve":
             message = f"The {what} point belongs to the standard inversion; the curve-informed method sets its own."
+        elif film_curve_wanted(s.metering):
+            message = f"The {what} point dropper reads the scan as it is, not through a film curve profile: use the {what} point slider, or set the Curve profile to None."
         else:
             probe = self._renderer.probe_negative(self._render_base(), EditParams.from_state(s), self._token(), self._render_base().shape[1], flatfield=self._ff)
             frame, rect, floors, ceils = probe
