@@ -2115,6 +2115,29 @@ class AppController(QObject):
             self._log(description)
         self.masks_changed.emit()
 
+    def module_shape_name(self, key: str, kind: str) -> str:
+        """What a shape drawn from a module's Mask box is called: its kind in words ("Brush", "Curve"), numbered when the module's mask already holds one of that kind."""
+        label = mask_model.SHAPE_LABELS.get(kind, kind.title())
+        ms, blend = self.mask_set(), self.blend_of(key)
+        taken = {ms.get(i).name for i in ms.flatten(blend.mask_id)} if blend.uses_mask() and blend.mask_id else set()
+        name, n = label, 1
+        while name in taken:
+            n += 1
+            name = f"{label} {n}"
+        return name
+
+    def mask_owners(self) -> list[tuple[str, str, int]]:
+        """The modules that are blended through a drawn mask, as (module key, its title, the id of the mask): the Masks panel lists each module's mask under the module."""
+        ms, out = self.mask_set(), []
+        for key, value in self.state.blends.items():
+            blend = mask_blend.Blend.from_dict(value)
+            if blend.uses_mask() and blend.mask_id and ms.get(blend.mask_id) is not None:
+                try:
+                    out.append((key, self.module_title(key), blend.mask_id))
+                except KeyError:
+                    continue
+        return out
+
     def add_mask_form(self, form_type: str, points: list, name: str = "", source=(0.0, 0.0)) -> int:
         """Add a shape (circle, ellipse, path, brush or gradient) to the photo's masks. Returns its id, 0 if it could not be added."""
         if self.state.preview_rgb is None:

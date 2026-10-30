@@ -18,6 +18,7 @@ from dataclasses import dataclass, field
 
 CIRCLE, ELLIPSE, PATH, BRUSH, GRADIENT, GROUP = "circle", "ellipse", "path", "brush", "gradient", "group"
 SHAPES = (CIRCLE, ELLIPSE, PATH, BRUSH, GRADIENT)
+SHAPE_LABELS = {CIRCLE: "Circle", ELLIPSE: "Ellipse", PATH: "Curve", BRUSH: "Brush", GRADIENT: "Gradient"}      # what a shape drawn from a module is called, in the module's mask
 TYPE_LABELS = {CIRCLE: "Circle", ELLIPSE: "Ellipse", PATH: "Path", BRUSH: "Brush", GRADIENT: "Gradient", GROUP: "Group"}
 
 # a group element's state (darktable's dt_masks_state_t)

@@ -1,3 +1,5 @@
+import time
+
 from PyQt6.QtCore import QSize, QTimer, Qt, pyqtSignal
 from PyQt6.QtGui import QIcon
 from PyQt6.QtWidgets import QAbstractItemView, QComboBox, QHBoxLayout, QInputDialog, QLabel, QMenu, QToolButton, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget
@@ -22,7 +24,8 @@ _ROLE = Qt.ItemDataRole.UserRole
 
 class MaskManagerPanel(CollapsiblePanel):
     """The Masks section on the left of the picture (darktable's mask manager): the picture's shapes and groups, and a Dust Detection folder with what dust detection found, split
-    into Dust, Hairs and Scratches.
+    into Dust, Hairs and Scratches. A module that was blended through a drawn mask has a folder of its own ("Sharpening mask") holding its shapes (Brush, Curve...); they are not
+    listed again under Shapes and Groups. The eye shows every mask on the picture whatever is picked.
 
     Draw buttons place a free shape on the picture; a shape or group picked in the list is shown on the picture to move, reshape or scroll-resize (the pencil turns that on and off); its
     right-click menu renames, duplicates, deletes, groups, and (for a shape inside a group) sets how it combines with the others. Picking a speck, hair or scratch in the Dust Detection
@@ -65,6 +68,9 @@ class MaskManagerPanel(CollapsiblePanel):
         self._listed = True
         self._building = False
         self._expanded: set[str] = {"Dust Detection", "Groups", "Shapes"}
+        self._collapsed: set[str] = set()           # the modules' folders the person closed (they start open)
+        self._owners: list[tuple[str, str, int]] = []     # (module key, title, id of its mask): see set_masks
+        self._last_pick = 0.0
         body = self.body()
         body.setSpacing(THEME.space_sm)
 
@@ -97,18 +103,22 @@ class MaskManagerPanel(CollapsiblePanel):
         self._tree.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self._tree.customContextMenuRequested.connect(self._menu)
         self._tree.itemSelectionChanged.connect(self._selection_changed)
-        self._tree.itemExpanded.connect(lambda item: self._expanded.add(self._path(item)))
-        self._tree.itemCollapsed.connect(lambda item: self._expanded.discard(self._path(item)))
+        self._tree.itemClicked.connect(self._item_clicked)
+        self._tree.itemExpanded.connect(lambda item: (self._expanded.add(self._path(item)), self._collapsed.discard(self._path(item))))
+        self._tree.itemCollapsed.connect(lambda item: (self._expanded.discard(self._path(item)), self._collapsed.add(self._path(item))))
         self._tree.keyPressEvent = self._key_pressed
         body.addWidget(self._tree)
 
         actions = QHBoxLayout()
         actions.setSpacing(THEME.space_sm)
+        self._eye_btn = tool_button("mask-eye", "Show every mask on the picture, whichever is picked in the list", checkable=True)
+        self._eye_btn.toggled.connect(lambda _on: self._selection_changed())
         self._edit_btn = tool_button("mask-edit", "Show the picked shapes on the picture to edit them", checkable=True)
         self._edit_btn.setChecked(True)
         self._edit_btn.toggled.connect(self.edit_toggled.emit)
         self._delete_btn = tool_button("mask-trash", "Delete the picked shapes, groups or detections (Delete key)")
         self._delete_btn.clicked.connect(self._delete_picked)
+        actions.addWidget(self._eye_btn)
         actions.addWidget(self._edit_btn)
         actions.addWidget(self._delete_btn)
         actions.addStretch(1)
@@ -178,9 +188,22 @@ class MaskManagerPanel(CollapsiblePanel):
         self._rebuild()
 
     # ------------------------------------------------------------ what the list shows
-    def set_masks(self, ms: M.MaskSet) -> None:
+    def set_masks(self, ms: M.MaskSet, owners: list | None = None) -> None:
+        """`owners` are the modules blended through a drawn mask, as (module key, title, id of the mask): each gets a folder holding its mask's shapes."""
         self._ms = ms
+        self._owners = list(owners or [])
         self._rebuild()
+        if self._eye_btn.isChecked():      # (a shape just drawn or taken away: the picture shows every mask as it now is)
+            self._selection_changed()
+
+    def set_all_shown(self, on: bool) -> None:
+        """The eye, without picking anything (the panel was closed: nothing stays on the picture)."""
+        self._eye_btn.blockSignals(True)
+        self._eye_btn.setChecked(on)
+        self._eye_btn.blockSignals(False)
+
+    def all_shown(self) -> bool:
+        return self._eye_btn.isChecked()
 
     def set_detections(self, items: dict) -> None:
         self._detections = {k: list(items.get(k, [])) for k in (DUST, HAIRS, SCRATCHES)}
@@ -254,8 +277,26 @@ class MaskManagerPanel(CollapsiblePanel):
                 leaf.setIcon(0, QIcon(panel_icons.pixmap(_FOLDER_ICONS[key], 16, THEME.text_primary)))
             sub.setText(0, f"{_FOLDER_TITLES[key]} ({len(self._detections[key])})")
 
+        owned: set[int] = set()
+        modules = []
+        for key, title, mask_id in self._owners:      # each module's mask, under a folder named for the module
+            form = self._ms.get(mask_id)
+            if form is None:
+                continue
+            owned |= self._closure(mask_id)
+            folder = self._folder(None, f"{title} mask", "mask-layers", {"kind": "folder", "view": f"module:{key}"})
+            if form.type == M.GROUP:
+                for p in form.points:
+                    child = self._ms.get(p["formid"])
+                    if child is not None:
+                        self._form_item(folder, child, {"kind": "member", "id": child.id, "group": form.id}, p)
+            else:
+                self._form_item(folder, form, {"kind": "form", "id": form.id, "group": 0})
+            modules.append(folder)
         groups = self._folder(None, "Groups", "mask-group", {"kind": "folder", "view": "groups"})     # a click on a folder shows all it holds
         for g in self._ms.groups():
+            if g.id in owned:
+                continue
             gi = self._form_item(groups, g, {"kind": "form", "id": g.id, "group": 0})
             for p in g.points:
                 child = self._ms.get(p["formid"])
@@ -263,11 +304,12 @@ class MaskManagerPanel(CollapsiblePanel):
                     self._form_item(gi, child, {"kind": "member", "id": child.id, "group": g.id}, p)
         shapes = self._folder(None, "Shapes", None, {"kind": "folder", "view": "shapes"})
         for f in self._ms.shapes():
-            self._form_item(shapes, f, {"kind": "form", "id": f.id, "group": 0})
-        if not self._ms.groups():
-            groups.setText(0, "Groups")
+            if f.id not in owned:
+                self._form_item(shapes, f, {"kind": "form", "id": f.id, "group": 0})
         for top in (dust, groups, shapes):
             top.setExpanded(self._path(top) in self._expanded)
+        for folder in modules:
+            folder.setExpanded(self._path(folder) not in self._collapsed)
         for i in range(dust.childCount()):
             sub = dust.child(i)
             sub.setExpanded(self._path(sub) in self._expanded)
@@ -277,6 +319,18 @@ class MaskManagerPanel(CollapsiblePanel):
         self._reselect(keep)
         self._building = False
         self._selection_changed(emit=False)
+
+    def _closure(self, form_id: int, seen: set | None = None) -> set[int]:
+        """A shape or group and everything inside it."""
+        seen = seen if seen is not None else set()
+        form = self._ms.get(form_id)
+        if form is None or form_id in seen:
+            return seen
+        seen.add(form_id)
+        if form.type == M.GROUP:
+            for p in form.points:
+                self._closure(p["formid"], seen)
+        return seen
 
     def _form_item(self, parent, form: M.Form, data: dict, element: dict | None = None) -> QTreeWidgetItem:
         text = form.name
@@ -316,9 +370,17 @@ class MaskManagerPanel(CollapsiblePanel):
                 out.append(d["id"])
         return out
 
+    def _item_clicked(self, _item, _column: int = 0) -> None:
+        """A click on what is already picked changes nothing in the list, but the picture may have been given to another tool since (a module's Mask box takes it): show it again. A click
+        that did pick something has just been answered."""
+        if time.monotonic() - self._last_pick > 0.4:
+            self._selection_changed()
+
     def _selection_changed(self, emit: bool = True) -> None:
         if self._building:
             return
+        if emit:
+            self._last_pick = time.monotonic()
         data = self._picked_data()
         forms = [d for d in data if d.get("kind") in ("form", "member")]
         detection = next((d for d in data if d.get("kind") in (DUST, HAIRS, SCRATCHES)), None)
@@ -345,12 +407,17 @@ class MaskManagerPanel(CollapsiblePanel):
         if not forms and folder in ("shapes", "groups"):      # the Shapes or Groups folder was clicked: all of what it holds is shown on the picture
             for f in (self._ms.shapes() if folder == "shapes" else self._ms.groups()):
                 ids += [i for i in self._ms.flatten(f.id) if i not in ids]
+        elif not forms and folder.startswith("module:"):      # a module's folder: its whole mask
+            mask_id = next((m for key, _t, m in self._owners if f"module:{key}" == folder), 0)
+            ids = self._ms.flatten(mask_id)
         elif len(forms) == 1 and forms[0]["kind"] == "form" and (self._ms.get(forms[0]["id"]) or M.Form).type == M.GROUP:
             ids, parent = self._ms.flatten(forms[0]["id"]), forms[0]["id"]
         else:
             for d in forms:
                 ids += [i for i in self._ms.flatten(d["id"]) if i not in ids]
             parent = forms[0]["group"] if len(forms) == 1 and forms[0]["kind"] == "member" else 0
+        if self._eye_btn.isChecked():      # the eye: every mask, whatever is picked
+            ids = self.all_ids()
         self.picked.emit(ids, parent)
 
     # ------------------------------------------------------------ properties of the picked shape

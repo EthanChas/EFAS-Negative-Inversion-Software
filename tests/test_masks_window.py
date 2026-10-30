@@ -80,23 +80,24 @@ _SCRIPT = textwrap.dedent(r"""
     assert names.index(win._mask_manager) == names.index(win._history_panel) + 1, "Masks sits right under History"
     assert win._mask_manager._collapsible
 
-    # --- the Masks panel lists them: Dust Detection folder first with Dust, Hairs, Scratches, then Groups and Shapes
+    # --- the Masks panel lists them: Dust Detection folder first with Dust, Hairs, Scratches, then a folder for each module with a mask, then Groups and Shapes
     tree = mgr._tree
     top = [tree.topLevelItem(i).text(0) for i in range(tree.topLevelItemCount())]
-    assert top == ["Dust Detection", "Groups", "Shapes"], top
+    assert top == ["Dust Detection", "Exposure mask", "Groups", "Shapes"], top
     subs = [tree.topLevelItem(0).child(i).text(0) for i in range(3)]
     assert [x.split(" (")[0] for x in subs] == ["Dust", "Hairs", "Scratches"], subs
     assert subs == ["Dust (0)", "Hairs (0)", "Scratches (0)"], "the three folders are there from the start, with their counts"
-    groups_item, shapes_item = tree.topLevelItem(1), tree.topLevelItem(2)
-    assert groups_item.childCount() == 1 and groups_item.child(0).childCount() == 2 and shapes_item.childCount() == 2
+    module_item, groups_item, shapes_item = tree.topLevelItem(1), tree.topLevelItem(2), tree.topLevelItem(3)
+    assert module_item.childCount() == 2 and [module_item.child(i).text(0).split("  (")[0] for i in range(2)] == ["Circle", "Ellipse"], "the module's shapes are named for what they are"
+    assert groups_item.childCount() == 0 and shapes_item.childCount() == 0, "what a module made is under the module, not listed again"
     # picking a shape in the list shows it on the picture
-    shapes_item.child(0).setSelected(True); app.processEvents()
+    module_item.child(0).setSelected(True); app.processEvents()
     assert editor._manager and tool.visible == {1}, tool.visible
-    tree.clearSelection(); groups_item.child(0).setSelected(True); app.processEvents()
-    assert tool.visible == {1, 2} and tool.parent_id == group.id
+    tree.clearSelection(); module_item.setSelected(True); app.processEvents()
+    assert tool.visible == {1, 2}, "the module's folder shows all of its mask"
 
     # --- the properties of the picked shape, as in darktable's mask manager
-    tree.clearSelection(); shapes_item.child(0).setSelected(True); app.processEvents()
+    tree.clearSelection(); module_item.child(0).setSelected(True); app.processEvents()
     assert mgr._prop_rows["size"].isVisible() and mgr._prop_rows["feather"].isVisible() and not mgr._prop_rows["hardness"].isVisible()
     mgr._prop_rows["size"].set_value(10.0); mgr._property_moved("size", 10.0); app.processEvents()
     pump(lambda: abs(c.mask_set().get(1).points[0]["radius"] - 0.10) < 1e-6, 5.0)

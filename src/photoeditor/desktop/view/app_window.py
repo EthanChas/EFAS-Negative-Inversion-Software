@@ -3119,12 +3119,13 @@ class AppWindow(QMainWindow):
 
     def _put_down_masks(self) -> None:
         """The Masks panel was closed: nothing picked in it stays on the picture - the shapes being drawn or edited, a mask shown, the dust folder shown, the ring on a detection."""
+        self._mask_manager.set_all_shown(False)
         self._mask_manager._tree.clearSelection()     # (this lets go of the mask view, the folder view and the ring)
         self._mask_editor.stop()
         self._on_detection_group_picked("")
 
     def _refresh_mask_manager(self, *_args) -> None:
-        self._mask_manager.set_masks(self.controller.mask_set())
+        self._mask_manager.set_masks(self.controller.mask_set(), self.controller.mask_owners())
 
     def _forget_detections(self, *_args) -> None:
         self._detections_key = None

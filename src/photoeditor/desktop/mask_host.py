@@ -56,7 +56,8 @@ class ControllerHost(Host):
         if key is not None and key.split("#")[0] == "retouch":     # "retouch" is the module, "retouch#2" a copy of it
             form_id = self.c.add_retouch_form(kind, points, source, int(key.split("#")[1]) if "#" in key else 0)
         else:
-            form_id = self.c.add_mask_form(kind, points, source=source or (0.0, 0.0))
+            name = self.c.module_shape_name(key, kind) if key is not None else ""      # (a shape drawn from a module is named for what it is: Brush, Curve...)
+            form_id = self.c.add_mask_form(kind, points, name, source=source or (0.0, 0.0))
         if form_id and self._created is not None:
             self._created(kind, key, form_id)
         return form_id
