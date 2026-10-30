@@ -8,6 +8,7 @@ from pathlib import Path
 from .film_profile import FilmProfile, ProfileError, ProfileStore
 
 BUNDLED_DIR = Path(__file__).resolve().parents[2] / "assets" / "film_profiles"
+REPLACED = ("kodak-gold-200-data-sheet",)      # profiles that were shipped wrong and replaced under a new id: taken out of a folder that has them (the first Kodak Gold 200 kept the base density in its curves)
 MARKER = "bundled-installed.txt"      # the ids already put in this folder (not a .json file: the store would list it as a profile)
 
 
@@ -34,6 +35,9 @@ def install(store: ProfileStore) -> list[str]:
     except OSError:
         had = set()
     added, now = [], set(had)
+    for old in REPLACED:
+        if store.exists(old):
+            store.delete(old)
     for profile in available():
         if profile.id in had:
             continue

@@ -22,7 +22,7 @@ OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "src", "pho
 PAGE = 3                    # the "CURVES" page (0-based)
 SIGMA = 0.03                # density: the width of the lines, and reading the vendor's chart
 POINTS = 40                 # samples along each curve
-ID = "kodak-gold-200-data-sheet"
+ID = "kodak-gold-200-kodak-e7022"       # (the first version, "kodak-gold-200-data-sheet", kept the base density in the curves, which gave a colour cast: bundled.REPLACED removes it)
 # The chart's frame in PDF points: left edge = log exposure -3, right edge = +1, bottom = density 0, top = density 4 (its ticks fall at 127.8, 173.9, 220.1 for -2, -1, 0 and at
 # 239.7, 193.6, 147.4 for densities 1, 2, 3, which the check in `axes` confirms against the frame).
 FRAME_WIDTH_PT = 0.43       # the frame is the one drawing stroked at this width with a rectangle of about 185 x 185 points
@@ -78,11 +78,13 @@ def main() -> None:
     curves = {}
     for layer in "RGB":
         x, y = data[layer]
-        curves[layer] = fp.curve_from_report(fit.fit_curve(x, y, sigma=np.full(len(x), SIGMA)), scale="relative", unit="log relative exposure")
+        # a profile's curves are the density ABOVE the film base (as the inversion and the film curve read them): each layer's lowest density, the orange mask, is taken off, or the
+        # three layers would start at 0.25, 0.66 and 0.96 and a neutral scene would come out tinted
+        curves[layer] = fp.curve_from_report(fit.fit_curve(x, y - y.min(), sigma=np.full(len(x), SIGMA)), scale="relative", unit="log relative exposure")
     p = fp.new_profile(
         "Kodak Gold 200 (Kodak data sheet)", "supplied", curves, film_stock="Kodak Gold 200", process="C-41",
         notes=("The characteristic curves of Kodak's technical data sheet E-7022 for KODAK GOLD 200 Film (February 2016), read off the vector chart (+-0.03 density): daylight exposure, Status M "
-               "densitometry, red, green and blue. The density includes base and fog. Supplied by the maker's chart, not measured by EFAS, and other rolls and processing differ."),
+               "densitometry, red, green and blue. The curves are the density above the base (the orange mask, the lowest density of each layer, is taken off and kept as the profile's base). Supplied by the maker's chart, not measured by EFAS, and other rolls and processing differ."),
         conditions={"illuminant": "Daylight", "densitometry": "Status M", "process": "C-41", "log_h_ref": -1.14},
         calibration={"origin": "manufacturer data sheet, read from the printed vector chart", "source": "Kodak Alaris, KODAK GOLD 200 Film, Publication E-7022", "tool": "tools/make_kodak_gold_profile.py"},
     )
@@ -90,7 +92,7 @@ def main() -> None:
     base = [float(data[c][1].min()) for c in "RGB"]
     p.base = {"dmin_from_curve": base}
     p.validity = {"log_exposure_range": [float(min(data[c][0].min() for c in "RGB")), float(max(data[c][0].max() for c in "RGB"))],
-                  "density_range": [float(min(data[c][1].min() for c in "RGB")), float(max(data[c][1].max() for c in "RGB"))]}
+                  "density_range": [0.0, float(max(data[c][1].max() - data[c][1].min() for c in "RGB"))]}
     os.makedirs(OUT, exist_ok=True)
     with open(os.path.join(OUT, ID + ".json"), "w", encoding="utf-8", newline="\n") as f:
         json.dump(p.to_dict(), f, indent=1, ensure_ascii=False)

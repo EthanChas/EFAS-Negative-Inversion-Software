@@ -17,7 +17,7 @@ from photoeditor.features.negative import noritsu as N  # noqa: E402
 from photoeditor.features.negative import printengine as pe  # noqa: E402
 from photoeditor.features.negative.metering import Metering  # noqa: E402
 
-GOLD = "kodak-gold-200-data-sheet"
+GOLD = "kodak-gold-200-kodak-e7022"
 FOMA = "foma-fomapan-100-microphen-7min"
 
 
@@ -37,13 +37,41 @@ def test_the_kodak_gold_profile_comes_with_efas_and_follows_the_data_sheet_chart
     profile = next(p for p in bundled.available() if p.id == GOLD)
     assert profile.kind == "supplied" and set(profile.curves) == {"R", "G", "B"} and profile.usable_for_inversion()
     assert "E-7022" in profile.notes and profile.film_stock == "Kodak Gold 200"
-    # the chart: red from 0.25 to 1.83, green 0.66 to 2.30, blue 0.96 (a dip at the toe) to 2.74, over log exposure -3 to +0.86
-    for ch, low, high in (("R", 0.25, 1.83), ("G", 0.66, 2.30), ("B", 0.95, 2.74)):
+    # the chart: red from 0.25 to 1.83, green 0.66 to 2.30, blue 0.96 (a dip at the toe) to 2.74, over log exposure -3 to +0.86; the profile holds the density ABOVE the base
+    # (each layer's lowest density, its orange mask, taken off), as every film profile does, and keeps that base
+    for ch, base, high in (("R", 0.25, 1.83), ("G", 0.66, 2.30), ("B", 0.95, 2.74)):
         c = profile.curves[ch]
-        assert abs(min(c.y) - low) < 0.06 and abs(max(c.y) - high) < 0.06, (ch, min(c.y), max(c.y))
+        assert abs(min(c.y)) < 0.01 and abs(max(c.y) - (high - base)) < 0.07, (ch, min(c.y), max(c.y))
         assert abs(min(c.x) + 3.0) < 0.05 and abs(max(c.x) - 0.86) < 0.05
+    assert all(abs(a - b) < 0.03 for a, b in zip(profile.base["dmin_from_curve"], (0.25, 0.66, 0.96)))
     gamma = profile.gradients()
     assert gamma["B"]["gamma"] > gamma["R"]["gamma"], "the blue layer is the steepest on the chart"
+
+
+def test_a_neutral_scene_comes_out_neutral_through_the_kodak_curves(installed):
+    """The first version kept each layer's base density in its curves (0.25, 0.66, 0.96), so a neutral scene was pulled apart: pink."""
+    models = filmcurve.profile_models(GOLD)
+    base = np.array([0.25, 0.66, 0.96], np.float32)                      # the orange mask of a colour negative
+    e = np.linspace(-2.2, 0.4, 8)
+    scan = np.stack([base[c] + np.asarray(models["RGB"[c]].curve(e)) for c in range(3)], axis=-1).astype(np.float32)
+    film = filmcurve.build(models, base, True, GOLD)
+    est = np.stack([film(scan[:, c], c) / float(film.slopes[c]) for c in range(3)], axis=-1)      # the exposure each layer's density implies (up to a constant per layer, which white balance takes out)
+    mid = slice(1, 7)
+    for c in (0, 2):
+        diff = est[mid, c] - est[mid, 1]
+        assert float(diff.max() - diff.min()) < 0.12, ("a neutral ramp's layers disagree about the exposure", c, diff.round(3).tolist())
+
+
+def test_the_profile_that_was_shipped_wrong_is_taken_out_of_a_folder_that_has_it(tmp_path):
+    from photoeditor.features.densitometry import film_profile as fp
+
+    store = fp.ProfileStore(str(tmp_path / "film-profiles"))
+    old = next(p for p in bundled.available() if p.id == GOLD)
+    old.id = "kodak-gold-200-data-sheet"
+    store.save(old)
+    assert "kodak-gold-200-data-sheet" in store.ids()
+    bundled.install(store)
+    assert "kodak-gold-200-data-sheet" not in store.ids() and GOLD in store.ids()
 
 
 def test_the_profile_is_installed_for_the_curve_menu(installed):
@@ -115,7 +143,7 @@ _SCRIPT = textwrap.dedent(r"""
     pump(3)
     c.set_negative_inverted(True); pump(1.5)
     panel = win._negative_tool
-    gold = "kodak-gold-200-data-sheet"
+    gold = "kodak-gold-200-kodak-e7022"
     for _ in range(3):
         win._sync_inversion(); pump(0.3)      # (the profile lists the window shows)
         if panel._film_profile.findData(gold) >= 0: break
