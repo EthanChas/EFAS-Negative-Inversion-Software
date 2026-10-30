@@ -123,6 +123,17 @@ export writes every one of them, with what it does, as a starting point; `var(--
 | `--layout-left-width` | 0 to 800 px | The width of the column of panels when a theme is put in force (0 leaves it as you set it). Default: 0. |
 | `--layout-sidebar-width` | 0 to 800 px | The width of the modules when a theme is put in force (0 leaves it as you set it). Default: 0. |
 
+**Startup screen**
+
+| Setting | Values | What it is |
+|---|---|---|
+| `--splash-bg` | a colour | The startup screen's panel. Default: #2b2b2b. |
+| `--splash-border` | a colour | Its outline. Default: #4cc2ff. |
+| `--splash-text` | a colour | The program's name typed on it. Default: #ffffff. |
+| `--splash-dim` | a colour | The lines under the name. Default: #d0d0d0. |
+| `--splash-ray` | a colour | The arrows round the logo. Default: #4cc2ff. |
+| `--splash-speed-percent` | 25 to 400 % | How fast the startup screen plays (100 is normal). Default: 100. |
+
 Gaps between controls (`--space-sm`, `--space-md`, `--space-lg`, `--space-xl`, in pixels) can be set too. Windows opened afterwards use them; the main window uses them the next time the
 program starts.
 
@@ -164,3 +175,10 @@ A theme can also arrange the window. These are the `Layout` settings in the tabl
 A theme can be a **folder**: a `theme.css` (the same file as above) with an `icons` folder beside it. Pack the folder as a `.zip` to share it. **Import theme folder...** takes the
 folder, **Import theme file...** takes a `.css` or a `.zip`; **Export theme folder...** writes a folder to start from. Only `theme.css` and the `.svg` / `.png` pictures of the
 `icons` folder are copied in (nothing else in a folder or zip is read), and a zip or folder that is too large (400 files, 40 MB) is refused. A single `.css` file works exactly as before.
+
+## The startup screen
+
+While the program loads, a small screen plays the logo and the program's name, laid on the startup sound (`assets/sound/startup.mp3`): the logo lands on the sound's hit, the square
+panel opens into a wide one, and the name is typed out from the sound's pulses, each line starting on one. It runs in a process of its own, so it keeps moving while the program loads and
+does not slow the start down, and it leaves, fading, when the program is ready. Settings > General turns the screen and its sound on and off; a theme sets its colours (`--splash-bg` and
+the others in the table above). To use another sound, the timings in `photoeditor/splash_process.py` (`PULSES`, `HIT_MS`, `LINE_STARTS`, `END_MS`) are where its hit and pulses go.

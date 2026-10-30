@@ -377,6 +377,14 @@ class SettingsDialog(QDialog):
         col.addWidget(self._check_updates)
         col.addWidget(_hint("The only time the editor goes online. It asks the GitHub releases page for the latest version number and tells you "
                             "if there is a newer one. No data about you or your photos is sent. You can also check by hand under Info."))
+        self._startup_screen = QCheckBox("Show the startup screen while the program loads")
+        self._startup_screen.setChecked(self._initial["startup_screen"])
+        self._startup_screen.setToolTip("A small animated screen with the logo and the program's name, shown while EFAS starts. It runs on its own, so it does not slow the start down. A theme can restyle it.")
+        col.addWidget(self._startup_screen)
+        self._startup_sound = QCheckBox("Play the startup sound with it")
+        self._startup_sound.setChecked(self._initial["startup_sound"])
+        self._startup_sound.setToolTip("The short sound the startup screen is timed to. Only plays when the startup screen is shown.")
+        col.addWidget(self._startup_sound)
         self._scan_quality = QCheckBox("Check scan quality when a RAW photo opens")
         self._scan_quality.setChecked(self._initial["scan_quality"])
         self._scan_quality.setToolTip("Reads the RAW file a second time in the background to tell you if the scan was exposed well enough to measure the whole negative.")
@@ -910,7 +918,7 @@ class SettingsDialog(QDialog):
     def values(self) -> dict:
         return {
             "raw_demosaic": self._demosaic.currentData(), "raw_auto_bright": self._auto_bright.isChecked(), "raw_linear": self._raw_linear.isChecked(), "auto_advance": self._auto_advance.isChecked(),
-            "check_updates": self._check_updates.isChecked(), "scan_quality": self._scan_quality.isChecked(),
+            "check_updates": self._check_updates.isChecked(), "scan_quality": self._scan_quality.isChecked(), "startup_screen": self._startup_screen.isChecked(), "startup_sound": self._startup_sound.isChecked(),
             "hover_modules": self._hover_modules.isChecked(), "workbench_library": self._workbench_library.isChecked(), "hq_always": self._hq_always.isChecked(), "collapse_on_tab_change": self._collapse_on_tab_change.isChecked(), "film_reference_online": self._film_reference_online.isChecked(), "hover_preview": self._hover_preview.isChecked(), "module_colours": self._module_colours.isChecked(),
             "gpu_enabled": self._gpu_enabled.isChecked(), "gpu_limit": self._gpu_limit.value(),
             "backup_auto": self._backup_auto.isChecked(), "backup_keep": self._backup_keep.value(), "backup_dir": self._backup_dir,

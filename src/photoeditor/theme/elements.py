@@ -103,3 +103,12 @@ _add("layout_tool_rail", "choice", _G, "which side of the modules their tab rail
 _add("layout_filmstrip", "choice", _G, "where the filmstrip of the folder's photos is (bottom, top or hidden)", "bottom", choices=("bottom", "top", "hidden"))
 _number("layout_left_width", _G, "the width of the column of panels when a theme is put in force (0 leaves it as you set it)", 0, 0, 800, "px")
 _number("layout_sidebar_width", _G, "the width of the modules when a theme is put in force (0 leaves it as you set it)", 0, 0, 800, "px")
+
+# ---------------------------------------------------------------- the startup screen
+_G = "Startup screen"
+_colour("splash_bg", _G, "the startup screen's panel", lambda t: t.bg_panel)
+_colour("splash_border", _G, "its outline", lambda t: t.accent_primary)
+_colour("splash_text", _G, "the program's name typed on it", lambda t: t.text_primary)
+_colour("splash_dim", _G, "the lines under the name", lambda t: t.text_secondary)
+_colour("splash_ray", _G, "the arrows round the logo", lambda t: t.accent_primary)
+_number("splash_speed_percent", _G, "how fast the startup screen plays (100 is normal)", 100, 25, 400, "%")

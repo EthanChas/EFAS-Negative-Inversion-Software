@@ -291,13 +291,16 @@ def test_the_examples_in_the_theme_guide_really_import(app):
 
     guide = (Path(__file__).resolve().parents[1] / "docs" / "themes.md").read_text(encoding="utf-8")
     blocks = re.findall(r"```css\n(.*?)```", guide, re.S)
-    assert len(blocks) == 2
+    assert len(blocks) == 3, "the :root example, the rules example and the layout example"
     spec, errors, warnings = cssfile.parse(blocks[0], "guide.css")
     assert errors == [] and spec.name == "Sunset" and spec.overrides["accent_primary"] == "#ff9f43"
     spec, errors, warnings = cssfile.parse(blocks[0] + "\n" + blocks[1], "guide2.css")
     assert errors == [] and "QSlider::handle:horizontal" in spec.extra_qss
+    spec, errors, warnings = cssfile.parse(blocks[2], "layout.css")
+    assert errors == [] and spec.name == "Compact" and dict(spec.extras)["layout_filmstrip"] == "top"
     every = re.findall(r"`(--[a-z-]+)`", guide)
     known = {"--" + f.replace("_", "-") for f in (*cssfile.COLOUR_FIELDS, *cssfile.NUMBER_FIELDS, *cssfile.TEXT_FIELDS)} | {"--accent", "--name", "--description", "--base"}
+    known |= {"--" + e.css_name for e in cssfile.elements.ELEMENTS.values()}
     assert set(every) <= known, sorted(set(every) - known)
 
 
