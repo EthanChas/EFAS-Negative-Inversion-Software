@@ -8,6 +8,18 @@ import pytest
 from photoeditor.theme import cssfile, elements, themes, tokens
 
 
+_APP = None
+
+
+def _app():
+    """One QApplication for the module, kept alive: the program's style object lives as long as the one it was made under."""
+    global _APP
+    from PyQt6.QtWidgets import QApplication
+
+    _APP = QApplication.instance() or QApplication([])
+    return _APP
+
+
 @pytest.fixture(autouse=True)
 def _isolated(tmp_path, monkeypatch):
     monkeypatch.setenv("PHOTOEDITOR_DATA_DIR", str(tmp_path / "data"))
@@ -127,7 +139,7 @@ def test_the_export_folder_holds_the_settings_and_the_programs_icons(tmp_path):
 def test_the_widgets_read_the_elements(in_force):
     from PyQt6.QtWidgets import QApplication, QComboBox, QLabel, QVBoxLayout, QWidget
 
-    app = QApplication.instance() or QApplication([])
+    app = _app()
     spec, errors, _w = cssfile.parse(":root { --fold-head-bg: #112233; --fold-head-height: 40px; --dropdown-frame-bg: #223344; --dropdown-field-radius: 9px; --changed-star: #00ff00; }")
     assert errors == []
     in_force(themes.build(spec))
@@ -166,7 +178,7 @@ def test_a_theme_can_replace_icons_recolour_them_all_and_resize_them(tmp_path, i
 
     from photoeditor.desktop.view import panel_icons
 
-    app = QApplication.instance() or QApplication([])
+    app = _app()
     icons = tmp_path / "icons"
     icons.mkdir()
     (icons / "sun.svg").write_text('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><rect width="24" height="24" fill="currentColor"/></svg>', encoding="utf-8")
@@ -191,3 +203,48 @@ def test_a_theme_can_replace_icons_recolour_them_all_and_resize_them(tmp_path, i
     assert abs(big.width() / big.devicePixelRatio() - 24) < 1.01, "drawn at 150 percent"
     app.processEvents()
     del plain
+
+
+def test_section_titles_can_be_boxed_flat_or_underlined_and_the_change_mark_can_be_a_dot(in_force):
+    from PyQt6.QtWidgets import QApplication, QLabel, QVBoxLayout, QWidget
+
+    app = _app()
+    from photoeditor.desktop.view import fold
+    from photoeditor.desktop.view.collapsible_panel import CollapsiblePanel
+
+    keep = []
+
+    def section(css):
+        spec, errors, _w = cssfile.parse(css)
+        assert errors == [], errors
+        in_force(themes.build(spec))
+        host = QWidget()
+        keep.append(host)
+        body = QVBoxLayout(host)
+        title = QLabel("METERING")
+        title.setProperty("role", "subtitle")
+        body.addWidget(title)
+        body.addWidget(QLabel("x"))
+        return fold.fold_sections(body, "t")[0]
+
+    assert "border: 1px solid" in section(":root { --fold-head-style: boxed; }")._head.styleSheet()
+    flat = section(":root { --fold-head-style: flat; }")._head.styleSheet()
+    assert "background: transparent" in flat and "border: none" in flat and "hover" not in flat
+    under = section(":root { --fold-head-style: underline; }")._head.styleSheet()
+    assert "border-bottom: 1px solid" in under
+    spec, errors, _w = cssfile.parse(":root { --fold-head-style: wavy; }")
+    assert spec is None and any("should be one of" in e for e in errors)
+    spec, errors, _w = cssfile.parse(":root { --changed-mark: dot; --space-md: 12px; }")
+    assert errors == [] and themes.build(spec).get("changed_mark") == "dot" and themes.build(spec).space_md == 12
+    in_force(themes.build(spec))
+    panel = CollapsiblePanel("Exposure", collapsible=True, start_expanded=True)
+    assert panel._header.changed_star.text() == "●"
+    app.processEvents()
+
+
+def test_every_element_is_in_the_docs():
+    text = (os.path.join(os.path.dirname(__file__), "..", "docs", "themes.md"))
+    with open(text, encoding="utf-8") as f:
+        doc = f.read()
+    missing = [e.css_name for e in elements.ELEMENTS.values() if f"`--{e.css_name}`" not in doc]
+    assert missing == [], f"docs/themes.md does not list: {missing}"

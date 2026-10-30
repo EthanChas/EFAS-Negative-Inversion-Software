@@ -107,7 +107,7 @@ class _CollapsibleHeader(QWidget):
         self._title_label = label
         row.addWidget(label, 0, Qt.AlignmentFlag.AlignVCenter)
 
-        self.changed_star = QLabel("*")      # a red star beside the name while something in the module is not at its default
+        self.changed_star = QLabel(self._MARKS["star"])      # a red star beside the name while something in the module is not at its default
         self._restyle_star()
         self.changed_star.setToolTip("Something in this module has been changed from its defaults")
         self.changed_star.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
@@ -147,7 +147,10 @@ class _CollapsibleHeader(QWidget):
         self._icon_label.setPixmap(pix)
         self._icon_label.setVisible(not pix.isNull())
 
+    _MARKS = {"star": "*", "dot": "●", "bar": "|"}
+
     def _restyle_star(self) -> None:
+        self.changed_star.setText(self._MARKS.get(THEME.get("changed_mark"), "*"))
         self.changed_star.setStyleSheet(f"color: {THEME.get('changed_star')}; font-weight: bold; font-size: {THEME.font_size_header + 3}pt;")
 
     def apply_theme(self) -> None:

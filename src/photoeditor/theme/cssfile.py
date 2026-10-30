@@ -34,6 +34,7 @@ NUMBER_FIELDS = {  # field: (lowest, highest)
     "font_size_small": (6, 30), "font_size_base": (6, 30), "font_size_header": (6, 30), "font_size_title": (6, 30),
     "radius_sm": (0, 40), "radius_md": (0, 40), "border_width": (0, 6), "window_border_width": (0, 6), "title_bar_height": (18, 64),
     "title_button_size": (12, 64), "slider_steps": (50, 5000),
+    "space_sm": (0, 20), "space_md": (0, 30), "space_lg": (0, 40), "space_xl": (0, 60),      # gaps between controls: windows opened afterwards use them (a restart for the main window)
 }
 TEXT_FIELDS = ("font_family", "font_family_fallback", "mono_family")
 ALIASES = {"accent": "accent_primary"}
@@ -243,7 +244,7 @@ def export(theme: ThemeConfig, name: str, description: str = "", base: str | Non
         ("accent: delete these three lines to use the accent from Settings > Themes", ("accent_primary", "accent_hover", "on_accent")),
         ("status colours", ("status_success", "status_warning", "status_critical")),
         ("sizes and fonts", ("font_family", "font_family_fallback", "font_size_small", "font_size_base", "font_size_header", "font_size_title", "radius_sm",
-                             "radius_md", "border_width", "title_bar_height", "slider_steps")),
+                             "radius_md", "border_width", "title_bar_height", "slider_steps", "space_sm", "space_md", "space_lg", "space_xl")),
     )
     lines.pop()  # the placeholder "surfaces" comment; each group writes its own
     for title, fields in groups:

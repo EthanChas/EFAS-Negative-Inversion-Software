@@ -66,10 +66,12 @@ _number("fold_body_tint_alpha", _G, "how strong that wash is (0 none, 255 solid)
 _number("fold_head_height", _G, "the height of the title band", 28, 18, 60, "px")
 _number("fold_head_radius", _G, "the rounding of the title band's corners", 6, 0, 20, "px")
 _number("fold_slide_ms", _G, "how long a section takes to open or shut (0 for none)", 160, 0, 1000, "ms")
+_add("fold_head_style", "choice", _G, "boxed: a band with an outline; flat: just the title; underline: a line under the title", "boxed", choices=("boxed", "flat", "underline"))
 
 # ---------------------------------------------------------------- modules
 _G = "Modules"
-_colour("changed_star", _G, "the star beside a module with something changed", "#e5484d")
+_colour("changed_star", _G, "the mark beside a module with something changed", "#e5484d")
+_add("changed_mark", "choice", _G, "what that mark is: star, dot or bar", "star", choices=("star", "dot", "bar"))
 _number("module_slide_ms", _G, "how long a module takes to open or shut (0 for none)", 180, 0, 1000, "ms")
 
 # ---------------------------------------------------------------- dropdowns
@@ -87,3 +89,17 @@ _G = "Icons"
 _add("icon_color_mode", "choice", _G, "normal: each icon keeps the colour the program gives it; all: every icon is drawn in the icon colour below", "normal", choices=("normal", "all"))
 _colour("icon_color", _G, "the colour of every icon when the mode above is all (a theme's own icon files are drawn in it too, where they use currentColor)", lambda t: t.text_secondary)
 _number("icon_size_percent", _G, "how large the icons are drawn, as a percentage of the program's size for them", 100, 60, 200, "%")
+
+# ---------------------------------------------------------------- layout: where things sit
+_G = "Layout"
+LEFT_PANELS = ("library", "tagging", "history", "masks", "snapshots", "versions", "presets", "export")
+TOOL_TABS = ("active", "negative", "correction", "exposure", "color", "detail", "watermark", "metadata", "plugins")
+_add("layout_left_panels", "list", _G, "the panels in the column beside the picture, top to bottom; one that is left out is not shown (library, tagging, history, masks, snapshots, versions, presets, export)",
+     ",".join(LEFT_PANELS), choices=LEFT_PANELS)
+_add("layout_tool_tabs", "list", _G, "the tabs of the tool rail, top to bottom; one that is left out is not shown (active, negative, correction, exposure, color, detail, watermark, metadata, plugins)",
+     ",".join(TOOL_TABS), choices=TOOL_TABS)
+_add("layout_side_panels", "choice", _G, "which side of the picture the column of panels is on; the modules go on the other (left or right)", "left", choices=("left", "right"))
+_add("layout_tool_rail", "choice", _G, "which side of the modules their tab rail is on (left or right)", "left", choices=("left", "right"))
+_add("layout_filmstrip", "choice", _G, "where the filmstrip of the folder's photos is (bottom, top or hidden)", "bottom", choices=("bottom", "top", "hidden"))
+_number("layout_left_width", _G, "the width of the column of panels when a theme is put in force (0 leaves it as you set it)", 0, 0, 800, "px")
+_number("layout_sidebar_width", _G, "the width of the modules when a theme is put in force (0 leaves it as you set it)", 0, 0, 800, "px")

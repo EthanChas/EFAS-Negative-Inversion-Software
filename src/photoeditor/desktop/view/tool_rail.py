@@ -35,6 +35,8 @@ class ToolRail(QWidget):
 
         self._buttons: dict[str, QToolButton] = {}
         self._frames: dict[str, QWidget] = {}
+        self._wanted: dict[str, bool] = {}       # the window's own say on whether a tab shows (the Plugins tab only while a plugin has put something in it)
+        self._listed: set[str] | None = None     # the tabs a theme lists (None: all of them)
 
         self._max_animation = QPropertyAnimation(self, b"maximumWidth", self)
         self._max_animation.setDuration(_HOVER_DURATION_MS)
@@ -75,11 +77,26 @@ class ToolRail(QWidget):
         """Show or hide a tab's button (the Plugins tab is only there while a plugin has put something in it)."""
         frame = self._frames.get(tab_id)
         if frame is not None:
-            frame.setVisible(visible)
+            self._wanted[tab_id] = visible
+            frame.setVisible(visible and (self._listed is None or tab_id in self._listed))
 
     def tab_visible(self, tab_id: str) -> bool:
         frame = self._frames.get(tab_id)
         return frame is not None and not frame.isHidden()
+
+    def set_theme_tabs(self, order: list[str]) -> None:
+        """A theme's tabs: these, in this order; the others are put away (and come back when the theme lists them again)."""
+        listed = [t for t in order if t in self._frames]
+        self._listed = set(listed)
+        rest = [t for t in self._frames if t not in self._listed]
+        stretch = self._layout.takeAt(self._layout.count() - 1)
+        for tab_id in (*listed, *rest):
+            self._layout.removeWidget(self._frames[tab_id])
+        for tab_id in (*listed, *rest):
+            self._layout.addWidget(self._frames[tab_id])
+        self._layout.addItem(stretch)
+        for tab_id, frame in self._frames.items():
+            frame.setVisible(self._wanted.get(tab_id, True) and tab_id in self._listed)
 
     def set_tab_checked(self, tab_id: str, checked: bool) -> None:
         """Sync a tab's checked look to an external toggle without

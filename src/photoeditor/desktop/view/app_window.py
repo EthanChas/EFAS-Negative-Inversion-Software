@@ -147,6 +147,7 @@ from . import fold
 from .scope_view import ScopeView, ZoneStrip
 from .tab_header import dress_tab
 from .segmented import SegmentedControl, add_steppers_in
+from .theme_layout import ThemeLayout
 from .slider_row import SliderRow
 from .find_dialog import FindDialog
 from ...features.find import logic as find_logic
@@ -471,6 +472,7 @@ class AppWindow(QMainWindow):
         self.controller.hq_busy_changed.connect(self._on_hq_busy)
 
         frame = WindowFrame()
+        self._window_frame = frame
         frame.layout().addWidget(TitleBar(APP_NAME), 0)
 
         self._cursor_sync = CursorSyncFilter(frame)
@@ -616,6 +618,18 @@ class AppWindow(QMainWindow):
         self._apply_hotstack()
         self._apply_gpu_settings()
         self._start_plugins()
+        self._theme_layout = ThemeLayout(
+            self, panels={"library": self._library_panel, "tagging": self._tagging_panel, "history": self._history_panel, "masks": self._mask_manager, "snapshots": self._snapshots_panel,
+                          "versions": self._versions_panel, "presets": self._presets_panel, "export": self._export_panel},
+            left_column=self._left_tools_col, splitter=self._splitter, side_panes=(self._left_scroll, self._sidebar_pane), rail=self._tool_rail, rail_row=self._tool_row,
+            frame_layout=self._window_frame.layout(), filmstrip=self._filmstrip)
+        self._theme_layout.apply(first=True)
+
+    def apply_theme(self) -> None:
+        """A theme was put in force: the window is arranged as it says (which panels, in what order, on which side; the tool rail; the filmstrip)."""
+        layout = getattr(self, "_theme_layout", None)
+        if layout is not None:
+            layout.apply()
 
     # ------------------------------------------------------------ plugins
     def _start_plugins(self) -> None:
@@ -991,6 +1005,7 @@ class AppWindow(QMainWindow):
 
         left_tools_col_widget = QWidget()
         left_tools_col = QVBoxLayout(left_tools_col_widget)
+        self._left_tools_col = left_tools_col
         left_tools_col.setContentsMargins(0, 0, 0, 0)
         left_tools_col.setSpacing(THEME.space_sm)
 
@@ -1303,6 +1318,7 @@ class AppWindow(QMainWindow):
 
         tool_row_host = QWidget()
         tool_row = QHBoxLayout(tool_row_host)
+        self._tool_row = tool_row
         tool_row.setContentsMargins(0, 0, 0, 0)
         tool_row.setSpacing(THEME.space_sm)
 
@@ -3395,7 +3411,8 @@ class AppWindow(QMainWindow):
         want_left, want_right = sess["left_width"] or left, sess["right_width"] or right
         total = left + center + right
         if total > 0 and want_left + want_right < total - 300:
-            self._splitter.setSizes([want_left, total - want_left - want_right, want_right])
+            sizes = [want_left, total - want_left - want_right, want_right]
+            self._splitter.setSizes([sizes[2], sizes[1], sizes[0]] if self._theme_layout.swapped else sizes)
         last = sess["last_image"]
         if last and os.path.isfile(last):
             self.open_folder(os.path.dirname(last), prefer=last)
@@ -3433,6 +3450,8 @@ class AppWindow(QMainWindow):
 
     def _save_session_layout(self) -> None:
         left, _center, right = self._splitter.sizes()
+        if self._theme_layout.swapped:
+            left, right = right, left
         if left > 0:
             self._session["left_width"] = left
         if right > 0:

@@ -139,8 +139,14 @@ class FoldSection(QWidget):
 
     def _restyle_head(self) -> None:
         self._head.setFixedHeight(THEME.get("fold_head_height"))
-        self._head.setStyleSheet(f"#foldhead {{ background: {THEME.get('fold_head_bg')}; border: 1px solid {THEME.get('fold_head_border')}; border-radius: {THEME.get('fold_head_radius')}px; }}"
-                                 f"#foldhead:hover {{ border-color: {THEME.get('fold_head_hover_border')}; }}")
+        style = THEME.get("fold_head_style")
+        if style == "flat":
+            box = "background: transparent; border: none; border-radius: 0px;"
+        elif style == "underline":
+            box = f"background: transparent; border: none; border-bottom: 1px solid {THEME.get('fold_head_border')}; border-radius: 0px;"
+        else:
+            box = f"background: {THEME.get('fold_head_bg')}; border: 1px solid {THEME.get('fold_head_border')}; border-radius: {THEME.get('fold_head_radius')}px;"
+        self._head.setStyleSheet(f"#foldhead {{ {box} }}" + (f"#foldhead:hover {{ border-color: {THEME.get('fold_head_hover_border')}; }}" if style == "boxed" else ""))
 
     def apply_theme(self) -> None:
         """A theme was put in force: the title band and the rail take its values."""
