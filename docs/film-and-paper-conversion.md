@@ -95,7 +95,25 @@ The **Noritsu look** is a numpy port of [noritsu-tool](https://github.com/rohanp
 
 **Suggest** is noritsu-tool's `autoparam`: it reads the scan's density range (thin below 0.9, dense above 1.5) and sets Gamma, Dmax %, Contrast, Saturation and Toe for the look chosen beside it (Balanced, Punchy or Soft).
 
-What is not ported: reading an LS-600 RAW dump, its ICE (infrared dust) clean-up, and fitting a profile from a pair of pictures (EFAS has its own RAW decoding and dust tools). Statistics from a scan bigger than two million pixels are read at every k-th pixel of every k-th row, which gives the same percentiles and means. As noritsu-tool does not apply a camera colour matrix, neither does this conversion; its output is used as the display picture (it is not encoded again), so the real curve and lab mode, which expect linear input, come out dark on a scan that is not linear.
+noritsu-tool is discontinued, so the rest of what it had is in EFAS too:
+
+- **LS-600 RAW dumps open directly.** A headerless `FULL...RAW` file (3 x 16-bit little-endian per pixel in blue, green, red order, 12-bit linear data) is recognised by its size (`features/open_image/ls600raw.py`, noritsu-tool's `ls600raw`), opened as a linear 16-bit landscape scan, and read with the **Linear** scan encoding, which is the right one for it, so its thumbnail, the editor and the export all agree. Camera RAW files are still decoded by EFAS's own RAW decoding.
+- **Tone-curve variants.** Under **Real LS-600 tone curve** (or Lab mode) a menu picks which of the LS-600's IQ variants the 20-point curve is: the standard one (variants 1 and 3 to 6 are the same curve; 5 is noritsu-tool's default), IQ 2 (a lifted toe, highlights a touch over), or a linear one that does nothing. Those are the only curves that differ in noritsu-tool's table (`base_tone_curve.json`).
+- **Profiles of your own.** The **Stock** list holds the three profiles that come with noritsu-tool and any `.npz` profile you add: **Import profile...** copies one in (noritsu-tool's `calibrate` writes them: `lut`, `dmin`, `dmax`), and **Fit from a pair...** makes one from a negative scan and the picture a lab made from the same frame (noritsu-tool's `calibrate`: each colour's table is the mean of the lab's values at each level of the normalized scan). They are kept in the data folder's `noritsu` folder. An LS-600 dump is cropped and resized to the geometry of the machine's own TIFF before the fit, as noritsu-tool does.
+
+What is not ported: its ICE (infrared dust) clean-up, which needs the scan's infrared channel that EFAS does not read (EFAS has its own dust tools). noritsu-tool's `per_film_tables.json` is only a record of the headers and first numbers of the vendor's per-film table files (its own README says no code loads it), so there is nothing in it to use. Statistics from a scan bigger than two million pixels are read at every k-th pixel of every k-th row, which gives the same percentiles and means. As noritsu-tool does not apply a camera colour matrix, neither does this conversion; its output is used as the display picture (it is not encoded again), so the real curve and lab mode, which expect linear input, come out dark on a scan that is not linear.
+
+## Print stocks, Hold Black, grey balance, contrast mask and B&W (NegPy Conversion)
+
+More of NegPy's print controls, under Conversion when the method is NegPy Conversion. Each is off or neutral until you use it.
+
+- **Print stock.** A paper's own curve and the colour of its dyes (`assets/print_stocks/stocks.json`, from NegPy), in place of the engine's own paper. **Stock colour** is how much of the stock's dye colour is applied.
+- **Hold black.** A toe lift fades out toward the paper's black, so the black point stays black however much toe you add.
+- **Grey balance** (NegPy's Cast Removal). Takes out the cast of the picture's own greys, shadows to highlights: the part of the cast that changes with brightness, which a single white balance cannot remove. It acts only when the frame has near-neutral tones to read; with none it does nothing, rather than guess.
+- **Contrast mask** (after the Fujifilm Frontier's HyperTone, and the darkroom's unsharp mask). A blurred copy of the negative holds back the highlights and lifts the shadows a little, so big tonal differences are compressed and local detail stays.
+- **B&W print.** Prints a colour negative as black and white through a contrast filter (yellow, deep yellow, orange, red, yellow-green, green), which weights the three dye layers the way the filter would.
+- **Meter the picture, not the holder.** With no crop, reads the picture inside the film frame instead of the holder round it.
+- **Pick Better...** Tunes the print by choosing, round after round, the better of two prints that differ in one control (grade, density, temperature, tint, the paper, the layers' grades). The steps shrink as you go; **Neither** keeps the picture; **Undo** puts it back. Each pick is an ordinary step in the History.
 
 ## Curve: a film profile in Original and the Noritsu look
 

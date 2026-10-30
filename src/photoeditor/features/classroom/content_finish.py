@@ -98,6 +98,25 @@ Halation shows most round small, very bright things on a dark ground: street lig
 TIP: Be honest about it. A glow you add is a look you chose, not something the film did; keep it small, and compare with the highlights at 100% with the module off, so you know what the scan already had.
 """, keywords=("halation", "glow", "bloom", "highlights", "red", "film look", "simulated"), module="Halation", see=("watermark-module", "lab-look-module")),
 
+    Lesson("carrier-module", "finish", "Negative Carrier: the filed rebate", "Understand what a filed-out negative carrier prints, and what the module's sliders do.",
+           r"""
+In the darkroom a negative carrier whose aperture has been **filed out** larger than the frame prints the film's own **rebate**: the dark edge of the film between the picture and the filed metal, and past the metal a margin of bare paper. The edge is never clean: the film gate is a little uneven, the filed aperture is ragged, its corners are rounded, and light flares off the bevel. Printers use it as a signature, proof that the whole frame was printed. The **Negative Carrier** module (Finishing tab) simulates it, after NegPy's.
+
+## The sliders
+
+**Width** is how wide the rebate prints, in mm on a 30 cm print (0 is off); it scales with the picture, so a preview and a full-size export look the same. **Rough** is how ragged the filed edge is. **Corner** is how round the corners of the filed aperture are. **Flare** is the bright line light makes along the filed bevel.
+
+## How it works
+
+The pattern is fixed: one filed carrier for every frame, so the same photo always prints the same edge. It works on the finished, cropped picture, after the vignette and before the watermark and the border, and the picture is composited in linear light over white paper. The filed edge and the flare are exposure, so the more of the paper is exposed, the darker it prints.
+
+## When it is worth using
+
+It suits pictures meant as prints, in a frame or a book, where the black edge says the picture is whole. On a picture that will be cropped again or put on a busy page it only gets in the way.
+
+TIP: It adds pixels that were never in the scan, so keep a copy without it; it cannot be taken out of an export.
+""", keywords=("carrier", "rebate", "filed", "border", "frame", "edge", "black edge", "darkroom", "print"), module="Negative Carrier", see=("halation-module", "watermark-module")),
+
     Lesson("watermark-variables", "finish", "Watermark variables and SVG templates", "Write a watermark once that fills in the film, camera, year or file name of every picture, the way darktable's watermarks do.",
            r"""
 A watermark can write something different on every picture without you typing it each time. In the Watermark module's **text** and inside an **SVG** marker, anything written as `$(NAME)` is replaced by what that name means for the picture: `(c) $(EXIF.YEAR) $(CAMERA)` becomes `(c) 1987 Pentax K1000`. This is the same idea, and the same `$(...)` writing, that darktable's watermark module uses, so an SVG made for darktable works here.
