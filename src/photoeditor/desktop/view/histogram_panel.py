@@ -1,5 +1,7 @@
 import math
 
+import numpy as np
+
 from PyQt6.QtCore import QPointF, QRect, QRectF, Qt, pyqtSignal
 from PyQt6.QtGui import (
     QBrush, QColor, QMouseEvent, QPainter, QPainterPath, QPaintEvent, QPen, QPolygonF, QWheelEvent,
@@ -23,10 +25,42 @@ _LEGEND_HEIGHT = 14
 _FULL_RANGE = (0.0, 255.0)
 _MIN_ZOOM_SPAN = 8.0
 _ZOOM_STEP = 0.85
+D_AXIS_MAX = 2.4                                                        # the print density at the left of the Density graph (the paper's black is about 2.3); its right is the paper white, 0
 STYLES = {"chunky": "Chunky", "smooth": "Smooth", "bars": "Bars"}     # the ways the graph can be drawn; the first is the default
 _BAR_COUNT = 64                                                        # bars in the Bars style, across whatever range is shown
 _CLIP_SHADOW_COLOUR = "#3270ff"      # the colours the clipping marks on the picture use (features/whitebalance/logic.py)
 _CLIP_HIGHLIGHT_COLOUR = "#ff2828"
+
+
+def code_density(code):
+    """The print density (against the paper's own white) a display code stands for: D = -log10 of the light, light being the code undone from sRGB. 255 is 0; 0 is as dense as it gets."""
+    v = np.clip(np.asarray(code, dtype=np.float64) / 255.0, 0.0, 1.0)
+    light = np.where(v <= 0.04045, v / 12.92, np.power((v + 0.055) / 1.055, 2.4))
+    return -np.log10(np.maximum(light, 1e-6))
+
+
+def density_code(density):
+    """The display code (0 to 255, not rounded) of a print density: the inverse of code_density."""
+    light = np.power(10.0, -np.asarray(density, dtype=np.float64))
+    v = np.where(light <= 0.0031308, light * 12.92, 1.055 * np.power(light, 1 / 2.4) - 0.055)
+    return np.clip(v, 0.0, 1.0) * 255.0
+
+
+def density_of_bin(index: float) -> float:
+    """The print density at the left edge of bin `index` (0 to 256) of the Density graph, whose bins are equal steps of density, densest first."""
+    return D_AXIS_MAX * (1.0 - index / 256.0)
+
+
+def to_density_bins(counts) -> list[int]:
+    """A 256-level histogram of display codes as 256 bins of equal print density, the counts of a level spread evenly over the density it covers (what is denser than the axis goes in the
+    first bin), so the picture is the same one with its tones laid out by how dense the print is rather than by how bright it looks."""
+    c = np.asarray(counts, dtype=np.float64)
+    cumulative = np.concatenate(([0.0], np.cumsum(c)))                          # at the edges of the levels: level v covers [v, v + 1)
+    edges = density_code(density_of_bin(np.arange(257))) + 0.5                  # where each bin edge falls on the level axis
+    cut = np.interp(np.clip(edges, 0.0, 256.0), np.arange(257), cumulative)     # cumulative counts at the bin edges, running from dense to light
+    bins = np.diff(cut)
+    bins[0] += cut[0]
+    return [int(round(v)) for v in bins]
 
 
 class HistogramPanel(BevelPanel):
@@ -64,6 +98,9 @@ class HistogramPanel(BevelPanel):
         self._rgb_histogram: dict[str, list[int]] | None = None
         self._luminance_histogram: list[int] | None = None
         self._mode = "color"
+        self._density = False
+        self._orig_rgb: dict[str, list[int]] | None = None
+        self._orig_lum: list[int] | None = None
         self._log = False
         self._split = False
         self._style = "chunky"
@@ -77,9 +114,54 @@ class HistogramPanel(BevelPanel):
         self._clip_marking = (False, False)  # whether each is marked on the picture
         self._clip_rects: dict[str, QRect] = {}
 
+    def set_density(self, on: bool) -> None:
+        """The Density graph: the same picture on an axis of print density (how dense the print is, 0 at the paper's white to about 2.4 at its black) instead of display levels."""
+        on = bool(on)
+        if on != self._density:
+            self._density = on
+            self._selection = self._drag_anchor = None
+            self._share_text = ""
+            self._zoom_min, self._zoom_max = _FULL_RANGE
+            self._apply_axis()
+            self.update()
+
+    def density(self) -> bool:
+        return self._density
+
+    def _apply_axis(self) -> None:
+        """The series the graph draws: the levels as they are, or laid out by print density."""
+        if self._density:
+            self._rgb_histogram = {k: to_density_bins(v) for k, v in self._orig_rgb.items()} if self._orig_rgb else None
+            self._luminance_histogram = to_density_bins(self._orig_lum) if self._orig_lum else self._orig_lum
+        else:
+            self._rgb_histogram, self._luminance_histogram = self._orig_rgb, self._orig_lum
+
+    def value_label(self, value: float) -> str:
+        """What a place on the axis is called: its level, or its print density."""
+        return f"Density: {density_of_bin(value + 0.5):.2f} D" if self._density else f"Value: {int(value)}"
+
+    def _view_value(self, code: float) -> float:
+        """Where a display level (0 to 255) falls on the axis shown."""
+        if not self._density:
+            return code
+        return float(min(255.0, max(0.0, (1.0 - float(code_density(code)) / D_AXIS_MAX) * 256.0 - 0.5)))
+
+    def _axis_text(self, value: float) -> str:
+        return f"{density_of_bin(value + 0.5):.1f}" if self._density else f"{value:.0f}"
+
+    def _code_span(self, span: tuple[int, int]) -> tuple[int, int]:
+        """A span of the axis shown as the span of display levels it covers (what picks pixels on the picture)."""
+        if not self._density:
+            return span
+        lo, hi = span
+        a, b = density_code(density_of_bin(lo)), density_code(density_of_bin(hi + 1))      # the densest edge is the darkest level
+        low = 0 if lo <= 0 else int(max(0, min(255, math.floor(min(a, b)))))               # (the first bin holds everything denser than the axis)
+        return (low, int(max(0, min(255, math.ceil(max(a, b))))))
+
     def set_data(self, rgb_histogram: dict[str, list[int]], luminance_histogram: list[int]) -> None:
-        self._rgb_histogram = rgb_histogram
-        self._luminance_histogram = luminance_histogram
+        self._orig_rgb = rgb_histogram
+        self._orig_lum = luminance_histogram
+        self._apply_axis()
         total = float(sum(luminance_histogram)) if luminance_histogram else 0.0
         self._clip_share = ((100.0 * sum(luminance_histogram[:CLIP_SHADOW_MAX + 1]) / total), (100.0 * sum(luminance_histogram[CLIP_HIGHLIGHT_MIN:]) / total)) if total else (0.0, 0.0)
         self.update()
@@ -124,7 +206,8 @@ class HistogramPanel(BevelPanel):
         self.update()
 
     def selection(self) -> tuple[int, int] | None:
-        return self._selection
+        """The selected span, as a span of display levels (also on the Density graph, where it is the levels that span of density covers)."""
+        return None if self._selection is None else self._code_span(self._selection)
 
     def clear_selection(self, emit: bool = False) -> None:
         had = self._selection is not None
@@ -237,7 +320,7 @@ class HistogramPanel(BevelPanel):
                 if span != self._selection:
                     self._selection = span
                     self.update()
-                    self.range_selected.emit(*span)
+                    self.range_selected.emit(*self._code_span(span))
                 return
         value = self._value_at_x(int(pos.x()), int(pos.y()))
         if value is None:
@@ -306,7 +389,7 @@ class HistogramPanel(BevelPanel):
         if self._selection is not None and self._mode == "exposure":
             self._draw_selection(painter, rect)
         if self._marker_value is not None:
-            self._draw_line(painter, rect, self._marker_value, QColor(THEME.text_primary), Qt.PenStyle.SolidLine, 2)
+            self._draw_line(painter, rect, self._view_value(self._marker_value), QColor(THEME.text_primary), Qt.PenStyle.SolidLine, 2)
         if self._cursor_value is not None:
             self._draw_line(painter, rect, self._cursor_value, QColor(THEME.accent_primary), Qt.PenStyle.DashLine, 1)
 
@@ -410,7 +493,7 @@ class HistogramPanel(BevelPanel):
         painter.setPen(QColor(THEME.text_secondary))
         for value in values:
             x = int(self._x_for_value(rect, value))
-            painter.drawText(QRect(x - _AXIS_LABEL_WIDTH // 2, rect.bottom() + 2, _AXIS_LABEL_WIDTH, _AXIS_LABEL_HEIGHT), int(Qt.AlignmentFlag.AlignHCenter), str(value))
+            painter.drawText(QRect(x - _AXIS_LABEL_WIDTH // 2, rect.bottom() + 2, _AXIS_LABEL_WIDTH, _AXIS_LABEL_HEIGHT), int(Qt.AlignmentFlag.AlignHCenter), self._axis_text(value))
 
     def _draw_bars(self, painter: QPainter, rect: QRect, parts: list, blend: bool) -> None:
         """The bar style: the shown range cut into 64 bars, each as tall as the fullest level in it. With the channels blended each bar is three thin ones, red, green and blue; in Exposure
@@ -591,15 +674,15 @@ class HistogramPanel(BevelPanel):
         mid_value = (self._zoom_min + self._zoom_max) / 2
         painter.drawText(
             QRect(rect.left(), label_y, _AXIS_LABEL_WIDTH, _AXIS_LABEL_HEIGHT),
-            int(Qt.AlignmentFlag.AlignLeft), f"{self._zoom_min:.0f}",
+            int(Qt.AlignmentFlag.AlignLeft), self._axis_text(self._zoom_min),
         )
         painter.drawText(
             QRect(int(rect.center().x() - _AXIS_LABEL_WIDTH / 2), label_y, _AXIS_LABEL_WIDTH, _AXIS_LABEL_HEIGHT),
-            int(Qt.AlignmentFlag.AlignHCenter), f"{mid_value:.0f}",
+            int(Qt.AlignmentFlag.AlignHCenter), self._axis_text(mid_value),
         )
         painter.drawText(
             QRect(rect.right() - _AXIS_LABEL_WIDTH, label_y, _AXIS_LABEL_WIDTH, _AXIS_LABEL_HEIGHT),
-            int(Qt.AlignmentFlag.AlignRight), f"{self._zoom_max:.0f}",
+            int(Qt.AlignmentFlag.AlignRight), self._axis_text(self._zoom_max),
         )
 
     def _series_points(self, rect: QRect, counts: list[int], peak: float) -> list[tuple[float, float]]:

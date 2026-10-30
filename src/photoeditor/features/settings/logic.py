@@ -39,6 +39,7 @@ DEFAULTS: dict[str, Any] = {
     "error_marks_visible": True,
     "histogram_log": False,
     "histogram_split": False,
+    "histogram_density": False,
     "histogram_style": "chunky",
     "hover_preview": True,
     "slideshow_interval": 5.0,
@@ -101,7 +102,7 @@ def _clean(data: Any) -> dict[str, Any]:
         out["histogram_style"] = data["histogram_style"]
     if data.get("raw_demosaic") in DEMOSAIC_CHOICES:
         out["raw_demosaic"] = data["raw_demosaic"]
-    for key in ("raw_auto_bright", "raw_linear", "auto_advance", "backup_auto", "check_updates", "advanced_mode", "scan_quality", "startup_screen", "startup_sound", "hover_modules", "module_colours", "workbench_library", "hq_always", "collapse_on_tab_change", "film_reference_online", "crop_roll_same_size", "hover_preview", "error_marks_visible", "histogram_log", "histogram_split"):
+    for key in ("raw_auto_bright", "raw_linear", "auto_advance", "backup_auto", "check_updates", "advanced_mode", "scan_quality", "startup_screen", "startup_sound", "hover_modules", "module_colours", "workbench_library", "hq_always", "collapse_on_tab_change", "film_reference_online", "crop_roll_same_size", "hover_preview", "error_marks_visible", "histogram_log", "histogram_split", "histogram_density"):
         if isinstance(data.get(key), bool):
             out[key] = data[key]
     for key in ("slideshow_shuffle", "slideshow_loop", "slideshow_captions", "slideshow_edits", "slideshow_progress", "live_open_editor", "live_clear_folder", "gpu_enabled"):

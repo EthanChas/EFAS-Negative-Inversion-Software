@@ -23,12 +23,12 @@ def sound_wanted(values: dict) -> bool:
     return bool(values.get("startup_sound", True)) and os.environ.get("PHOTOEDITOR_AUDIO", "").lower() not in ("off", "0", "none") and SOUND.is_file()
 
 
-def config(theme, logo: str | None = None, sound: bool = False) -> dict:
+def config(theme, logo: str | None = None, sound: bool = False, version: str = "") -> dict:
     """What the screen needs from the theme in force: its colours, fonts and speed (the screen process knows nothing of themes)."""
     return {
         "bg": theme.get("splash_bg"), "border": theme.get("splash_border"), "text": theme.get("splash_text"), "dim": theme.get("splash_dim"), "ray": theme.get("splash_ray"),
         "font": theme.font_family, "mono": theme.mono_family, "speed": theme.get("splash_speed_percent"), "logo": logo if logo is not None else str(LOGO),
-        "sound": str(SOUND) if sound else "",
+        "sound": str(SOUND) if sound else "", "version": version,
     }
 
 
@@ -53,11 +53,24 @@ def launch(values: dict) -> "subprocess.Popen | None":
         from .theme.tokens import ACCENTS, CLASSIC
 
         spec = themes.find(str(values.get("theme", CLASSIC))) or themes.BUILTIN[0]
-        description = config(themes.build(spec, values.get("theme_accent", ACCENTS[0][0]), int(values.get("theme_text_scale", 100))), sound=sound_wanted(values))
+        from . import __version__
+
+        description = config(themes.build(spec, values.get("theme_accent", ACCENTS[0][0]), int(values.get("theme_text_scale", 100))), sound=sound_wanted(values), version=f"v{__version__}")
         flags = 0x08000000 if sys.platform.startswith("win") else 0      # CREATE_NO_WINDOW: no console flashes up beside it
         return subprocess.Popen(command(description), stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, creationflags=flags)
     except Exception:
         return None
+
+
+def report(process: "subprocess.Popen | None", fraction: float, text: str = "") -> None:
+    """Tell the screen how far the program has got (0 to 1) and what it is doing; the loading bar eases to it."""
+    if process is None or process.stdin is None:
+        return
+    try:
+        process.stdin.write(f"p {min(1.0, max(0.0, fraction)):.3f} {text}\n".encode("utf-8"))
+        process.stdin.flush()
+    except Exception:
+        pass
 
 
 def dismiss(process: "subprocess.Popen | None") -> None:

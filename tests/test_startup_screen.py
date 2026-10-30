@@ -88,7 +88,7 @@ def test_a_still_frame_shows_the_panel_the_logo_and_the_text(tmp_path):
     early, opened = frame(300), frame(int(sp.OPEN_TO) + 20)
     assert early.size == (sp.WIDTH, sp.HEIGHT)
     assert width_of_panel(early) < 160 < width_of_panel(opened), (width_of_panel(early), width_of_panel(opened))
-    assert opened.getpixel((sp.WIDTH // 2 + 150, sp.HEIGHT // 2 + 55))[:3] == (0x11, 0x22, 0x33), "the panel is the colour the theme gave it"
+    assert opened.getpixel((sp.WIDTH // 2 + 150, sp.HEIGHT // 2 + 80))[:3] == (0x11, 0x22, 0x33), "the panel is the colour the theme gave it"
     assert opened.getpixel((2, 2))[3] == 0, "outside the panel the window is see-through"
 
 
@@ -171,3 +171,82 @@ def test_the_settings_are_on_by_default_and_must_be_a_yes_or_no(tmp_path, monkey
     assert S.load()["startup_screen"] is False and S.load()["startup_sound"] is False
     S.save({"startup_screen": "maybe", "startup_sound": 3})
     assert S.load()["startup_screen"] is True and S.load()["startup_sound"] is True, "a value that is not a yes or no is the default (on)"
+
+
+def test_the_programs_own_files_check_out_and_a_broken_one_is_named(tmp_path):
+    from photoeditor import assets_check as ac
+
+    found = ac.run(root=ac.ASSETS)
+    assert found.ok and found.checked > 80, found.problems[:5]
+    root = tmp_path / "assets"
+    (root / "icon").mkdir(parents=True)
+    (root / "icon" / "good.svg").write_text('<svg xmlns="http://www.w3.org/2000/svg"></svg>', encoding="utf-8")
+    (root / "icon" / "bad.svg").write_text("not a picture", encoding="utf-8")
+    (root / "icon" / "empty.png").write_bytes(b"")
+    (root / "presets").mkdir()
+    (root / "presets" / "ok.json").write_text("{}", encoding="utf-8")
+    (root / "presets" / "broken.json").write_text("{ nope", encoding="utf-8")
+    seen = []
+    found = ac.run(lambda fraction, text: seen.append((fraction, text)), root=root, groups=ac.GROUPS[:3])
+    problems = " | ".join(found.problems)
+    assert "icon/bad.svg is not an SVG" in problems and "icon/empty.png is empty" in problems and "presets/broken.json cannot be read" in problems
+    assert "icon/good.svg" not in problems and "presets/ok.json" not in problems
+    assert "the film_profiles folder is missing" in problems, "a folder that is not there is named too"
+    fractions = [f for f, _t in seen]
+    assert fractions == sorted(fractions) and fractions[-1] == 1.0 and seen[0][1].startswith("Checking icons")
+
+
+def test_the_parent_reports_progress_and_the_bar_follows_it_smoothly():
+    assert sp.parse_line("p 0.5 Building the window\n") == ("progress", 0.5, "Building the window")
+    assert sp.parse_line("p 7 x") == ("progress", 1.0, "x") and sp.parse_line("p -2 x")[1] == 0.0
+    assert sp.parse_line("ready\n") == ("ready", 1.0, "") and sp.parse_line("nonsense") is None and sp.parse_line("p oops") is None
+    shown, trail = 0.0, []
+    for _ in range(400):
+        shown = sp.eased(shown, 0.8)
+        trail.append(shown)
+    assert trail == sorted(trail) and abs(trail[-1] - 0.8) < 1e-9 and trail[5] < 0.5, "it eases up to the target without overshooting"
+    assert sp.eased(0.9, 0.5) == 0.9, "and never goes back"
+    assert sp.eased(0.5, 0.5) == 0.5
+
+
+def test_the_version_goes_to_the_screen_and_progress_lines_reach_it(tmp_path):
+    from photoeditor import __version__
+    from photoeditor.theme import tokens
+
+    cfg = startup_screen.config(tokens.modern_theme(), version="v1.2.3")
+    assert cfg["version"] == "v1.2.3"
+    import io
+
+    class Pipe:
+        def __init__(self):
+            self.stdin = io.BytesIO()
+
+    pipe = Pipe()
+    startup_screen.report(pipe, 0.25, "Checking icons")
+    startup_screen.report(pipe, 3.0, "")
+    startup_screen.report(None, 0.5, "ignored")
+    assert pipe.stdin.getvalue() == b"p 0.250 Checking icons\np 1.000 \n"
+    assert __version__
+    out = tmp_path / "v.png"
+    r = subprocess.run([sys.executable, "-m", "photoeditor.splash_process", json.dumps({"logo": str(startup_screen.LOGO), "version": "v9.9.9"}), "--frame", "3000", str(out), "--progress", "0.5", "Loading"],
+                       env=ENV, capture_output=True, text=True, timeout=120)
+    assert r.returncode == 0, r.stderr[-800:]
+
+
+def test_the_bar_creeps_on_between_milestones_but_never_runs_ahead_or_back():
+    shown = 0.0
+    for _ in range(300):
+        shown = sp.advanced(shown, 0.32)
+    assert 0.32 < shown <= 0.32 + sp.BAR_CREEP_REACH + 1e-9, "it passes the milestone a little"
+    before = shown
+    for _ in range(5000):
+        shown = sp.advanced(shown, 0.32)
+    assert shown == pytest.approx(0.32 + sp.BAR_CREEP_REACH) and shown >= before, "and stops there"
+    shown = sp.advanced(shown, 0.7)
+    assert shown > 0.5, "a new milestone takes it on"
+    for _ in range(9000):
+        shown = sp.advanced(shown, 0.92)
+    assert shown <= sp.BAR_CREEP_CEILING + 1e-9, "it never reaches the end by itself"
+    for _ in range(300):
+        shown = sp.advanced(shown, 1.0)
+    assert shown == 1.0, "only the program saying it is ready fills it"
