@@ -58,7 +58,7 @@ def test_titled_groups_become_sections_that_fold(monkeypatch, tmp_path):
     host.show()
     assert w["first"].parentWidget() is host, "controls before the first title stay where they were"
     assert w["a"].parentWidget() is sections[0]._body and w["b"].parentWidget() is sections[1]._body and w["d"].parentWidget() is sections[2]._body
-    assert w["light"].parentWidget() is sections[2], "what stood beside a title stays beside it, in the header"
+    assert w["light"].parentWidget() is sections[2]._head, "what stood beside a title stays beside it, in the title bar"
     assert not sections[0].is_closed() and sections[2].is_closed(), "the one asked to start closed is closed"
     assert w["a"].isVisible() and not w["d"].isVisible()
     seen = []
