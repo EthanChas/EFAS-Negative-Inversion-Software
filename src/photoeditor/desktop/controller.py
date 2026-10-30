@@ -52,6 +52,7 @@ from ..features.metadata import suggest
 from ..features.metadata.models import MetadataConfig
 from ..features.metadata.roll import RollCard, compose
 from ..features.negative import metering as metering_mod
+from ..features.pickbetter import logic as pick_better_logic
 from ..features.negative.logic import FILM_TYPE_LABELS, ProcessMode, detect_process_mode, point_from_pixel
 from ..features.negative.metering import Metering
 from ..features.watermark import layout as wm_layout
@@ -250,6 +251,7 @@ class AppController(QObject):
 
         self._opening = 0   # open_file calls in progress (it can be re-entered through the event loop it runs)
         self._renderer = Renderer()
+        self._pick_renderers: list[Renderer] = []      # the two prints of a Pick Better round are rendered on their own (see pick_better_render)
         self._renderer.ai_prob_lookup = self._ai_prob_for
         self._ai_probs: dict[tuple, object] = {}
         self._ai_worker = None
@@ -1019,6 +1021,60 @@ class AppController(QObject):
             return
         self.state.metering = metering
         self._preview(LIVE_OTHER_METHODS)
+
+    # ------------------------------------------------------------ Pick Better
+    def pick_better_unavailable(self) -> str:
+        """Why Pick Better cannot tune the open photo (it tunes the NegPy Conversion of an inverted negative), or "" when it can."""
+        s = self.state
+        if s.image_path is None or s.preview_rgb is None:
+            return "Open a photo first."
+        if not s.negative_inverted:
+            return "This photo is not inverted: press Invert to Positive in the Negative module first."
+        if s.inversion_engine == "curve":
+            return "This photo uses the curve-informed method, whose controls Pick Better does not tune: switch it to the standard method."
+        if s.metering.engine != "print":
+            return "Pick Better tunes the NegPy Conversion: choose it under Conversion > Method in the Negative module."
+        return ""
+
+    def pick_better_config(self) -> dict:
+        """The values of the controls Pick Better tunes, for the open photo as it is."""
+        return pick_better_logic.read(self.state.metering, self.state.temperature, self.state.tint)
+
+    def pick_better_snapshot(self) -> tuple:
+        """The photo's own values of those controls (to put back on an undo)."""
+        return (self.state.metering, self.state.temperature, self.state.tint)
+
+    def pick_better_render(self, config: dict, width: int, slot: int = 0):
+        """The open photo with the controls set as `config` says, rendered at about `width` pixels across, with a renderer of its own per slot (so the two prints of a round keep their tables
+        and nothing about the photo changes); None when there is nothing to render."""
+        base = self._render_base()
+        if base is None:
+            return None
+        import cv2
+
+        metering, temperature, tint = pick_better_logic.write(self.state.metering, config)
+        params = dataclasses.replace(EditParams.from_state(self.state), metering=metering, temperature=temperature, tint=tint)
+        while len(self._pick_renderers) <= slot:
+            self._pick_renderers.append(Renderer())
+        image = self._pick_renderers[slot].render(base, params, ("pick", slot, self._token()), base.shape[1], None, want_stats=False, overlay=False, flatfield=self._ff)[0]
+        if image.shape[1] > width:
+            image = cv2.resize(image, (width, max(1, round(image.shape[0] * width / image.shape[1]))), interpolation=cv2.INTER_AREA)
+        return image
+
+    def pick_better_commit(self, config: dict, description: str = "") -> None:
+        """Make the config the photo's own: its metering, and its Color tab's temperature and tint (one history step each)."""
+        metering, temperature, tint = pick_better_logic.write(self.state.metering, config)
+        if metering != self.state.metering:
+            self.set_metering(metering)
+        if (temperature, tint) != (self.state.temperature, self.state.tint):
+            self.set_color(self.state.saturation, temperature, tint)
+
+    def pick_better_restore(self, snapshot: tuple) -> None:
+        metering, temperature, tint = snapshot
+        if metering != self.state.metering:
+            self.set_metering(metering)
+        if (temperature, tint) != (self.state.temperature, self.state.tint):
+            self.set_color(self.state.saturation, temperature, tint)
 
     def set_metering(self, metering: Metering) -> None:
         if self.state.preview_rgb is None:

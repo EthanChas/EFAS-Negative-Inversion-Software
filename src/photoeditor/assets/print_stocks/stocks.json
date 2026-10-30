@@ -1,0 +1,595 @@
+{
+ "_about": "Print stock curves (D max, D min, knee sharpness, slope crossover) and the colour of each stock's dyes as a 3x3 density matrix (rows sum to 1, neutrals hold), from NegPy's print stock profiles (negpy/features/exposure/papers.py) and the matrices stored with its print LUTs (GPL-3.0, https://github.com/marcinz606/NegPy), which were fitted to datasheets and Fujifilm Frontier printer profiles (see NOTICE.md there). The full LUTs are not bundled: EFAS applies the matrix.",
+ "stocks": {
+  "neutral": {
+   "label": "Digital (Adobe RGB)",
+   "short": "Digital",
+   "kind": "default",
+   "medium": "digital",
+   "d_max": 2.3,
+   "d_min": 0.06,
+   "toe_sharpness_base": 6.0,
+   "shoulder_sharpness_base": 3.0,
+   "channel_gamma": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "slope_gain": 1.0,
+   "base_tint_cmy": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "matrix": null,
+   "dyes": null
+  },
+  "pakon": {
+   "label": "Digital (Pakon)",
+   "short": "Pakon",
+   "kind": "ra4",
+   "medium": "digital",
+   "d_max": 2.3,
+   "d_min": 0.06,
+   "toe_sharpness_base": 6.0,
+   "shoulder_sharpness_base": 3.0,
+   "channel_gamma": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "slope_gain": 1.0,
+   "base_tint_cmy": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "matrix": [
+    [
+     0.78569,
+     0.2567,
+     -0.04239
+    ],
+    [
+     0.0728,
+     0.87367,
+     0.05352
+    ],
+    [
+     -0.00087,
+     0.07154,
+     0.92932
+    ]
+   ],
+   "dyes": "pakon"
+  },
+  "frontier": {
+   "label": "Digital (Frontier)",
+   "short": "Frontier",
+   "kind": "ra4",
+   "medium": "digital",
+   "d_max": 2.52,
+   "d_min": 0.005,
+   "toe_sharpness_base": 3.53,
+   "shoulder_sharpness_base": 1.21,
+   "channel_gamma": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "slope_gain": 1.2,
+   "base_tint_cmy": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "matrix": [
+    [
+     0.81056,
+     0.13589,
+     0.05355
+    ],
+    [
+     0.14546,
+     0.87657,
+     -0.02203
+    ],
+    [
+     -0.00907,
+     0.20392,
+     0.80515
+    ]
+   ],
+   "dyes": "frontier"
+  },
+  "ilford_mg_rc": {
+   "label": "Ilford Multigrade RC",
+   "short": "MG RC",
+   "kind": "bw",
+   "medium": "paper",
+   "d_max": 2.1,
+   "d_min": 0.04,
+   "toe_sharpness_base": 4.0,
+   "shoulder_sharpness_base": 3.0,
+   "channel_gamma": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "slope_gain": 1.0,
+   "base_tint_cmy": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "matrix": null,
+   "dyes": null
+  },
+  "ilford_fb_classic": {
+   "label": "Ilford Multigrade FB Classic",
+   "short": "MG FB",
+   "kind": "bw",
+   "medium": "paper",
+   "d_max": 2.15,
+   "d_min": 0.04,
+   "toe_sharpness_base": 5.0,
+   "shoulder_sharpness_base": 3.0,
+   "channel_gamma": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "slope_gain": 1.0,
+   "base_tint_cmy": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "matrix": null,
+   "dyes": null
+  },
+  "foma_fomatone": {
+   "label": "Foma Fomatone MG Classic",
+   "short": "Fomatone",
+   "kind": "bw",
+   "medium": "paper",
+   "d_max": 2.0,
+   "d_min": 0.05,
+   "toe_sharpness_base": 3.5,
+   "shoulder_sharpness_base": 3.0,
+   "channel_gamma": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "slope_gain": 1.0,
+   "base_tint_cmy": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "matrix": null,
+   "dyes": null
+  },
+  "foma_fomabrom": {
+   "label": "Foma Fomabrom Variant",
+   "short": "Fomabrom",
+   "kind": "bw",
+   "medium": "paper",
+   "d_max": 2.0,
+   "d_min": 0.04,
+   "toe_sharpness_base": 4.0,
+   "shoulder_sharpness_base": 3.0,
+   "channel_gamma": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "slope_gain": 1.0,
+   "base_tint_cmy": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "matrix": null,
+   "dyes": null
+  },
+  "kodak_polymax_ii": {
+   "label": "Kodak Polymax II RC",
+   "short": "Polymax II",
+   "kind": "bw",
+   "medium": "paper",
+   "d_max": 2.13,
+   "d_min": 0.062,
+   "toe_sharpness_base": 3.58,
+   "shoulder_sharpness_base": 3.07,
+   "channel_gamma": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "slope_gain": 1.0,
+   "base_tint_cmy": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "matrix": null,
+   "dyes": null
+  },
+  "kodak_polycontrast_iv": {
+   "label": "Kodak Polycontrast IV RC",
+   "short": "Polycontrast IV",
+   "kind": "bw",
+   "medium": "paper",
+   "d_max": 2.15,
+   "d_min": 0.062,
+   "toe_sharpness_base": 5.99,
+   "shoulder_sharpness_base": 2.96,
+   "channel_gamma": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "slope_gain": 1.0,
+   "base_tint_cmy": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "matrix": null,
+   "dyes": null
+  },
+  "kodak_endura": {
+   "label": "Kodak Endura Premier",
+   "short": "Endura Premier",
+   "kind": "ra4",
+   "medium": "paper",
+   "d_max": 2.55,
+   "d_min": 0.06,
+   "toe_sharpness_base": 3.5,
+   "shoulder_sharpness_base": 3.0,
+   "channel_gamma": [
+    1.04,
+    1.0,
+    0.98
+   ],
+   "slope_gain": 1.0,
+   "base_tint_cmy": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "matrix": [
+    [
+     0.84046,
+     0.19478,
+     -0.03523
+    ],
+    [
+     0.14404,
+     0.76788,
+     0.08807
+    ],
+    [
+     0.02293,
+     0.11535,
+     0.86172
+    ]
+   ],
+   "dyes": "kodak_e4070"
+  },
+  "fuji_crystal": {
+   "label": "Fujicolor Crystal Archive",
+   "short": "Crystal Archive",
+   "kind": "ra4",
+   "medium": "paper",
+   "d_max": 2.42,
+   "d_min": 0.083,
+   "toe_sharpness_base": 5.96,
+   "shoulder_sharpness_base": 2.89,
+   "channel_gamma": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "slope_gain": 1.0,
+   "base_tint_cmy": [
+    0.008,
+    0.007,
+    -0.016
+   ],
+   "matrix": [
+    [
+     0.78382,
+     0.22725,
+     -0.01107
+    ],
+    [
+     0.1388,
+     0.74688,
+     0.11432
+    ],
+    [
+     0.03319,
+     0.11771,
+     0.8491
+    ]
+   ],
+   "dyes": "fuji_ca_dpii"
+  },
+  "fuji_crystal_hd": {
+   "label": "Fujicolor Crystal Archive HD",
+   "short": "Crystal HD",
+   "kind": "ra4",
+   "medium": "paper",
+   "d_max": 2.14,
+   "d_min": 0.071,
+   "toe_sharpness_base": 5.96,
+   "shoulder_sharpness_base": 2.89,
+   "channel_gamma": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "slope_gain": 1.0,
+   "base_tint_cmy": [
+    0.015,
+    0.011,
+    -0.026
+   ],
+   "matrix": [
+    [
+     0.78344,
+     0.23308,
+     -0.01652
+    ],
+    [
+     0.13686,
+     0.76274,
+     0.1004
+    ],
+    [
+     0.03469,
+     0.11564,
+     0.84967
+    ]
+   ],
+   "dyes": "fuji_ca_hd"
+  },
+  "kodak_portra_endura": {
+   "label": "Kodak Portra Endura",
+   "short": "Portra Endura",
+   "kind": "ra4",
+   "medium": "paper",
+   "d_max": 2.65,
+   "d_min": 0.093,
+   "toe_sharpness_base": 1.78,
+   "shoulder_sharpness_base": 2.81,
+   "channel_gamma": [
+    0.968,
+    1.0,
+    1.013
+   ],
+   "slope_gain": 1.0,
+   "base_tint_cmy": [
+    -0.002,
+    0.012,
+    -0.009
+   ],
+   "matrix": [
+    [
+     0.86015,
+     0.1805,
+     -0.04064
+    ],
+    [
+     0.16577,
+     0.75563,
+     0.0786
+    ],
+    [
+     0.04024,
+     0.1099,
+     0.84986
+    ]
+   ],
+   "dyes": "kodak_e4021"
+  },
+  "kodak_supra_endura": {
+   "label": "Kodak Supra Endura",
+   "short": "Supra Endura",
+   "kind": "ra4",
+   "medium": "paper",
+   "d_max": 2.6,
+   "d_min": 0.095,
+   "toe_sharpness_base": 7.99,
+   "shoulder_sharpness_base": 3.23,
+   "channel_gamma": [
+    1.008,
+    1.0,
+    1.0
+   ],
+   "slope_gain": 1.0,
+   "base_tint_cmy": [
+    0.011,
+    -0.009,
+    -0.003
+   ],
+   "matrix": [
+    [
+     0.86015,
+     0.1805,
+     -0.04064
+    ],
+    [
+     0.16577,
+     0.75563,
+     0.0786
+    ],
+    [
+     0.04024,
+     0.1099,
+     0.84986
+    ]
+   ],
+   "dyes": "kodak_e4021"
+  },
+  "kodak_ultra_endura": {
+   "label": "Kodak Ultra Endura",
+   "short": "Ultra Endura",
+   "kind": "ra4",
+   "medium": "paper",
+   "d_max": 2.61,
+   "d_min": 0.096,
+   "toe_sharpness_base": 6.04,
+   "shoulder_sharpness_base": 5.74,
+   "channel_gamma": [
+    1.109,
+    1.0,
+    1.051
+   ],
+   "slope_gain": 1.0,
+   "base_tint_cmy": [
+    -0.003,
+    -0.003,
+    0.005
+   ],
+   "matrix": [
+    [
+     0.84046,
+     0.19478,
+     -0.03523
+    ],
+    [
+     0.14404,
+     0.76788,
+     0.08807
+    ],
+    [
+     0.02293,
+     0.11535,
+     0.86172
+    ]
+   ],
+   "dyes": "kodak_e4070"
+  },
+  "kodak_ektacolor_edge": {
+   "label": "Kodak Ektacolor Edge",
+   "short": "Ektacolor Edge",
+   "kind": "ra4",
+   "medium": "paper",
+   "d_max": 2.25,
+   "d_min": 0.083,
+   "toe_sharpness_base": 2.3,
+   "shoulder_sharpness_base": 2.34,
+   "channel_gamma": [
+    1.013,
+    1.0,
+    1.004
+   ],
+   "slope_gain": 1.0,
+   "base_tint_cmy": [
+    0.011,
+    0.011,
+    -0.022
+   ],
+   "matrix": [
+    [
+     0.84046,
+     0.19478,
+     -0.03523
+    ],
+    [
+     0.14404,
+     0.76788,
+     0.08807
+    ],
+    [
+     0.02293,
+     0.11535,
+     0.86172
+    ]
+   ],
+   "dyes": "kodak_e4070"
+  },
+  "kodak_2383": {
+   "label": "Kodak Vision 2383",
+   "short": "2383",
+   "kind": "ra4",
+   "medium": "film",
+   "d_max": 2.29,
+   "d_min": 0.065,
+   "toe_sharpness_base": 2.65,
+   "shoulder_sharpness_base": 2.86,
+   "channel_gamma": [
+    1.034,
+    1.0,
+    0.989
+   ],
+   "slope_gain": 1.0,
+   "base_tint_cmy": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "matrix": [
+    [
+     0.77267,
+     0.24638,
+     -0.01905
+    ],
+    [
+     0.14583,
+     0.77473,
+     0.07944
+    ],
+    [
+     0.05915,
+     0.13994,
+     0.80091
+    ]
+   ],
+   "dyes": "kodak_2383"
+  },
+  "kodak_2393": {
+   "label": "Kodak Vision 2393",
+   "short": "2393",
+   "kind": "ra4",
+   "medium": "film",
+   "d_max": 2.25,
+   "d_min": 0.025,
+   "toe_sharpness_base": 3.22,
+   "shoulder_sharpness_base": 2.28,
+   "channel_gamma": [
+    1.075,
+    1.0,
+    1.049
+   ],
+   "slope_gain": 1.0,
+   "base_tint_cmy": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "matrix": [
+    [
+     0.7583,
+     0.27125,
+     -0.02955
+    ],
+    [
+     0.14415,
+     0.77117,
+     0.08468
+    ],
+    [
+     0.06727,
+     0.13091,
+     0.80182
+    ]
+   ],
+   "dyes": "kodak_2393"
+  }
+ }
+}

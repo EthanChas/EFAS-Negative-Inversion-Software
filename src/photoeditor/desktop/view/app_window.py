@@ -148,6 +148,7 @@ from .scope_view import ScopeView, ZoneStrip
 from .tab_header import dress_tab
 from .segmented import SegmentedControl, add_steppers_in
 from .theme_layout import ThemeLayout
+from .pick_better_dialog import PickBetterDialog
 from .slider_row import SliderRow
 from .find_dialog import FindDialog
 from ...features.find import logic as find_logic
@@ -1442,6 +1443,7 @@ class AppWindow(QMainWindow):
         self._negative_tool.rgb_changed.connect(self.controller.set_invert_rgb)
         self._negative_tool.light_source_requested.connect(self._on_light_source)
         self._negative_tool.metering_changed.connect(self.controller.set_metering)
+        self._negative_tool.pick_better_requested.connect(self._open_pick_better)
         self._negative_tool.metering_preview.connect(self.controller.preview_metering)
         self._negative_tool.region_draw_toggled.connect(self._on_region_draw_toggled)
         self._negative_tool.region_cleared.connect(lambda: self.controller.set_metering_rect(None))
@@ -4940,6 +4942,14 @@ class AppWindow(QMainWindow):
         self._hist_style_btn.setText(HISTOGRAM_STYLES[style])
         for key, action in self._hist_style_actions.items():
             action.setChecked(key == style)
+
+    def _open_pick_better(self) -> None:
+        """Negative > Conversion > Pick Better...: the window that tunes the open photo's print by choosing the better of two."""
+        if getattr(self, "_pick_better", None) is None:
+            self._pick_better = PickBetterDialog(self.controller, self)
+        self._pick_better.show()
+        self._pick_better.raise_()
+        self._pick_better.begin()
 
     def _on_histogram_density_toggled(self, on: bool) -> None:
         app_settings.save({"histogram_density": bool(on)})

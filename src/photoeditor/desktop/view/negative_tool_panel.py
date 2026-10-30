@@ -54,6 +54,7 @@ class NegativeToolPanel(CollapsiblePanel):
     region_cleared = pyqtSignal()
     metering_reset_requested = pyqtSignal()
     noritsu_suggest_requested = pyqtSignal(str)
+    pick_better_requested = pyqtSignal()
     advanced_toggled = pyqtSignal(bool)
     auto_base_requested = pyqtSignal()
     roll_base_requested = pyqtSignal()
@@ -281,8 +282,16 @@ class NegativeToolPanel(CollapsiblePanel):
             "density": SliderRow("Print density", min_value=-1.0, max_value=1.0, reset_value=0.0),
             "paper_toe": SliderRow("Paper toe", min_value=-1.0, max_value=1.0, reset_value=0.0),
             "paper_shoulder": SliderRow("Paper shoulder", min_value=-1.0, max_value=1.0, reset_value=0.0),
+            "stock_colour": SliderRow("Stock colour", min_value=0.0, max_value=1.0, reset_value=1.0),
+            "grey_balance": SliderRow("Grey balance", min_value=0.0, max_value=1.0, reset_value=0.0),
+            "contrast_mask": SliderRow("Contrast mask", min_value=0.0, max_value=1.0, reset_value=0.0),
         }
         tips = {
+            "stock_colour": "How much of the print stock's dye colour is applied (1 is the stock as it is, 0 is its curve with neutral dyes). Only a colour stock has any.",
+            "grey_balance": "NegPy's Cast Removal: finds the frame's own greys in the shadows, the middle and the highlights (leaving out leaves, grass, sky and water) and takes out the cast they carry, "
+                            "at the share you choose. A frame with no grey to read is left alone.",
+            "contrast_mask": "The darkroom's unsharp contrast mask, as the Fujifilm Frontier's HyperTone does it: opens up large dark areas and holds back large bright ones, and keeps fine detail. "
+                             "A low-contrast frame changes little. The picture is metered without it.",
             "crosstalk": "How much of the dyes' crosstalk is taken out. Each dye also absorbs in its neighbours' bands, which muddies colour; 1 corrects it fully, 0 leaves it.",
             "film_curve": "How much of the film's own toe and shoulder is put back before printing (more shadow depth and highlight separation). It works best with a sampled film base.",
             "grade": "Paper contrast on top of the automatic grade: + harder, - softer. The automatic grade fits the picture's own range to the paper.",
@@ -290,9 +299,55 @@ class NegativeToolPanel(CollapsiblePanel):
             "paper_toe": "How the shadows roll into paper black: + lifts and softens them, - makes the roll-off tighter.",
             "paper_shoulder": "How the highlights roll into paper white: + holds them back from pure white, - makes the roll-off tighter.",
         }
+        stock_row = QHBoxLayout()
+        self._stock_label = QLabel("Print stock")
+        self._stock_label.setFixedWidth(80)
+        stock_row.addWidget(self._stock_label)
+        self._stock = QComboBox()
+        self._stock.addItem("Digital (the engine's own paper)", "")
+        for group, items in printengine.stock_groups():
+            self._stock.addItem(f"- {group} -", None)
+            self._stock.model().item(self._stock.count() - 1).setEnabled(False)
+            for key, label in items:
+                self._stock.addItem(label, key)
+        self._stock.setToolTip("The paper or print film the picture is printed on: its curve (how deep its blacks go, how its highlights roll off, how contrasty each dye layer is) and, for a colour stock, "
+                               "the colour of its dyes. From NegPy's print stocks, which are fitted to the makers' datasheets and to Fujifilm Frontier printer profiles. A black-and-white stock is tonal only.")
+        self._stock.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
+        self._stock.setMinimumContentsLength(10)
+        self._stock.currentIndexChanged.connect(self._on_metering_slider)
+        stock_row.addWidget(self._stock, 1)
+        body.addLayout(stock_row)
+        self._hold_black = QCheckBox("Hold black")
+        self._hold_black.setToolTip("With the paper toe lifting the shadows, keep the paper's black where it was: the lift fades out toward the black, so the black point stays and only the shadows above it open up.")
+        self._hold_black.toggled.connect(self._on_metering_slider)
+        body.addWidget(self._hold_black)
+        self._meter_frame = QCheckBox("Meter the picture, not the holder")
+        self._meter_frame.setToolTip("With no crop, read the picture's range from inside the film frame (found from its edge) instead of the whole scan less a margin, so the holder or the clear film round the frame does not "
+                                     "count. A crop or a drawn region is always what is read.")
+        self._meter_frame.toggled.connect(self._on_metering_slider)
+        body.addWidget(self._meter_frame)
         for key, row in self._print_rows.items():
             row.setToolTip(tips[key])
             body.addWidget(row)
+        self._pick_better_btn = QPushButton("Pick Better...")
+        self._pick_better_btn.setToolTip("Tune the print by choosing, round after round, the better of two prints that differ in one control (grade, density, colour, paper, the layers' grades...). "
+                                         "The steps shrink as you go. NegPy Conversion only.")
+        self._pick_better_btn.clicked.connect(self.pick_better_requested.emit)
+        body.addWidget(self._pick_better_btn)
+        bw_row = QHBoxLayout()
+        self._bw_label = QLabel("B&W print")
+        self._bw_label.setFixedWidth(80)
+        bw_row.addWidget(self._bw_label)
+        self._bw_filter = QComboBox()
+        for key, label in printengine.BW_FILTER_NAMES.items():
+            self._bw_filter.addItem(label, key)
+        self._bw_filter.setToolTip("Print a colour negative as black and white, through a contrast filter as a darkroom would: yellow, orange and red darken skies and bring out clouds, green lightens foliage. "
+                                   "The three layers' densities are mixed with the weights of a panchromatic film behind the Wratten filter. Off prints in colour.")
+        self._bw_filter.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
+        self._bw_filter.setMinimumContentsLength(10)
+        self._bw_filter.currentIndexChanged.connect(self._on_bw_filter_changed)
+        bw_row.addWidget(self._bw_filter, 1)
+        body.addLayout(bw_row)
         self._trim_rows = [SliderRow(f"{name} grade", min_value=-0.3, max_value=0.3, reset_value=0.0) for name in ("Red", "Green", "Blue")]
         for name, row in zip(("red", "green", "blue"), self._trim_rows):
             row.setToolTip(f"Contrast of the {name} layer on its own, around the picture's middle. Fixes colour crossover: when shadows lean one colour and highlights lean "
@@ -517,6 +572,10 @@ class NegativeToolPanel(CollapsiblePanel):
         self._film_profile.setCurrentIndex(max(0, self._film_profile.findData(wanted)))
         self._film_profile.blockSignals(False)
 
+    def _on_bw_filter_changed(self, _index: int) -> None:
+        self._sync_engine_controls(self._conversion.currentData() or "standard")
+        self._on_metering_slider(0.0)
+
     def _on_film_profile_changed(self, _index: int) -> None:
         self._sync_engine_controls(self._conversion.currentData() or "standard")
         self._on_metering_slider(0.0)
@@ -571,10 +630,16 @@ class NegativeToolPanel(CollapsiblePanel):
         """Show a Metering in the controls without emitting anything."""
         self._metering = metering
         widgets = (self._margin, self._range, self._cast, self._white, self._black, self._conversion, self._film, self._encoding, self._film_profile, *self._print_rows.values(), *self._trim_rows,
-                   *self._nor_rows.values(), self._nor_stock, self._nor_lab, self._nor_real_curve, self._nor_border, self._nor_auto_wb)
+                   *self._nor_rows.values(), self._nor_stock, self._nor_lab, self._nor_real_curve, self._nor_border, self._nor_auto_wb, self._stock, self._hold_black, self._meter_frame, self._bw_filter)
         for w in widgets:
             w.blockSignals(True)
         self._fill_film_profiles()
+        if metering.print_stock and self._stock.findData(metering.print_stock) < 0:      # a stock that is no longer there reads as the engine's own paper
+            self._stock.addItem(f"{metering.print_stock} (missing: the engine's own paper used)", metering.print_stock)
+        self._stock.setCurrentIndex(max(0, self._stock.findData(metering.print_stock)))
+        self._hold_black.setChecked(metering.hold_black)
+        self._meter_frame.setChecked(metering.meter_frame)
+        self._bw_filter.setCurrentIndex(max(0, self._bw_filter.findData(metering.bw_filter)))
         self._conversion.setCurrentIndex(max(0, self._conversion.findData(metering.engine)))
         self._last_engine = metering.engine
         if self._film.findData(metering.film) < 0:   # a profile that is no longer there reads as the generic one
@@ -612,13 +677,14 @@ class NegativeToolPanel(CollapsiblePanel):
             w.setVisible(noritsu)
         self._margin.setVisible(not noritsu)       # (noritsu-tool reads the whole film; only a drawn region narrows it)
         self._real_curve_rows_enabled()
-        for w in (self._film_label, self._film, *self._trim_rows, self._print_rows["crosstalk"], self._print_rows["film_curve"]):
+        for w in (self._film_label, self._film, *self._trim_rows, self._print_rows["crosstalk"], self._print_rows["film_curve"], self._stock_label, self._stock, self._hold_black, self._meter_frame,
+                  self._print_rows["stock_colour"], self._print_rows["grey_balance"], self._print_rows["contrast_mask"], self._pick_better_btn):
             w.setVisible(modern)
         with_curve = engine in ("standard", "noritsu")
         for w in (self._curve_label, self._film_profile):
             w.setVisible(with_curve)
-        for w in (self._encoding_label, self._encoding):     # (a film curve needs the scan turned back into density correctly, so its encoding matters to Original and the Noritsu look too)
-            w.setVisible(modern or old or (with_curve and bool(self._film_profile.currentData())))
+        for w in (self._encoding_label, self._encoding):     # (a film curve, or a B&W print through a filter, needs the scan turned back into density correctly, so its encoding matters to Original and the Noritsu look too)
+            w.setVisible(modern or old or (with_curve and bool(self._film_profile.currentData() or self._bw_filter.currentData())))
         for w in (self._print_rows["grade"], self._print_rows["density"], self._print_rows["paper_toe"], self._print_rows["paper_shoulder"]):
             w.setVisible(modern or old)
         for w in (self._range, self._wb_title, self._channel_label, self._white, self._black, self._channel, *self._droppers.values()):
@@ -657,7 +723,8 @@ class NegativeToolPanel(CollapsiblePanel):
         return dataclasses.replace(m, film=self._film.currentData() or "generic", transfer=self._encoding.currentData() or "auto", buffer=self._margin.value(), range_clip=self._range.value(), cast_removal=self._cast.value(), engine=engine,
                                    grade_trim=tuple(row.value() for row in self._trim_rows), **{key: row.value() for key, row in self._print_rows.items()}, **{key: row.value() for key, row in self._nor_rows.items()},
                                    nor_stock=self._nor_stock.currentData() or "", nor_lab=self._nor_lab.isChecked(), nor_real_curve=self._nor_real_curve.isChecked(), nor_border=self._nor_border.isChecked(),
-                                   nor_auto_wb=self._nor_auto_wb.isChecked(), film_profile=self._film_profile.currentData() or "")
+                                   nor_auto_wb=self._nor_auto_wb.isChecked(), film_profile=self._film_profile.currentData() or "", hold_black=self._hold_black.isChecked(),
+                                   print_stock=self._stock.currentData() or "", bw_filter=self._bw_filter.currentData() or "", meter_frame=self._meter_frame.isChecked())
 
     def _build_noritsu(self, body) -> None:
         """The controls of the Noritsu look (a port of noritsu-tool: its --stock, --lab, --real-curve, --contrast, --toe, --gamma, --sat, --dmin-pct, --dmax-pct, --no-border and --no-auto-wb)."""

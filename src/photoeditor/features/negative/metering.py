@@ -18,9 +18,12 @@ _FIELDS_NAMES = {
     "nor_stock": "Noritsu stock profile", "nor_lab": "Noritsu lab mode", "nor_real_curve": "Noritsu real curve", "nor_contrast": "Noritsu contrast", "nor_toe": "Noritsu toe",
     "nor_gamma": "Noritsu gamma", "nor_sat": "Noritsu saturation", "nor_dmin_pct": "Noritsu Dmin percentile", "nor_dmax_pct": "Noritsu Dmax percentile", "nor_border": "Noritsu rebate Dmin",
     "nor_auto_wb": "Noritsu auto white balance", "film_profile": "film curve profile",
+    "hold_black": "hold black", "print_stock": "print stock", "stock_colour": "stock colour", "grey_balance": "grey balance", "contrast_mask": "contrast mask", "bw_filter": "B&W filter",
+    "meter_frame": "metering the picture, not the holder",
 }
 ENGINES = ("print", "standard", "negpy056", "noritsu")   # "noritsu" is the Noritsu look (features/negative/noritsu.py: a port of noritsu-tool), "print" is NegPy Conversion (film and paper: features/negative/printengine.py), "standard" is Original (a straight stretch of each channel), "negpy056" is NegPy 0.56 (old): NegPy's own conversion as that version made it (features/negative/negpy056.py)
 DEFAULT_ENGINE = "print"
+BW_FILTER_KEYS = ("none", "yellow8", "deepyellow15", "orange21", "red25", "yellowgreen11", "green58")     # (printengine.BW_FILTERS, which this file cannot import: it is read first)
 TRANSFERS = ("auto", "srgb", "bt709", "linear")   # how the scan's codes were made from light; "auto" reads it from the file (RAW decoded by EFAS: bt709, anything else: srgb)
 
 
@@ -72,6 +75,13 @@ class Metering:
     nor_border: bool = True          # Noritsu: Dmin from the film rebate when it looks like the orange mask
     nor_auto_wb: bool = True         # Noritsu: neutralize the residual cast of the picture's average
     film_profile: str = ""           # Original and Noritsu: the id of a film profile (a characteristic curve) the scan is taken back through before the stretch or the tone curve ("" for none)
+    hold_black: bool = False         # print engine: a toe lift fades out toward the paper's black, so the black point stays
+    print_stock: str = ""            # print engine: a print stock (printengine.stocks()): its curve and the colour of its dyes ("" for the engine's own paper)
+    stock_colour: float = 1.0        # print engine: how much of the stock's dye colour is applied
+    grey_balance: float = 0.0        # print engine: how much of the cast of the frame's own greys is taken out, shadows to highlights (NegPy's Cast Removal)
+    contrast_mask: float = 0.0       # print engine: the darkroom's unsharp contrast mask, after the Fujifilm Frontier's HyperTone
+    bw_filter: str = ""              # a B&W print from a colour negative through a contrast filter (printengine.BW_FILTERS; "" for a colour print)
+    meter_frame: bool = False        # print engine: with no crop, meter the picture inside the film frame, not the holder round it
 
     def is_default(self) -> bool:
         return self == Metering()
@@ -133,6 +143,9 @@ class Metering:
             nor_sat=_num(data.get("nor_sat"), 0.0, 2.0, 1.0), nor_dmin_pct=_num(data.get("nor_dmin_pct"), 0.0, 10.0, 0.5), nor_dmax_pct=_num(data.get("nor_dmax_pct"), 90.0, 100.0, 99.8),
             nor_border=data.get("nor_border") is not False, nor_auto_wb=data.get("nor_auto_wb") is not False,
             film_profile=data["film_profile"] if isinstance(data.get("film_profile"), str) and 0 < len(data["film_profile"]) <= 120 else "",
+            hold_black=data.get("hold_black") is True, print_stock=data["print_stock"] if isinstance(data.get("print_stock"), str) and 0 < len(data["print_stock"]) <= 60 else "",
+            stock_colour=_num(data.get("stock_colour"), 0.0, 1.0, 1.0), grey_balance=_num(data.get("grey_balance"), 0.0, 1.0, 0.0), contrast_mask=_num(data.get("contrast_mask"), 0.0, 1.0, 0.0),
+            bw_filter=data["bw_filter"] if data.get("bw_filter") in BW_FILTER_KEYS else "", meter_frame=data.get("meter_frame") is True,
         )
 
 

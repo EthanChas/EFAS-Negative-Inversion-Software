@@ -581,7 +581,8 @@ def print_settings(m: Metering) -> "printengine.Settings":
     """The Print Engine's settings for a photo's metering (its scan encoding already resolved: see EditParams)."""
     transfer = m.transfer if m.transfer in printengine.TRANSFER_CURVES else "srgb"
     return printengine.Settings(unmix_matrix=printengine.matrix_for(m.film), unmix_strength=m.crosstalk, restore=m.film_curve, grade=m.grade, density=m.density, toe=m.paper_toe, shoulder=m.paper_shoulder, trims=m.grade_trim,
-                                transfer=transfer)
+                                transfer=transfer, hold_black=m.hold_black, stock=m.print_stock if m.engine == "print" else "", grey_balance=m.grey_balance if m.engine == "print" else 0.0,
+                                contrast_mask=m.contrast_mask if m.engine == "print" else 0.0, bw_weights=printengine.BW_FILTERS.get(m.bw_filter))
 
 
 MIN_SAMPLED_BASE = 0.05      # the least density a film base can read as, for the film curve to trust it as a sampled one (any film base is denser than clear light)
@@ -596,12 +597,17 @@ def density_settings(m: Metering) -> "printengine.Settings":
     """The settings the scan is turned into a density image with: the Print Engine's, except that NegPy 0.56 (old), the Noritsu look and Original with a film profile take out no dye
     crosstalk (NegPy 0.56 has none by default)."""
     s = print_settings(m)
-    return dataclasses.replace(s, unmix_strength=0.0) if (m.engine in ("negpy056", "noritsu") or film_curve_wanted(m)) else s
+    return dataclasses.replace(s, unmix_strength=0.0) if (m.engine in ("negpy056", "noritsu") or standard_in_density(m)) else s
+
+
+def standard_in_density(m: Metering) -> bool:
+    """Whether Original is made on the density image: with a film profile, or to print a colour negative as black and white through a filter (which needs the layers' densities)."""
+    return m.engine == "standard" and (film_curve_wanted(m) or bool(m.bw_filter))
 
 
 def converts_in_density(m: Metering) -> bool:
     """Whether the conversion reads the scan as a density image (the others read its codes as they are)."""
-    return m.engine in ("print", "negpy056", "noritsu") or film_curve_wanted(m)
+    return m.engine in ("print", "negpy056", "noritsu") or standard_in_density(m)
 
 
 def negpy056_settings(m: Metering, black_and_white: bool) -> "negpy056.Settings":
@@ -633,6 +639,8 @@ class Renderer:
         self.wide_mixing = True   # keep a 16-bit scan 16-bit through the mixing stages (False gives the older 8-bit path: the tests compare the two)
         self.lock = threading.RLock()
         self._invert_lut = None
+        self._mask_plane = None        # the contrast mask's plane for the last metering (kept while a slider moves)
+        self._print_build = None       # the NegPy Conversion's last table and the numbers behind it (printengine.PrintBuild), for the stages that work on each pixel before it
         self._noritsu_density = None   # the density the Noritsu look last read its statistics from (for its Suggest settings)
         self._invert_key = None
         self._retouch: OrderedDict = OrderedDict()
@@ -758,7 +766,7 @@ class Renderer:
 
     def _density_image(self, pixels: np.ndarray, settings: "printengine.Settings") -> np.ndarray:
         """The scan as a density image for the Print Engine (the dyes' crosstalk taken out), kept while the same picture is rendered again."""
-        key = (id(pixels), pixels.shape, pixels.dtype.str, settings.unmix_matrix, settings.unmix_strength, settings.transfer)
+        key = (id(pixels), pixels.shape, pixels.dtype.str, settings.unmix_matrix, settings.unmix_strength, settings.transfer, settings.bw_weights)
         if self._density is not None and self._density[0] == key:
             return self._density[2]
         codes = printengine.density_codes(pixels, settings)
@@ -781,6 +789,28 @@ class Renderer:
         base = np.asarray(base_density, dtype=np.float32) if sampled else printengine.estimate_base(density)
         return filmcurve.build(filmcurve.profile_models(m.film_profile), base, sampled, m.film_profile)
 
+    def _shaped(self, codes: np.ndarray, m: Metering) -> np.ndarray:
+        """The density image with the contrast mask and a print stock's dye colour worked in (printengine.shape_codes), from the numbers the last metering gave; as it was with neither on."""
+        built = self._print_build
+        if built is None:
+            return codes
+        curve = printengine.curve_for(m.print_stock)
+        matrix = None
+        if curve.matrix is not None and m.stock_colour > 0.0:
+            matrix = np.eye(3) * (1.0 - m.stock_colour) + np.asarray(curve.matrix) * m.stock_colour
+        shift = None
+        if m.contrast_mask > 0.0:
+            key = (id(built), codes.shape)
+            if self._mask_plane is None or self._mask_plane[0] != key:
+                self._mask_plane = (key, built, printengine.mask_plane(codes, built))      # (holding the build keeps its id from being reused)
+            import cv2
+
+            delta = printengine.mask_shift(self._mask_plane[2], built, m.contrast_mask)
+            shift = cv2.resize(delta, (codes.shape[1], codes.shape[0]), interpolation=cv2.INTER_LINEAR)
+        if shift is None and matrix is None:
+            return codes
+        return printengine.shape_codes(codes, built, shift, matrix)
+
     def _get_invert_lut(self, pixels, params: EditParams, rect, token):
         key = (token, pixels.dtype.str, params.film_type == "bw", params.rotation_quarter_turns, params.flip_h, params.flip_v, params.crop_rect, params.film_base, params.metering,
                filmcurve.profile_stamp(params.metering.film_profile) if params.metering.film_profile else None)
@@ -793,7 +823,8 @@ class Renderer:
                 settings = print_settings(params.metering)
                 sampled = None if base is None else printengine.base_density(base, settings, 255.0)
                 block = analysis_region(pixels, rect, params.metering.buffer)
-                self._invert_lut = printengine.build_lut(block, settings, sampled)
+                self._print_build = printengine.build_print(block, settings, sampled)
+                self._invert_lut = self._print_build.lut
             elif params.metering.engine == "negpy056":      # (a sampled film base is not used: NegPy 0.56 reads its bounds off the picture)
                 grid = negpy056.grid_from_codes(pixels, rect, params.metering.buffer, printengine.DENSITY_SCALE)
                 plan = negpy056.plan_from_grid(grid, negpy056_settings(params.metering, params.film_type == "bw"))
@@ -805,7 +836,7 @@ class Renderer:
                 film = self._film_curve_for(params.metering, self._noritsu_density, base_d)
                 plan = noritsu.plan_from_density(self._noritsu_density, noritsu_settings(params.metering), border=drawn is None, film=film)
                 self._invert_lut = noritsu.build_lut(plan, printengine.DENSITY_SCALE)
-            elif film_curve_wanted(params.metering):      # (Original with a film profile: its stretch is made on the density image, straightened through the film's curve)
+            elif standard_in_density(params.metering):      # (Original with a film profile, or a B&W print through a filter: its stretch is made on the density image)
                 base_d = None if base is None else printengine.base_density(base, density_settings(params.metering), 255.0)
                 film = self._film_curve_for(params.metering, analysis_region(pixels, rect, params.metering.buffer).astype(np.float32) / np.float32(printengine.DENSITY_SCALE), base_d)
                 self._invert_lut = compute_invert_lut_density(pixels, rect, base_d, params.metering, film, printengine.DENSITY_SCALE)
@@ -1115,7 +1146,8 @@ class Renderer:
                 geometry(flip_horizontal)
             if params.flip_v:
                 geometry(flip_vertical)
-            film_frame = self._film_frame(pixels, pixels16, params, token) if want_stats else None      # (for the histogram: the clear film border is no part of the picture)
+            metering_frame = params.negative_inverted and params.metering.engine == "print" and params.metering.meter_frame and params.crop_rect is None and params.metering.rect is None
+            film_frame = self._film_frame(pixels, pixels16, params, token) if (want_stats or metering_frame) else None      # (for the histogram: the clear film border is no part of the picture; for the metering: nor the holder)
             pixels, pixels16 = self._fix_edges(pixels, pixels16, params, edge_values, token, retouched, scale)   # the border's light, its holder and holes: repaired before the conversion reads the picture
             if params.negative_inverted and converts_in_density(params.metering):
                 deep = deep and pixels16 is not None   # an 8-bit source has no more levels to keep, whatever depth the density image is held at
@@ -1139,6 +1171,10 @@ class Renderer:
             ramp = wide_ramp() if wide else identity_ramp()
             if params.negative_inverted:
                 meter_rect = rect if params.metering.rect is None else _scale_rect(params.metering.rect, scale, frame.shape[1], frame.shape[0])
+                if metering_frame and film_frame is not None:      # no crop: the metering reads the picture inside the film frame (a little in from its edge), not the holder round it
+                    fx1, fy1, fx2, fy2 = film_frame
+                    inset_x, inset_y = int(0.03 * (fx2 - fx1)), int(0.03 * (fy2 - fy1))
+                    meter_rect = (fx1 + inset_x, fy1 + inset_y, fx2 - inset_x, fy2 - inset_y)
                 meter_params = params
                 inset = edge_logic.meter_inset(edge_values)   # the Border mask's band is not part of the picture the metering reads
                 if inset:
@@ -1151,6 +1187,8 @@ class Renderer:
                 lut_token = (token, edge_logic.scan_token(edge_values), meter_rect) if (edge_logic.scan_active(edge_values) or inset) else token
                 if wide:
                     ramp = np.ascontiguousarray(self._get_invert_lut(pixels16, meter_params, meter_rect, lut_token).T[None])
+                    if params.metering.engine == "print":
+                        pixels16 = self._shaped(pixels16, params.metering)      # (the contrast mask and a stock's dyes move each pixel's exposure before the table reads it)
                 else:
                     ramp = apply_invert_lut(ramp, self._get_invert_lut(pixels, meter_params, meter_rect, lut_token))
             ramp = apply_channel_offsets(ramp, (params.invert_r, params.invert_g, params.invert_b))
