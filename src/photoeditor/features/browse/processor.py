@@ -11,7 +11,8 @@ from PIL import Image
 
 from ..negative import printengine
 from ..negative.logic import ProcessMode, detect_process_mode
-from ..open_image.logic import is_raw
+from ..open_image import ls600raw
+from ..open_image.logic import is_ls600, is_raw
 from .logic import thumbnail_cache_key
 
 _THUMB_QUALITY = 85
@@ -43,7 +44,14 @@ def make_thumbnail_bytes(path: str, max_dim: int = 200) -> bytes | None:
     None if the file is unreadable."""
     try:
         transfer = "srgb"   # how the pixels were encoded: a camera's JPEG preview and an ordinary picture are sRGB
-        if is_raw(path):
+        if is_ls600(path):      # a Noritsu LS-600 dump: linear light, read whole and shrunk
+            import cv2
+
+            full = ls600raw.load_rgb16(path)
+            scale = max_dim / max(full.shape[:2])
+            img = Image.fromarray(np.clip(np.rint(cv2.resize(full, (max(1, round(full.shape[1] * scale)), max(1, round(full.shape[0] * scale))), interpolation=cv2.INTER_AREA) / 257.0), 0, 255).astype(np.uint8))
+            transfer = "linear"
+        elif is_raw(path):
             img = _embedded_preview(path, max_dim)
             if img is None:
                 with rawpy.imread(path) as raw:

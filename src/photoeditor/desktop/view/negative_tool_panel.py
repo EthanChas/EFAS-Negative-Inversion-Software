@@ -2,7 +2,7 @@ import dataclasses
 
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QIcon
-from PyQt6.QtWidgets import QCheckBox, QComboBox, QHBoxLayout, QInputDialog, QLabel, QMenu, QPushButton, QVBoxLayout, QWidget
+from PyQt6.QtWidgets import QCheckBox, QComboBox, QFileDialog, QHBoxLayout, QInputDialog, QLabel, QMenu, QMessageBox, QPushButton, QVBoxLayout, QWidget
 
 from ...features.densitometry.quality import COLOURS as QUALITY_COLOURS
 from ...features.negative import lightsource, printengine
@@ -630,7 +630,7 @@ class NegativeToolPanel(CollapsiblePanel):
         """Show a Metering in the controls without emitting anything."""
         self._metering = metering
         widgets = (self._margin, self._range, self._cast, self._white, self._black, self._conversion, self._film, self._encoding, self._film_profile, *self._print_rows.values(), *self._trim_rows,
-                   *self._nor_rows.values(), self._nor_stock, self._nor_lab, self._nor_real_curve, self._nor_border, self._nor_auto_wb, self._stock, self._hold_black, self._meter_frame, self._bw_filter)
+                   *self._nor_rows.values(), self._nor_stock, self._nor_lab, self._nor_real_curve, self._nor_variant, self._nor_border, self._nor_auto_wb, self._stock, self._hold_black, self._meter_frame, self._bw_filter)
         for w in widgets:
             w.blockSignals(True)
         self._fill_film_profiles()
@@ -652,7 +652,11 @@ class NegativeToolPanel(CollapsiblePanel):
             row.set_value(value)
         for key, row in self._nor_rows.items():
             row.set_value(getattr(metering, key))
+        self._fill_nor_stocks()
+        if metering.nor_stock and self._nor_stock.findData(metering.nor_stock) < 0:      # a profile that is no longer there reads as none
+            self._nor_stock.addItem(f"{metering.nor_stock} (missing: none used)", metering.nor_stock)
         self._nor_stock.setCurrentIndex(max(0, self._nor_stock.findData(metering.nor_stock)))
+        self._nor_variant.setCurrentIndex(max(0, self._nor_variant.findData(metering.nor_variant)))
         self._nor_lab.setChecked(metering.nor_lab)
         self._nor_real_curve.setChecked(metering.nor_real_curve)
         self._nor_border.setChecked(metering.nor_border)
@@ -722,7 +726,7 @@ class NegativeToolPanel(CollapsiblePanel):
         self._sync_engine_controls(engine)
         return dataclasses.replace(m, film=self._film.currentData() or "generic", transfer=self._encoding.currentData() or "auto", buffer=self._margin.value(), range_clip=self._range.value(), cast_removal=self._cast.value(), engine=engine,
                                    grade_trim=tuple(row.value() for row in self._trim_rows), **{key: row.value() for key, row in self._print_rows.items()}, **{key: row.value() for key, row in self._nor_rows.items()},
-                                   nor_stock=self._nor_stock.currentData() or "", nor_lab=self._nor_lab.isChecked(), nor_real_curve=self._nor_real_curve.isChecked(), nor_border=self._nor_border.isChecked(),
+                                   nor_stock=self._nor_stock.currentData() or "", nor_lab=self._nor_lab.isChecked(), nor_real_curve=self._nor_real_curve.isChecked(), nor_variant=self._nor_variant.currentData() or "00000005", nor_border=self._nor_border.isChecked(),
                                    nor_auto_wb=self._nor_auto_wb.isChecked(), film_profile=self._film_profile.currentData() or "", hold_black=self._hold_black.isChecked(),
                                    print_stock=self._stock.currentData() or "", bw_filter=self._bw_filter.currentData() or "", meter_frame=self._meter_frame.isChecked())
 
@@ -739,18 +743,37 @@ class NegativeToolPanel(CollapsiblePanel):
         stock_label.setFixedWidth(80)
         stock_layout.addWidget(stock_label)
         self._nor_stock = QComboBox()
-        self._nor_stock.addItem("None (use the sliders)", "")
-        for stock, name in noritsu_logic.STOCK_NAMES.items():
-            self._nor_stock.addItem(name, stock)
+        self._fill_nor_stocks()
         self._nor_stock.setToolTip("A per-stock profile fitted to real LS-600 scans of that film. It replaces the automatic white balance and the tone curve, so Contrast, Toe, Gamma and the real-curve choice do nothing while one is on.")
         self._nor_stock.currentIndexChanged.connect(self._on_metering_slider)
         stock_layout.addWidget(self._nor_stock, 1)
         body.addWidget(stock_row)
         self._nor_widgets.append(stock_row)
+        profile_row = QWidget()
+        profile_layout = QHBoxLayout(profile_row)
+        profile_layout.setContentsMargins(0, 0, 0, 0)
+        self._nor_import = QPushButton("Import profile...")
+        self._nor_import.setToolTip("Add a calibration profile of your own to the Stock list: a .npz file such as noritsu-tool's calibrate writes (lut, dmin, dmax).")
+        self._nor_import.clicked.connect(self._on_nor_import)
+        profile_layout.addWidget(self._nor_import)
+        self._nor_fit = QPushButton("Fit from a pair...")
+        self._nor_fit.setToolTip("Make a profile from a negative scan and the picture a lab made from the same frame (noritsu-tool's calibrate): each colour's tone table is fitted to the lab's own. "
+                                 "Both must be the same picture. An LS-600 .raw dump is cropped to the machine's own geometry first.")
+        self._nor_fit.clicked.connect(self._on_nor_fit)
+        profile_layout.addWidget(self._nor_fit)
+        body.addWidget(profile_row)
+        self._nor_widgets.append(profile_row)
         self._nor_lab = QCheckBox("Lab mode")
         self._nor_lab.setToolTip("Closer to what a Noritsu lab tech delivers: contrast 0.90, gamma 0.90, toe 0.04, saturation 0.95 and the LS-600's own tone curve (noritsu-tool's --lab).")
         self._nor_real_curve = QCheckBox("Real LS-600 tone curve")
         self._nor_real_curve.setToolTip("The LS-600's own 20-point tone curve instead of the synthetic S-curve (noritsu-tool's --real-curve). Lab mode uses it too.")
+        self._nor_variant = QComboBox()
+        for variant, name in noritsu_logic.VARIANTS.items():
+            self._nor_variant.addItem(name, variant)
+        self._nor_variant.setToolTip("Which of the LS-600's image-quality variants the real tone curve is (the curves that really differ: the standard one, IQ 2, and a linear one that does nothing).")
+        self._nor_variant.currentIndexChanged.connect(self._on_metering_slider)
+        body.addWidget(self._nor_variant)
+        self._nor_widgets.append(self._nor_variant)
         self._nor_border = QCheckBox("Dmin from the rebate")
         self._nor_border.setToolTip("Take the film base (the orange mask) from the film's unexposed rebate when it looks like one; otherwise, or when this is off, from a low percentile of the film.")
         self._nor_auto_wb = QCheckBox("Automatic white balance")
@@ -793,12 +816,56 @@ class NegativeToolPanel(CollapsiblePanel):
         body.addWidget(self._nor_note)
         self._nor_widgets.append(self._nor_note)
 
+    def _fill_nor_stocks(self) -> None:
+        """The Stock list: none, the three profiles that come with noritsu-tool, then yours."""
+        current = self._nor_stock.currentData() if self._nor_stock.count() else ""
+        was_blocked = self._nor_stock.blockSignals(True)      # (set_metering has the signals off: they go back as they were)
+        self._nor_stock.clear()
+        self._nor_stock.addItem("None (use the sliders)", "")
+        for stock, name in noritsu_logic.stocks().items():
+            self._nor_stock.addItem(name if not stock.startswith("user:") else f"{name} (yours)", stock)
+        self._nor_stock.setCurrentIndex(max(0, self._nor_stock.findData(current)))
+        self._nor_stock.blockSignals(was_blocked)
+
+    def _on_nor_import(self) -> None:
+        path, _filter = QFileDialog.getOpenFileName(self, "Import a calibration profile", "", "Calibration profile (*.npz)")
+        if not path:
+            return
+        try:
+            stock = noritsu_logic.import_profile(path)
+        except ValueError as exc:
+            QMessageBox.warning(self, "Import profile", str(exc))
+            return
+        self._fill_nor_stocks()
+        self._nor_stock.setCurrentIndex(max(0, self._nor_stock.findData(stock)))
+        self._on_metering_slider()
+
+    def _on_nor_fit(self) -> None:
+        scan, _f = QFileDialog.getOpenFileName(self, "The negative scan", "", "Scans (*.tif *.tiff *.png *.raw *.dng *.jpg *.jpeg)")
+        if not scan:
+            return
+        lab, _f = QFileDialog.getOpenFileName(self, "The lab's picture of the same frame", "", "Pictures (*.tif *.tiff *.png *.jpg *.jpeg)")
+        if not lab:
+            return
+        name, ok = QInputDialog.getText(self, "Fit from a pair", "Name of the profile:")
+        if not ok or not name.strip():
+            return
+        try:
+            stock = noritsu_logic.fit_profile_from_files(scan, lab, name)
+        except Exception as exc:  # noqa: BLE001 - any file that cannot be read or fitted is reported, not raised
+            QMessageBox.warning(self, "Fit from a pair", f"The profile could not be made: {exc}")
+            return
+        self._fill_nor_stocks()
+        self._nor_stock.setCurrentIndex(max(0, self._nor_stock.findData(stock)))
+        self._on_metering_slider()
+
     def _real_curve_rows_enabled(self) -> None:
         """A stock profile or the real curve replaces the synthetic S-curve: its Contrast, Toe and Gamma do nothing then."""
         synthetic = not (self._nor_stock.currentData() or self._nor_real_curve.isChecked() or self._nor_lab.isChecked())
         for key in ("nor_contrast", "nor_toe", "nor_gamma"):
             self._nor_rows[key].setEnabled(synthetic)
         self._nor_rows["nor_sat"].setEnabled(not self._nor_lab.isChecked())
+        self._nor_variant.setEnabled(not self._nor_stock.currentData() and (self._nor_real_curve.isChecked() or self._nor_lab.isChecked()))
 
     def show_noritsu_suggestion(self, params: dict | None) -> None:
         """Set the sliders to noritsu-tool's suggestion for this scan (None: nothing has been read yet)."""

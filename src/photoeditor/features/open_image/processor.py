@@ -9,7 +9,8 @@ from PIL import Image
 from ..lut.logic import to_uint8  # noqa: F401  (re-exported: the 8-bit copy of a decoded picture)
 from ..settings import logic as settings
 from . import camera
-from .logic import is_raw
+from . import ls600raw
+from .logic import is_ls600, is_raw
 
 _SIXTEEN_BIT_FILES = (".tif", ".tiff", ".png")
 
@@ -38,6 +39,8 @@ def load_image_rgb(path: str, standard: bool = False) -> np.ndarray:
     sensor or scanner recorded - the edit pipeline stretches a negative's narrow range, and 8 bits would show gaps), uint8 for the rest.
     A RAW file is opened in the camera's own primaries (tagged with the matrix to apply after inversion) when Settings > RAW decoding asks for it; `standard`
     forces the usual sRGB decode for the callers that need a finished picture (the curve-informed inversion)."""
+    if is_ls600(path):      # a Noritsu LS-600 dump: not a camera RAW file, though it has the same .raw name
+        return ls600raw.load_rgb16(path)
     if is_raw(path):
         with rawpy.imread(path) as raw:
             linear = bool(settings.get("raw_linear")) and not standard

@@ -6,8 +6,11 @@ calibrate.py (a fitted per-channel LUT, for its per-stock profiles) and autopara
 name, its maths and its numbers; what differs is only where it reads its pixels from: EFAS holds a scan as density codes (code / DENSITY_SCALE is the density), so the density step is
 already done and the per-channel stages (normalize, white balance, tone) are folded into one table over those codes (`build_lut`), as every other conversion does.
 
-Not ported: reading an LS-600 FULL*.RAW dump and its ICE (infrared dust) clean-up (ls600raw.py, ice.py: EFAS has its own RAW decoding and dust tools), and fitting a profile from a pair of
-pictures (calibrate.calibrate: it needs a second, aligned picture); the three profiles that come with noritsu-tool are used as they are. The licence text is in assets/noritsu/LICENSE.
+Also here: fitting a profile from a negative and the lab's own positive of it (calibrate.py's calibrate, `fit_profile`), profiles of your own that sit beside the three that come with
+noritsu-tool (`stocks`, `import_profile`; they are the same .npz files noritsu-tool writes), and the tone curve of each of the LS-600's IQ variants (`VARIANTS`, tables.py's CommonCalcPara).
+Reading an LS-600 FULL*.RAW dump (ls600raw.py) is features/open_image/ls600raw.py. Not ported: its ICE (infrared dust) clean-up (ice.py: it needs the scan's infrared channel, which EFAS
+does not read; EFAS has its own dust tools). noritsu-tool's per_film_tables.json is only a record of the headers and first numbers of the vendor's per-film table files (its README says no
+code loads it), so there is nothing in it to use. The licence text is in assets/noritsu/LICENSE.
 """
 
 import os
@@ -33,6 +36,11 @@ BASE_CURVES = {
 }
 BASE_CURVE_SCALE = 65535.0
 DEFAULT_VARIANT = "00000005"
+VARIANTS = {      # the tone curves that really differ (IQ variants 1 and 3 to 6 are the same curve: the LS-600's own, which variant 5, noritsu-tool's default, is one of)
+    "00000005": "Standard (the LS-600's own: IQ 1, 3 to 6)",
+    "00000002": "IQ 2 (lifted toe, highlights a touch over)",
+    "00000000": "Linear (no tone curve)",
+}
 
 # --- autoparam.py ---
 THIN_DMAX = 0.9       # density range below this = thin negative
@@ -61,6 +69,7 @@ class Settings:
     stock: str = ""                  # "" (none) or one of STOCKS: noritsu-tool's per-stock calibration profile, which replaces the white balance and the tone curve
     lab: bool = False                # "lab mode": contrast 0.90, gamma 0.90, toe 0.04, saturation 0.95 and the real tone curve
     real_curve: bool = False         # the LS-600's own 20-point curve instead of the synthetic S-curve
+    variant: str = DEFAULT_VARIANT   # which IQ variant's 20-point curve the real curve is (VARIANTS)
     contrast: float = 1.05
     toe: float = 0.02
     gamma: float = 0.98
@@ -269,7 +278,7 @@ def render_channel(positive: np.ndarray, settings: Settings, gain: float = 1.0) 
     if abs(gain - 1.0) > 1e-4:
         out = np.clip(out * np.float32(gain), 0.0, 1.0)
     if settings.real_curve:
-        return np.clip(_interp_table(out, tone_curve_lut()), 0.0, 1.0).astype(np.float32)
+        return np.clip(_interp_table(out, tone_curve_lut(variant=settings.variant)), 0.0, 1.0).astype(np.float32)
     return np.clip(noritsu_tone_curve(out, settings.contrast, settings.toe, settings.gamma), 0.0, 1.0).astype(np.float32)
 
 
@@ -289,8 +298,67 @@ def load_calib(path: str) -> dict:
     return {"lut": z["lut"], "dmin": z["dmin"], "dmax": z["dmax"]}
 
 
+def user_folder() -> str:
+    """Where profiles of your own are kept (the same .npz files noritsu-tool's calibrate writes): their ids start with "user:"."""
+    from ..datadir import app_data_dir
+
+    return os.path.join(app_data_dir(), "noritsu")
+
+
+def stocks() -> dict[str, str]:
+    """Every profile there is: id -> name. The three that come with noritsu-tool, then your own by name."""
+    out = dict(STOCK_NAMES)
+    try:
+        for name in sorted(os.listdir(user_folder()), key=str.casefold):
+            if name.lower().endswith(".npz"):
+                out["user:" + name] = os.path.splitext(name)[0]
+    except OSError:
+        pass
+    return out
+
+
+def _valid_calib(z) -> bool:
+    try:
+        lut = np.asarray(z["lut"])
+        return lut.ndim == 2 and lut.shape[0] == 3 and lut.shape[1] >= 2 and np.asarray(z["dmin"]).size == 3 and np.asarray(z["dmax"]).size == 3
+    except (KeyError, ValueError):
+        return False
+
+
+def import_profile(path: str) -> str:
+    """Copy a calibration .npz (noritsu-tool's calibrate writes one: lut, dmin, dmax) into your folder; its id. ValueError when it is not one."""
+    import shutil
+
+    try:
+        with np.load(path, allow_pickle=False) as z:
+            if not _valid_calib(z):
+                raise ValueError("this is not a calibration profile (it needs lut, dmin and dmax)")
+    except (OSError, ValueError, EOFError) as exc:
+        raise ValueError(str(exc) or "this is not a calibration profile") from exc
+    os.makedirs(user_folder(), exist_ok=True)
+    name = os.path.basename(path)
+    shutil.copyfile(path, os.path.join(user_folder(), name))
+    _PROFILES.pop("user:" + name, None)
+    return "user:" + name
+
+
 def stock_profile(stock: str) -> dict | None:
-    """A per-stock calibration profile ({lut: (3, n), dmin, dmax}), or None when there is none of that name."""
+    """A calibration profile ({lut: (3, n), dmin, dmax}), or None when there is none of that name."""
+    if stock.startswith("user:"):
+        path = os.path.join(user_folder(), os.path.basename(stock[5:]))
+        try:
+            stamp = os.path.getmtime(path)
+        except OSError:
+            return None
+        cached = _PROFILES.get(stock)
+        if cached is None or cached.get("stamp") != stamp:
+            try:
+                with np.load(path, allow_pickle=False) as z:
+                    cached = {**load_calib(path), "stamp": stamp} if _valid_calib(z) else {"lut": None, "stamp": stamp}
+            except (OSError, ValueError, EOFError):
+                cached = {"lut": None, "stamp": stamp}
+            _PROFILES[stock] = cached
+        return cached if cached["lut"] is not None else None
     if stock not in STOCKS:
         return None
     if stock not in _PROFILES:
@@ -318,6 +386,52 @@ def fit_lut(src: np.ndarray, dst: np.ndarray, n: int = 1024) -> np.ndarray:
             continue
         lut[c] = np.interp(np.arange(n), good, xs[good])
     return lut
+
+
+def fit_profile(codes: np.ndarray, target: np.ndarray, settings: "Settings | None" = None, density_scale: float = DENSITY_SCALE) -> dict:
+    """calibrate.py's calibrate: a profile from a negative's density codes (HxWx3) and the positive a lab made from the same frame (HxWx3, 8 or 16 bit, the same picture: it is resized to
+    the scan if it differs in size). The scan's density is normalized to [Dmin, Dmax] as the conversion does, and each colour's table is the mean of the lab's values at each level of that
+    (`fit_lut`). -> {lut: (3, 1024), dmin, dmax}, which `save_profile` keeps and `stock_profile` reads."""
+    import cv2
+
+    plan = plan_from_density(analysis_density(codes, None, density_scale), settings or Settings())
+    k = max(1, int(np.ceil(np.sqrt(codes.shape[0] * codes.shape[1] / ANALYSIS_PIXELS))))
+    positive = normalize(codes[::k, ::k, :3].astype(np.float32) / np.float32(density_scale), plan.dmin, plan.rng)
+    top = 255.0 if target.dtype == np.uint8 else 65535.0
+    aligned = cv2.resize(np.ascontiguousarray(target[..., :3]), (positive.shape[1], positive.shape[0]), interpolation=cv2.INTER_AREA).astype(np.float32) / np.float32(top)
+    return {"lut": fit_lut(positive.reshape(-1, 3), aligned.reshape(-1, 3)), "dmin": plan.dmin, "dmax": plan.dmax}
+
+
+def save_profile(name: str, profile: dict) -> str:
+    """Keep a fitted profile in your folder as `name`.npz; its id."""
+    safe = "".join(ch for ch in name.strip() if ch.isalnum() or ch in " -_.()") or "profile"
+    os.makedirs(user_folder(), exist_ok=True)
+    np.savez(os.path.join(user_folder(), safe + ".npz"), lut=np.asarray(profile["lut"], dtype=np.float32), dmin=np.asarray(profile["dmin"], dtype=np.float32), dmax=np.asarray(profile["dmax"], dtype=np.float32))
+    _PROFILES.pop("user:" + safe + ".npz", None)
+    return "user:" + safe + ".npz"
+
+
+def fit_profile_from_files(scan_path: str, lab_path: str, name: str) -> str:
+    """Fit and keep a profile from a negative scan on disk and the lab's positive of it (what calibrate.py's command line does): the id. An LS-600 dump is cropped and resized to the
+    geometry of the machine's own TIFF first, as noritsu-tool does."""
+    import cv2
+
+    from ..open_image import ls600raw
+    from ..open_image.logic import is_ls600, is_raw, source_encoding
+    from ..open_image.processor import load_image_rgb
+    from . import printengine
+
+    scan = load_image_rgb(scan_path)
+    if is_ls600(scan_path):
+        scan = ls600raw.align_to_machine(scan)
+    encoding = source_encoding(scan_path) or ("bt709" if is_raw(scan_path) else "srgb")
+    codes = printengine.density_codes(scan, printengine.Settings(transfer=encoding, unmix_strength=0.0))
+    lab = cv2.imread(lab_path, cv2.IMREAD_UNCHANGED | cv2.IMREAD_ANYDEPTH | cv2.IMREAD_ANYCOLOR)
+    if lab is None:
+        raise ValueError("the lab's picture could not be read")
+    if lab.ndim == 2:
+        lab = np.repeat(lab[:, :, None], 3, axis=2)
+    return save_profile(name, fit_profile(codes, np.ascontiguousarray(lab[..., :3][..., ::-1])))
 
 
 def apply_calib(positive: np.ndarray, calib: dict) -> np.ndarray:

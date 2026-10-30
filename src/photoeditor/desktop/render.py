@@ -18,7 +18,7 @@ import numpy as np
 from PyQt6.QtCore import QThread, pyqtSignal
 
 from ..features.open_image import camera
-from ..features.open_image.logic import is_raw
+from ..features.open_image.logic import is_raw, source_encoding
 from ..features.color.logic import adjust_saturation, adjust_temperature_tint
 from ..features.contrast.logic import apply_contrast
 from ..features.denoise.logic import apply_chroma_denoise
@@ -523,7 +523,7 @@ class EditParams:
             ai_threshold=float(getattr(s, "ai_threshold", aidust.DEFAULT_THRESHOLD)),
             ai_grow=int(getattr(s, "ai_grow", aidust.DEFAULT_GROW)),
             marks=Marks.from_dict(getattr(s, "marks", None)),
-            metering=Metering.from_dict(getattr(s, "metering", None)).resolved(_source_is_raw(s)),
+            metering=Metering.from_dict(getattr(s, "metering", None)).resolved(_source_is_raw(s), _source_encoding(s)),
             keystone_v=float(getattr(s, "keystone_v", 0.0)),
             keystone_h=float(getattr(s, "keystone_h", 0.0)),
             dust_excluded=tuple((float(p[0]), float(p[1])) for p in getattr(s, "dust_excluded", ())),
@@ -629,8 +629,17 @@ def negpy056_settings(m: Metering, black_and_white: bool) -> "negpy056.Settings"
 
 def noritsu_settings(m: Metering) -> "noritsu.Settings":
     """noritsu-tool's options for a photo's metering (see features/negative/noritsu.py)."""
-    return noritsu.Settings(stock=m.nor_stock, lab=m.nor_lab, real_curve=m.nor_real_curve, contrast=m.nor_contrast, toe=m.nor_toe, gamma=m.nor_gamma, saturation=m.nor_sat, dmin_pct=m.nor_dmin_pct,
+    return noritsu.Settings(stock=m.nor_stock, lab=m.nor_lab, real_curve=m.nor_real_curve, variant=m.nor_variant, contrast=m.nor_contrast, toe=m.nor_toe, gamma=m.nor_gamma, saturation=m.nor_sat, dmin_pct=m.nor_dmin_pct,
                             dmax_pct=m.nor_dmax_pct, use_border=m.nor_border, auto_wb=m.nor_auto_wb)
+
+
+def _source_encoding(s) -> str | None:
+    """How the open file's codes were made from light, when the file says so (said outright by `source_encoding` for a saved state with no path, or by the file itself)."""
+    flag = getattr(s, "source_encoding", None)
+    if flag:
+        return flag
+    path = getattr(s, "image_path", None)
+    return source_encoding(path) if path else None
 
 
 def _source_is_raw(s) -> bool:

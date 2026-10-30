@@ -24,7 +24,7 @@ from ..features.watermark import variables as wm_variables
 from ..features.watermark.marks import Marks
 from ..features.browse.logic import list_images_in_folder
 from ..features.negative.logic import ProcessMode, detect_process_mode
-from ..features.open_image.logic import is_raw
+from ..features.open_image.logic import is_raw, source_encoding
 from ..features.open_image.processor import load_image_rgb, make_preview_rgb, to_uint8
 from ..features.persistence import edit_store
 from ..features.tags.export import embed_keywords
@@ -278,7 +278,7 @@ def _edits_for(path: str, conn, preview, state: dict | None = None) -> tuple:
     if saved.get("lens_corr"):   # a photo with lens corrections on needs its camera, lens, focal length and aperture, from its own EXIF
         extra["lens_shot"] = lens_logic.shot_from_exif(read_exif_from_file(path)).as_tuple()
     params = EditParams.from_dict(
-        {**saved, "roll_camera": roll.camera.strip(), "roll_lens": roll.lens.strip(), "film_base": base, "source_raw": is_raw(path), **extra}
+        {**saved, "roll_camera": roll.camera.strip(), "roll_lens": roll.lens.strip(), "film_base": base, "source_raw": is_raw(path), "source_encoding": source_encoding(path), **extra}
     )
     flatfield = None
     row = edit_store.effective_flatfield(conn, path)

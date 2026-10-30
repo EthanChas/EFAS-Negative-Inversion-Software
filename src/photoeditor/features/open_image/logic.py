@@ -14,6 +14,19 @@ def is_raw(path: str) -> bool:
     return os.path.splitext(path)[1].lower() in RAW_EXTS
 
 
+def is_ls600(path: str) -> bool:
+    """Whether `path` is a Noritsu LS-600 scanner dump (a headerless .raw: features/open_image/ls600raw.py), which RAW decoding cannot read."""
+    from .ls600raw import is_ls600_raw
+
+    return is_ls600_raw(path)
+
+
+def source_encoding(path: str) -> str | None:
+    """How a file's codes were made from light, when the file says so (see Metering.transfer): an LS-600 dump holds the scanner's linear light. None for the rest, which are read by the
+    usual rule (RAW decoded by EFAS: BT.709, anything else: sRGB)."""
+    return "linear" if path and is_ls600(path) else None
+
+
 def is_supported(path: str) -> bool:
     return os.path.splitext(path)[1].lower() in SUPPORTED_EXTS
 
