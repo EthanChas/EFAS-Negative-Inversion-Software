@@ -108,20 +108,26 @@ def test_a_section_slides_shut_and_open(monkeypatch, tmp_path):
     host, body, w = _module()
     sections = fold.fold_sections(body, "demo", {})
     host.show()
-    app.processEvents()
+    app.processEvents(); app.processEvents()
     s = sections[0]
     full = s._body.height()
-    assert full > 10 and s._body.isVisible()
+    assert full > 10 and s._clip.isVisible()
     s.toggle()
     assert s.is_closed(), "the state changes at once, the picture follows"
-    from PyQt6.QtCore import QAbstractAnimation
-    assert s._slide.state() == QAbstractAnimation.State.Running and s._body.isVisible(), "it slides rather than snaps"
+    assert s._slide.running() and s._clip.isVisible(), "it slides rather than snaps"
+    heights, inner = [], []
     deadline = time.time() + 2
-    while s._body.isVisible() and time.time() < deadline:
-        app.processEvents(); time.sleep(0.01)
-    assert not s._body.isVisible() and s._body.maximumHeight() > 10_000
+    while s._clip.isVisible() and time.time() < deadline:
+        app.processEvents(); time.sleep(0.004)
+        heights.append(s._clip.height()); inner.append(s._body.height())
+    assert not s._clip.isVisible() and s._clip.maximumHeight() > 10_000
+    assert heights == sorted(heights, reverse=True) and len(set(heights)) > 3, "the clip closes steadily"
+    assert set(inner) <= {full}, ("the controls inside do not squash while it slides", sorted(set(inner)))
     s.toggle()
+    heights, inner = [], []
     deadline = time.time() + 2
-    while s._body.maximumHeight() < 10_000 and time.time() < deadline:
-        app.processEvents(); time.sleep(0.01)
-    assert s._body.isVisible() and s._body.height() >= full - 2
+    while s._clip.maximumHeight() < 10_000 and time.time() < deadline:
+        app.processEvents(); time.sleep(0.004)
+        heights.append(s._clip.height()); inner.append(s._body.height())
+    assert s._clip.isVisible() and s._body.height() == full, "it ends on the height it began with: no jump at the end"
+    assert heights == sorted(heights) and len(set(heights)) > 3 and set(inner) <= {full}

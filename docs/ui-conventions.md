@@ -10,3 +10,5 @@ NegPy has no design skill file. Its rules are the "UI conventions" section of it
 6. **Hide or gray out.** Hide a single control the mode can never use; gray out a whole group the mode cannot use, with one line saying why.
 7. **Labels** are Title Case for a control and sentence case beside a dropdown; a unit goes beside the number, not in the label; every control has a tooltip.
 8. **Words.** Plain words for a photographer who does not know darkroom terms; one sentence per tooltip where it can be.
+9. **Changed means starred.** A module that is not at its defaults has a red * beside its name and is in the Enabled modules list; at its defaults it has neither (`CollapsiblePanel.set_changed`, `AppWindow._refresh_module_marks`).
+10. **Things that open slide** (`desktop/view/slide.py`): the controls keep their size and a clip moves around them, never a height that squeezes the layout.

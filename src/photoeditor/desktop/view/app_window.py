@@ -574,6 +574,7 @@ class AppWindow(QMainWindow):
         self._wire_retouch()
         self._wire_extra_power()
         self._wire_instances()
+        self._wire_module_marks()
 
         self._filmstrip = Filmstrip()
         self._filmstrip.image_selected.connect(self.controller.open_file)
@@ -4995,6 +4996,31 @@ class AppWindow(QMainWindow):
         self._open_tab = ""
         self._module_search.show_modules(self._module_is_listed)
         self._tool_rail.set_tab_checked("active", True)
+
+    def _wire_module_marks(self) -> None:
+        """The red star beside a module whose settings are not its defaults, and the Enabled list kept the same as the stars: a module put back to its defaults leaves it at once."""
+        c = self.controller
+        self._marks_timer = QTimer(self)
+        self._marks_timer.setSingleShot(True)
+        self._marks_timer.setInterval(60)      # (a slider sends a change at every tick: look once it has paused)
+        self._marks_timer.timeout.connect(self._refresh_module_marks)
+        for signal in (c.module_presets_changed, c.modules_enabled_changed, c.history_changed, c.image_adjusted, c.image_preview_changed, c.reverted, c.file_changed, c.instances_changed):
+            signal.connect(lambda *_a: self._marks_timer.start())
+
+    def _refresh_module_marks(self) -> None:
+        c = self.controller
+        panels = {**self._module_menus._panels, **getattr(self, "_extra_panels", {}), **getattr(self, "_instance_panels", {})}
+        active = {}
+        for key, panel in panels.items():
+            active[id(panel)] = on = c.module_is_active(key)
+            panel.set_changed(on)
+        if not self._active_tab_open or self._module_search_edit.text():
+            return
+        if QApplication.mouseButtons() != Qt.MouseButton.NoButton:      # a slider is under the hand: the list changes once it lets go
+            self._marks_timer.start()
+            return
+        if {id(m[0]) for m in self._module_search._moved} != {i for i, on in active.items() if on}:
+            self._module_search.show_modules(lambda panel: active.get(id(panel), False))
 
     def _module_is_listed(self, panel) -> bool:
         keys = getattr(self, "_panel_keys", None)

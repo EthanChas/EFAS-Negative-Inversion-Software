@@ -1,4 +1,4 @@
-from PyQt6.QtCore import QEasingCurve, QPointF, QPropertyAnimation, QRectF, Qt, QTimer, pyqtSignal
+from PyQt6.QtCore import QEasingCurve, QPointF, QRectF, Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QAction, QActionGroup, QColor, QLinearGradient, QPainter, QPaintEvent, QPen
 from PyQt6.QtWidgets import (
     QAbstractSpinBox, QApplication, QHBoxLayout, QLabel, QLineEdit, QMenu, QMessageBox, QPlainTextEdit, QPushButton, QTextEdit, QVBoxLayout, QWidget,
@@ -9,8 +9,9 @@ from . import module_origin
 from .bevel_widgets import BevelPanel, CaptionButton
 from . import panel_icons
 from .module_style import AUTOMATIC, NAMED, PLAIN, STYLE
+from .slide import Slide
 
-_NO_MAX = 16777215
+CHANGED_RED = "#e5484d"      # the star beside a module whose settings are not its defaults
 HOVER_OPEN_MS = 220
 HOVER_CLOSE_MS = 400
 
@@ -106,6 +107,13 @@ class _CollapsibleHeader(QWidget):
         label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
         self._title_label = label
         row.addWidget(label, 0, Qt.AlignmentFlag.AlignVCenter)
+
+        self.changed_star = QLabel("*")      # a red star beside the name while something in the module is not at its default
+        self.changed_star.setStyleSheet(f"color: {CHANGED_RED}; font-weight: bold; font-size: {THEME.font_size_header + 3}pt;")
+        self.changed_star.setToolTip("Something in this module has been changed from its defaults")
+        self.changed_star.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        self.changed_star.hide()
+        row.addWidget(self.changed_star, 0, Qt.AlignmentFlag.AlignTop)
 
         self.preset_label = QLabel("")
         self.preset_label.setStyleSheet(f"color: {THEME.text_muted}; font-size: {THEME.font_size_small}pt;")
@@ -250,19 +258,20 @@ class CollapsiblePanel(BevelPanel):
         self._header.help_button.clicked.connect(self._show_help)
         self.layout().addWidget(self._header)
 
-        self._body_container = QWidget()
-        self._body_layout = QVBoxLayout(self._body_container)
+        self._body_container = QWidget()      # what slides (its height is what opens and shuts); the controls keep their full size inside it
+        clip_layout = QVBoxLayout(self._body_container)
+        clip_layout.setContentsMargins(0, 0, 0, 0)
+        self._content = QWidget()
+        self._body_layout = QVBoxLayout(self._content)
         self._body_layout.setContentsMargins(
             THEME.space_sm, THEME.space_sm, THEME.space_sm, THEME.space_sm
         )
+        clip_layout.addWidget(self._content)
         self.layout().addWidget(self._body_container)
         if collapsible and not start_expanded:
             self._body_container.setMaximumHeight(0)
 
-        self._animation = QPropertyAnimation(self._body_container, b"maximumHeight", self)
-        self._animation.setDuration(180)
-        self._animation.setEasingCurve(QEasingCurve.Type.InOutQuad)
-        self._animation.finished.connect(self._on_animation_finished)
+        self._slide = Slide(self, self._body_container, self._content, 180, QEasingCurve.Type.InOutQuad, hide_when_closed=False, opened=start_expanded or not collapsible)
 
         # opening on hover (a General setting): `pinned` panels were opened by a click and stay; the others close when the mouse leaves
         self._pinned = False
@@ -300,6 +309,13 @@ class CollapsiblePanel(BevelPanel):
     def set_display_title(self, text: str) -> None:
         """The name shown in the header (a copy of a module is shown with its number and name); the module's own title still picks its icon and colour."""
         self._header._title_label.setText(module_origin.with_origin(text, self._title))
+
+    def set_changed(self, changed: bool) -> None:
+        """Show (or take away) the red star beside the module's name: its settings are not the ones it starts with."""
+        self._header.changed_star.setVisible(bool(changed))
+
+    def is_changed(self) -> bool:
+        return not self._header.changed_star.isHidden()
 
     def enable_instance_button(self, tooltip: str | None = None) -> CaptionButton:
         """Show the multiple-instances button (two overlapping squares) in the header."""
@@ -418,28 +434,19 @@ class CollapsiblePanel(BevelPanel):
         self._expanded = expanded
         self._header.arrow_button.set_expanded(expanded)
 
-        target = self._body_container.sizeHint().height() if expanded else 0
-        self._animation.stop()
-        self._animation.setStartValue(self._body_container.height())
-        self._animation.setEndValue(target)
-        self._animation.start()
+        self._slide.go(expanded)
         self.toggled.emit(expanded)
 
     def collapse_now(self) -> bool:
         """Close the module at once, without the slide - for a module nobody can see (its tab was just left). Returns whether it was open."""
         if not self._collapsible or not self._expanded:
             return False
-        self._animation.stop()
         self._expanded = False
         self._pinned = False
         self._header.arrow_button.set_expanded(False)
-        self._body_container.setMaximumHeight(0)
+        self._slide.snap(False)
         self.toggled.emit(False)
         return True
-
-    def _on_animation_finished(self) -> None:
-        if self._expanded:
-            self._body_container.setMaximumHeight(_NO_MAX)
 
     def _show_help(self) -> None:
         if self._help_text:
