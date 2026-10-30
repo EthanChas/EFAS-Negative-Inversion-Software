@@ -81,3 +81,9 @@ _colour("dropdown_field_edge", _G, "the faint edge of the field set into the fra
 _number("dropdown_field_radius", _G, "the rounding of the field", 4, 0, 20, "px")
 _colour("dropdown_arrow_bg", _G, "the little buttons either side of a dropdown", lambda t: t.bg_button)
 _colour("dropdown_arrow_hover_border", _G, "their outline under the pointer", lambda t: t.accent_primary)
+
+# ---------------------------------------------------------------- icons
+_G = "Icons"
+_add("icon_color_mode", "choice", _G, "normal: each icon keeps the colour the program gives it; all: every icon is drawn in the icon colour below", "normal", choices=("normal", "all"))
+_colour("icon_color", _G, "the colour of every icon when the mode above is all (a theme's own icon files are drawn in it too, where they use currentColor)", lambda t: t.text_secondary)
+_number("icon_size_percent", _G, "how large the icons are drawn, as a percentage of the program's size for them", 100, 60, 200, "%")

@@ -102,12 +102,13 @@ class FoldSection(QWidget):
         self._chevron.setToolTip("Fold or open this section")
         self._chevron.clicked.connect(self.toggle)
         head.addWidget(self._chevron)
-        icon_name = SECTION_ICONS.get(title.text().strip().lower())
-        if icon_name:
-            icon = QLabel()
-            icon.setPixmap(panel_icons.pixmap(icon_name, 14, THEME.text_secondary))
-            icon.setFixedWidth(18)
-            head.addWidget(icon)
+        self._icon_name = SECTION_ICONS.get(title.text().strip().lower())
+        self._icon_label = None
+        if self._icon_name:
+            self._icon_label = QLabel()
+            self._icon_label.setPixmap(panel_icons.pixmap(self._icon_name, 14, THEME.text_secondary))
+            self._icon_label.setFixedWidth(18)
+            head.addWidget(self._icon_label)
         head.addWidget(title, 1)
         for item in extras:
             if item.widget() is not None:
@@ -144,6 +145,8 @@ class FoldSection(QWidget):
     def apply_theme(self) -> None:
         """A theme was put in force: the title band and the rail take its values."""
         self._restyle_head()
+        if self._icon_label is not None:
+            self._icon_label.setPixmap(panel_icons.pixmap(self._icon_name, 14, THEME.text_secondary))
         self._body.update()
 
     def eventFilter(self, obj, event):

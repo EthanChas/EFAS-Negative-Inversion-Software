@@ -10,6 +10,7 @@ from PyQt6.QtCore import QByteArray, Qt
 from PyQt6.QtGui import QGuiApplication, QImage, QPainter, QPixmap
 from PyQt6.QtSvg import QSvgRenderer
 
+from ...theme import runtime
 from ...theme.tokens import THEME
 
 ICON_DIR = Path(__file__).resolve().parents[2] / "assets" / "icon"
@@ -41,16 +42,36 @@ def _ratio() -> float:
     return max(1.0, min(3.0, screen.devicePixelRatio())) if screen is not None else 1.0
 
 
+def _theme_file(name: str) -> Path | None:
+    """The theme's own picture for this icon (an .svg, else a .png, named like the program's icon in the theme's icons folder), if it has one."""
+    folder = THEME.icons_dir
+    if not folder:
+        return None
+    for extension in (".svg", ".png"):
+        path = Path(folder) / f"{name}{extension}"
+        if path.is_file():
+            return path
+    return None
+
+
 def _render(name: str, size: int, colour: str, ratio: float) -> QImage:
     image = QImage()
+    own = _theme_file(name)
+    side = round(size * ratio * THEME.get("icon_size_percent") / 100)
+    if own is not None and own.suffix == ".png":
+        picture = QImage(str(own))
+        if picture.isNull():
+            return image
+        picture = picture.scaled(side, side, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
+        picture.setDevicePixelRatio(ratio)
+        return picture
     try:
-        data = (ICON_DIR / f"{name}.svg").read_text(encoding="utf-8").replace("currentColor", colour)
+        data = (own or ICON_DIR / f"{name}.svg").read_text(encoding="utf-8").replace("currentColor", colour)
     except OSError:
         return image
     renderer = QSvgRenderer(QByteArray(data.encode("utf-8")))
     if not renderer.isValid():
         return image
-    side = round(size * ratio)
     image = QImage(side, side, QImage.Format.Format_ARGB32_Premultiplied)
     image.fill(Qt.GlobalColor.transparent)
     painter = QPainter(image)
@@ -64,13 +85,21 @@ def pixmap(name: str | None, size: int = 16, colour: str | None = None) -> QPixm
     """The icon `name` as a pixmap `size` points square in `colour` (the theme's secondary text colour when None); a null pixmap when there is no such file."""
     if not name:
         return QPixmap()
-    colour = colour or THEME.text_secondary
+    colour = THEME.get("icon_color") if THEME.get("icon_color_mode") == "all" else (colour or THEME.text_secondary)
     ratio = _ratio()
-    key = (name, size, colour, ratio)
+    key = (name, size, colour, ratio, THEME.icons_dir, THEME.get("icon_size_percent"))
     if key not in _cache:
         _cache[key] = _render(name, size, colour, ratio)
     image = _cache[key]
     return QPixmap() if image.isNull() else QPixmap.fromImage(image)
+
+
+def refresh() -> None:
+    """A theme was put in force: icons are made again (its own pictures, its colour)."""
+    _cache.clear()
+
+
+runtime.HOOKS.append(refresh)
 
 
 def for_title(title: str, size: int = 16, colour: str | None = None) -> QPixmap:

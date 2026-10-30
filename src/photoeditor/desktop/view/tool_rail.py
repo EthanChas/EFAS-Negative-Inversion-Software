@@ -3,6 +3,7 @@ from PyQt6.QtGui import QIcon, QPixmap
 from PyQt6.QtWidgets import QSizePolicy, QToolButton, QVBoxLayout, QWidget
 
 from ...theme.tokens import THEME
+from . import panel_icons
 from .bevel_widgets import thin_sunken_panel
 
 _COLLAPSED_WIDTH = 44
@@ -62,6 +63,13 @@ class ToolRail(QWidget):
         frame.layout().addWidget(button)
         self._frames[tab_id] = frame
         self._layout.insertWidget(self._layout.count() - 1, frame)
+
+    def apply_theme(self) -> None:
+        """A theme was put in force: each tab's icon is made again (a theme can bring its own)."""
+        for tab_id, button in self._buttons.items():
+            pixmap = panel_icons.for_tab(tab_id, 18, THEME.text_primary)
+            if not pixmap.isNull():
+                button.setIcon(QIcon(pixmap))
 
     def set_tab_visible(self, tab_id: str, visible: bool) -> None:
         """Show or hide a tab's button (the Plugins tab is only there while a plugin has put something in it)."""

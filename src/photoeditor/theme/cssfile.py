@@ -44,7 +44,7 @@ _ROOT = re.compile(r":root\s*\{([^}]*)\}", re.S | re.I)
 _DECL = re.compile(r"--([A-Za-z0-9_-]+)\s*:\s*([^;]*?)\s*(?:;|$)", re.M)
 _VAR = re.compile(r"var\(\s*--([A-Za-z0-9_-]+)\s*(?:,\s*([^)]*?))?\s*\)")
 _HEX = re.compile(r"^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$")
-_NUM = re.compile(r"^(\d+)\s*(?:px|pt|ms)?$")
+_NUM = re.compile(r"^(\d+)\s*(?:px|pt|ms|%)?$")
 
 
 def _field(key: str) -> str:

@@ -158,3 +158,36 @@ def test_the_widgets_read_the_elements(in_force):
     section.apply_theme()
     assert "#abcdef" in section._head.styleSheet()
     app.processEvents()
+
+
+def test_a_theme_can_replace_icons_recolour_them_all_and_resize_them(tmp_path, in_force):
+    from PyQt6.QtGui import QColor, QImage
+    from PyQt6.QtWidgets import QApplication
+
+    from photoeditor.desktop.view import panel_icons
+
+    app = QApplication.instance() or QApplication([])
+    icons = tmp_path / "icons"
+    icons.mkdir()
+    (icons / "sun.svg").write_text('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><rect width="24" height="24" fill="currentColor"/></svg>', encoding="utf-8")
+    QImage(8, 8, QImage.Format.Format_ARGB32).save(str(icons / "film.png"))
+    middle = lambda pm: QColor(pm.toImage().pixel(pm.toImage().width() // 2, pm.toImage().height() // 2)).name()
+
+    plain = panel_icons.pixmap("sun", 16, "#112233")
+    in_force(dataclasses.replace(tokens.THEME, icons_dir=""))
+    panel_icons.refresh()
+    assert middle(panel_icons.pixmap("sun", 16, "#112233")) != "#112233", "the program's own sun is a line drawing, not a filled square"
+    in_force(dataclasses.replace(tokens.THEME, icons_dir=str(icons)))
+    panel_icons.refresh()
+    assert middle(panel_icons.pixmap("sun", 16, "#112233")) == "#112233", "the theme's own sun is used, in the colour the program asks for"
+    assert not panel_icons.pixmap("film", 16).isNull(), "a png will do for an icon"
+    assert panel_icons.pixmap("crop", 16).width() > 0, "icons the theme does not replace are the program's"
+    spec, errors, _w = cssfile.parse(":root { --icon-color-mode: all; --icon-color: #ff0000; --icon-size-percent: 150%; }")
+    assert errors == []
+    in_force(dataclasses.replace(themes.build(spec), icons_dir=str(icons)))
+    panel_icons.refresh()
+    big = panel_icons.pixmap("sun", 16, "#112233")
+    assert middle(big) == "#ff0000", "every icon in the icon colour"
+    assert abs(big.width() / big.devicePixelRatio() - 24) < 1.01, "drawn at 150 percent"
+    app.processEvents()
+    del plain

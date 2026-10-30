@@ -15,6 +15,8 @@ from .tokens import ACCENTS, CLASSIC, MODERN, THEME, ThemeConfig
 
 BUSY = False  # True while a theme is being put in force: the program's own event filters stand aside (they would only slow it down)
 
+HOOKS: list = []  # functions called when a theme is put in force, before the widgets are told (the icon cache registers one)
+
 ICON_DIR_NAME = "theme-icons"
 _ICON_SIZE = 18
 
@@ -165,6 +167,8 @@ def apply(app: QApplication | None = None, values: dict | None = None) -> ThemeC
     if theme.style == MODERN:
         theme = dataclasses.replace(theme, icon_dir=icon_folder(theme))
     before = tokens.use(theme)
+    for hook in HOOKS:
+        hook()
     app = app or QApplication.instance()
     if app is None:
         return THEME
