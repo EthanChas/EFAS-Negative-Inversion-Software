@@ -4,11 +4,12 @@ which are closed is remembered between sessions."""
 
 from PyQt6.QtCore import QEasingCurve, QEvent, QObject, Qt, QTimer, QVariantAnimation, pyqtSignal
 from PyQt6.QtGui import QColor, QPainter
-from PyQt6.QtWidgets import QHBoxLayout, QLabel, QLayout, QLayoutItem, QToolButton, QVBoxLayout, QWidget
+from PyQt6.QtWidgets import QHBoxLayout, QLabel, QLayout, QLayoutItem, QSizePolicy, QToolButton, QVBoxLayout, QWidget
 
 from ...features.settings import logic as app_settings
 from ...theme.tokens import THEME
 from . import panel_icons
+from .module_style import STYLE
 from .dividers import ROLE as DIVIDER_ROLE
 
 
@@ -87,8 +88,14 @@ class FoldSection(QWidget):
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
         outer.setSpacing(0)
-        head = QHBoxLayout()
-        head.setContentsMargins(0, 2, 0, 2)
+        self._head = QWidget()      # the title bar: a darker rounded band behind the chevron, the icon and the title
+        self._head.setObjectName("foldhead")
+        self._head.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        head = QHBoxLayout(self._head)
+        head.setContentsMargins(4, 3, 6, 3)
+        self._head.setFixedHeight(28)
+        self._restyle_head()
+        STYLE.changed.connect(self._restyle_head)
         self._chevron = QToolButton()
         self._chevron.setAutoRaise(True)
         self._chevron.setFocusPolicy(Qt.FocusPolicy.NoFocus)
@@ -107,7 +114,8 @@ class FoldSection(QWidget):
                 head.addWidget(item.widget())
             elif item.layout() is not None:
                 head.addLayout(item.layout())
-        outer.addLayout(head)
+        outer.addWidget(self._head)
+        outer.addSpacing(3)
         self._body = _Body()
         self._layout = QVBoxLayout(self._body)
         self._layout.setContentsMargins(12, 3, 0, 3)
@@ -118,10 +126,15 @@ class FoldSection(QWidget):
         self._slide.setEasingCurve(QEasingCurve.Type.OutCubic)
         self._slide.valueChanged.connect(lambda h: self._body.setMaximumHeight(int(h)))
         self._slide.finished.connect(self._slide_done)
+        self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
         self._watch = _Watch(self)
         title.installEventFilter(self)
         title.setCursor(Qt.CursorShape.PointingHandCursor)
         self._apply()
+
+    def _restyle_head(self) -> None:
+        self._head.setStyleSheet(f"#foldhead {{ background: {THEME.bg_input}; border: 1px solid {THEME.border_color}; border-radius: 6px; }}"
+                                 f"#foldhead:hover {{ border-color: {THEME.text_muted}; }}")
 
     def eventFilter(self, obj, event):
         if obj is self._title and event.type() == QEvent.Type.MouseButtonRelease and event.button() == Qt.MouseButton.LeftButton:
