@@ -600,7 +600,8 @@ MIN_SAMPLED_BASE = 0.05      # the least density a film base can read as, for th
 
 def film_curve_wanted(m: Metering) -> bool:
     """Whether the conversion straightens the scan's density through a film profile first: Original and the Noritsu look can (see features/negative/filmcurve.py)."""
-    return bool(m.film_profile) and m.engine in ("standard", "print", "noritsu") and filmcurve.profile_models(m.film_profile) is not None
+    profile = m.film_profile_in_use()
+    return bool(profile) and m.engine in ("standard", "print", "noritsu") and filmcurve.profile_models(profile) is not None
 
 
 def density_settings(m: Metering) -> "printengine.Settings":
@@ -806,7 +807,7 @@ class Renderer:
             return None
         sampled = base_density is not None and float(np.max(base_density)) >= MIN_SAMPLED_BASE   # (a sample that reads as clear light was clipped by the picture's own white: it says nothing)
         base = np.asarray(base_density, dtype=np.float32) if sampled else printengine.estimate_base(density)
-        return filmcurve.build(filmcurve.profile_models(m.film_profile), base, sampled, m.film_profile)
+        return filmcurve.build(filmcurve.profile_models(m.film_profile_in_use()), base, sampled, m.film_profile_in_use())
 
     def _shaped(self, codes: np.ndarray, m: Metering) -> np.ndarray:
         """The density image with the contrast mask and a print stock's dye colour worked in (printengine.shape_codes), from the numbers the last metering gave; as it was with neither on."""
@@ -832,7 +833,7 @@ class Renderer:
 
     def _get_invert_lut(self, pixels, params: EditParams, rect, token):
         key = (token, pixels.dtype.str, params.film_type == "bw", params.rotation_quarter_turns, params.flip_h, params.flip_v, params.crop_rect, params.film_base, params.metering,
-               filmcurve.profile_stamp(params.metering.film_profile) if params.metering.film_profile else None)
+               filmcurve.profile_stamp(params.metering.film_profile_in_use()) if params.metering.film_profile_in_use() else None)
         if self._invert_lut is None or self._invert_key != key:
             base = params.film_base
             if base is not None and params.film_type == "bw":

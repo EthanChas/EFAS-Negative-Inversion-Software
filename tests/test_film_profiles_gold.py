@@ -131,6 +131,16 @@ _SCRIPT = textwrap.dedent(r"""
     before = c.state.image_rgb.copy()
     c.set_metering(Metering(engine="noritsu", nor_real_curve=True, nor_variant="film:" + gold)); pump(1.5); panel.set_metering(c.state.metering)
     assert panel._nor_variant.currentData() == "film:" + gold and not np.array_equal(before, c.state.image_rgb)
+    # the Noritsu Stock list offers every film, a black-and-white one too, and a film stock puts that film's curve back without replacing the sliders
+    foma = "film:foma-fomapan-100-microphen-7min"
+    assert panel._nor_stock.findData(foma) >= 0 and panel._nor_stock.findData("film:" + gold) >= 0 and panel._nor_variant.findData(foma) >= 0
+    before = c.state.image_rgb.copy()
+    c.set_metering(Metering(engine="noritsu", nor_stock="film:" + gold)); pump(1.5); panel.set_metering(c.state.metering)
+    assert panel._nor_stock.currentData() == "film:" + gold and not np.array_equal(before, c.state.image_rgb), "a film stock changes the picture"
+    assert panel._nor_rows["nor_contrast"].isEnabled(), "a film stock leaves the tone sliders working"
+    # long film names do not widen the panel (they were clipping the sliders on the right)
+    for combo in (panel._nor_stock, panel._nor_variant, panel._nor_look):
+        assert combo.sizeHint().width() < 260, (combo.sizeHint().width(), combo.currentText())
     print("OK film profiles")
 """)
 

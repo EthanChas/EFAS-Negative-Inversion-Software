@@ -85,6 +85,12 @@ class Metering:
     bw_filter: str = ""              # a B&W print from a colour negative through a contrast filter (printengine.BW_FILTERS; "" for a colour print)
     meter_frame: bool = False        # print engine: with no crop, meter the picture inside the film frame, not the holder round it
 
+    def film_profile_in_use(self) -> str:
+        """The film profile whose curve the conversion puts back: the Curve menu's, or (the Noritsu look) a "Film: ..." Stock, which is that film's curve with the Noritsu look's own tone."""
+        if self.film_profile:
+            return self.film_profile
+        return self.nor_stock[5:] if self.engine == "noritsu" and self.nor_stock.startswith("film:") else ""
+
     def is_default(self) -> bool:
         return self == Metering()
 
@@ -140,7 +146,7 @@ class Metering:
             grade=_num(data.get("grade"), -0.5, 0.5, 0.0), density=_num(data.get("density"), -1.0, 1.0, 0.0),
             paper_toe=_num(data.get("paper_toe"), -1.0, 1.0, 0.0), paper_shoulder=_num(data.get("paper_shoulder"), -1.0, 1.0, 0.0),
             grade_trim=tuple(max(-0.3, min(0.3, v)) for v in _triple(data.get("grade_trim"))),
-            nor_stock=data["nor_stock"] if (data.get("nor_stock") in ("portra160", "portra400", "superia800") or (isinstance(data.get("nor_stock"), str) and data["nor_stock"].startswith("user:") and len(data["nor_stock"]) <= 120)) else "",
+            nor_stock=data["nor_stock"] if (data.get("nor_stock") in ("portra160", "portra400", "superia800") or (isinstance(data.get("nor_stock"), str) and data["nor_stock"].startswith(("user:", "film:")) and 5 < len(data["nor_stock"]) <= 130)) else "",
             nor_variant=data["nor_variant"] if (data.get("nor_variant") in NOR_VARIANTS or (isinstance(data.get("nor_variant"), str) and data["nor_variant"].startswith("film:") and 5 < len(data["nor_variant"]) <= 130)) else "00000005", nor_lab=data.get("nor_lab") is True, nor_real_curve=data.get("nor_real_curve") is True,
             nor_contrast=_num(data.get("nor_contrast"), 0.5, 2.0, 1.05), nor_toe=_num(data.get("nor_toe"), 0.0, 0.2, 0.02), nor_gamma=_num(data.get("nor_gamma"), 0.4, 1.6, 0.98),
             nor_sat=_num(data.get("nor_sat"), 0.0, 2.0, 1.0), nor_dmin_pct=_num(data.get("nor_dmin_pct"), 0.0, 10.0, 0.5), nor_dmax_pct=_num(data.get("nor_dmax_pct"), 90.0, 100.0, 99.8),

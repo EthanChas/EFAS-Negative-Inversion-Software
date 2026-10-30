@@ -528,10 +528,12 @@ class NegativeToolPanel(CollapsiblePanel):
         # a black-and-white film's profile is offered for a black-and-white negative only (and stays in the list while a photo is using it)
         usable = [r for r in profiles if r["usable"] and (status.get("bw", True) or not r.get("bw_only") or r["id"] == status.get("profile_id"))]
         self._profile_choices = [(f"{preset_tree.display(r['name'])} ({r['film']})", r["id"]) for r in usable]
+        self._film_choices = [(preset_tree.display(r["name"]), r["id"]) for r in profiles if r["usable"]]      # (every film for the Noritsu Stock and tone-curve menus: a black-and-white film's curve too)
         if hasattr(self, "_film_profile"):
             self._fill_film_profiles()
         if hasattr(self, "_nor_variant"):
             self._fill_nor_variants()
+            self._fill_nor_stocks()
         self._engine_profile.clear()
         for r in usable:
             self._engine_profile.addItem(f"{preset_tree.display(r['name'])} ({r['film']})", r["id"])
@@ -692,7 +694,7 @@ class NegativeToolPanel(CollapsiblePanel):
         for w in (self._curve_label, self._film_profile):
             w.setVisible(with_curve)
         for w in (self._encoding_label, self._encoding):     # (a film curve, or a B&W print through a filter, needs the scan turned back into density correctly, so its encoding matters to Original and the Noritsu look too)
-            w.setVisible(modern or old or (with_curve and bool(self._film_profile.currentData() or self._bw_filter.currentData())))
+            w.setVisible(modern or old or (with_curve and bool(self._film_profile.currentData() or self._bw_filter.currentData() or (self._nor_stock.currentData() or "").startswith(noritsu_logic.FILM_PREFIX))))
         for w in (self._print_rows["grade"], self._print_rows["density"], self._print_rows["paper_toe"], self._print_rows["paper_shoulder"]):
             w.setVisible(modern or old)
         for w in (self._range, self._wb_title, self._channel_label, self._white, self._black, self._channel, *self._droppers.values()):
@@ -747,6 +749,8 @@ class NegativeToolPanel(CollapsiblePanel):
         stock_label.setFixedWidth(80)
         stock_layout.addWidget(stock_label)
         self._nor_stock = QComboBox()
+        self._nor_stock.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
+        self._nor_stock.setMinimumContentsLength(10)
         self._fill_nor_stocks()
         self._nor_stock.setToolTip("A per-stock profile fitted to real LS-600 scans of that film. It replaces the automatic white balance and the tone curve, so Contrast, Toe, Gamma and the real-curve choice do nothing while one is on.")
         self._nor_stock.currentIndexChanged.connect(self._on_metering_slider)
@@ -772,6 +776,8 @@ class NegativeToolPanel(CollapsiblePanel):
         self._nor_real_curve = QCheckBox("Real LS-600 tone curve")
         self._nor_real_curve.setToolTip("The LS-600's own 20-point tone curve instead of the synthetic S-curve (noritsu-tool's --real-curve). Lab mode uses it too.")
         self._nor_variant = QComboBox()
+        self._nor_variant.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
+        self._nor_variant.setMinimumContentsLength(10)
         self._fill_nor_variants()
         self._nor_variant.setToolTip("Which tone curve the real tone curve is: one of the LS-600's image-quality variants (the curves that really differ: the standard one, IQ 2, and a linear one that does nothing), "
                                      "or a film's own characteristic curve (Fomapan 100, Kodak Gold 200...: its toe, straight section and shoulder, each colour by its own curve).")
@@ -805,6 +811,8 @@ class NegativeToolPanel(CollapsiblePanel):
         suggest_layout = QHBoxLayout(suggest_row)
         suggest_layout.setContentsMargins(0, 0, 0, 0)
         self._nor_look = QComboBox()
+        self._nor_look.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
+        self._nor_look.setMinimumContentsLength(10)
         for look, preset in noritsu_logic.LOOK_PRESETS.items():
             self._nor_look.addItem(preset["label"], look)
         suggest_layout.addWidget(self._nor_look, 1)
@@ -828,7 +836,7 @@ class NegativeToolPanel(CollapsiblePanel):
         self._nor_variant.clear()
         for variant, name in noritsu_logic.VARIANTS.items():
             self._nor_variant.addItem(name, variant)
-        for label, ident in getattr(self, "_profile_choices", []):
+        for label, ident in getattr(self, "_film_choices", []):
             self._nor_variant.addItem(f"Film: {label}", noritsu_logic.FILM_PREFIX + ident)
         for keep in (wanted, current):
             if keep and self._nor_variant.findData(keep) < 0:
@@ -844,6 +852,8 @@ class NegativeToolPanel(CollapsiblePanel):
         self._nor_stock.addItem("None (use the sliders)", "")
         for stock, name in noritsu_logic.stocks().items():
             self._nor_stock.addItem(name if not stock.startswith("user:") else f"{name} (yours)", stock)
+        for label, ident in getattr(self, "_film_choices", []):
+            self._nor_stock.addItem(f"Film: {label}", noritsu_logic.FILM_PREFIX + ident)
         self._nor_stock.setCurrentIndex(max(0, self._nor_stock.findData(current)))
         self._nor_stock.blockSignals(was_blocked)
 
@@ -881,11 +891,13 @@ class NegativeToolPanel(CollapsiblePanel):
 
     def _real_curve_rows_enabled(self) -> None:
         """A stock profile or the real curve replaces the synthetic S-curve: its Contrast, Toe and Gamma do nothing then."""
-        synthetic = not (self._nor_stock.currentData() or self._nor_real_curve.isChecked() or self._nor_lab.isChecked())
+        stock = self._nor_stock.currentData() or ""
+        calibrated = bool(stock) and not stock.startswith(noritsu_logic.FILM_PREFIX)
+        synthetic = not (calibrated or self._nor_real_curve.isChecked() or self._nor_lab.isChecked())
         for key in ("nor_contrast", "nor_toe", "nor_gamma"):
             self._nor_rows[key].setEnabled(synthetic)
         self._nor_rows["nor_sat"].setEnabled(not self._nor_lab.isChecked())
-        self._nor_variant.setEnabled(not self._nor_stock.currentData() and (self._nor_real_curve.isChecked() or self._nor_lab.isChecked()))
+        self._nor_variant.setEnabled(not calibrated and (self._nor_real_curve.isChecked() or self._nor_lab.isChecked()))
 
     def show_noritsu_suggestion(self, params: dict | None) -> None:
         """Set the sliders to noritsu-tool's suggestion for this scan (None: nothing has been read yet)."""
