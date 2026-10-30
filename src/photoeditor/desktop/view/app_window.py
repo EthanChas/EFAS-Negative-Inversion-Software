@@ -5004,12 +5004,18 @@ class AppWindow(QMainWindow):
         self._marks_timer.setSingleShot(True)
         self._marks_timer.setInterval(60)      # (a slider sends a change at every tick: look once it has paused)
         self._marks_timer.timeout.connect(self._refresh_module_marks)
-        for signal in (c.module_presets_changed, c.modules_enabled_changed, c.history_changed, c.image_adjusted, c.image_preview_changed, c.reverted, c.file_changed, c.instances_changed):
+        for signal in (c.module_presets_changed, c.modules_enabled_changed, c.history_changed, c.image_adjusted, c.image_preview_changed, c.reverted, c.file_changed, c.instances_changed,
+                       c.flatfield_changed, c.ai_dust_status, c.lens_changed):
             signal.connect(lambda *_a: self._marks_timer.start())
+
+    def _all_module_panels(self) -> dict:
+        """Every module panel by its key: those with Reset and Presets, the ones with a power light, the copies, and the three (Crop & Rotate, AI Dust Detection, Flat Field) that have neither."""
+        plain = {"crop": self._crop_tool, "aidust": self._ai_dust_tool, "flatfield": self._flatfield_tool}
+        return {**self._module_menus._panels, **getattr(self, "_extra_panels", {}), **plain, **getattr(self, "_instance_panels", {})}
 
     def _refresh_module_marks(self) -> None:
         c = self.controller
-        panels = {**self._module_menus._panels, **getattr(self, "_extra_panels", {}), **getattr(self, "_instance_panels", {})}
+        panels = self._all_module_panels()
         active = {}
         for key, panel in panels.items():
             active[id(panel)] = on = c.module_is_active(key)
@@ -5025,7 +5031,7 @@ class AppWindow(QMainWindow):
     def _module_is_listed(self, panel) -> bool:
         keys = getattr(self, "_panel_keys", None)
         if keys is None:
-            keys = self._panel_keys = {id(p): k for k, p in {**self._module_menus._panels, **getattr(self, "_extra_panels", {}), **getattr(self, "_instance_panels", {})}.items()}
+            keys = self._panel_keys = {id(p): k for k, p in self._all_module_panels().items()}
         key = keys.get(id(panel))
         return key is not None and self.controller.module_is_active(key)
 

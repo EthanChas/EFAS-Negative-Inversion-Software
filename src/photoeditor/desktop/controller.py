@@ -3887,6 +3887,12 @@ class AppController(QObject):
             return bool(s.error_marks)
         if key == "negative":
             return bool(s.negative_inverted)
+        if key == "crop":
+            return bool(s.crop_rect is not None or s.rotation_quarter_turns or s.flip_h or s.flip_v or s.fine_rotation or s.distortion or s.keystone_v or s.keystone_h or s.lens_corr)
+        if key == "aidust":
+            return bool(s.ai_dust)
+        if key == "flatfield":
+            return self._ff is not None
         if key not in PANEL_MODULES:
             return False
         values, defaults = self.module_values(key) or {}, panel_defaults(key)

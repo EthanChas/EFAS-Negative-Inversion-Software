@@ -35,6 +35,19 @@ _SCRIPT = textwrap.dedent(r"""
     assert "Exposure" not in win._module_search.result_titles(), win._module_search.result_titles()
     c.set_exposure_ev(-0.4); pump(0.8)
     assert ex.is_changed() and "Exposure" in win._module_search.result_titles(), "changed again: it is back in the list"
+    crop = win._crop_tool
+    assert not crop.is_changed()
+    c.set_crop_rect((50, 40, 400, 300)); pump(0.8)
+    assert crop.is_changed() and "Crop & Rotate" in win._module_search.result_titles(), "a crop gives Crop & Rotate its star and a place in the list"
+    c.reset_geometry(); pump(0.8)
+    assert not crop.is_changed() and "Crop & Rotate" not in win._module_search.result_titles()
+    c.set_fine_rotation(1.5); pump(0.8)
+    assert crop.is_changed(), "straightening is Crop & Rotate's too"
+    c.reset_geometry(); pump(0.5)
+    ai = win._ai_dust_tool
+    assert not ai.is_changed()
+    c.set_ai_dust(True, 0.3, 2); pump(0.8)
+    assert ai.is_changed()
     print("OK module marks")
 """)
 
