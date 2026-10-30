@@ -67,7 +67,7 @@ class MaskManagerPanel(CollapsiblePanel):
         self._detections: dict = {DUST: [], HAIRS: [], SCRATCHES: []}
         self._listed = True
         self._building = False
-        self._expanded: set[str] = {"Dust Detection", "Groups", "Shapes"}
+        self._open_folders: set[str] = {"Dust Detection", "Groups", "Shapes"}
         self._collapsed: set[str] = set()           # the modules' folders the person closed (they start open)
         self._owners: list[tuple[str, str, int]] = []     # (module key, title, id of its mask): see set_masks
         self._last_pick = 0.0
@@ -104,8 +104,8 @@ class MaskManagerPanel(CollapsiblePanel):
         self._tree.customContextMenuRequested.connect(self._menu)
         self._tree.itemSelectionChanged.connect(self._selection_changed)
         self._tree.itemClicked.connect(self._item_clicked)
-        self._tree.itemExpanded.connect(lambda item: (self._expanded.add(self._path(item)), self._collapsed.discard(self._path(item))))
-        self._tree.itemCollapsed.connect(lambda item: (self._expanded.discard(self._path(item)), self._collapsed.add(self._path(item))))
+        self._tree.itemExpanded.connect(lambda item: (self._open_folders.add(self._path(item)), self._collapsed.discard(self._path(item))))
+        self._tree.itemCollapsed.connect(lambda item: (self._open_folders.discard(self._path(item)), self._collapsed.add(self._path(item))))
         self._tree.keyPressEvent = self._key_pressed
         body.addWidget(self._tree)
 
@@ -173,7 +173,7 @@ class MaskManagerPanel(CollapsiblePanel):
         self._props_hint.setWordWrap(True)
         pl.addWidget(self._props_hint)
         body.addWidget(self._props)
-        self._prop_target = 0
+        self._prop_targets: list[int] = []      # the shapes the sliders change: the picked shape, or all of a picked mask's (a module's folder or a group)
         self._prop_drag = False
         self._prop_timer = QTimer(self)
         self._prop_timer.setSingleShot(True)
@@ -307,12 +307,12 @@ class MaskManagerPanel(CollapsiblePanel):
             if f.id not in owned:
                 self._form_item(shapes, f, {"kind": "form", "id": f.id, "group": 0})
         for top in (dust, groups, shapes):
-            top.setExpanded(self._path(top) in self._expanded)
+            top.setExpanded(self._path(top) in self._open_folders)
         for folder in modules:
             folder.setExpanded(self._path(folder) not in self._collapsed)
         for i in range(dust.childCount()):
             sub = dust.child(i)
-            sub.setExpanded(self._path(sub) in self._expanded)
+            sub.setExpanded(self._path(sub) in self._open_folders)
         for gi in range(groups.childCount()):
             groups.child(gi).setExpanded(True)
 
@@ -394,7 +394,7 @@ class MaskManagerPanel(CollapsiblePanel):
                     self._opacity.blockSignals(True)
                     self._opacity.set_value(p["opacity"])
                     self._opacity.blockSignals(False)
-        self._show_properties(forms)
+        self._show_properties(self._property_targets(data))
         if not emit:
             return
         self.detection_group_picked.emit(folder if detection is None and not forms else "")
@@ -433,32 +433,51 @@ class MaskManagerPanel(CollapsiblePanel):
     def _from_ui(name: str, value: float) -> float:
         return value if name == "rotation" else (value / 50.0 if name == "curvature" else value / 100.0)
 
-    def _show_properties(self, forms: list) -> None:
-        form = self._ms.get(forms[0]["id"]) if len(forms) == 1 else None
-        names = P.available(form.type) if form is not None and form.type != M.GROUP else ()
-        self._prop_target = form.id if names else 0
-        values = P.read(form) if names else {}
+    def _property_targets(self, data: list[dict]) -> list[int]:
+        """The shapes the properties are of: one picked shape; or, when a mask is picked (a module's folder, or a group), every shape in it."""
+        forms = [d for d in data if d.get("kind") in ("form", "member")]
+        if len(forms) == 1:
+            ids = self._ms.flatten(forms[0]["id"])
+        elif not forms:
+            folder = next((d["view"] for d in data if d.get("view")), "")
+            mask_id = next((m for key, _t, m in self._owners if f"module:{key}" == folder), 0) if folder.startswith("module:") else 0
+            ids = self._ms.flatten(mask_id) if mask_id else []
+        else:
+            ids = []
+        return [i for i in ids if self._ms.get(i) is not None and self._ms.get(i).type != M.GROUP]
+
+    def _show_properties(self, targets: list[int]) -> None:
+        """The sliders of the picked shape or mask: the properties every one of its shapes has (a mask of an ellipse and a circle has size and feather), showing the first shape's values;
+        moving one sets it on all of them."""
+        forms = [self._ms.get(i) for i in targets]
+        names = tuple(n for n in self._prop_rows if forms and all(n in P.available(f.type) for f in forms))
+        self._prop_targets = list(targets) if names else []
+        values = P.read(forms[0]) if names else {}
         for name, row in self._prop_rows.items():
             row.setVisible(name in names)
             if name in names and not self._prop_drag:
                 row.blockSignals(True)
                 row.set_value(self._to_ui(name, values.get(name, 0.0)))
                 row.blockSignals(False)
-        self._smoothing_row.setVisible(form is not None and form.type == M.BRUSH)
-        self._props_hint.setVisible(not names and self._opacity_target is None)
+        self._smoothing_row.setVisible(len(forms) == 1 and forms[0].type == M.BRUSH)
+        many = len(forms) > 1 and bool(names)
+        self._props_hint.setText(f"These are the properties all {len(forms)} shapes of this mask have: moving one sets it on every shape." if many else "Pick a shape in the list to change its properties.")
+        self._props_hint.setVisible((many or not names) and self._opacity_target is None)
 
     def _property_moved(self, name: str, value: float) -> None:
-        if not self._prop_target or self._building:
+        if not self._prop_targets or self._building:
             return
         self._prop_drag = True
         self._prop_last = (name, self._from_ui(name, value))
-        self.property_changed.emit(self._prop_target, name, self._prop_last[1], False)
+        for shape in self._prop_targets:
+            self.property_changed.emit(shape, name, self._prop_last[1], False)
         self._prop_timer.start()
 
     def _commit_property(self) -> None:
         self._prop_drag = False
-        if self._prop_target and self._prop_last is not None:
-            self.property_changed.emit(self._prop_target, self._prop_last[0], self._prop_last[1], True)
+        if self._prop_targets and self._prop_last is not None:
+            for shape in self._prop_targets:
+                self.property_changed.emit(shape, self._prop_last[0], self._prop_last[1], True)
         self._prop_last = None
 
     # ------------------------------------------------------------ opacity of a shape inside a group

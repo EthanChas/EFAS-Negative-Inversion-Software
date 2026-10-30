@@ -90,6 +90,16 @@ _SCRIPT = textwrap.dedent(r"""
     mgr._eye_btn.setChecked(True); pump(0.3)
     mgr.set_expanded(False); pump(0.5)
     assert not mgr.all_shown(), "closing the panel puts the eye down too"
+    mgr.set_expanded(True); pump(0.5)
+    # --- clicking a module's mask shows properties: its shapes' size and feather, and moving one sets it on every shape
+    from photoeditor.features.masks import properties as P
+    mgr._tree.clearSelection(); top("Sharpening mask").setSelected(True); pump(0.4)
+    assert {n for n, r in mgr._prop_rows.items() if not r.isHidden()} == {"size", "feather"}, "the properties all its shapes have (an ellipse and circles)"
+    mgr._prop_rows["size"].set_value(10.0); mgr._property_moved("size", 10.0); pump(1.2)
+    sizes = [P.read(c.mask_set().get(i))["size"] for i in c.mask_set().flatten(c.blend_of("sharpening").mask_id)]
+    assert len(sizes) == 3 and all(abs(v - 0.10) < 1e-6 for v in sizes), sizes
+    c2 = top("Exposure mask"); mgr._tree.clearSelection(); c2.setSelected(True); pump(0.4)
+    assert {n for n, r in mgr._prop_rows.items() if not r.isHidden()} == {"size", "feather"} and mgr._props_hint.isHidden(), "a mask of one circle: that shape's properties"
     print("OK mask panel modules")
 """)
 
