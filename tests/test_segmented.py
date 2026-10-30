@@ -80,6 +80,20 @@ def test_not_every_dropdown_gets_arrows():
     for w in (two, editable, many):
         layout.addWidget(w)
     assert add_steppers_in(host) == 1 and many.property("stepper") and not two.property("stepper") and not editable.property("stepper")
+    assert two.property("framed") and two.parentWidget().objectName() == "stepcombo" and not editable.property("framed"), "a dropdown with no arrows still sits in the dark frame"
+    assert len(two.parentWidget().findChildren(__import__("PyQt6.QtWidgets", fromlist=["QToolButton"]).QToolButton)) == 0
+
+
+def test_the_field_inside_the_frame_has_a_faint_edge():
+    from photoeditor.desktop.view.segmented import inset_edge
+    from photoeditor.theme.tokens import THEME
+    from PyQt6.QtGui import QColor
+    edge, base = QColor(inset_edge()), QColor(THEME.bg_input)
+    assert edge.lightness() > base.lightness() and edge.lightness() - base.lightness() < 40, "a faint wash of white on the dark field, not a bright line"
+    _app()
+    host, combo = _row()
+    add_steppers(combo)
+    assert f"border: 1px solid {inset_edge()}" in combo.parentWidget().styleSheet()
 
 
 def test_the_arrows_follow_the_dropdown_when_a_panel_hides_it():

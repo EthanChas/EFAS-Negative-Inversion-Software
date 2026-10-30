@@ -293,12 +293,12 @@ class NegativeToolPanel(CollapsiblePanel):
         for key, row in self._print_rows.items():
             row.setToolTip(tips[key])
             body.addWidget(row)
-        self._build_noritsu(body)
         self._trim_rows = [SliderRow(f"{name} grade", min_value=-0.3, max_value=0.3, reset_value=0.0) for name in ("Red", "Green", "Blue")]
         for name, row in zip(("red", "green", "blue"), self._trim_rows):
             row.setToolTip(f"Contrast of the {name} layer on its own, around the picture's middle. Fixes colour crossover: when shadows lean one colour and highlights lean "
                            "the opposite one, harden or soften one layer until both go neutral. The middle tones do not move.")
             body.addWidget(row)
+        self._build_noritsu(body)      # (after the grade rows: its title only shows with the Noritsu look, and what stands under a hidden title belongs to the group above)
         meter_title = QLabel("METERING")
         meter_title.setProperty("role", "subtitle")
         body.addWidget(meter_title)

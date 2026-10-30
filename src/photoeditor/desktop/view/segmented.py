@@ -188,11 +188,22 @@ def _stepper_button(direction: int, tip: str) -> QToolButton:
     return _ArrowButton(direction, tip)
 
 
+def inset_edge() -> str:
+    """The edge of the field inside a dropdown's dark frame, as NegPy draws a field's: a faint white wash (its border_primary, 6% white) on the dark input colour, worked out as a plain
+    colour so it holds on every theme."""
+    base = QColor(THEME.bg_input)
+    return QColor(*(round(c * 0.94 + 255 * 0.06) for c in (base.red(), base.green(), base.blue()))).name()
+
+
 def _restyle_steppers(box: QWidget) -> None:
-    """The dropdown and its two arrows sit in one rounded, grey, bordered frame; each arrow is a small raised button of its own and the dropdown inside has no edge of its own."""
+    """The dropdown (and its two arrows, when it has them) sit in one rounded, dark, bordered frame; each arrow is a small raised button of its own and the dropdown inside is a field set
+    into the frame with a faint edge of its own (NegPy's field edge)."""
+    edge = inset_edge()
     box.setStyleSheet(
         f"#stepcombo {{ background: {THEME.bg_input}; border: 1px solid {THEME.border_color}; border-radius: 7px; }}"
-        f"#stepcombo QComboBox {{ background: transparent; border: none; padding-left: 4px; }}"
+        f"#stepcombo QComboBox {{ background: {THEME.bg_input}; border: 1px solid {edge}; border-radius: 4px; padding-left: 6px; }}"
+        f"#stepcombo QComboBox:hover {{ border-color: {THEME.bevel_light}; }}"
+        f"#stepcombo QComboBox:focus {{ border: 1px solid {THEME.accent_primary}; }}"
         f"#stepcombo QToolButton {{ background: {THEME.bg_button}; border: 1px solid {THEME.border_color}; border-radius: 5px; color: {THEME.text_primary}; font-weight: bold; padding: 0px; }}"
         f"#stepcombo QToolButton:hover {{ background: {THEME.bg_hover}; border-color: {THEME.accent_primary}; }}"
         f"#stepcombo QToolButton:pressed {{ background: {THEME.bg_pressed}; }}")
@@ -229,10 +240,9 @@ class _Follow(QObject):
         return False
 
 
-def add_steppers(combo: QComboBox) -> bool:
-    """Put ‹ and › either side of a dropdown: they step to the previous or next choice and wrap past the ends. False when the dropdown is not in a layout, is editable or has fewer
-    than three choices (two choices are one click away already)."""
-    if combo.isEditable() or combo.count() < 3 or combo.property("stepper") or combo.parentWidget() is None:
+def _framed(combo: QComboBox, arrows: bool) -> bool:
+    """Set a dropdown in the dark frame, with ‹ and › either side of it when `arrows`. False when it is not in a layout."""
+    if combo.parentWidget() is None:
         return False
     holder = _layout_holding(combo, combo.parentWidget().layout())
     if holder is None:
@@ -245,16 +255,22 @@ def add_steppers(combo: QComboBox) -> bool:
     row.setSpacing(3)
     _restyle_steppers(box)
     STYLE.changed.connect(lambda box=box: _restyle_steppers(box))
-    previous = _stepper_button(-1, "Previous choice")
-    following = _stepper_button(1, "Next choice")
     hidden = combo.isHidden()
     holder.replaceWidget(combo, box)
-    row.addWidget(previous)
+    previous = following = None
+    if arrows:
+        previous = _stepper_button(-1, "Previous choice")
+        following = _stepper_button(1, "Next choice")
+        row.addWidget(previous)
     row.addWidget(combo, 1)
-    row.addWidget(following)
+    if arrows:
+        row.addWidget(following)
     combo.setVisible(not hidden)
     box.setVisible(not hidden)
     _Follow(combo, box)
+    combo.setProperty("framed", True)
+    if not arrows:
+        return True
     combo.setProperty("stepper", True)
 
     def step(delta: int) -> None:
@@ -267,6 +283,27 @@ def add_steppers(combo: QComboBox) -> bool:
     return True
 
 
+def add_steppers(combo: QComboBox) -> bool:
+    """Put ‹ and › either side of a dropdown: they step to the previous or next choice and wrap past the ends. False when the dropdown is not in a layout, is editable or has fewer
+    than three choices (two choices are one click away already)."""
+    if combo.isEditable() or combo.count() < 3 or combo.property("framed"):
+        return False
+    return _framed(combo, True)
+
+
+def add_frame(combo: QComboBox) -> bool:
+    """A dropdown with no arrows (one with fewer than three choices, or whose choices come later) in the same dark frame as the rest, so every dropdown reads alike."""
+    if combo.isEditable() or combo.property("framed"):
+        return False
+    return _framed(combo, False)
+
+
 def add_steppers_in(panel: QWidget) -> int:
-    """add_steppers for every dropdown inside a panel (those added later are not seen: call it once the panel is built)."""
-    return sum(1 for combo in panel.findChildren(QComboBox) if add_steppers(combo))
+    """add_steppers for every dropdown inside a panel, and the dark frame round the rest (those added later are not seen: call it once the panel is built). Returns how many got arrows."""
+    arrows = 0
+    for combo in panel.findChildren(QComboBox):
+        if add_steppers(combo):
+            arrows += 1
+        else:
+            add_frame(combo)
+    return arrows

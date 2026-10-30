@@ -4,7 +4,7 @@ which are closed is remembered between sessions."""
 
 from PyQt6.QtCore import QEvent, QObject, Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QColor, QPainter
-from PyQt6.QtWidgets import QHBoxLayout, QLabel, QLayout, QLayoutItem, QSizePolicy, QToolButton, QVBoxLayout, QWidget
+from PyQt6.QtWidgets import QAbstractButton, QHBoxLayout, QLabel, QLayout, QLayoutItem, QSizePolicy, QToolButton, QVBoxLayout, QWidget
 
 from ...features.settings import logic as app_settings
 from ...theme.tokens import THEME
@@ -75,6 +75,7 @@ class FoldSection(QWidget):
     folded = pyqtSignal(str, bool)       # (key, closed)
     ANIMATE = True                       # the group slides open and shut (the tests that look at it straight after a click turn this off)
     SLIDE_MS = 160
+    HEAD_BUTTON_HEIGHT = 22              # the title bar is 28 high with 3 of room above and below
 
     def __init__(self, key: str, title: QLabel, extras: list[QLayoutItem], closed: bool = False, parent: QWidget | None = None):
         super().__init__(parent)
@@ -109,7 +110,11 @@ class FoldSection(QWidget):
         head.addWidget(title, 1)
         for item in extras:
             if item.widget() is not None:
-                head.addWidget(item.widget())
+                widget = item.widget()
+                if isinstance(widget, QAbstractButton) and not isinstance(widget, QToolButton):
+                    widget.setFixedHeight(self.HEAD_BUTTON_HEIGHT)      # a button beside a title sits inside the title bar, not taller than it
+                    widget.setStyleSheet("QPushButton { padding: 0px 10px; min-height: 0px; }")
+                head.addWidget(widget)
             elif item.layout() is not None:
                 head.addLayout(item.layout())
         outer.addWidget(self._head)
