@@ -67,6 +67,7 @@ from ..features.colormix.logic import MIXER_PANEL_KEYS, TONING_KEYS
 from .mask_blend import MaskBlender
 from ..features.halation import logic as hal_logic
 from ..features.carrier import logic as carrier_logic
+from ..features.negative import curveview
 from ..features.flatfield.logic import apply_flatfield
 from ..features.negative.logic import (
     analysis_region,
@@ -1180,6 +1181,7 @@ class Renderer:
             deep_ok = deep and wide and keeps_16
             hold_16 = wide and self.wide_mixing and (gpu_pipeline.wide_ok() or not gpu_pipeline.usable(frame.shape))   # the picture stays 16-bit through the mixing stages
             ramp = wide_ramp() if wide else identity_ramp()
+            curve_codes = curve_lut = None   # what the conversion's table was read with, and the table (for the histogram's Curve view)
             if params.negative_inverted:
                 meter_rect = rect if params.metering.rect is None else _scale_rect(params.metering.rect, scale, frame.shape[1], frame.shape[0])
                 if metering_frame and film_frame is not None:      # no crop: the metering reads the picture inside the film frame (a little in from its edge), not the holder round it
@@ -1197,11 +1199,15 @@ class Renderer:
                         meter_params = dataclasses.replace(params, metering=dataclasses.replace(params.metering, buffer=min(MAX_BUFFER, max(params.metering.buffer, inset))))
                 lut_token = (token, edge_logic.scan_token(edge_values), meter_rect) if (edge_logic.scan_active(edge_values) or inset) else token
                 if wide:
-                    ramp = np.ascontiguousarray(self._get_invert_lut(pixels16, meter_params, meter_rect, lut_token).T[None])
+                    curve_lut = self._get_invert_lut(pixels16, meter_params, meter_rect, lut_token)
+                    curve_codes = pixels16
+                    ramp = np.ascontiguousarray(curve_lut.T[None])
                     if params.metering.engine == "print":
                         pixels16 = self._shaped(pixels16, params.metering)      # (the contrast mask and a stock's dyes move each pixel's exposure before the table reads it)
                 else:
-                    ramp = apply_invert_lut(ramp, self._get_invert_lut(pixels, meter_params, meter_rect, lut_token))
+                    curve_lut = self._get_invert_lut(pixels, meter_params, meter_rect, lut_token)
+                    curve_codes = pixels
+                    ramp = apply_invert_lut(ramp, curve_lut)
             ramp = apply_channel_offsets(ramp, (params.invert_r, params.invert_g, params.invert_b))
             base_ramp = ramp   # the conversion itself, which is not a module that can be blended
             ramp = adjust_temperature_tint(ramp, params.temperature, params.tint)
@@ -1309,6 +1315,8 @@ class Renderer:
 
             image = apply_crop(pixels, rect)
             stats = compute_stats(self._inside_frame(image, film_frame, rect)) if want_stats else None
+            if stats is not None and curve_codes is not None:
+                stats["curve"] = curveview.build(curve_codes, curve_lut, converts_in_density(params.metering), printengine.DENSITY_SCALE)
             overlay_rgba = None
             if overlay:
                 base_hw = (round(image.shape[0] / scale), round(image.shape[1] / scale))

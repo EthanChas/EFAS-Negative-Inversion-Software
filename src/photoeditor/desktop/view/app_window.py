@@ -1244,13 +1244,13 @@ class AppWindow(QMainWindow):
         self._hist_log_btn.setToolTip("Logarithmic height: the thin tails of the shadows and highlights show up beside the big peaks")
         self._hist_log_btn.toggled.connect(self._on_histogram_log_toggled)
         button_row.addWidget(self._hist_log_btn)
-        self._hist_density_btn = QPushButton("Density")
-        self._hist_density_btn.setCheckable(True)
-        self._hist_density_btn.setChecked(app_settings.get("histogram_density"))
-        self._hist_density_btn.setToolTip("Print density: lay the graph out by how dense the print is (0 at the paper's white to about 2.4 at its black) instead of by display level, the way a darkroom "
-                                          "reads a print. Works with both Exposure and Color.")
-        self._hist_density_btn.toggled.connect(self._on_histogram_density_toggled)
-        button_row.addWidget(self._hist_density_btn)
+        self._hist_curve_btn = QPushButton("Curve")
+        self._hist_curve_btn.setCheckable(True)
+        self._hist_curve_btn.setChecked(app_settings.get("histogram_curve"))
+        self._hist_curve_btn.setToolTip("The paper curve, like NegPy's Analysis chart: the conversion's curve (the print's level against the negative's density) over the negative's own density histogram, "
+                                        "with the print's histogram along the right. Needs an inverted negative.")
+        self._hist_curve_btn.toggled.connect(self._on_histogram_curve_toggled)
+        button_row.addWidget(self._hist_curve_btn)
         self._hist_split_btn = QPushButton("Split")
         self._hist_split_btn.setCheckable(True)
         self._hist_split_btn.setChecked(app_settings.get("histogram_split"))
@@ -1293,7 +1293,7 @@ class AppWindow(QMainWindow):
         self._histogram_panel.set_log(app_settings.get("histogram_log"))
         self._histogram_panel.set_split(app_settings.get("histogram_split"))
         self._on_histogram_style(app_settings.get("histogram_style"), save=False)
-        self._histogram_panel.set_density(app_settings.get("histogram_density"))
+        self._histogram_panel.set_curve_view(app_settings.get("histogram_curve"))
         self._histogram_panel.bin_hovered.connect(self._on_bin_hovered)
         self._histogram_panel.hover_cleared.connect(self._on_graph_hover_cleared)
         self._histogram_panel.range_selected.connect(self._on_range_selected)
@@ -3670,6 +3670,7 @@ class AppWindow(QMainWindow):
         self._histogram_panel.clear_selection()
         self._image_view.set_range_overlay(None)
         self._histogram_panel.set_data(state.histogram, state.luminance_histogram)
+        self._histogram_panel.set_curve_data(state.curve_view)
         self._update_scope()
         self._update_zones()
         self._stats_panel.set_stats(state.channel_stats, state.exposure_label, state.luminance["avg"], state.readout)
@@ -3938,6 +3939,7 @@ class AppWindow(QMainWindow):
         self._refresh_export_hints()
         self._refresh_size_label()
         self._histogram_panel.set_data(state.histogram, state.luminance_histogram)
+        self._histogram_panel.set_curve_data(state.curve_view)
         self._update_scope()
         self._update_zones()
         self._stats_panel.set_stats(state.channel_stats, state.exposure_label, state.luminance["avg"], state.readout)
@@ -4959,9 +4961,9 @@ class AppWindow(QMainWindow):
         self._pick_better.raise_()
         self._pick_better.begin()
 
-    def _on_histogram_density_toggled(self, on: bool) -> None:
-        app_settings.save({"histogram_density": bool(on)})
-        self._histogram_panel.set_density(on)
+    def _on_histogram_curve_toggled(self, on: bool) -> None:
+        app_settings.save({"histogram_curve": bool(on)})
+        self._histogram_panel.set_curve_view(on)
         self._image_view.set_range_overlay(None)
         self._graph_reading_label.setText("Hover the graph for a reading.")
 

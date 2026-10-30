@@ -755,6 +755,7 @@ class AppController(QObject):
         if out.stats is not None:
             s.histogram = out.stats["histogram"]
             s.luminance_histogram = out.stats["luminance_histogram"]
+            s.curve_view = out.stats.get("curve")
             s.channel_stats = out.stats["channel_stats"]
             s.luminance = out.stats["luminance"]
             s.exposure_label = out.stats["exposure_label"]
@@ -806,6 +807,7 @@ class AppController(QObject):
             s.clip_rgba = None
         s.histogram = stats["histogram"]
         s.luminance_histogram = stats["luminance_histogram"]
+        s.curve_view = stats.get("curve")
         s.channel_stats = stats["channel_stats"]
         s.luminance = stats["luminance"]
         s.exposure_label = stats["exposure_label"]

@@ -486,6 +486,7 @@ class AppState:
     hq_enabled: bool = False
     histogram: dict[str, list[int]] | None = None
     luminance_histogram: list[int] | None = None
+    curve_view: dict | None = None             # the conversion's paper curve and the negative's density histogram, for the histogram's Curve view (features/negative/curveview.py)
     channel_stats: dict[str, dict[str, float]] | None = None
     luminance: dict[str, float] | None = None
     exposure_label: str | None = None
