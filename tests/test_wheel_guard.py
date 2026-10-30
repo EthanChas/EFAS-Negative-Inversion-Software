@@ -68,6 +68,18 @@ _SCRIPT = textwrap.dedent(r'''
     # a scroll bar is always moved by the wheel
     spin.clearFocus(); pump(); at = bar.value(); wheel(bar, -120); assert bar.value() != at
 
+    # focus comes by a click only (not by tabbing or from the window), a drop-down lets go when the pointer leaves, and a custom wheel control is guarded too
+    for w in (slider, spin, combo):
+        assert w.focusPolicy() == Qt.FocusPolicy.ClickFocus, w
+    combo.setFocus(); pump(); i = combo.currentIndex()
+    QApplication.sendEvent(combo, QEvent(QEvent.Type.Leave)); pump()
+    assert not combo.hasFocus(), "a drop-down is guarded again once the pointer leaves it"
+    wheel(combo, 120); assert combo.currentIndex() == i
+    from photoeditor.desktop.view.peaking_slider import PeakingSlider
+    peak = PeakingSlider(content); col.addWidget(peak); peak.show(); pump(0.1); peak.clearFocus()
+    lvl = peak.level(); wheel(peak, 120); assert peak.level() == lvl, "the focus-peaking slider waits for a click too"
+    peak.setFocus(); pump(); wheel(peak, 120); assert peak.level() != lvl
+
     # the main window puts the guard on
     from photoeditor.features.settings import logic as S
     S.save({"scan_quality": False})

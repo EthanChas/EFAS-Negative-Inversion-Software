@@ -20,6 +20,7 @@ class PeakingSlider(QWidget):
         super().__init__(parent)
         self._level = 0
         self.setFixedSize(_WIDTH, _HEIGHT)
+        self.setProperty("wheelGuard", True)      # the wheel moves it only once it has been clicked (see wheel_guard)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setToolTip("Focus peaking level: marks the picked color and everything sharper. Blue shows the most, red only the very sharpest.")
         self.hide()

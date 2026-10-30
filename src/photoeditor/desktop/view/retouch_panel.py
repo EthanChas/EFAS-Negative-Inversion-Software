@@ -67,6 +67,7 @@ class ScaleBar(QWidget):
         self.setFixedHeight(40)
         self.setMinimumWidth(180)
         self.setMouseTracking(True)
+        self.setProperty("wheelGuard", True)      # the wheel steps it only once it has been clicked (see wheel_guard)
         self.num_scales, self.curr_scale, self.merge_from = 0, 0, 0
         self.first_visible = 0
         self.shapes: dict[int, int] = {}
