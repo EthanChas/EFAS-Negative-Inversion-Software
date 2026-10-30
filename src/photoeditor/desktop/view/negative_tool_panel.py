@@ -265,7 +265,8 @@ class NegativeToolPanel(CollapsiblePanel):
         curve_row.addWidget(curve_label)
         self._film_profile = QComboBox()
         self._film_profile.setToolTip(
-            "The film's own characteristic curve (a film profile: the maker's published curve, or one you measured), put back before the conversion. Original and the Noritsu look stretch "
+            "The film's own characteristic curve (a film profile: the maker's published curve, or one you measured), put back before the conversion. In the NegPy Conversion it replaces the "
+            "engine's own S-curve, so the film's real toe and shoulder are put back (by the Film curve amount). Original and the Noritsu look stretch "
             "density in a straight line, so the film's toe and shoulder go into the picture as they are: shadows squeezed, highlights flattened. With a profile, each channel's density is "
             "taken back to the exposure it implies through the curve and carried on along the curve's own straight section, and the stretch or the Noritsu tone curve works on that. "
             "It counts fully with a sampled film base and about a third as much with an estimated one. None leaves the conversion as it was.")
@@ -529,6 +530,8 @@ class NegativeToolPanel(CollapsiblePanel):
         self._profile_choices = [(f"{preset_tree.display(r['name'])} ({r['film']})", r["id"]) for r in usable]
         if hasattr(self, "_film_profile"):
             self._fill_film_profiles()
+        if hasattr(self, "_nor_variant"):
+            self._fill_nor_variants()
         self._engine_profile.clear()
         for r in usable:
             self._engine_profile.addItem(f"{preset_tree.display(r['name'])} ({r['film']})", r["id"])
@@ -634,6 +637,7 @@ class NegativeToolPanel(CollapsiblePanel):
         for w in widgets:
             w.blockSignals(True)
         self._fill_film_profiles()
+        self._fill_nor_variants()
         if metering.print_stock and self._stock.findData(metering.print_stock) < 0:      # a stock that is no longer there reads as the engine's own paper
             self._stock.addItem(f"{metering.print_stock} (missing: the engine's own paper used)", metering.print_stock)
         self._stock.setCurrentIndex(max(0, self._stock.findData(metering.print_stock)))
@@ -684,7 +688,7 @@ class NegativeToolPanel(CollapsiblePanel):
         for w in (self._film_label, self._film, *self._trim_rows, self._print_rows["crosstalk"], self._print_rows["film_curve"], self._stock_label, self._stock, self._hold_black, self._meter_frame,
                   self._print_rows["stock_colour"], self._print_rows["grey_balance"], self._print_rows["contrast_mask"], self._pick_better_btn):
             w.setVisible(modern)
-        with_curve = engine in ("standard", "noritsu")
+        with_curve = engine in ("standard", "print", "noritsu")
         for w in (self._curve_label, self._film_profile):
             w.setVisible(with_curve)
         for w in (self._encoding_label, self._encoding):     # (a film curve, or a B&W print through a filter, needs the scan turned back into density correctly, so its encoding matters to Original and the Noritsu look too)
@@ -768,9 +772,9 @@ class NegativeToolPanel(CollapsiblePanel):
         self._nor_real_curve = QCheckBox("Real LS-600 tone curve")
         self._nor_real_curve.setToolTip("The LS-600's own 20-point tone curve instead of the synthetic S-curve (noritsu-tool's --real-curve). Lab mode uses it too.")
         self._nor_variant = QComboBox()
-        for variant, name in noritsu_logic.VARIANTS.items():
-            self._nor_variant.addItem(name, variant)
-        self._nor_variant.setToolTip("Which of the LS-600's image-quality variants the real tone curve is (the curves that really differ: the standard one, IQ 2, and a linear one that does nothing).")
+        self._fill_nor_variants()
+        self._nor_variant.setToolTip("Which tone curve the real tone curve is: one of the LS-600's image-quality variants (the curves that really differ: the standard one, IQ 2, and a linear one that does nothing), "
+                                     "or a film's own characteristic curve (Fomapan 100, Kodak Gold 200...: its toe, straight section and shoulder, each colour by its own curve).")
         self._nor_variant.currentIndexChanged.connect(self._on_metering_slider)
         body.addWidget(self._nor_variant)
         self._nor_widgets.append(self._nor_variant)
@@ -815,6 +819,22 @@ class NegativeToolPanel(CollapsiblePanel):
         self._nor_note.setWordWrap(True)
         body.addWidget(self._nor_note)
         self._nor_widgets.append(self._nor_note)
+
+    def _fill_nor_variants(self) -> None:
+        """The tone-curve menu: the LS-600's variants, then each film profile's own curve; the one the photo uses stays in it, named as missing, when it is no longer there."""
+        current = self._nor_variant.currentData() if self._nor_variant.count() else ""
+        wanted = getattr(self, "_metering", Metering()).nor_variant
+        was_blocked = self._nor_variant.blockSignals(True)
+        self._nor_variant.clear()
+        for variant, name in noritsu_logic.VARIANTS.items():
+            self._nor_variant.addItem(name, variant)
+        for label, ident in getattr(self, "_profile_choices", []):
+            self._nor_variant.addItem(f"Film: {label}", noritsu_logic.FILM_PREFIX + ident)
+        for keep in (wanted, current):
+            if keep and self._nor_variant.findData(keep) < 0:
+                self._nor_variant.addItem(f"{keep} (missing: standard used)", keep)
+        self._nor_variant.setCurrentIndex(max(0, self._nor_variant.findData(wanted or current)))
+        self._nor_variant.blockSignals(was_blocked)
 
     def _fill_nor_stocks(self) -> None:
         """The Stock list: none, the three profiles that come with noritsu-tool, then yours."""

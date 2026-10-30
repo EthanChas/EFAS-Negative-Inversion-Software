@@ -69,7 +69,7 @@ class Settings:
     stock: str = ""                  # "" (none) or one of STOCKS: noritsu-tool's per-stock calibration profile, which replaces the white balance and the tone curve
     lab: bool = False                # "lab mode": contrast 0.90, gamma 0.90, toe 0.04, saturation 0.95 and the real tone curve
     real_curve: bool = False         # the LS-600's own 20-point curve instead of the synthetic S-curve
-    variant: str = DEFAULT_VARIANT   # which IQ variant's 20-point curve the real curve is (VARIANTS)
+    variant: str = DEFAULT_VARIANT   # which IQ variant's 20-point curve the real curve is (VARIANTS), or a film profile's own curve ("film:<profile id>")
     contrast: float = 1.05
     toe: float = 0.02
     gamma: float = 0.98
@@ -89,6 +89,27 @@ class Settings:
 # ---------------------------------------------------------------------------
 # tables.py
 # ---------------------------------------------------------------------------
+
+FILM_PREFIX = "film:"      # a variant that is a film profile's own characteristic curve (the film profiles of the Curve menu): "film:<profile id>"
+
+
+def is_film_variant(variant: str) -> bool:
+    return variant.startswith(FILM_PREFIX) and len(variant) > len(FILM_PREFIX)
+
+
+def film_tone_table(variant: str, channel: int, n: int = 4096) -> np.ndarray | None:
+    """A film profile's curve of one colour as a tone curve: the density it makes (taken from its lowest to its highest over the measured range) against the log exposure laid evenly
+    across that range, so the picture goes through the film's own toe, straight section and shoulder. None when the profile is not there or cannot drive a conversion."""
+    from . import filmcurve
+
+    models = filmcurve.profile_models(variant[len(FILM_PREFIX):]) if is_film_variant(variant) else None
+    if models is None:
+        return None
+    model = models["RGB"[channel]]
+    lo, hi = model.support
+    d = np.maximum.accumulate(np.asarray(model.curve(np.linspace(lo, hi, n)), dtype=np.float64))
+    return np.clip((d - d[0]) / max(float(d[-1] - d[0]), 1e-6), 0.0, 1.0).astype(np.float32)
+
 
 def load_base_tone_curve(variant: str = DEFAULT_VARIANT) -> list[float] | None:
     """The base tone curve normalized to [0,1] (a couple of variants overshoot full scale by <0.4%: clamped)."""
@@ -272,13 +293,14 @@ def _interp_table(values: np.ndarray, table) -> np.ndarray:
     return arr[i0] * (1 - t) + arr[i1] * t
 
 
-def render_channel(positive: np.ndarray, settings: Settings, gain: float = 1.0) -> np.ndarray:
+def render_channel(positive: np.ndarray, settings: Settings, gain: float = 1.0, channel: int = 0) -> np.ndarray:
     """render.render for one channel of a density-normalized positive: white balance, then the tone curve (the real 20-point one, or the synthetic S-curve)."""
     out = positive
     if abs(gain - 1.0) > 1e-4:
         out = np.clip(out * np.float32(gain), 0.0, 1.0)
     if settings.real_curve:
-        return np.clip(_interp_table(out, tone_curve_lut(variant=settings.variant)), 0.0, 1.0).astype(np.float32)
+        film = film_tone_table(settings.variant, channel) if is_film_variant(settings.variant) else None
+        return np.clip(_interp_table(out, film if film is not None else tone_curve_lut(variant=settings.variant if not is_film_variant(settings.variant) else DEFAULT_VARIANT)), 0.0, 1.0).astype(np.float32)
     return np.clip(noritsu_tone_curve(out, settings.contrast, settings.toe, settings.gamma), 0.0, 1.0).astype(np.float32)
 
 
@@ -599,5 +621,5 @@ def build_lut(plan: Plan, density_scale: float = DENSITY_SCALE) -> np.ndarray:
         if profile is not None:
             lut[c] = np.clip(_interp_table(positive, profile["lut"][c]), 0.0, 1.0) * 255.0      # (apply_calib's lookup, one channel)
         else:
-            lut[c] = render_channel(positive, s, plan.gains[c]) * 255.0
+            lut[c] = render_channel(positive, s, plan.gains[c], c) * 255.0
     return lut

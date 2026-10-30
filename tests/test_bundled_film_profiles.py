@@ -6,7 +6,7 @@ from photoeditor.features.densitometry.film_profile import ProfileStore
 
 
 def test_the_three_fomapan_100_curves_are_there_and_read_right():
-    profiles = {p.id: p for p in bundled.available()}
+    profiles = {p.id: p for p in bundled.available() if p.id.startswith("foma-")}      # (the Kodak Gold 200 profile is in test_film_profiles_gold)
     assert set(profiles) == {"foma-fomapan-100-microphen-5min", "foma-fomapan-100-microphen-7min", "foma-fomapan-100-microphen-11min"}
     at = {}
     for ident, p in profiles.items():
@@ -25,10 +25,10 @@ def test_the_three_fomapan_100_curves_are_there_and_read_right():
 def test_they_are_installed_once_and_not_put_back(tmp_path):
     store = ProfileStore(str(tmp_path / "film-profiles"))
     added = bundled.install(store)
-    assert len(added) == 3 and len(store.ids()) == 3 and all(r["usable"] for r in store.list())
+    assert len(added) == 4 and len(store.ids()) == 4 and all(r["usable"] for r in store.list())
     assert bundled.install(store) == [], "a second look adds nothing"
     store.delete("foma-fomapan-100-microphen-7min")
-    assert bundled.install(store) == [] and len(store.ids()) == 2, "a profile the person deleted is not put back"
+    assert bundled.install(store) == [] and len(store.ids()) == 3, "a profile the person deleted is not put back"
 
 
 def test_a_black_and_white_profile_is_offered_only_for_a_black_and_white_negative():

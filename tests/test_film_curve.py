@@ -84,7 +84,7 @@ _SCRIPT = textwrap.dedent(r"""
         assert np.array_equal(render(Metering(engine=engine, transfer="bt709", film_profile="no-such-profile")), a), "a missing profile leaves the conversion as it was"
         m = b[..., 1].astype(float).mean(axis=0)
         assert m[:30].mean() > m[-30:].mean() + 20, "the denser part of the negative (the left, where the scan is darker) is still the brighter part of the positive"
-    assert not film_curve_wanted(Metering(engine="print", film_profile=ident)), "the NegPy Conversion has its own film curve"
+    assert film_curve_wanted(Metering(engine="print", film_profile=ident)), "the NegPy Conversion puts a profile's real curve back in place of its own S-curve"
     from photoeditor.desktop.view.negative_tool_panel import NegativeToolPanel
     panel = NegativeToolPanel()
     panel.set_inversion({"engine": "classic", "profile_id": "", "error": "", "covered": None, "base_ready": False, "bw": True}, store.list(), [])
@@ -95,7 +95,7 @@ _SCRIPT = textwrap.dedent(r"""
     panel.set_metering(Metering(engine="standard", film_profile="gone"))
     assert panel._collect().film_profile == "gone" and "missing" in panel._film_profile.currentText()
     panel.set_metering(Metering(engine="print"))
-    assert panel._film_profile.isHidden() and panel._curve_label.isHidden()
+    assert not panel._film_profile.isHidden() and not panel._curve_label.isHidden()
     panel.set_metering(Metering(engine="noritsu"))
     assert not panel._film_profile.isHidden()
     print("OK film curve")

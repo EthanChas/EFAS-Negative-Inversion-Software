@@ -81,6 +81,7 @@ class Settings:
     grey_balance: float = 0.0      # how much of the frame's own greys' cast is taken out, shadows to highlights (0 off)
     contrast_mask: float = 0.0     # the darkroom's unsharp contrast mask, as the Fujifilm Frontier's HyperTone does it (0 off)
     bw_weights: tuple | None = None  # B&W from a colour negative: the weights of the three layers' densities in the one density printed (None: colour)
+    film: object = None            # a film profile's curve (features/negative/filmcurve.FilmCurve): the film's real toe and shoulder are put back in place of the engine's own S-curve
 
 
 def _libraw_curve() -> tuple[float, float, float, float]:
@@ -385,7 +386,12 @@ def build_print(block: np.ndarray, settings: Settings = Settings(), base: np.nda
     known = base is not None
     b = np.asarray(base, dtype=np.float32) if known else estimate_base(d)
     strength = settings.restore * (1.0 if known else UNSURE_BASE)   # the S is only put back as far as the base is trusted
-    rest = lambda x, c: restore_exposure(x, b[c], strength, settings.film_range, settings.film_gamma)
+    film = settings.film
+    if film is not None:
+        # the exposure each density implies through the profile's curve, laid on its straight line (the table already counts for less with an estimated base): `restore` blends it with plain density
+        rest = lambda x, c: ((x - b[c]) + settings.restore * (film(x, c) - x)) / float(film.slopes[c])
+    else:
+        rest = lambda x, c: restore_exposure(x, b[c], strength, settings.film_range, settings.film_gamma)
     crop_e = np.stack([rest(d[..., c], c) for c in range(3)], axis=-1)
     hi = np.percentile(crop_e.reshape(-1, 3), RANGE_HIGH, axis=0)
     lo = np.percentile(crop_e.reshape(-1, 3), RANGE_LOW, axis=0)

@@ -600,7 +600,7 @@ MIN_SAMPLED_BASE = 0.05      # the least density a film base can read as, for th
 
 def film_curve_wanted(m: Metering) -> bool:
     """Whether the conversion straightens the scan's density through a film profile first: Original and the Noritsu look can (see features/negative/filmcurve.py)."""
-    return bool(m.film_profile) and m.engine in ("standard", "noritsu") and filmcurve.profile_models(m.film_profile) is not None
+    return bool(m.film_profile) and m.engine in ("standard", "print", "noritsu") and filmcurve.profile_models(m.film_profile) is not None
 
 
 def density_settings(m: Metering) -> "printengine.Settings":
@@ -842,7 +842,8 @@ class Renderer:
                 settings = print_settings(params.metering)
                 sampled = None if base is None else printengine.base_density(base, settings, 255.0)
                 block = analysis_region(pixels, rect, params.metering.buffer)
-                self._print_build = printengine.build_print(block, settings, sampled)
+                film = self._film_curve_for(params.metering, block.astype(np.float32) / np.float32(printengine.DENSITY_SCALE), sampled)      # (a film profile's real curve, when one is chosen)
+                self._print_build = printengine.build_print(block, dataclasses.replace(settings, film=film) if film is not None else settings, sampled)
                 self._invert_lut = self._print_build.lut
             elif params.metering.engine == "negpy056":      # (a sampled film base is not used: NegPy 0.56 reads its bounds off the picture)
                 grid = negpy056.grid_from_codes(pixels, rect, params.metering.buffer, printengine.DENSITY_SCALE)
