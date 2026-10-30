@@ -14,7 +14,7 @@ class Slide(QObject):
 
     ANIMATE = True       # the tests that look straight after a click turn this off
 
-    def __init__(self, host: QWidget, clip: QWidget, content: QWidget, duration: int = 160, easing=QEasingCurve.Type.OutCubic, hide_when_closed: bool = True, opened: bool = True):
+    def __init__(self, host: QWidget, clip: QWidget, content: QWidget, duration=160, easing=QEasingCurve.Type.OutCubic, hide_when_closed: bool = True, opened: bool = True):
         super().__init__(host)
         self._host = host
         self._clip = clip
@@ -22,7 +22,8 @@ class Slide(QObject):
         self._hide = hide_when_closed
         self._open = opened
         self._anim = QVariantAnimation(self)
-        self._anim.setDuration(duration)
+        self._duration = duration      # milliseconds, or a function that gives them (a theme can change how long it takes, or turn the slide off with 0)
+        self._anim.setDuration(duration() if callable(duration) else duration)
         self._anim.setEasingCurve(easing)
         self._anim.valueChanged.connect(lambda h: self._clip.setMaximumHeight(int(h)))
         self._anim.finished.connect(self._done)
@@ -52,9 +53,11 @@ class Slide(QObject):
 
     def go(self, opened: bool) -> None:
         """Open or close, sliding when it can be seen."""
-        if not (self.ANIMATE and self._host.isVisible()):
+        ms = self._duration() if callable(self._duration) else self._duration
+        if not (self.ANIMATE and self._host.isVisible()) or ms <= 0:
             self.snap(opened)
             return
+        self._anim.setDuration(ms)
         self._anim.stop()
         self._open = opened
         shown = self._clip.isVisible() and not self._clip.isHidden()

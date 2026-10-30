@@ -1,5 +1,6 @@
 import dataclasses
 from dataclasses import dataclass
+from functools import lru_cache
 
 from ..features.platform import pick
 
@@ -11,6 +12,11 @@ ACCENTS = (
     ("Blue", "#4cc2ff"), ("Teal", "#3fd1c0"), ("Green", "#6ccb5f"), ("Amber", "#fcb040"), ("Coral", "#ff7a70"), ("Pink", "#ff7eb6"), ("Violet", "#b392f0"),
 )
 TEXT_SCALE_RANGE = (85, 130)  # percent
+
+
+@lru_cache(maxsize=64)
+def _extras_dict(extras: tuple) -> dict:
+    return dict(extras)
 
 
 @dataclass(frozen=True)
@@ -75,6 +81,17 @@ class ThemeConfig:
     slider_steps: int = 100  # how many stops a slider has across its span: more is smoother
 
     icon_dir: str = ""  # where the Modern theme's checkbox / arrow pictures are (set when the theme is applied)
+    icons_dir: str = ""  # a folder of the theme's own icons (svg or png, by the icon's name), which are used in place of the program's
+    extras: tuple = ()  # (name, value) pairs the theme file sets for the named parts of the interface (see elements.py); read them with get()
+
+    def get(self, name: str):
+        """The value of a named part of the interface (elements.py): what the theme file says, else what follows from the theme's colours."""
+        values = _extras_dict(self.extras)
+        if name in values:
+            return values[name]
+        from .elements import default_of
+
+        return default_of(self, name)
 
 
 def _mix(a: str, b: str, t: float) -> str:

@@ -17,6 +17,8 @@ class ThemeSpec:
     default_accent: str | None = None  # the accent when it is not editable and not in overrides
     extra_qss: str = ""  # a user's own style sheet rules, added after the theme's
     path: str = ""  # the theme file, for a user theme
+    extras: tuple = ()  # (name, value) pairs for the named parts of the interface (elements.py)
+    icons_dir: str = ""  # the theme's own icons folder, when it has one (a theme that is a folder)
 
     @property
     def builtin(self) -> bool:

@@ -26,10 +26,14 @@ class _Body(QWidget):
 
     def paintEvent(self, event) -> None:
         painter = QPainter(self)
-        painter.fillRect(4, 0, self.width() - 4, self.height(), QColor(255, 255, 255, 9))
-        rail = QColor(THEME.accent_primary)
-        rail.setAlpha(150)
-        painter.fillRect(3, 0, 2, self.height(), rail)
+        tint = QColor(THEME.get("fold_body_tint"))
+        tint.setAlpha(THEME.get("fold_body_tint_alpha"))
+        painter.fillRect(4, 0, self.width() - 4, self.height(), tint)
+        width = THEME.get("fold_rail_width")
+        if width:
+            rail = QColor(THEME.get("fold_rail"))
+            rail.setAlpha(THEME.get("fold_rail_alpha"))
+            painter.fillRect(5 - width, 0, width, self.height(), rail)
 
 
 def _is_title(widget) -> bool:
@@ -74,8 +78,6 @@ class FoldSection(QWidget):
 
     folded = pyqtSignal(str, bool)       # (key, closed)
     ANIMATE = True                       # the group slides open and shut (the tests that look at it straight after a click turn this off)
-    SLIDE_MS = 160
-    HEAD_BUTTON_HEIGHT = 22              # the title bar is 28 high with 3 of room above and below
 
     def __init__(self, key: str, title: QLabel, extras: list[QLayoutItem], closed: bool = False, parent: QWidget | None = None):
         super().__init__(parent)
@@ -92,7 +94,6 @@ class FoldSection(QWidget):
         self._head.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         head = QHBoxLayout(self._head)
         head.setContentsMargins(4, 3, 6, 3)
-        self._head.setFixedHeight(28)
         self._restyle_head()
         STYLE.changed.connect(self._restyle_head)
         self._chevron = QToolButton()
@@ -112,7 +113,7 @@ class FoldSection(QWidget):
             if item.widget() is not None:
                 widget = item.widget()
                 if isinstance(widget, QAbstractButton) and not isinstance(widget, QToolButton):
-                    widget.setFixedHeight(self.HEAD_BUTTON_HEIGHT)      # a button beside a title sits inside the title bar, not taller than it
+                    widget.setFixedHeight(max(16, THEME.get("fold_head_height") - 6))      # a button beside a title sits inside the title bar, not taller than it
                     widget.setStyleSheet("QPushButton { padding: 0px 10px; min-height: 0px; }")
                 head.addWidget(widget)
             elif item.layout() is not None:
@@ -128,7 +129,7 @@ class FoldSection(QWidget):
         clip_layout.setContentsMargins(0, 0, 0, 0)
         clip_layout.addWidget(self._body)
         outer.addWidget(self._clip)
-        self._slide = Slide(self, self._clip, self._body, self.SLIDE_MS)
+        self._slide = Slide(self, self._clip, self._body, lambda: THEME.get("fold_slide_ms"))
         self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
         self._watch = _Watch(self)
         title.installEventFilter(self)
@@ -136,8 +137,14 @@ class FoldSection(QWidget):
         self._apply()
 
     def _restyle_head(self) -> None:
-        self._head.setStyleSheet(f"#foldhead {{ background: {THEME.bg_input}; border: 1px solid {THEME.border_color}; border-radius: 6px; }}"
-                                 f"#foldhead:hover {{ border-color: {THEME.text_muted}; }}")
+        self._head.setFixedHeight(THEME.get("fold_head_height"))
+        self._head.setStyleSheet(f"#foldhead {{ background: {THEME.get('fold_head_bg')}; border: 1px solid {THEME.get('fold_head_border')}; border-radius: {THEME.get('fold_head_radius')}px; }}"
+                                 f"#foldhead:hover {{ border-color: {THEME.get('fold_head_hover_border')}; }}")
+
+    def apply_theme(self) -> None:
+        """A theme was put in force: the title band and the rail take its values."""
+        self._restyle_head()
+        self._body.update()
 
     def eventFilter(self, obj, event):
         if obj is self._title and event.type() == QEvent.Type.MouseButtonRelease and event.button() == Qt.MouseButton.LeftButton:

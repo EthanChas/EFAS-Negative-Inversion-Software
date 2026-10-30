@@ -6,7 +6,7 @@ from PyQt6.QtCore import QUrl, Qt
 from PyQt6.QtGui import QDesktopServices, QKeySequence
 from PyQt6.QtWidgets import (
     QApplication, QButtonGroup, QCheckBox, QComboBox, QGridLayout, QSlider, QDialog, QFileDialog, QFormLayout, QFrame, QHBoxLayout, QKeySequenceEdit, QLabel, QListWidget, QMessageBox, QPushButton,
-    QInputDialog, QScrollArea, QSpinBox, QStackedWidget, QVBoxLayout, QWidget,
+    QInputDialog, QMenu, QScrollArea, QSpinBox, QStackedWidget, QVBoxLayout, QWidget,
 )
 
 from ...features.aidust import logic as aidust
@@ -130,17 +130,23 @@ class SettingsDialog(QDialog):
         tools = QHBoxLayout()
         tools.setSpacing(THEME.space_sm)
         self._import_btn = QPushButton("Import theme file...")
-        self._import_btn.setToolTip("Add a theme written in CSS (a .css file): see 'How to write a theme' in the docs, or export a theme to see the format")
+        self._import_btn.setToolTip("Add a theme written in CSS (a .css file) or a .zip of a theme folder: see docs/themes.md, or export a theme to see the format")
         self._import_btn.clicked.connect(self._import_theme)
+        self._import_folder_btn = QPushButton("Import theme folder...")
+        self._import_folder_btn.setToolTip("Add a theme that is a folder: a theme.css, with the theme's own icons in an icons folder beside it")
+        self._import_folder_btn.clicked.connect(self._import_theme_folder)
         self._export_btn = QPushButton("Export theme...")
         self._export_btn.setToolTip("Save the selected theme as a CSS file: the quickest way to start making your own")
         self._export_btn.clicked.connect(self._export_theme)
+        self._export_folder_btn = QPushButton("Export theme folder...")
+        self._export_folder_btn.setToolTip("Save the selected theme as a folder: its settings (theme.css) and a copy of every icon to change (icons)")
+        self._export_folder_btn.clicked.connect(self._export_theme_folder)
         self._folder_btn = QPushButton("Open themes folder")
         self._folder_btn.clicked.connect(self._open_themes_folder)
         self._remove_btn = QPushButton("Remove theme")
         self._remove_btn.setToolTip("Delete the selected imported theme (the built-in ones cannot be removed)")
         self._remove_btn.clicked.connect(self._remove_theme)
-        for b in (self._import_btn, self._export_btn, self._folder_btn, self._remove_btn):
+        for b in (self._import_btn, self._import_folder_btn, self._export_btn, self._export_folder_btn, self._folder_btn, self._remove_btn):
             tools.addWidget(b)
         tools.addStretch(1)
         col.addLayout(tools)
@@ -290,9 +296,16 @@ class SettingsDialog(QDialog):
         super().accept()
 
     def _import_theme(self) -> None:
-        path, _ = QFileDialog.getOpenFileName(self, "Import theme file", "", "Theme files (*.css *.qss *.efastheme);;All files (*)")
-        if not path:
-            return
+        path, _ = QFileDialog.getOpenFileName(self, "Import theme", "", "Theme files (*.css *.qss *.efastheme *.zip);;All files (*)")
+        if path:
+            self._import_theme_from(path)
+
+    def _import_theme_folder(self) -> None:
+        path = QFileDialog.getExistingDirectory(self, "Import theme folder")
+        if path:
+            self._import_theme_from(path)
+
+    def _import_theme_from(self, path: str) -> None:
         spec, errors, warnings = theme_themes.import_file(path)
         if spec is None:
             QMessageBox.warning(self, "Import theme file", "That theme could not be imported:\n\n- " + "\n- ".join(errors))
@@ -317,6 +330,20 @@ class SettingsDialog(QDialog):
                 f.write(text)
         except OSError as exc:
             QMessageBox.warning(self, "Export theme", f"The file could not be written ({exc}).")
+
+    def _export_theme_folder(self) -> None:
+        spec = self._spec(self._theme_name)
+        theme = theme_themes.build(spec, self._theme_accent, 100)
+        destination = QFileDialog.getExistingDirectory(self, "Export theme: choose where to put its folder")
+        if not destination:
+            return
+        try:
+            folder = theme_themes.export_folder(theme, spec.name + (" (copy)" if spec.builtin else ""), spec.description, spec.base, destination)
+        except OSError as exc:
+            QMessageBox.warning(self, "Export theme", f"The folder could not be written ({exc}).")
+            return
+        QMessageBox.information(self, "Export theme", f"Saved to {folder}.\n\nEdit theme.css (colours, sizes, parts of the interface) and replace icons in its icons folder (delete the ones you do not change), "
+                                                    "then use Import theme > A folder... to bring it back.")
 
     def _open_themes_folder(self) -> None:
         folder = theme_themes.themes_folder()

@@ -191,8 +191,7 @@ def _stepper_button(direction: int, tip: str) -> QToolButton:
 def inset_edge() -> str:
     """The edge of the field inside a dropdown's dark frame, as NegPy draws a field's: a faint white wash (its border_primary, 6% white) on the dark input colour, worked out as a plain
     colour so it holds on every theme."""
-    base = QColor(THEME.bg_input)
-    return QColor(*(round(c * 0.94 + 255 * 0.06) for c in (base.red(), base.green(), base.blue()))).name()
+    return THEME.get("dropdown_field_edge")
 
 
 def _restyle_steppers(box: QWidget) -> None:
@@ -200,12 +199,12 @@ def _restyle_steppers(box: QWidget) -> None:
     into the frame with a faint edge of its own (NegPy's field edge)."""
     edge = inset_edge()
     box.setStyleSheet(
-        f"#stepcombo {{ background: {THEME.bg_input}; border: 1px solid {THEME.border_color}; border-radius: 7px; }}"
-        f"#stepcombo QComboBox {{ background: {THEME.bg_input}; border: 1px solid {edge}; border-radius: 4px; padding-left: 6px; }}"
+        f"#stepcombo {{ background: {THEME.get('dropdown_frame_bg')}; border: 1px solid {THEME.get('dropdown_frame_border')}; border-radius: {THEME.get('dropdown_frame_radius')}px; }}"
+        f"#stepcombo QComboBox {{ background: {THEME.get('dropdown_frame_bg')}; border: 1px solid {edge}; border-radius: {THEME.get('dropdown_field_radius')}px; padding-left: 6px; }}"
         f"#stepcombo QComboBox:hover {{ border-color: {THEME.bevel_light}; }}"
         f"#stepcombo QComboBox:focus {{ border: 1px solid {THEME.accent_primary}; }}"
-        f"#stepcombo QToolButton {{ background: {THEME.bg_button}; border: 1px solid {THEME.border_color}; border-radius: 5px; color: {THEME.text_primary}; font-weight: bold; padding: 0px; }}"
-        f"#stepcombo QToolButton:hover {{ background: {THEME.bg_hover}; border-color: {THEME.accent_primary}; }}"
+        f"#stepcombo QToolButton {{ background: {THEME.get('dropdown_arrow_bg')}; border: 1px solid {THEME.border_color}; border-radius: 5px; color: {THEME.text_primary}; font-weight: bold; padding: 0px; }}"
+        f"#stepcombo QToolButton:hover {{ background: {THEME.bg_hover}; border-color: {THEME.get('dropdown_arrow_hover_border')}; }}"
         f"#stepcombo QToolButton:pressed {{ background: {THEME.bg_pressed}; }}")
 
 
@@ -240,6 +239,13 @@ class _Follow(QObject):
         return False
 
 
+class _StepBox(QWidget):
+    """The dark frame round a dropdown: it takes the theme's values again when a theme is put in force."""
+
+    def apply_theme(self) -> None:
+        _restyle_steppers(self)
+
+
 def _framed(combo: QComboBox, arrows: bool) -> bool:
     """Set a dropdown in the dark frame, with ‹ and › either side of it when `arrows`. False when it is not in a layout."""
     if combo.parentWidget() is None:
@@ -247,7 +253,7 @@ def _framed(combo: QComboBox, arrows: bool) -> bool:
     holder = _layout_holding(combo, combo.parentWidget().layout())
     if holder is None:
         return False
-    box = QWidget()
+    box = _StepBox()
     box.setObjectName("stepcombo")
     box.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
     row = QHBoxLayout(box)

@@ -59,9 +59,10 @@ def user_specs() -> list[ThemeSpec]:
     except OSError:
         return out
     for name in names:
-        if not name.lower().endswith(cssfile.EXTENSIONS):
+        path = os.path.join(folder, name)
+        if not (name.lower().endswith(cssfile.EXTENSIONS) or os.path.isfile(os.path.join(path, cssfile.FOLDER_FILE))):
             continue
-        spec, errors, _warnings = cssfile.load(os.path.join(folder, name))
+        spec, errors, _warnings = cssfile.load(path)
         if spec is not None and not errors:
             out.append(spec)
     return out
@@ -77,7 +78,7 @@ def find(theme_id: str) -> ThemeSpec | None:
             return spec
     if theme_id.startswith(USER_PREFIX):
         path = os.path.join(themes_folder(), os.path.basename(theme_id[len(USER_PREFIX):]))
-        if os.path.isfile(path):
+        if os.path.isfile(path) or os.path.isfile(os.path.join(path, cssfile.FOLDER_FILE)):
             spec, errors, _w = cssfile.load(path)
             if spec is not None and not errors:
                 return spec
@@ -97,7 +98,7 @@ def build(spec: ThemeSpec, accent_name: str = ACCENTS[0][0], text_scale: int = 1
     else:
         accent = spec.overrides.get("accent_primary") or (accent_colour(accent_name) if spec.accent_editable else accent_colour(spec.default_accent or ACCENTS[0][0]))
         theme = tokens.modern_theme(accent, **spec.overrides)
-    theme = dataclasses.replace(theme, name=spec.id)
+    theme = dataclasses.replace(theme, name=spec.id, extras=spec.extras, icons_dir=spec.icons_dir)
     return tokens.scaled(theme, text_scale)
 
 
@@ -127,8 +128,97 @@ def unique_path(name: str) -> str:
     return path
 
 
+def unique_folder(name: str) -> str:
+    folder = themes_folder()
+    os.makedirs(folder, exist_ok=True)
+    base = safe_file_name(name)
+    path = os.path.join(folder, base)
+    n = 2
+    while os.path.exists(path):
+        path = os.path.join(folder, f"{base} ({n})")
+        n += 1
+    return path
+
+
+MAX_FILES = 400                 # what a theme folder or zip may hold
+MAX_TOTAL_BYTES = 40 * 1024 * 1024
+ICON_EXTENSIONS = (".svg", ".png")
+
+
+def _wanted_in_folder(rel: str) -> bool:
+    """A theme folder holds theme.css and, in an icons folder, svg or png pictures: nothing else is copied."""
+    rel = rel.replace("\\", "/")
+    if rel == cssfile.FOLDER_FILE:
+        return True
+    parts = rel.split("/")
+    return len(parts) == 2 and parts[0] == cssfile.ICONS_FOLDER and parts[1].lower().endswith(ICON_EXTENSIONS) and not parts[1].startswith(".")
+
+
+def _import_folder(source: str, spec_check) -> tuple[ThemeSpec | None, list[str], list[str]]:
+    """Copy a checked theme folder into the themes folder (only theme.css and the pictures of its icons folder)."""
+    spec, errors, warnings = spec_check
+    if spec is None or errors:
+        return None, errors or ["That folder is not a theme."], warnings
+    import shutil
+
+    dest = unique_folder(spec.name)
+    try:
+        os.makedirs(dest)
+        total = 0
+        count = 0
+        for root, _dirs, files in os.walk(source):
+            for name in files:
+                full = os.path.join(root, name)
+                rel = os.path.relpath(full, source)
+                if not _wanted_in_folder(rel):
+                    continue
+                total += os.path.getsize(full)
+                count += 1
+                if count > MAX_FILES or total > MAX_TOTAL_BYTES:
+                    raise OSError("the folder holds too much")
+                target = os.path.join(dest, rel)
+                os.makedirs(os.path.dirname(target), exist_ok=True)
+                shutil.copyfile(full, target)
+    except OSError as exc:
+        shutil.rmtree(dest, ignore_errors=True)
+        return None, [f"The theme could not be copied into the themes folder ({exc})."], warnings
+    spec, _e, _w = cssfile.load(dest)
+    return spec, [], warnings
+
+
+def _import_zip(source: str) -> tuple[ThemeSpec | None, list[str], list[str]]:
+    import tempfile
+    import zipfile
+
+    try:
+        with zipfile.ZipFile(source) as z, tempfile.TemporaryDirectory() as tmp:
+            names = [n for n in z.namelist() if not n.endswith("/")]
+            if len(names) > MAX_FILES or sum(z.getinfo(n).file_size for n in names) > MAX_TOTAL_BYTES:
+                return None, ["That zip file holds too much to be a theme."], []
+            clean = {n: n.replace("\\", "/") for n in names}
+            roots = {c.split("/", 1)[0] for c in clean.values() if "/" in c}
+            strip = len(roots) == 1 and all("/" in c for c in clean.values())      # everything sits inside one folder of the zip
+            for n, rel in clean.items():
+                if strip:
+                    rel = rel.split("/", 1)[1]
+                if ".." in rel.split("/") or rel.startswith("/") or not _wanted_in_folder(rel):
+                    continue
+                target = os.path.join(tmp, *rel.split("/"))
+                os.makedirs(os.path.dirname(target), exist_ok=True)
+                with z.open(n) as src, open(target, "wb") as out:
+                    out.write(src.read())
+            return import_file(tmp)
+    except (OSError, zipfile.BadZipFile) as exc:
+        return None, [f"The zip file could not be read ({exc})."], []
+
+
 def import_file(source: str) -> tuple[ThemeSpec | None, list[str], list[str]]:
-    """Check a theme file and, if it is good, copy it into the themes folder. -> (the theme, errors, warnings); on errors nothing is copied."""
+    """Check a theme (a .css file, a folder with a theme.css, or a zip of one) and, if it is good, copy it into the themes folder. -> (the theme, errors, warnings); on errors
+    nothing is copied."""
+    if os.path.isdir(source):
+        return _import_folder(source, cssfile.load(source))
+    if source.lower().endswith(".zip"):
+        return _import_zip(source)
     spec, errors, warnings = cssfile.load(source)
     if spec is None or errors:
         return None, errors or ["That file is not a theme."], warnings
@@ -144,12 +234,36 @@ def import_file(source: str) -> tuple[ThemeSpec | None, list[str], list[str]]:
     return spec, [], warnings
 
 
+def export_folder(theme: ThemeConfig, name: str, description: str, base: str, destination: str, with_icons: bool = True) -> str:
+    """Write a theme as a folder to start from: <destination>/<name>/theme.css with every setting, and an icons folder holding the program's icons to change (only the icons that are
+    there are used: delete the ones you do not change). Returns the folder."""
+    import shutil
+
+    folder = os.path.join(destination, safe_file_name(name))
+    os.makedirs(folder, exist_ok=True)
+    with open(os.path.join(folder, cssfile.FOLDER_FILE), "w", encoding="utf-8") as f:
+        f.write(cssfile.export(theme, name, description, base))
+    icons = os.path.join(folder, cssfile.ICONS_FOLDER)
+    os.makedirs(icons, exist_ok=True)
+    if with_icons:
+        source = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "assets", "icon")
+        for entry in sorted(os.listdir(source)):
+            if entry.lower().endswith(".svg"):
+                shutil.copyfile(os.path.join(source, entry), os.path.join(icons, entry))
+    return folder
+
+
 def remove_user_theme(theme_id: str) -> bool:
     spec = find(theme_id)
     if spec is None or spec.builtin or not spec.path:
         return False
+    import shutil
+
     try:
-        os.remove(spec.path)
+        if os.path.basename(spec.path) == cssfile.FOLDER_FILE:
+            shutil.rmtree(os.path.dirname(spec.path))
+        else:
+            os.remove(spec.path)
     except OSError:
         return False
     return True

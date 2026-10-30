@@ -16,11 +16,13 @@ import dataclasses
 import os
 import re
 
-from . import tokens
+from . import elements, tokens
 from .spec import USER_PREFIX, ThemeSpec
 from .tokens import CLASSIC, MODERN, ThemeConfig
 
 EXTENSIONS = (".css", ".qss", ".efastheme")
+FOLDER_FILE = "theme.css"      # a theme that is a folder keeps its settings here, with its icons beside it in an icons folder
+ICONS_FOLDER = "icons"
 MAX_BYTES = 256 * 1024
 
 COLOUR_FIELDS = (
@@ -42,7 +44,7 @@ _ROOT = re.compile(r":root\s*\{([^}]*)\}", re.S | re.I)
 _DECL = re.compile(r"--([A-Za-z0-9_-]+)\s*:\s*([^;]*?)\s*(?:;|$)", re.M)
 _VAR = re.compile(r"var\(\s*--([A-Za-z0-9_-]+)\s*(?:,\s*([^)]*?))?\s*\)")
 _HEX = re.compile(r"^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$")
-_NUM = re.compile(r"^(\d+)\s*(?:px|pt)?$")
+_NUM = re.compile(r"^(\d+)\s*(?:px|pt|ms)?$")
 
 
 def _field(key: str) -> str:
@@ -89,18 +91,50 @@ def substitute_vars(text: str, theme: ThemeConfig) -> str:
     """Replace var(--name) in the style sheet rules by the theme's own value (or the fallback given in var(--name, fallback))."""
     def repl(m: re.Match) -> str:
         key = _field(m.group(1))
-        value = getattr(theme, key, None)
-        if isinstance(value, (str, int)) and key not in ("name", "style", "icon_dir"):
+        value = theme.get(key) if key in elements.ELEMENTS else getattr(theme, key, None)
+        if isinstance(value, (str, int)) and key not in ("name", "style", "icon_dir", "icons_dir"):
             return str(value)
         return m.group(2) if m.group(2) is not None else m.group(0)
 
     return _VAR.sub(repl, text)
 
 
-def parse(text: str, file_name: str = "theme.css", path: str = "") -> tuple[ThemeSpec | None, list[str], list[str]]:
+def _element_value(element: "elements.Element", raw: str, css_name: str, errors: list[str]):
+    """The value a theme file gives a named part of the interface, or None (with the reason added to `errors`)."""
+    raw = raw.strip().strip("\"'")
+    if element.kind == "colour":
+        colour = _colour(raw)
+        if colour is None:
+            errors.append(f"--{css_name}: '{raw}' is not a colour. Write it as #rrggbb (or #rgb).")
+        return colour
+    if element.kind == "number":
+        n = _NUM.match(raw)
+        if not n:
+            errors.append(f"--{css_name}: '{raw}' is not a whole number.")
+            return None
+        if not element.low <= int(n.group(1)) <= element.high:
+            errors.append(f"--{css_name}: {n.group(1)} is outside {element.low} to {element.high}.")
+            return None
+        return int(n.group(1))
+    if element.kind == "choice":
+        word = raw.lower()
+        if word not in element.choices:
+            errors.append(f"--{css_name}: '{raw}' should be one of {', '.join(element.choices)}.")
+            return None
+        return word
+    items = [w.strip().lower() for w in raw.split(",") if w.strip()]      # a list of words
+    bad = [w for w in items if w not in element.choices]
+    if bad:
+        errors.append(f"--{css_name}: '{bad[0]}' is not one of {', '.join(element.choices)}.")
+        return None
+    return ",".join(items)
+
+
+def parse(text: str, file_name: str = "theme.css", path: str = "", ident: str = "", icons_dir: str = "") -> tuple[ThemeSpec | None, list[str], list[str]]:
     """-> (the theme or None, errors, warnings). Errors stop a theme being used; warnings are for the author (an unknown name, hard-to-read colours)."""
     errors: list[str] = []
     warnings: list[str] = []
+    extras: dict = {}
     if len(text.encode("utf-8", "ignore")) > MAX_BYTES:
         return None, [f"The file is larger than {MAX_BYTES // 1024} KB."], warnings
     text = _COMMENT.sub("", text.replace("\r\n", "\n"))
@@ -130,6 +164,10 @@ def parse(text: str, file_name: str = "theme.css", path: str = "") -> tuple[Them
                 overrides[key] = int(n.group(1))
         elif key in TEXT_FIELDS:
             overrides[key] = raw.strip("\"'").split(",")[0].strip().strip("\"'")
+        elif key in elements.ELEMENTS:
+            value = _element_value(elements.ELEMENTS[key], raw, m.group(1), errors)
+            if value is not None:
+                extras[key] = value
         else:
             warnings.append(f"--{m.group(1)} is not something themes can set; it was ignored.")
     base = meta.get("base", MODERN).lower()
@@ -137,13 +175,14 @@ def parse(text: str, file_name: str = "theme.css", path: str = "") -> tuple[Them
         errors.append(f"--base: '{base}' should be modern or classic.")
         base = MODERN
     rest = _ROOT.sub("", text).strip()
-    errors.extend(f"The style sheet rules: {message}" for message in qss_errors(substitute_vars(rest, _preview_config(base, overrides))))
+    errors.extend(f"The style sheet rules: {message}" for message in qss_errors(substitute_vars(rest, dataclasses.replace(_preview_config(base, overrides), extras=tuple(sorted(extras.items()))))))
     name = meta.get("name") or os.path.splitext(os.path.basename(file_name))[0]
     if errors:
         return None, errors, warnings
     spec = ThemeSpec(
-        id=USER_PREFIX + os.path.basename(file_name), name=name[:60], description=(meta.get("description") or "A theme you imported.")[:200],
+        id=USER_PREFIX + (ident or os.path.basename(file_name)), name=name[:60], description=(meta.get("description") or "A theme you imported.")[:200],
         base=base, overrides=overrides, accent_editable="accent_primary" not in overrides, extra_qss=rest, path=path,
+        extras=tuple(sorted(extras.items())), icons_dir=icons_dir,
     )
     cfg = _preview_config(base, overrides)
     for fg, bg in (("text_primary", "bg_app"), ("text_primary", "bg_panel"), ("text_secondary", "bg_panel"), ("on_accent", "accent_primary")):
@@ -160,6 +199,15 @@ def _preview_config(base: str, overrides: dict) -> ThemeConfig:
 
 
 def load(path: str) -> tuple[ThemeSpec | None, list[str], list[str]]:
+    """A theme from a file, or from a folder (its theme.css, with an icons folder beside it)."""
+    ident, icons = "", ""
+    if os.path.isdir(path):
+        folder = path
+        path = os.path.join(folder, FOLDER_FILE)
+        ident = os.path.basename(os.path.normpath(folder))
+        icons = os.path.join(folder, ICONS_FOLDER) if os.path.isdir(os.path.join(folder, ICONS_FOLDER)) else ""
+        if not os.path.isfile(path):
+            return None, [f"The folder has no {FOLDER_FILE} in it."], []
     try:
         size = os.path.getsize(path)
         if size > MAX_BYTES:
@@ -168,7 +216,7 @@ def load(path: str) -> tuple[ThemeSpec | None, list[str], list[str]]:
             text = f.read()
     except (OSError, UnicodeDecodeError) as exc:
         return None, [f"The file could not be read ({exc})."], []
-    return parse(text, os.path.basename(path), path)
+    return parse(text, os.path.basename(path), path, ident, icons)
 
 
 def _css_value(field: str, value) -> str:
@@ -202,6 +250,17 @@ def export(theme: ThemeConfig, name: str, description: str = "", base: str | Non
         lines.append(f"  /* {title} */")
         for f in fields:
             lines.append(f"  --{f.replace('_', '-').replace('accent-primary', 'accent')}: {_css_value(f, getattr(theme, f))};")
+        lines.append("")
+    seen: list[str] = []
+    for element in elements.ELEMENTS.values():
+        if element.group not in seen:
+            seen.append(element.group)
+    for group in seen:
+        lines.append(f"  /* {group}: parts of the interface (see docs/themes.md); delete a line to use the value that follows from the colours above */")
+        for element in elements.ELEMENTS.values():
+            if element.group == group:
+                value = theme.get(element.name)
+                lines.append(f"  --{element.css_name}: {value}{element.unit if element.kind == 'number' else ''};      /* {element.help} */")
         lines.append("")
     lines[-1:] = ["}", "", "/* Example: rounder buttons and a brighter focus ring (delete or change) */", "/* QPushButton { border-radius: 14px; } */", ""]
     return "\n".join(lines)

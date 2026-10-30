@@ -11,7 +11,6 @@ from . import panel_icons
 from .module_style import AUTOMATIC, NAMED, PLAIN, STYLE
 from .slide import Slide
 
-CHANGED_RED = "#e5484d"      # the star beside a module whose settings are not its defaults
 HOVER_OPEN_MS = 220
 HOVER_CLOSE_MS = 400
 
@@ -109,7 +108,7 @@ class _CollapsibleHeader(QWidget):
         row.addWidget(label, 0, Qt.AlignmentFlag.AlignVCenter)
 
         self.changed_star = QLabel("*")      # a red star beside the name while something in the module is not at its default
-        self.changed_star.setStyleSheet(f"color: {CHANGED_RED}; font-weight: bold; font-size: {THEME.font_size_header + 3}pt;")
+        self._restyle_star()
         self.changed_star.setToolTip("Something in this module has been changed from its defaults")
         self.changed_star.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
         self.changed_star.hide()
@@ -148,8 +147,13 @@ class _CollapsibleHeader(QWidget):
         self._icon_label.setPixmap(pix)
         self._icon_label.setVisible(not pix.isNull())
 
+    def _restyle_star(self) -> None:
+        self.changed_star.setStyleSheet(f"color: {THEME.get('changed_star')}; font-weight: bold; font-size: {THEME.font_size_header + 3}pt;")
+
     def apply_theme(self) -> None:
         self.setFixedHeight(THEME.font_size_header + THEME.space_lg + (8 if THEME.style == "modern" else 0))
+        if hasattr(self, "changed_star"):
+            self._restyle_star()
         if hasattr(self, "_icon_label"):
             self._set_margins()
             self._show_icon()
@@ -271,7 +275,7 @@ class CollapsiblePanel(BevelPanel):
         if collapsible and not start_expanded:
             self._body_container.setMaximumHeight(0)
 
-        self._slide = Slide(self, self._body_container, self._content, 180, QEasingCurve.Type.InOutQuad, hide_when_closed=False, opened=start_expanded or not collapsible)
+        self._slide = Slide(self, self._body_container, self._content, lambda: THEME.get("module_slide_ms"), QEasingCurve.Type.InOutQuad, hide_when_closed=False, opened=start_expanded or not collapsible)
 
         # opening on hover (a General setting): `pinned` panels were opened by a click and stay; the others close when the mouse leaves
         self._pinned = False
