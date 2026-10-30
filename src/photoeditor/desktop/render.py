@@ -66,6 +66,7 @@ from ..features.lenscorrect import logic as lens_logic
 from ..features.colormix.logic import MIXER_PANEL_KEYS, TONING_KEYS
 from .mask_blend import MaskBlender
 from ..features.halation import logic as hal_logic
+from ..features.carrier import logic as carrier_logic
 from ..features.flatfield.logic import apply_flatfield
 from ..features.negative.logic import (
     analysis_region,
@@ -208,6 +209,10 @@ class EditParams:
     hal_radius: float = 0.4
     hal_threshold: float = 0.7
     hal_warmth: float = 0.8
+    carrier_width: float = 0.0
+    carrier_rough: float = 0.25
+    carrier_corner: float = 0.25
+    carrier_flare: float = 0.5
     gs_amount: float = 0.0
     gs_size: float = 1.2
     gs_midtones: float = 0.5
@@ -426,6 +431,10 @@ class EditParams:
             hal_radius=float(getattr(s, "hal_radius", 0.4)),
             hal_threshold=float(getattr(s, "hal_threshold", 0.7)),
             hal_warmth=float(getattr(s, "hal_warmth", 0.8)),
+            carrier_width=float(getattr(s, "carrier_width", 0.0)),
+            carrier_rough=float(getattr(s, "carrier_rough", 0.25)),
+            carrier_corner=float(getattr(s, "carrier_corner", 0.25)),
+            carrier_flare=float(getattr(s, "carrier_flare", 0.5)),
             gs_amount=float(getattr(s, "gs_amount", 0.0)),
             gs_size=float(getattr(s, "gs_size", 1.2)),
             gs_midtones=float(getattr(s, "gs_midtones", 0.5)),
@@ -1112,6 +1121,8 @@ class Renderer:
             ec_active = not ec_logic.is_neutral(ec_values)
             hal_values = {k: getattr(params, k) for k in hal_logic.KEYS}
             hal_active = not hal_logic.is_neutral(hal_values)
+            carrier_values = {k: getattr(params, k) for k in carrier_logic.KEYS}
+            carrier_active = not carrier_logic.is_neutral(carrier_values)
             gs_values = {k: getattr(params, k) for k in gs_logic.KEYS}
             gs_active = not gs_logic.is_neutral(gs_values)
             teq_active = not teq_logic.is_neutral({k: getattr(params, k) for k in teq_logic.KEYS})       # the three darktable modules that work on the whole picture after the colour (see below)
@@ -1164,7 +1175,7 @@ class Renderer:
             noritsu_sat = noritsu_settings(params.metering).effective().saturation if (params.negative_inverted and params.metering.engine == "noritsu") else 1.0   # (the Noritsu look's saturation mixes the channels: it cannot be part of the conversion's table)
             mixing = bool(params.shadows or params.highlights or params.saturation or denoise or local or camera_matrix or color_active or abs(noritsu_sat - 1.0) > 1e-4)
             wide = pixels16 is not None
-            keeps_16 = not (blender.any() or rt_active or ec_active or hal_active or gs_active or teq_active or cbr_active or dif_active or params.sharpen_amount or params.vignette or watermark_active(params.wm_film) or params.border > 0
+            keeps_16 = not (blender.any() or rt_active or ec_active or hal_active or carrier_active or gs_active or teq_active or cbr_active or dif_active or params.sharpen_amount or params.vignette or watermark_active(params.wm_film) or params.border > 0
                             or params.marks.wanted(params.wm_info, params.wm_camera, params.wm_lens, watermark_active(params.wm_film)))   # nothing after the colour stages needs 8 bits
             deep_ok = deep and wide and keeps_16
             hold_16 = wide and self.wide_mixing and (gpu_pipeline.wide_ok() or not gpu_pipeline.usable(frame.shape))   # the picture stays 16-bit through the mixing stages
@@ -1317,6 +1328,8 @@ class Renderer:
             if params.vignette:
                 lit = gpu_pipeline.vignette(image, params.vignette, params.vignette_size)
                 image = lit if lit is not None else apply_vignette(image, params.vignette, params.vignette_size)
+            if carrier_active:   # the filed negative carrier's rebate, on the finished and cropped picture, after the vignette and before the border (see features/carrier)
+                image = carrier_logic.apply_carrier(image, carrier_values)
             if watermark_active(params.wm_film):
                 image = apply_watermark(
                     image, params.wm_film, params.wm_texture, params.wm_size, params.wm_position,

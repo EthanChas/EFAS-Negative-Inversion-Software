@@ -49,6 +49,7 @@ from .blend_box import BlendBox
 from .grainsharp_panel import GrainSharpeningPanel
 from ..mask_blend import BLENDABLE
 from .halation_panel import HalationPanel
+from .carrier_panel import CarrierPanel
 from .color_balance_rgb_panel import ColorBalanceRgbPanel
 from .diffuse_panel import DiffuseSharpenPanel
 from .tone_equalizer_panel import ToneEqualizerPanel
@@ -547,7 +548,7 @@ class AppWindow(QMainWindow):
         self._preset_sharing = PresetSharing(self.controller, self)
         self._module_menus = ModuleMenus(self.controller, self, self._preset_sharing)
         for key, panel in (
-            ("exposure", self._exposure_tool), ("contrast", self._contrast_tool), ("printresponse", self._print_response_tool), ("lablook", self._lab_look_tool), ("colormixer", self._color_mixer_tool), ("colortoning", self._color_toning_tool), ("edgebleed", self._edge_tool), ("edgecolor", self._edge_color_tool), ("halation", self._halation_tool), ("tonecurve", self._curve_tool),
+            ("exposure", self._exposure_tool), ("contrast", self._contrast_tool), ("printresponse", self._print_response_tool), ("lablook", self._lab_look_tool), ("colormixer", self._color_mixer_tool), ("colortoning", self._color_toning_tool), ("edgebleed", self._edge_tool), ("edgecolor", self._edge_color_tool), ("halation", self._halation_tool), ("carrier", self._carrier_tool), ("tonecurve", self._curve_tool),
             ("shadows_highlights", self._shadows_highlights_tool), ("color", self._color_tool), ("sharpening", self._sharpening_tool), ("grainsharp", self._grainsharp_tool),
             ("diffuse", self._diffuse_tool), ("toneequalizer", self._tone_eq_tool), ("colorbalancergb", self._color_balance_tool),
             ("localcontrast", self._local_contrast_tool), ("denoise", self._denoise_tool), ("negative", self._negative_tool),
@@ -1386,6 +1387,9 @@ class AppWindow(QMainWindow):
         self._edge_color_tool.preview_requested.connect(self.controller.preview_edge_color)
         self._edge_color_tool.auto_requested.connect(self._on_edge_color_auto)
 
+        self._carrier_tool = CarrierPanel()
+        self._carrier_tool.changed.connect(self.controller.set_carrier)
+        self._carrier_tool.preview_requested.connect(self.controller.preview_carrier)
         self._halation_tool = HalationPanel()
         self._halation_tool.changed.connect(self.controller.set_halation)
         self._halation_tool.preview_requested.connect(self.controller.preview_halation)
@@ -1683,6 +1687,7 @@ class AppWindow(QMainWindow):
         watermark_col.setContentsMargins(0, 0, 0, 0)
         watermark_col.setSpacing(THEME.space_sm)
         watermark_col.addWidget(self._finishing_tool)
+        watermark_col.addWidget(self._carrier_tool)
         watermark_col.addWidget(self._watermark_tool)
         watermark_col.addWidget(self._canister_tool)
         watermark_col.addStretch(1)
@@ -3610,6 +3615,8 @@ class AppWindow(QMainWindow):
         self._edge_color_tool.set_values(self.controller._ec_values())
         self._halation_tool.reset()
         self._halation_tool.set_values(self.controller._hal_values())
+        self._carrier_tool.reset()
+        self._carrier_tool.set_values(self.controller._carrier_values())
         self._grainsharp_tool.reset()
         self._grainsharp_tool.set_values(self.controller._gs_values())
         self._grainsharp_tool.set_note("Judge it at 100% zoom: on the small preview the grain is under a pixel.")
@@ -4348,6 +4355,7 @@ class AppWindow(QMainWindow):
         self._edge_tool.set_values(self.controller._edge_values())
         self._edge_color_tool.set_values(self.controller._ec_values())
         self._halation_tool.set_values(self.controller._hal_values())
+        self._carrier_tool.set_values(self.controller._carrier_values())
         self._grainsharp_tool.set_values(self.controller._gs_values())
         self._diffuse_tool.set_values(self.controller._dif_values())
         self._tone_eq_tool.set_values(self.controller._teq_values())

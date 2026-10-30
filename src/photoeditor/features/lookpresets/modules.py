@@ -17,6 +17,7 @@ from ..colorbalancergb import logic as color_balance
 from ..diffuse import logic as diffuse
 from ..toneequalizer import logic as tone_eq
 from ..halation import logic as halation
+from ..carrier import logic as carrier
 from ..lablook import logic as lab_look
 from ..printresponse import logic as print_response
 from ..sharpening.logic import DEFAULT_METHOD, METHOD_LABELS, SharpenMethod
@@ -147,6 +148,12 @@ MODULES: tuple[ModuleSpec, ...] = (
         FieldSpec("hal_threshold", "Halation threshold", "float", halation.DEFAULTS["hal_threshold"], *halation.THRESHOLD_RANGE),
         FieldSpec("hal_warmth", "Halation warmth", "float", halation.DEFAULTS["hal_warmth"], 0.0, 1.0),
     )),
+    ModuleSpec("carrier", "Negative carrier", (
+        FieldSpec("carrier_width", "Carrier width (mm)", "float", 0.0, *carrier.WIDTH_RANGE),
+        FieldSpec("carrier_rough", "Carrier roughness", "float", carrier.DEFAULTS["carrier_rough"], 0.0, 1.0),
+        FieldSpec("carrier_corner", "Carrier corner", "float", carrier.DEFAULTS["carrier_corner"], 0.0, 1.0),
+        FieldSpec("carrier_flare", "Carrier flare", "float", carrier.DEFAULTS["carrier_flare"], 0.0, 1.0),
+    )),
     ModuleSpec("grainsharp", "Grain sharpening", (
         FieldSpec("gs_amount", "Grain sharpening amount", "float", 0.0, 0.0, 1.0),
         FieldSpec("gs_size", "Grain size", "float", grainsharp.DEFAULTS["gs_size"], *grainsharp.SIZE_RANGE),
@@ -215,6 +222,7 @@ PANEL_MODULES: dict[str, tuple[str, tuple[str, ...]]] = {
     "edgebleed": ("Edge Bleed", ("edgebleed",)),
     "edgecolor": ("Edge Color", ("edgecolor",)),
     "halation": ("Halation", ("halation",)),
+    "carrier": ("Negative Carrier", ("carrier",)),
     "grainsharp": ("Grain Sharpening", ("grainsharp",)),
     "diffuse": ("Diffuse or Sharpen", ("diffuse",)),
     "toneequalizer": ("Tone Equalizer", ("toneequalizer",)),

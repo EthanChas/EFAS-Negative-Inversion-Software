@@ -71,6 +71,7 @@ from ..features.retouchdt import logic as rt_logic
 from ..features.instances import logic as inst_logic
 from ..features.lenscorrect import logic as lens_logic
 from ..features.halation import logic as hal_logic
+from ..features.carrier import logic as carrier_logic
 from ..features.colorbalancergb import logic as cbr_logic
 from ..features.diffuse import logic as dif_logic
 from ..features.gpu import diffuse as gpu_diffuse
@@ -135,7 +136,7 @@ _IMPORT_COUNTER = {"new": "added", "renamed": "renamed", "replaced": "replaced"}
 
 LOOK_FIELDS = (
     "exposure_ev", "tone_curve_points", "tone_curve_red", "tone_curve_green", "tone_curve_blue", "negative_inverted", "saturation", "temperature", "tint", "shadows", "highlights",
-    "contrast", "local_contrast", "print_snap", "print_toe", "print_toe_width", "print_shoulder", "print_shoulder_width", "lab_fade", "lab_glow", "lab_by_shadows", "lab_by_mids", "lab_by_highs", "lab_gm_shadows", "lab_gm_mids", "lab_gm_highs", "lab_response", "lab_response_amount", "vibrance", "mix_hue_red", "mix_sat_red", "mix_lum_red", "mix_hue_orange", "mix_sat_orange", "mix_lum_orange", "mix_hue_yellow", "mix_sat_yellow", "mix_lum_yellow", "mix_hue_green", "mix_sat_green", "mix_lum_green", "mix_hue_aqua", "mix_sat_aqua", "mix_lum_aqua", "mix_hue_blue", "mix_sat_blue", "mix_lum_blue", "mix_hue_purple", "mix_sat_purple", "mix_lum_purple", "mix_hue_magenta", "mix_sat_magenta", "mix_lum_magenta", "tone_hue_shadows", "tone_amt_shadows", "tone_hue_mids", "tone_amt_mids", "tone_hue_highs", "tone_amt_highs", "edge_holder", "edge_bleed", "edge_dodge", "edge_reach", "edge_mask", "edge_feather", "edge_mask_color", "edge_mask_meter", "ec_tint", "ec_warmth", "ec_light", "ec_size", "ec_shape", "hal_amount", "hal_radius", "hal_threshold", "hal_warmth", "gs_amount", "gs_size", "gs_midtones", "vignette", "vignette_size", "border", "border_color", "sharpen_amount", "sharpen_radius", "sharpen_masking", "sharpen_method", "film_type", "invert_r", "invert_g",
+    "contrast", "local_contrast", "print_snap", "print_toe", "print_toe_width", "print_shoulder", "print_shoulder_width", "lab_fade", "lab_glow", "lab_by_shadows", "lab_by_mids", "lab_by_highs", "lab_gm_shadows", "lab_gm_mids", "lab_gm_highs", "lab_response", "lab_response_amount", "vibrance", "mix_hue_red", "mix_sat_red", "mix_lum_red", "mix_hue_orange", "mix_sat_orange", "mix_lum_orange", "mix_hue_yellow", "mix_sat_yellow", "mix_lum_yellow", "mix_hue_green", "mix_sat_green", "mix_lum_green", "mix_hue_aqua", "mix_sat_aqua", "mix_lum_aqua", "mix_hue_blue", "mix_sat_blue", "mix_lum_blue", "mix_hue_purple", "mix_sat_purple", "mix_lum_purple", "mix_hue_magenta", "mix_sat_magenta", "mix_lum_magenta", "tone_hue_shadows", "tone_amt_shadows", "tone_hue_mids", "tone_amt_mids", "tone_hue_highs", "tone_amt_highs", "edge_holder", "edge_bleed", "edge_dodge", "edge_reach", "edge_mask", "edge_feather", "edge_mask_color", "edge_mask_meter", "ec_tint", "ec_warmth", "ec_light", "ec_size", "ec_shape", "hal_amount", "hal_radius", "hal_threshold", "hal_warmth", "carrier_width", "carrier_rough", "carrier_corner", "carrier_flare", "gs_amount", "gs_size", "gs_midtones", "vignette", "vignette_size", "border", "border_color", "sharpen_amount", "sharpen_radius", "sharpen_masking", "sharpen_method", "film_type", "invert_r", "invert_g",
     "invert_b", "chroma_denoise", "wm_film", "wm_texture", "wm_size", "wm_position", "wm_info", "wm_camera", "wm_lens",
 )
 LOOK_FIELDS = LOOK_FIELDS + dif_logic.KEYS + teq_logic.KEYS + cbr_logic.KEYS
@@ -393,6 +394,8 @@ class AppController(QObject):
             setattr(self.state, key, float(saved.get(key, default)))
         for key, default in hal_logic.DEFAULTS.items():
             setattr(self.state, key, float(saved.get(key, default)))
+        for key, default in carrier_logic.DEFAULTS.items():
+            setattr(self.state, key, float(saved.get(key, default)))
         for key, default in gs_logic.DEFAULTS.items():
             setattr(self.state, key, float(saved.get(key, default)))
         for key, default in (*dif_logic.DEFAULTS.items(), *teq_logic.DEFAULTS.items(), *cbr_logic.DEFAULTS.items()):
@@ -626,6 +629,7 @@ class AppController(QObject):
         self._last_logged_edge = self._edge_values()
         self._last_logged_ec = self._ec_values()
         self._last_logged_hal = self._hal_values()
+        self._last_logged_carrier = self._carrier_values()
         self._last_logged_gs = self._gs_values()
         self._last_logged_dif = self._dif_values()
         self.state.teq_show_mask = False
@@ -1472,6 +1476,31 @@ class AppController(QObject):
         if now != self._last_logged_hal:
             self._last_logged_hal = now
             self._log(f"Halation: amount {now['hal_amount']:.2f}, radius {now['hal_radius']:.2f}, threshold {now['hal_threshold']:.2f}, warmth {now['hal_warmth']:.2f}")
+
+    # ------------------------------------------------------------ Negative Carrier
+    def _carrier_values(self) -> dict:
+        return {k: getattr(self.state, k) for k in carrier_logic.KEYS}
+
+    def preview_carrier(self, values: dict) -> None:
+        if self.state.preview_rgb is None:
+            return
+        for key in carrier_logic.KEYS:
+            if key in values:
+                setattr(self.state, key, float(values[key]))
+        self._preview(LIVE_OTHER_METHODS)
+
+    def set_carrier(self, values: dict) -> None:
+        """Negative Carrier: the black rebate frame of a filed-out negative carrier (Width 0 is off)."""
+        if self.state.preview_rgb is None:
+            return
+        for key in carrier_logic.KEYS:
+            if key in values:
+                setattr(self.state, key, float(values[key]))
+        self._settle()
+        now = self._carrier_values()
+        if now != self._last_logged_carrier:
+            self._last_logged_carrier = now
+            self._log(f"Negative carrier: width {now['carrier_width']:.2f} mm, rough {now['carrier_rough']:.2f}, corner {now['carrier_corner']:.2f}, flare {now['carrier_flare']:.2f}")
 
     # ------------------------------------------------------------ Grain Sharpening
     def _gs_values(self) -> dict:
@@ -3380,6 +3409,7 @@ class AppController(QObject):
             **{k: getattr(s, k) for k in edge_logic.KEYS},
             **{k: getattr(s, k) for k in ec_logic.KEYS},
             **{k: getattr(s, k) for k in hal_logic.KEYS},
+            **{k: getattr(s, k) for k in carrier_logic.KEYS},
             **{k: getattr(s, k) for k in gs_logic.KEYS},
             **{k: getattr(s, k) for k in dif_logic.KEYS},
             **{k: getattr(s, k) for k in teq_logic.KEYS},
@@ -3511,6 +3541,7 @@ class AppController(QObject):
             **self._edge_values(),
             **self._ec_values(),
             **self._hal_values(),
+            **self._carrier_values(),
             **self._gs_values(),
             **self._dif_values(),
             **self._teq_values(),
@@ -3589,6 +3620,8 @@ class AppController(QObject):
         for key, default in ec_logic.DEFAULTS.items():
             setattr(self.state, key, default)
         for key, default in hal_logic.DEFAULTS.items():
+            setattr(self.state, key, default)
+        for key, default in carrier_logic.DEFAULTS.items():
             setattr(self.state, key, default)
         for key, default in gs_logic.DEFAULTS.items():
             setattr(self.state, key, default)
@@ -3792,7 +3825,7 @@ class AppController(QObject):
         self._last_logged_local = entry.local_contrast
         s.print_snap, s.print_toe, s.print_toe_width, s.print_shoulder, s.print_shoulder_width = (
             entry.print_snap, entry.print_toe, entry.print_toe_width, entry.print_shoulder, entry.print_shoulder_width)
-        for key in (*lab_look_logic.ALL_KEYS, *color_mix_logic.KEYS, *edge_logic.KEYS, *ec_logic.KEYS, *hal_logic.KEYS, *gs_logic.KEYS, *dif_logic.KEYS, *teq_logic.KEYS, *cbr_logic.KEYS):
+        for key in (*lab_look_logic.ALL_KEYS, *color_mix_logic.KEYS, *edge_logic.KEYS, *ec_logic.KEYS, *hal_logic.KEYS, *carrier_logic.KEYS, *gs_logic.KEYS, *dif_logic.KEYS, *teq_logic.KEYS, *cbr_logic.KEYS):
             setattr(s, key, getattr(entry, key))
         self._last_logged_print = self._print_values()
         s.vignette, s.vignette_size, s.border, s.border_color = entry.vignette, entry.vignette_size, entry.border, entry.border_color
@@ -5108,7 +5141,7 @@ class AppController(QObject):
             EditParams.from_state(s),
             exposure_ev=0.0, tone_curve_points=tuple(tuple(p) for p in DEFAULT_POINTS), tone_curve_red=tuple(DEFAULT_POINTS), tone_curve_green=tuple(DEFAULT_POINTS), tone_curve_blue=tuple(DEFAULT_POINTS), saturation=0.0, temperature=0.0, tint=0.0, shadows=0.0,
             highlights=0.0, sharpen_amount=0.0, dust_auto=False, scratch_lines=(), heal_strokes=(), clone_strokes=(), ai_dust=False, contrast=0.0,
-            chroma_denoise=0.0, local_contrast=0.0, print_snap=0.0, print_toe=0.0, print_shoulder=0.0, **lab_look_logic.ALL_DEFAULTS, **color_mix_logic.DEFAULTS, **edge_logic.DEFAULTS, **ec_logic.DEFAULTS, **hal_logic.DEFAULTS, **gs_logic.DEFAULTS, **dif_logic.DEFAULTS, **teq_logic.DEFAULTS, **cbr_logic.DEFAULTS, vignette=0.0, border=0.0, wm_film="off", wm_info=False, crop_rect=None,
+            chroma_denoise=0.0, local_contrast=0.0, print_snap=0.0, print_toe=0.0, print_shoulder=0.0, **lab_look_logic.ALL_DEFAULTS, **color_mix_logic.DEFAULTS, **edge_logic.DEFAULTS, **ec_logic.DEFAULTS, **hal_logic.DEFAULTS, **carrier_logic.DEFAULTS, **gs_logic.DEFAULTS, **dif_logic.DEFAULTS, **teq_logic.DEFAULTS, **cbr_logic.DEFAULTS, vignette=0.0, border=0.0, wm_film="off", wm_info=False, crop_rect=None,
             rotation_quarter_turns=0, flip_h=False, flip_v=False, fine_rotation=0.0, distortion=0.0, keystone_v=0.0, keystone_h=0.0,
         )
         scanned = self._negative_base()
@@ -5318,7 +5351,7 @@ class AppController(QObject):
         params = dataclasses.replace(
             EditParams.from_state(s), crop_rect=None, rotation_quarter_turns=0, flip_h=False, flip_v=False, fine_rotation=0.0, distortion=0.0, keystone_v=0.0, keystone_h=0.0,
             dust_auto=False, scratch_lines=(), heal_strokes=(), clone_strokes=(), ai_dust=False, vignette=0.0, border=0.0, wm_film="off", wm_info=False, marks=Marks(), scan_width=0,
-            **edge_logic.DEFAULTS, **ec_logic.DEFAULTS, **hal_logic.DEFAULTS, **dif_logic.DEFAULTS, **teq_logic.DEFAULTS, **cbr_logic.DEFAULTS,
+            **edge_logic.DEFAULTS, **ec_logic.DEFAULTS, **hal_logic.DEFAULTS, **carrier_logic.DEFAULTS, **dif_logic.DEFAULTS, **teq_logic.DEFAULTS, **cbr_logic.DEFAULTS,
         )
         params = dataclasses.replace(params, metering=dataclasses.replace(params.metering, rect=None))   # (the patch is its own picture: the film base is read from it)
         off = dataclasses.replace(params, sharpen_amount=0.0, chroma_denoise=0.0, local_contrast=0.0, gs_amount=0.0)
@@ -5350,7 +5383,7 @@ class AppController(QObject):
             exposure_ev=0.0, tone_curve_points=tuple(tuple(p) for p in DEFAULT_POINTS), tone_curve_red=tuple(DEFAULT_POINTS), tone_curve_green=tuple(DEFAULT_POINTS), tone_curve_blue=tuple(DEFAULT_POINTS),
             saturation=0.0, temperature=0.0, tint=0.0, shadows=0.0, highlights=0.0, sharpen_amount=0.0,
             dust_auto=False, scratch_lines=(), heal_strokes=(), clone_strokes=(), ai_dust=False, contrast=0.0, chroma_denoise=0.0, local_contrast=0.0,
-            print_snap=0.0, print_toe=0.0, print_shoulder=0.0, **lab_look_logic.ALL_DEFAULTS, **color_mix_logic.DEFAULTS, **edge_logic.DEFAULTS, **ec_logic.DEFAULTS, **hal_logic.DEFAULTS, **gs_logic.DEFAULTS, **dif_logic.DEFAULTS, **teq_logic.DEFAULTS, **cbr_logic.DEFAULTS,
+            print_snap=0.0, print_toe=0.0, print_shoulder=0.0, **lab_look_logic.ALL_DEFAULTS, **color_mix_logic.DEFAULTS, **edge_logic.DEFAULTS, **ec_logic.DEFAULTS, **hal_logic.DEFAULTS, **carrier_logic.DEFAULTS, **gs_logic.DEFAULTS, **dif_logic.DEFAULTS, **teq_logic.DEFAULTS, **cbr_logic.DEFAULTS,
             vignette=0.0, border=0.0 if not keep_frame else EditParams.from_state(self.state).border,
             wm_film="off", wm_info=False,
         )

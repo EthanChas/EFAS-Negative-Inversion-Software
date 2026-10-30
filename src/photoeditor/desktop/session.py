@@ -123,6 +123,10 @@ class HistoryEntry:
     hal_radius: float = 0.4
     hal_threshold: float = 0.7
     hal_warmth: float = 0.8
+    carrier_width: float = 0.0
+    carrier_rough: float = 0.25
+    carrier_corner: float = 0.25
+    carrier_flare: float = 0.5
     gs_amount: float = 0.0
     gs_size: float = 1.2
     gs_midtones: float = 0.5
@@ -360,6 +364,10 @@ class AppState:
     hal_radius: float = 0.4
     hal_threshold: float = 0.7
     hal_warmth: float = 0.8
+    carrier_width: float = 0.0
+    carrier_rough: float = 0.25
+    carrier_corner: float = 0.25
+    carrier_flare: float = 0.5
     gs_amount: float = 0.0
     gs_size: float = 1.2
     gs_midtones: float = 0.5
