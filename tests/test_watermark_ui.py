@@ -46,6 +46,7 @@ _SCRIPT = textwrap.dedent(r'''
         return cond()
     assert pump(lambda: c.state.image_rgb is not None)
     pump(secs=1.0)
+    win._on_tool_tab_toggled("watermark", True); win._tool_rail.set_tab_checked("watermark", True)      # (a closed tab is hidden, so nothing in it is laid out: open the Finish tab)
     tool = win._watermark_tool          # darktable's Watermark: the marker
     ctool = win._canister_tool          # EFAS's Canister Watermark: the canister, the camera and lens text, the old text mark
     view = win._image_view
