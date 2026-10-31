@@ -36,15 +36,21 @@ _SCRIPT = textwrap.dedent(r"""
     edge = win._sidebar_scroll.viewport().mapTo(win, win._sidebar_scroll.viewport().rect().topRight()).x()
     modules = win._negative_tool.mapTo(win, win._negative_tool.rect().topRight()).x()
     assert edge - modules <= 8, ("a gap on the right of the modules", edge - modules)
-    # squeezing the sidebar stops at what the open tab needs: its modules never run behind the frame
-    for tab_id in ("exposure", "negative", "color", "correction"):
+    # squeezing the sidebar makes the modules narrower with it, down to the sidebar's own limit: no module, header button or control runs behind the frame (as in the versions before 0.12)
+    from PyQt6.QtWidgets import QWidget
+    from photoeditor.desktop.view.collapsible_panel import CollapsiblePanel
+    for tab_id in ("exposure", "negative", "color", "detail", "correction"):
         win._on_tool_tab_toggled(tab_id, True); win._tool_rail.set_tab_checked(tab_id, True); pump(1.0)
-        left, centre, right = win._splitter.sizes()
-        win._splitter.setSizes([left, centre + right - 200, 200]); pump(0.6)
         sc = win._tool_tab_panels()[tab_id]._content
-        assert sc.viewport().width() >= sc.widget().minimumSizeHint().width(), (tab_id, "squeezed: the modules are behind the frame", sc.viewport().width(), sc.widget().minimumSizeHint().width())
+        for module in sc.widget().findChildren(CollapsiblePanel):
+            module.set_expanded(True)
+        left, centre, right = win._splitter.sizes()
+        win._splitter.setSizes([left, centre + right - 200, 200]); pump(1.2)
+        assert win._splitter.sizes()[2] <= win._sidebar_base_min + 2, "the sidebar goes down to its own limit"
+        edge = sc.viewport().mapToGlobal(sc.viewport().rect().topRight()).x()
+        past = [type(w).__name__ for w in sc.widget().findChildren(QWidget) if w.isVisible() and w.width() > 0 and w.mapToGlobal(w.rect().topRight()).x() > edge + 1]
+        assert not past, (tab_id, "something runs behind the frame", past[:6])
         win._on_tool_tab_toggled(tab_id, False); win._tool_rail.set_tab_checked(tab_id, False); pump(0.4)
-    assert win._sidebar_pane.minimumWidth() == win._sidebar_base_min, "with no tab open the sidebar's own limit again"
     # the scroll bar of a tall tab has room of its own
     assert scroll.sizeHint().width() >= scroll.widget().sizeHint().width()
     print("OK negative panel fit")

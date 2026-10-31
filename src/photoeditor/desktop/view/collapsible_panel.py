@@ -1,7 +1,7 @@
 from PyQt6.QtCore import QEasingCurve, QPointF, QRectF, Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QAction, QActionGroup, QColor, QLinearGradient, QPainter, QPaintEvent, QPen
 from PyQt6.QtWidgets import (
-    QAbstractSpinBox, QApplication, QHBoxLayout, QLabel, QLineEdit, QMenu, QMessageBox, QPlainTextEdit, QPushButton, QTextEdit, QVBoxLayout, QWidget,
+    QAbstractSpinBox, QApplication, QHBoxLayout, QLabel, QLineEdit, QMenu, QMessageBox, QPlainTextEdit, QPushButton, QSizePolicy, QTextEdit, QVBoxLayout, QWidget,
 )
 
 from ...theme.tokens import THEME
@@ -105,6 +105,7 @@ class _CollapsibleHeader(QWidget):
         label.setProperty("role", "mini_header_text")
         label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
         self._title_label = label
+        label.setSizePolicy(QSizePolicy.Policy.Ignored, label.sizePolicy().verticalPolicy())      # (the title gives way when the panel is narrow: its buttons stay in view, and the title is cut, not the buttons)
         row.addWidget(label, 0, Qt.AlignmentFlag.AlignVCenter)
 
         self.changed_star = QLabel(self._MARKS["star"])      # a red star beside the name while something in the module is not at its default

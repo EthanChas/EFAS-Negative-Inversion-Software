@@ -1769,6 +1769,14 @@ class AppWindow(QMainWindow):
         dress_tab(metadata_col, "metadata", "Roll Card", "What the picture is: the roll, the film, the camera and the lens, and its tags.")
         dress_tab(plugins_col, "plugins", "Plugins", "The tools that plugins add.")
 
+        # A module can be as narrow as the sidebar is made: its card follows the sidebar (what is inside it that cannot be that narrow is cut at the card's edge) instead of keeping its natural
+        # width and running behind the frame, as every tab did once its controls grew wider than the sidebar's smallest size.
+        for column in (negative_tools_col, correction_col, tools_col, color_col, detail_col, watermark_col, metadata_col, plugins_col):
+            for i in range(column.count()):
+                item = column.itemAt(i).widget() if column.itemAt(i) is not None else None
+                if item is not None:
+                    item.setSizePolicy(QSizePolicy.Policy.Ignored, item.sizePolicy().verticalPolicy())
+
         # Search: the box above the modules. Type, and the modules that match - from every tab - are gathered in a list of their own, in place of the tab that was showing; clear
         # it and each goes back to its tab (see module_search.py). The list is a tab panel with no button on the rail.
         self._module_search_edit = QLineEdit()
