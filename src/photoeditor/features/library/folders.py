@@ -88,7 +88,7 @@ def plan_rename(folder: str, new_name: str) -> str:
     """Where `folder` would be with the name `new_name` - or a FolderError saying why it cannot be renamed. Nothing is changed. It never replaces another folder (a change of
     capitals only is allowed)."""
     new_name = check_name(new_name)
-    old = folder.rstrip("/" + os.sep)
+    old = folder.rstrip("/" + os.sep) or folder      # (the root of a Unix disk is "/": stripped, it would be nothing)
     if not os.path.isdir(old):
         raise FolderError("That folder is not there any more.")
     if os.path.dirname(old.replace("/", os.sep)) == old.replace("/", os.sep) or not os.path.basename(old.replace("/", os.sep)):
@@ -115,7 +115,7 @@ def rename_folder(folder: str, new_name: str) -> str:
 def plan_move(folder: str, into: str) -> str:
     """Where `folder` would be when it is moved into the folder `into` - or a FolderError saying why it cannot be. Nothing is changed. A folder cannot go into itself or into a folder
     inside it, cannot replace a folder of the same name, and has to stay on the same drive (a move to another drive would be a copy and then a delete, which is left to File Explorer)."""
-    old = folder.rstrip("/" + os.sep)
+    old = folder.rstrip("/" + os.sep) or folder
     if not os.path.isdir(old):
         raise FolderError("That folder is not there any more.")
     if not into or not os.path.isdir(into):

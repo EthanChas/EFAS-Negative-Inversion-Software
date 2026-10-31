@@ -53,7 +53,10 @@ _SCRIPT = textwrap.dedent(r'''
     w.sdk_edit.setText(sdk)
     assert "not found" in w.sdk_status.text()
     w.connect_camera(); assert w._state == "off" and "Choose the folder of Canon" in w.status.text()
-    open(os.path.join(sdk, "EDSDK.dll"), "wb").write(b"not a library")
+    from photoeditor.features.tether import edsdk_api
+    lib = os.path.join(sdk, edsdk_api.library_name())      # (EDSDK.dll, EDSDK.framework/EDSDK or libEDSDK.so by system)
+    os.makedirs(os.path.dirname(lib), exist_ok=True)
+    open(lib, "wb").write(b"not a library")
     w._sdk_changed()   # the status follows the folder as it is typed; here the file appeared afterwards
     assert w.sdk_status.text().startswith("Found ")
     w.connect_camera()
@@ -246,8 +249,9 @@ _SCRIPT = textwrap.dedent(r'''
     w.forget_base(); assert session.view.base_rgb is None and "worked out" in w.base_label.text()
 
     # --- the corner check
+    shown = w._frame
     camera._pos = pc.BEST; camera._frame = None
-    until(lambda: w._frame is not None and session.latest > 1, seconds=45.0, what="the lens back in focus")
+    until(lambda: w._frame is not None and w._frame is not shown and session.latest > 0, seconds=45.0, what="the lens back in focus")
     w.check_corners()
     assert "centre" in w.corner_label.text() and "top left" in w.corner_label.text() and ("sharp as the middle" in w.corner_label.text())
 

@@ -15,11 +15,11 @@ _SCRIPT = textwrap.dedent(r"""
     from photoeditor.desktop.view.roll_card_panel import RollCardTab
     tab = RollCardTab(); tab.resize(320, 700); tab.show(); app.processEvents()
     for box in (tab._iso, tab._piso):
-        need = box.fontMetrics().horizontalAdvance("25600") + 30   # the digits and the two arrows
+        need = box.fontMetrics().horizontalAdvance("25600") + 24   # the digits and the two arrows (Qt's own hint, which the box uses, is a little under 30 for them with some styles)
         assert box.minimumWidth() >= need, (box.minimumWidth(), need)
         assert box.maximumWidth() > 64, "no longer fixed at 64"
     tab._iso.setValue(25600); app.processEvents()
-    assert tab._iso.width() >= tab._iso.fontMetrics().horizontalAdvance(tab._iso.text()) + 30, (tab._iso.width(), tab._iso.text())
+    assert tab._iso.width() >= tab._iso.fontMetrics().horizontalAdvance(tab._iso.text()) + 24, (tab._iso.width(), tab._iso.text())
     print("OK")
 """)
 

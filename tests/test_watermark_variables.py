@@ -1,5 +1,6 @@
 """The $(NAME) variables of watermark text and SVG markers: darktable's syntax, and the names a film scanner can give."""
 import datetime as dt
+import os
 
 import pytest
 
@@ -58,7 +59,7 @@ def test_the_variables_of_a_film_frame():
     meta = MetadataConfig(camera_make="Pentax", camera_model="K1000", lens_model="SMC Pentax-M 50mm f/2", focal_length_mm=50.0, max_aperture=2.0, film="Kodak Portra 400", film_iso=400,
                           film_manufacturer="Kodak", format="35mm", capture_date="2024-03-09 14:30", capture_roll="Holiday", capture_frame=7, developer="Rodinal", scanning="Canon R6 + macro",
                           location_city="Cape Town", note="sunset", push_pull=1)
-    v = V.build(r"C:\scans\Holiday 2024\4N0A7862.CR2", meta, now=dt.datetime(2026, 10, 19, 15, 7), app_version="0.9.0")
+    v = V.build(os.path.join("scans", "Holiday 2024", "4N0A7862.CR2"), meta, now=dt.datetime(2026, 10, 19, 15, 7), app_version="0.9.0")
     assert v["FILE.NAME"] == "4N0A7862" and v["FILE.EXTENSION"] == "CR2" and v["FILE.FOLDER"] == "Holiday 2024", "the folder's name, not the whole path"
     assert (v["YEAR"], v["YEAR.SHORT"], v["MONTH"], v["MONTH.LONG"], v["DAY"], v["HOUR"], v["MINUTE"]) == ("2026", "26", "10", "October", "19", "15", "07"), "today"
     assert (v["EXIF.YEAR"], v["EXIF.MONTH"], v["EXIF.MONTH.SHORT"], v["EXIF.DAY"], v["EXIF.HOUR"], v["EXIF.MINUTE"], v["EXIF.TIME.REGIONAL"]) == ("2024", "3", "Mar", "9", "14", "30", "14:30"), "the frame's date"

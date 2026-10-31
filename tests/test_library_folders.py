@@ -102,7 +102,8 @@ def test_moving_a_folder_into_another(tmp_path):
 def test_remap_follows_a_renamed_folder_and_keeps_each_paths_own_spelling():
     old, new = "C:/Photos/Roll 1", "C:/Photos/Fuji"
     assert f.remap("C:/Photos/Roll 1/a.png", old, new) == "C:/Photos/Fuji/a.png"
-    assert f.remap("C:\\Photos\\Roll 1\\sub\\a.png", old, new) == "C:\\Photos\\Fuji\\sub\\a.png", "backslashes stay backslashes"
+    if os.name == "nt":      # (elsewhere a backslash is an ordinary character in a name)
+        assert f.remap("C:\\Photos\\Roll 1\\sub\\a.png", old, new) == "C:\\Photos\\Fuji\\sub\\a.png", "backslashes stay backslashes"
     assert f.remap("C:/Photos/Roll 1", old, new) == "C:/Photos/Fuji", "the folder itself"
     assert f.remap("C:/Photos/Roll 10/a.png", old, new) == "C:/Photos/Roll 10/a.png", "a folder that only starts with the same letters is not in it"
     assert f.remap("C:/Elsewhere/a.png", old, new) == "C:/Elsewhere/a.png"

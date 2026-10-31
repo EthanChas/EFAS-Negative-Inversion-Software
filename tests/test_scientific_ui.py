@@ -82,6 +82,7 @@ _SCRIPT = textwrap.dedent(r'''
     from photoeditor.desktop.view.app_window import AppWindow
     from photoeditor.features.persistence import edit_store
     w_ = AppWindow(); c = w_.controller
+    w_._on_tool_tab_toggled("negative", True); w_._tool_rail.set_tab_checked("negative", True)      # (a tab that is shut is hidden, and the Advanced panels sit in the Convert tab)
 
     def pump(cond, secs=30):
         t = time.time()

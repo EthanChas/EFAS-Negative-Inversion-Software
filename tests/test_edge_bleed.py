@@ -208,9 +208,13 @@ _SCRIPT = textwrap.dedent(r"""
 
     # the module's power light: off makes the picture without it, the settings kept
     on = c.state.image_rgb.copy()
-    c.set_module_enabled("edgebleed", False); pump(1.0)
+    def until(cond, secs=20):      # (the settle is debounced and the render takes a moment: wait for the picture, not for a fixed time)
+        end = time.time() + secs
+        while time.time() < end and not cond():
+            app.processEvents(); time.sleep(0.02)
+    c.set_module_enabled("edgebleed", False); until(lambda: not np.array_equal(on, c.state.image_rgb)); pump(0.3)
     assert c.state.edge_mask_color == "white" and not np.array_equal(on, c.state.image_rgb)
-    c.set_module_enabled("edgebleed", True); pump(1.0)
+    c.set_module_enabled("edgebleed", True); until(lambda: np.array_equal(on, c.state.image_rgb)); pump(0.3)
     assert np.array_equal(on, c.state.image_rgb)
 
     # a look carries it, and Clear resets it
