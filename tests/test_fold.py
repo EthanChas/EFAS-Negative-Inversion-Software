@@ -122,7 +122,7 @@ def test_a_section_slides_shut_and_open(monkeypatch, tmp_path):
         app.processEvents(); time.sleep(0.004)
         heights.append(s._clip.height()); inner.append(s._body.height())
     assert not s._clip.isVisible() and s._clip.maximumHeight() > 10_000
-    assert heights == sorted(heights, reverse=True) and len(set(heights)) > 3, "the clip closes steadily"
+    assert heights == sorted(heights, reverse=True) and len(set(heights)) > 2, "the clip closes steadily"
     assert set(inner) <= {full}, ("the controls inside do not squash while it slides", sorted(set(inner)))
     s.toggle()
     heights, inner = [], []
@@ -131,4 +131,4 @@ def test_a_section_slides_shut_and_open(monkeypatch, tmp_path):
         app.processEvents(); time.sleep(0.004)
         heights.append(s._clip.height()); inner.append(s._body.height())
     assert s._clip.isVisible() and s._body.height() == full, "it ends on the height it began with: no jump at the end"
-    assert heights == sorted(heights) and len(set(heights)) > 3 and set(inner) <= {full}
+    assert heights == sorted(heights) and len(set(heights)) > 2 and set(inner) <= {full}

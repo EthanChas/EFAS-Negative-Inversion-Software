@@ -44,27 +44,28 @@ _SCRIPT = textwrap.dedent(r'''
     assert w.camera_combo.currentData() == "practice" and not w.sdk_widget.isVisible() and w.windowTitle() == "Canon Tether and Live View"
     assert w.next_label.text() == "next: scan_0001" and w.image._message.startswith("Connect a camera")
 
-    # --- a Canon camera without Canon's SDK fails clearly and leaves the window usable
-    w.camera_combo.setCurrentIndex(w.camera_combo.findData("canon"))
-    assert w.sdk_widget.isVisible() and "Choose the folder" in w.sdk_status.text()
-    w.connect_camera()
-    assert w._state == "off" and "Choose the folder of Canon" in w.status.text()
-    sdk = tempfile.mkdtemp()
-    w.sdk_edit.setText(sdk)
-    assert "not found" in w.sdk_status.text()
-    w.connect_camera(); assert w._state == "off" and "Choose the folder of Canon" in w.status.text()
-    from photoeditor.features.tether import edsdk_api
-    lib = os.path.join(sdk, edsdk_api.library_name())      # (EDSDK.dll, EDSDK.framework/EDSDK or libEDSDK.so by system)
-    os.makedirs(os.path.dirname(lib), exist_ok=True)
-    open(lib, "wb").write(b"not a library")
-    w._sdk_changed()   # the status follows the folder as it is typed; here the file appeared afterwards
-    assert w.sdk_status.text().startswith("Found ")
-    w.connect_camera()
-    try:
-        until(lambda: w._state == "off" and "could not be loaded" in w.status.text(), 30.0, what="the failed load")
-    except AssertionError:
-        raise AssertionError("timed out waiting for the failed load: state=%r status=%r picture=%r" % (w._state, w.status.text(), w.image._message))
-    assert w.session is None and w.connect_button.isEnabled() and "could not be loaded" in w.image._message
+    # --- a Canon camera without Canon's SDK fails clearly and leaves the window usable  (Canon tethering is Windows-only so far: elsewhere the window says so, and the practice camera is all there is to try)
+    if sys.platform == "win32":
+        w.camera_combo.setCurrentIndex(w.camera_combo.findData("canon"))
+        assert w.sdk_widget.isVisible() and "Choose the folder" in w.sdk_status.text()
+        w.connect_camera()
+        assert w._state == "off" and "Choose the folder of Canon" in w.status.text()
+        sdk = tempfile.mkdtemp()
+        w.sdk_edit.setText(sdk)
+        assert "not found" in w.sdk_status.text()
+        w.connect_camera(); assert w._state == "off" and "Choose the folder of Canon" in w.status.text()
+        from photoeditor.features.tether import edsdk_api
+        lib = os.path.join(sdk, edsdk_api.library_name())      # (EDSDK.dll, EDSDK.framework/EDSDK or libEDSDK.so by system)
+        os.makedirs(os.path.dirname(lib), exist_ok=True)
+        open(lib, "wb").write(b"not a library")
+        w._sdk_changed()   # the status follows the folder as it is typed; here the file appeared afterwards
+        assert w.sdk_status.text().startswith("Found ")
+        w.connect_camera()
+        try:
+            until(lambda: w._state == "off" and "could not be loaded" in w.status.text(), 30.0, what="the failed load")
+        except AssertionError:
+            raise AssertionError("timed out waiting for the failed load: state=%r status=%r picture=%r" % (w._state, w.status.text(), w.image._message))
+        assert w.session is None and w.connect_button.isEnabled() and "could not be loaded" in w.image._message
     w.camera_combo.setCurrentIndex(w.camera_combo.findData("practice"))
     assert not w.sdk_widget.isVisible()
 

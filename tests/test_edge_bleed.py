@@ -207,13 +207,14 @@ _SCRIPT = textwrap.dedent(r"""
     assert abs(tool._rows["edge_mask"].value() - c.state.edge_mask) < 1e-6 and tool._colour.currentData() == c.state.edge_mask_color
 
     # the module's power light: off makes the picture without it, the settings kept
-    on = c.state.image_rgb.copy()
     def until(cond, secs=20):      # (the settle is debounced and the render takes a moment: wait for the picture, not for a fixed time)
         end = time.time() + secs
         while time.time() < end and not cond():
             app.processEvents(); time.sleep(0.02)
+    until(lambda: c.state.image_rgb[0, 0].min() > 240); pump(0.3)      # (the redo above has drawn: the white mask is on the picture the copy is taken of)
+    on = c.state.image_rgb.copy()
     c.set_module_enabled("edgebleed", False); until(lambda: not np.array_equal(on, c.state.image_rgb)); pump(0.3)
-    assert c.state.edge_mask_color == "white" and not np.array_equal(on, c.state.image_rgb)
+    assert c.state.edge_mask_color == "white" and not np.array_equal(on, c.state.image_rgb), (c.state.edge_mask_color, c.state.edge_mask, c.state.image_rgb[0, 0].tolist(), on[0, 0].tolist())
     c.set_module_enabled("edgebleed", True); until(lambda: np.array_equal(on, c.state.image_rgb)); pump(0.3)
     assert np.array_equal(on, c.state.image_rgb)
 
