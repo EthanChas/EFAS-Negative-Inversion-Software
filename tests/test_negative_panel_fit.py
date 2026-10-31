@@ -36,6 +36,15 @@ _SCRIPT = textwrap.dedent(r"""
     edge = win._sidebar_scroll.viewport().mapTo(win, win._sidebar_scroll.viewport().rect().topRight()).x()
     modules = win._negative_tool.mapTo(win, win._negative_tool.rect().topRight()).x()
     assert edge - modules <= 8, ("a gap on the right of the modules", edge - modules)
+    # squeezing the sidebar stops at what the open tab needs: its modules never run behind the frame
+    for tab_id in ("exposure", "negative", "color", "correction"):
+        win._on_tool_tab_toggled(tab_id, True); win._tool_rail.set_tab_checked(tab_id, True); pump(1.0)
+        left, centre, right = win._splitter.sizes()
+        win._splitter.setSizes([left, centre + right - 200, 200]); pump(0.6)
+        sc = win._tool_tab_panels()[tab_id]._content
+        assert sc.viewport().width() >= sc.widget().minimumSizeHint().width(), (tab_id, "squeezed: the modules are behind the frame", sc.viewport().width(), sc.widget().minimumSizeHint().width())
+        win._on_tool_tab_toggled(tab_id, False); win._tool_rail.set_tab_checked(tab_id, False); pump(0.4)
+    assert win._sidebar_pane.minimumWidth() == win._sidebar_base_min, "with no tab open the sidebar's own limit again"
     # the scroll bar of a tall tab has room of its own
     assert scroll.sizeHint().width() >= scroll.widget().sizeHint().width()
     print("OK negative panel fit")

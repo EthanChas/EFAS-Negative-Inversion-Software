@@ -1806,7 +1806,8 @@ class AppWindow(QMainWindow):
         sidebar_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOn)
         pane_col.addWidget(frozen, 0)  # frozen like the top row of a spreadsheet: it stays in view while the tools below scroll
         pane_col.addWidget(sidebar_scroll, 1)
-        sidebar_pane.setMinimumWidth(max(sidebar_content.minimumSizeHint().width(), self._wb_panel.minimumSizeHint().width()))
+        self._sidebar_base_min = max(sidebar_content.minimumSizeHint().width(), self._wb_panel.minimumSizeHint().width())
+        sidebar_pane.setMinimumWidth(self._sidebar_base_min)
         self._sidebar_pane = sidebar_pane
         self._splitter.addWidget(sidebar_pane)
         self._splitter.setStretchFactor(0, 0)
@@ -5108,6 +5109,8 @@ class AppWindow(QMainWindow):
             return
         if self._module_search.active() or self._search_panel._is_open or self._module_search_edit.text():
             self._module_search.dismiss()   # a tab was chosen: the modules the search gathered go back to their own tabs before anything else moves
+        if not checked:
+            self._sidebar_pane.setMinimumWidth(self._sidebar_base_min)      # (no tab open: the sidebar's own limit again)
         was_open = [other for other, p in panels.items() if p._is_open and (other != tab_id or not checked)]
         panels[tab_id].set_open(checked)
         self._open_tab = tab_id if checked else (self._open_tab if self._open_tab != tab_id else "")
@@ -5347,6 +5350,8 @@ class AppWindow(QMainWindow):
         overflow = inner - scroll.viewport().width()      # (what the tab's content is wider than the room it really has: the sum above leaves out a few margins)
         if overflow > 0 and scroll.viewport().width() > 0:
             needed = max(needed, right + overflow)
+        # the sidebar cannot be dragged narrower than the open tab needs: squeezed past that, the modules ran behind the frame instead of stopping at their limit
+        self._sidebar_pane.setMinimumWidth(max(self._sidebar_base_min, needed if overflow > 0 else needed))
         if needed > right:
             grow = min(needed - right, max(center - 200, 0))
             self._splitter.setSizes([left, center - grow, right + grow])
