@@ -60,7 +60,10 @@ _SCRIPT = textwrap.dedent(r'''
     w._sdk_changed()   # the status follows the folder as it is typed; here the file appeared afterwards
     assert w.sdk_status.text().startswith("Found ")
     w.connect_camera()
-    until(lambda: w._state == "off" and "could not be loaded" in w.status.text(), what="the failed load")
+    try:
+        until(lambda: w._state == "off" and "could not be loaded" in w.status.text(), 30.0, what="the failed load")
+    except AssertionError:
+        raise AssertionError("timed out waiting for the failed load: state=%r status=%r picture=%r" % (w._state, w.status.text(), w.image._message))
     assert w.session is None and w.connect_button.isEnabled() and "could not be loaded" in w.image._message
     w.camera_combo.setCurrentIndex(w.camera_combo.findData("practice"))
     assert not w.sdk_widget.isVisible()
