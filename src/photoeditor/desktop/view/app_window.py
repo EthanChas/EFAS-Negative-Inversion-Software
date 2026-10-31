@@ -1246,11 +1246,11 @@ class AppWindow(QMainWindow):
         self._hist_log_btn.setToolTip("Logarithmic height: the thin tails of the shadows and highlights show up beside the big peaks")
         self._hist_log_btn.toggled.connect(self._on_histogram_log_toggled)
         button_row.addWidget(self._hist_log_btn)
-        self._hist_curve_btn = QPushButton("Curve")
+        self._hist_curve_btn = QPushButton("Density")
         self._hist_curve_btn.setCheckable(True)
         self._hist_curve_btn.setChecked(app_settings.get("histogram_curve"))
-        self._hist_curve_btn.setToolTip("The paper curve, like NegPy's Analysis chart: the conversion's curve (the print's level against the negative's density) over the negative's own density histogram, "
-                                        "with the print's histogram along the right. Needs an inverted negative.")
+        self._hist_curve_btn.setToolTip("Draw the paper curve over the histogram: for each print level (along the bottom) the density of negative that prints as it (scale down the right), one line for "
+                                        "each colour in the Color graph. Steep means a lot of density squeezed into few levels. The dashed lines bound the density the picture uses. Needs an inverted negative.")
         self._hist_curve_btn.toggled.connect(self._on_histogram_curve_toggled)
         button_row.addWidget(self._hist_curve_btn)
         second_row = QHBoxLayout()      # (a sixth button in the one row made the whole sidebar about 100 px wider: Split and Style go on a row of their own)
@@ -2777,7 +2777,7 @@ class AppWindow(QMainWindow):
         w = widget
         while w is not None and w is not self:
             parent = w.parentWidget()
-            if w.isHidden() and not isinstance(parent, QStackedWidget):
+            if w.isHidden() and not isinstance(parent, QStackedWidget) and not isinstance(w, SlideOutPanel):      # (a closed tab is hidden too: it is one click away)
                 return False
             w = parent
         return True

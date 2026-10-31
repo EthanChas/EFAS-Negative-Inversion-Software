@@ -630,8 +630,8 @@ def negpy056_settings(m: Metering, black_and_white: bool) -> "negpy056.Settings"
 
 def noritsu_settings(m: Metering) -> "noritsu.Settings":
     """noritsu-tool's options for a photo's metering (see features/negative/noritsu.py)."""
-    return noritsu.Settings(stock=m.nor_stock, lab=m.nor_lab, real_curve=m.nor_real_curve, variant=m.nor_variant, contrast=m.nor_contrast, toe=m.nor_toe, gamma=m.nor_gamma, saturation=m.nor_sat, dmin_pct=m.nor_dmin_pct,
-                            dmax_pct=m.nor_dmax_pct, use_border=m.nor_border, auto_wb=m.nor_auto_wb)
+    return noritsu.Settings(stock=m.nor_stock, lab=m.nor_lab, real_curve=m.nor_real_curve, variant=(noritsu.DEFAULT_VARIANT if (noritsu.is_film_variant(m.nor_variant) and m.film_profile_in_use()) else m.nor_variant), contrast=m.nor_contrast, toe=m.nor_toe, gamma=m.nor_gamma, saturation=m.nor_sat, dmin_pct=m.nor_dmin_pct,
+                            dmax_pct=m.nor_dmax_pct, use_border=m.nor_border, auto_wb=m.nor_auto_wb, wb_warmth=m.nor_wb_warmth, wb_tint=m.nor_wb_tint)
 
 
 def _source_encoding(s) -> str | None:

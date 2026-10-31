@@ -17,7 +17,7 @@ _FIELDS_NAMES = {
     "paper_toe": "paper toe", "paper_shoulder": "paper shoulder", "grade_trim": "colour crossover", "film": "film profile", "transfer": "scan encoding",
     "nor_stock": "Noritsu stock profile", "nor_variant": "Noritsu tone curve", "nor_lab": "Noritsu lab mode", "nor_real_curve": "Noritsu real curve", "nor_contrast": "Noritsu contrast", "nor_toe": "Noritsu toe",
     "nor_gamma": "Noritsu gamma", "nor_sat": "Noritsu saturation", "nor_dmin_pct": "Noritsu Dmin percentile", "nor_dmax_pct": "Noritsu Dmax percentile", "nor_border": "Noritsu rebate Dmin",
-    "nor_auto_wb": "Noritsu auto white balance", "film_profile": "film curve profile",
+    "nor_auto_wb": "Noritsu auto white balance", "nor_wb_warmth": "Noritsu white balance warmth", "nor_wb_tint": "Noritsu white balance tint", "film_profile": "film curve profile",
     "hold_black": "hold black", "print_stock": "print stock", "stock_colour": "stock colour", "grey_balance": "grey balance", "contrast_mask": "contrast mask", "bw_filter": "B&W filter",
     "meter_frame": "metering the picture, not the holder",
 }
@@ -39,7 +39,10 @@ def _migrated(m: "Metering") -> "Metering":
         new = RENAMED_PROFILES.get(value[len(prefix):])
         if new:
             changes[field] = prefix + new
-    return dataclasses.replace(m, **changes) if changes else m
+    now = dataclasses.replace(m, **changes) if changes else m
+    if now.nor_stock.startswith("film:"):      # a "Film:" Stock was the Curve menu by another way: it is the Curve choice now
+        now = dataclasses.replace(now, film_profile=now.film_profile or now.nor_stock[5:], nor_stock="")
+    return now
 
 
 def _num(value: Any, low: float, high: float, default: float) -> float:
@@ -90,6 +93,8 @@ class Metering:
     nor_dmax_pct: float = 99.8       # Noritsu: the percentile Dmax is read at; lower for a thin negative
     nor_border: bool = True          # Noritsu: Dmin from the film rebate when it looks like the orange mask
     nor_auto_wb: bool = True         # Noritsu: neutralize the residual cast of the picture's average
+    nor_wb_warmth: float = 0.0       # Noritsu, with the automatic white balance off: the hand white balance's warmth (-1 cooler to 1 warmer)
+    nor_wb_tint: float = 0.0         # Noritsu, with it off: its tint (-1 greener to 1 more magenta)
     film_profile: str = ""           # Original and Noritsu: the id of a film profile (a characteristic curve) the scan is taken back through before the stretch or the tone curve ("" for none)
     hold_black: bool = False         # print engine: a toe lift fades out toward the paper's black, so the black point stays
     print_stock: str = ""            # print engine: a print stock (printengine.stocks()): its curve and the colour of its dyes ("" for the engine's own paper)
@@ -100,7 +105,9 @@ class Metering:
     meter_frame: bool = False        # print engine: with no crop, meter the picture inside the film frame, not the holder round it
 
     def film_profile_in_use(self) -> str:
-        """The film profile whose curve the conversion puts back: the Curve menu's, or (the Noritsu look) a "Film: ..." Stock, which is that film's curve with the Noritsu look's own tone."""
+        """The film profile whose curve the conversion puts back: the Curve menu's (none under the Noritsu look while a calibration profile is chosen as its Stock)."""
+        if self.engine == "noritsu" and self.nor_stock and not self.nor_stock.startswith("film:"):
+            return ""       # a calibration profile (Portra, Superia, yours) was fitted without a film curve and has the tone in it: a Curve choice is locked out
         if self.film_profile:
             return self.film_profile
         return self.nor_stock[5:] if self.engine == "noritsu" and self.nor_stock.startswith("film:") else ""
@@ -165,6 +172,7 @@ class Metering:
             nor_contrast=_num(data.get("nor_contrast"), 0.5, 2.0, 1.05), nor_toe=_num(data.get("nor_toe"), 0.0, 0.2, 0.02), nor_gamma=_num(data.get("nor_gamma"), 0.4, 1.6, 0.98),
             nor_sat=_num(data.get("nor_sat"), 0.0, 2.0, 1.0), nor_dmin_pct=_num(data.get("nor_dmin_pct"), 0.0, 10.0, 0.5), nor_dmax_pct=_num(data.get("nor_dmax_pct"), 90.0, 100.0, 99.8),
             nor_border=data.get("nor_border") is not False, nor_auto_wb=data.get("nor_auto_wb") is not False,
+            nor_wb_warmth=_num(data.get("nor_wb_warmth"), -1.0, 1.0, 0.0), nor_wb_tint=_num(data.get("nor_wb_tint"), -1.0, 1.0, 0.0),
             film_profile=data["film_profile"] if isinstance(data.get("film_profile"), str) and 0 < len(data["film_profile"]) <= 120 else "",
             hold_black=data.get("hold_black") is True, print_stock=data["print_stock"] if isinstance(data.get("print_stock"), str) and 0 < len(data["print_stock"]) <= 60 else "",
             stock_colour=_num(data.get("stock_colour"), 0.0, 1.0, 1.0), grey_balance=_num(data.get("grey_balance"), 0.0, 1.0, 0.0), contrast_mask=_num(data.get("contrast_mask"), 0.0, 1.0, 0.0),

@@ -81,14 +81,16 @@ _SCRIPT = textwrap.dedent(r"""
     win._hist_curve_btn.setChecked(True); pump(0.5)
     assert panel.curve_view() and S.load()["histogram_curve"] is True
     panel.resize(600, 260); pump(0.3)
-    img = panel.grab()
-    assert not img.isNull()
-    panel._curve_hover(__import__("PyQt6.QtCore", fromlist=["QPointF"]).QPointF(panel._plot_rect().center().x(), panel._plot_rect().center().y())); pump(0.2)
-    assert panel._curve_cursor is not None and 0.0 < panel._curve_cursor < 3.0
-    panel.grab()
+    assert panel.grab() is not None
+    plot = panel._plot_rect()
+    assert panel.rect().right() - plot.right() >= 20, "room on the right for the density scale while the curve is on"
+    panel.set_mode("color"); pump(0.2); panel.grab()
+    panel.set_mode("exposure"); pump(0.2); panel.grab()
+    panel._cursor_value = 128; panel.grab(); panel._cursor_value = None
     win._hist_curve_btn.setChecked(False); pump(0.3)
     assert not panel.curve_view()
-    panel.set_curve_view(True); panel.set_curve_data(None); panel.grab()      # no conversion: a note, not an error
+    assert panel.rect().right() - panel._plot_rect().right() <= 14, "no gap on the right while it is off"
+    panel.set_curve_view(True); panel.set_curve_data(None); panel.grab()      # no conversion: nothing is drawn, and nothing breaks
     print("OK histogram curve")
 """)
 

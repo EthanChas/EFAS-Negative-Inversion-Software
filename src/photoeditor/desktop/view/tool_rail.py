@@ -168,6 +168,7 @@ class SlideOutPanel(QWidget):
         self._animation.setDuration(180)
         self._animation.setEasingCurve(QEasingCurve.Type.InOutQuad)
         self._animation.finished.connect(self._on_animation_finished)
+        self.hide()      # (a closed panel is 0 wide but would still be an item in the row, and the row puts a gap beside every item: the open one was that many gaps short of the row's end)
 
     def sizeHint(self) -> QSize:
         return QSize(self._target_width(), super().sizeHint().height())
@@ -191,11 +192,24 @@ class SlideOutPanel(QWidget):
         if not self._is_open:
             return 0
         parent = self.parentWidget()
-        fallback = self._content.sizeHint().width()
-        return max(fallback, parent.width() - self.x()) if parent else fallback
+        # (the content's smallest width, not its natural one: with the natural one this asked for more than the row had, and the layout then gave it less than it could have, leaving a gap
+        # between the tab's modules and the scroll bar)
+        fallback = self._content.minimumSizeHint().width()
+        return max(fallback, self._room(parent)) if parent else self._content.sizeHint().width()
+
+    def _room(self, parent: QWidget) -> int:
+        """What the row has left for this panel: from where it starts to the row's right edge, less the gaps the layout puts after it (one before each of the closed panels, which are 0
+        wide but are still items) and its right margin."""
+        layout = parent.layout()
+        if layout is None:
+            return parent.width() - self.x()
+        after = sum(1 for i in range(layout.indexOf(self) + 1, layout.count()) if not (layout.itemAt(i).widget() is not None and layout.itemAt(i).widget().isHidden()))
+        return parent.width() - self.x() - after * max(layout.spacing(), 0) - layout.contentsMargins().right()
 
     def set_open(self, open_: bool) -> None:
         self._is_open = open_
+        if open_:
+            self.show()
         target = self._target_width()
 
         self._animation.stop()
@@ -205,5 +219,7 @@ class SlideOutPanel(QWidget):
         self.updateGeometry()
 
     def _on_animation_finished(self) -> None:
+        if not self._is_open:
+            self.hide()
         if self._is_open:
             self.setMaximumWidth(_NO_MAX)

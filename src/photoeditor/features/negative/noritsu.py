@@ -78,6 +78,8 @@ class Settings:
     dmax_pct: float = 99.8           # (cli.py's default; process_negative's own is 99.95)
     use_border: bool = True          # Dmin from the film rebate when it looks like the orange mask
     auto_wb: bool = True
+    wb_warmth: float = 0.0           # with the automatic white balance off: -1 (cooler, bluer) to 1 (warmer, yellower)
+    wb_tint: float = 0.0             # with it off: -1 (greener) to 1 (more magenta)
 
     def effective(self) -> "Settings":
         """Lab mode overrides the tone settings, as cli.run_one does."""
@@ -598,7 +600,21 @@ def plan_from_density(density: np.ndarray, settings: Settings, border: bool = Tr
         mean = np.clip(positive.reshape(-1, 3).mean(axis=0), 1e-4, None)
         target = mean.mean()
         gains = tuple(float(target / mean[c]) for c in range(3))
+    elif not s.auto_wb and not calibrated:
+        gains = manual_gains(s.wb_warmth, s.wb_tint)
     return Plan(dmin, dmax, rng, gains, settings, film)
+
+
+WB_STOPS = 0.45        # how far (in log e, per unit) the white balance sliders move a colour's gain at their ends
+
+
+def manual_gains(warmth: float, tint: float) -> tuple[float, float, float]:
+    """The per-colour gains of the hand white balance (the automatic one off): warmth raises red and lowers blue, tint lowers green (towards magenta) or raises it, kept so the three
+    multiply to one and the picture's brightness stays."""
+    w, t = max(-1.0, min(1.0, float(warmth))), max(-1.0, min(1.0, float(tint)))
+    r, g, b = np.exp(WB_STOPS * w), np.exp(-WB_STOPS * t), np.exp(-WB_STOPS * w)
+    norm = float(np.cbrt(r * g * b))
+    return (float(r / norm), float(g / norm), float(b / norm))
 
 
 def plan_from_codes(codes: np.ndarray, rect=None, settings: Settings | None = None, density_scale: float = DENSITY_SCALE, film=None) -> Plan:

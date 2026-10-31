@@ -117,6 +117,28 @@ def test_a_profile_can_be_imported_and_a_bad_file_is_refused(data_dir):
     assert "user:bad.npz" not in N.stocks()
 
 
+def test_the_hand_white_balance_replaces_the_automatic_one():
+    assert N.manual_gains(0.0, 0.0) == pytest.approx((1.0, 1.0, 1.0))
+    r, g, b = N.manual_gains(1.0, 0.0)
+    assert r > 1.0 > b and g == pytest.approx(1.0, abs=0.2) and r * g * b == pytest.approx(1.0, abs=1e-6), "warmth: more red, less blue, the brightness kept"
+    r2, g2, b2 = N.manual_gains(0.0, 1.0)
+    assert g2 < 1.0 < r2 and r2 == pytest.approx(b2), "tint towards magenta takes green out"
+    assert N.manual_gains(9.0, -9.0) == N.manual_gains(1.0, -1.0), "held to the sliders' range"
+    density = np.random.default_rng(2).uniform(0.2, 1.8, (60, 60, 3)).astype(np.float32)
+    auto = N.plan_from_density(density, N.Settings())
+    hand = N.plan_from_density(density, N.Settings(auto_wb=False))
+    warm = N.plan_from_density(density, N.Settings(auto_wb=False, wb_warmth=0.8))
+    assert hand.gains == (1.0, 1.0, 1.0) and auto.gains != (1.0, 1.0, 1.0)
+    assert warm.gains == N.manual_gains(0.8, 0.0)
+    lut_hand, lut_warm = N.build_lut(hand), N.build_lut(warm)
+    mid = int(1.0 * pe.DENSITY_SCALE)
+    assert lut_warm[0, mid] > lut_hand[0, mid] and lut_warm[2, mid] < lut_hand[2, mid], "a warmer balance prints more red and less blue"
+    on = N.plan_from_density(density, N.Settings(auto_wb=True, wb_warmth=0.8))
+    assert on.gains == auto.gains, "the sliders do nothing while the automatic balance is on"
+    m = Metering.from_dict({"nor_wb_warmth": 0.4, "nor_wb_tint": -9})
+    assert m.nor_wb_warmth == 0.4 and m.nor_wb_tint == -1.0 and Metering().to_dict().get("nor_wb_warmth") is None
+
+
 def test_the_bundled_profiles_and_the_per_film_note_are_as_documented():
     assert set(N.STOCKS) == {"portra160", "portra400", "superia800"} and all(N.stock_profile(s) is not None for s in N.STOCKS)
     assert N.stock_profile("not-a-stock") is None
@@ -153,6 +175,16 @@ _SCRIPT = textwrap.dedent(r"""
     shown = c.state.image_rgb.copy()
     c.set_metering(Metering(engine="noritsu", nor_real_curve=True, nor_variant="00000000")); pump(1.5)
     assert not np.array_equal(shown, c.state.image_rgb), "the variant changes the picture"
+    # the hand white balance shows when the automatic one is off
+    c.set_metering(Metering(engine="noritsu")); pump(1.0); panel.set_metering(c.state.metering)
+    assert panel._nor_rows["nor_wb_warmth"].isHidden() and panel._nor_rows["nor_wb_tint"].isHidden()
+    panel._nor_auto_wb.setChecked(False); pump(1.0)
+    assert not panel._nor_rows["nor_wb_warmth"].isHidden() and not panel._nor_rows["nor_wb_tint"].isHidden(), "the sliders appear"
+    neutral = c.state.image_rgb.copy()
+    panel._nor_rows["nor_wb_warmth"].set_value(0.9); panel._on_metering_slider(0.0); pump(2.0)      # (a drag of the slider does the same)
+    assert c.state.metering.nor_wb_warmth > 0.85 and not c.state.metering.nor_auto_wb and not np.array_equal(neutral, c.state.image_rgb)
+    panel._nor_auto_wb.setChecked(True); pump(1.0)
+    assert panel._nor_rows["nor_wb_warmth"].isHidden()
     c.set_metering(Metering(engine="noritsu", nor_stock="user:gone.npz")); pump(1.0); panel.set_metering(c.state.metering)
     assert "missing" in panel._nor_stock.currentText()
     print("OK noritsu extras")

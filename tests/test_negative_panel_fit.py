@@ -32,6 +32,10 @@ _SCRIPT = textwrap.dedent(r"""
         panel._conversion.setCurrentIndex(panel._conversion.findData(engine)); pump(1.0)
         inner = scroll.widget().minimumSizeHint().width()
         assert scroll.viewport().width() >= inner, (engine, "the tab's content is wider than the room it has", scroll.viewport().width(), inner)
+    # the tab's modules reach the sidebar's right edge (they stopped about 30 px short: a gap for every closed tab, which is 0 wide but was still an item in the row)
+    edge = win._sidebar_scroll.viewport().mapTo(win, win._sidebar_scroll.viewport().rect().topRight()).x()
+    modules = win._negative_tool.mapTo(win, win._negative_tool.rect().topRight()).x()
+    assert edge - modules <= 8, ("a gap on the right of the modules", edge - modules)
     # the scroll bar of a tall tab has room of its own
     assert scroll.sizeHint().width() >= scroll.widget().sizeHint().width()
     print("OK negative panel fit")

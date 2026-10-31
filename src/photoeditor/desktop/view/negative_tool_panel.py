@@ -264,12 +264,13 @@ class NegativeToolPanel(CollapsiblePanel):
         self._curve_label = curve_label
         curve_row.addWidget(curve_label)
         self._film_profile = QComboBox()
-        self._film_profile.setToolTip(
+        self._film_profile_tip = (
             "The film's own characteristic curve (a film profile: the maker's published curve, or one you measured), put back before the conversion. In the NegPy Conversion it replaces the "
             "engine's own S-curve, so the film's real toe and shoulder are put back (by the Film curve amount). Original and the Noritsu look stretch "
             "density in a straight line, so the film's toe and shoulder go into the picture as they are: shadows squeezed, highlights flattened. With a profile, each channel's density is "
             "taken back to the exposure it implies through the curve and carried on along the curve's own straight section, and the stretch or the Noritsu tone curve works on that. "
             "It counts fully with a sampled film base and about a third as much with an estimated one. None leaves the conversion as it was.")
+        self._film_profile.setToolTip(self._film_profile_tip)
         self._film_profile.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
         self._film_profile.setMinimumContentsLength(10)
         self._film_profile.currentIndexChanged.connect(self._on_film_profile_changed)
@@ -542,7 +543,6 @@ class NegativeToolPanel(CollapsiblePanel):
             self._fill_film_profiles()
         if hasattr(self, "_nor_variant"):
             self._fill_nor_variants()
-            self._fill_nor_stocks()
         self._engine_profile.clear()
         for r in usable:
             self._engine_profile.addItem(f"{preset_tree.display(r['name'])} ({r['film']})", r["id"])
@@ -709,6 +709,8 @@ class NegativeToolPanel(CollapsiblePanel):
         for w in (self._range, self._wb_title, self._channel_label, self._white, self._black, self._channel, *self._droppers.values()):
             w.setVisible(engine == "standard")
         self._cast.setVisible(engine in ("standard", "negpy056"))     # (for NegPy 0.56 (old) it is Cast Removal: 1 is NegPy's default of 0.5)
+        for key in ("nor_wb_warmth", "nor_wb_tint"):      # the hand white balance appears when the Noritsu look's automatic one is turned off
+            self._nor_rows[key].setVisible(engine == "noritsu" and not self._nor_auto_wb.isChecked())
 
     def set_region_draw_active(self, active: bool) -> None:
         """Sync the Draw Region button without emitting anything."""
@@ -739,11 +741,33 @@ class NegativeToolPanel(CollapsiblePanel):
             m = dataclasses.replace(m, white_trim=tuple(wt), black_trim=tuple(bt))
         engine = self._conversion.currentData() or "standard"
         self._sync_engine_controls(engine)
-        return dataclasses.replace(m, film=self._film.currentData() or "generic", transfer=self._encoding.currentData() or "auto", buffer=self._margin.value(), range_clip=self._range.value(), cast_removal=self._cast.value(), engine=engine,
+        out = dataclasses.replace(m, film=self._film.currentData() or "generic", transfer=self._encoding.currentData() or "auto", buffer=self._margin.value(), range_clip=self._range.value(), cast_removal=self._cast.value(), engine=engine,
                                    grade_trim=tuple(row.value() for row in self._trim_rows), **{key: row.value() for key, row in self._print_rows.items()}, **{key: row.value() for key, row in self._nor_rows.items()},
                                    nor_stock=self._nor_stock.currentData() or "", nor_lab=self._nor_lab.isChecked(), nor_real_curve=self._nor_real_curve.isChecked(), nor_variant=self._nor_variant.currentData() or "00000005", nor_border=self._nor_border.isChecked(),
                                    nor_auto_wb=self._nor_auto_wb.isChecked(), film_profile=self._film_profile.currentData() or "", hold_black=self._hold_black.isChecked(),
                                    print_stock=self._stock.currentData() or "", bw_filter=self._bw_filter.currentData() or "", meter_frame=self._meter_frame.isChecked())
+        return self._one_film_curve(out)
+
+    def _one_film_curve(self, m: Metering) -> Metering:
+        """A film's curve is put back by one control at a time, so the three that could do it do not pile up: a calibration profile as the Noritsu look's Stock has the tone in it and clears the Curve,
+        and a Curve with a film chosen clears a film tone curve (the menus show it)."""
+        changes = {}
+        if m.engine == "noritsu" and m.nor_stock and m.film_profile:
+            changes["film_profile"] = ""
+        if (changes.get("film_profile", m.film_profile)) and noritsu_logic.is_film_variant(m.nor_variant):
+            changes["nor_variant"] = noritsu_logic.DEFAULT_VARIANT
+        if not changes:
+            return m
+        if "film_profile" in changes:
+            self._film_profile.blockSignals(True)
+            self._film_profile.setCurrentIndex(0)
+            self._film_profile.blockSignals(False)
+        if "nor_variant" in changes:
+            self._nor_variant.blockSignals(True)
+            self._nor_variant.setCurrentIndex(max(0, self._nor_variant.findData(noritsu_logic.DEFAULT_VARIANT)))
+            self._nor_variant.blockSignals(False)
+        self._lock_nor_variants()
+        return dataclasses.replace(m, **changes)
 
     def _build_noritsu(self, body) -> None:
         """The controls of the Noritsu look (a port of noritsu-tool: its --stock, --lab, --real-curve, --contrast, --toe, --gamma, --sat, --dmin-pct, --dmax-pct, --no-border and --no-auto-wb)."""
@@ -797,7 +821,7 @@ class NegativeToolPanel(CollapsiblePanel):
         self._nor_border = QCheckBox("Dmin from the rebate")
         self._nor_border.setToolTip("Take the film base (the orange mask) from the film's unexposed rebate when it looks like one; otherwise, or when this is off, from a low percentile of the film.")
         self._nor_auto_wb = QCheckBox("Automatic white balance")
-        self._nor_auto_wb.setToolTip("Neutralize the residual colour cast so the picture's average renders neutral (the Noritsu automatic white balance).")
+        self._nor_auto_wb.setToolTip("Neutralize the residual colour cast so the picture's average renders neutral (the Noritsu automatic white balance). Turn it off to set the white balance by hand: a warmth and a tint slider appear.")
         for box in (self._nor_lab, self._nor_real_curve, self._nor_border, self._nor_auto_wb):
             box.toggled.connect(self._on_metering_slider)
             body.addWidget(box)
@@ -807,6 +831,8 @@ class NegativeToolPanel(CollapsiblePanel):
             "nor_toe": ("Toe", 0.0, 0.2, 0.02, "Shadow lift."),
             "nor_gamma": ("Gamma", 0.4, 1.6, 0.98, "Midtone gamma applied after the S-curve: lower lifts a thin negative."),
             "nor_sat": ("Saturation", 0.0, 2.0, 1.0, "Saturation around luma (1 leaves it)."),
+            "nor_wb_warmth": ("WB warmth", -1.0, 1.0, 0.0, "The white balance by hand (the automatic one is off): cooler and bluer to the left, warmer and yellower to the right."),
+            "nor_wb_tint": ("WB tint", -1.0, 1.0, 0.0, "The white balance by hand (the automatic one is off): greener to the left, more magenta to the right."),
             "nor_dmin_pct": ("Dmin %", 0.0, 10.0, 0.5, "The percentile of the film Dmin is read at when the rebate is not used."),
             "nor_dmax_pct": ("Dmax %", 90.0, 100.0, 99.8, "The percentile of the film Dmax is read at: lower it (98) for a thin negative, raise it (99.5) for a dense one."),
         }
@@ -853,6 +879,18 @@ class NegativeToolPanel(CollapsiblePanel):
                 self._nor_variant.addItem(f"{keep} (missing: standard used)", keep)
         self._nor_variant.setCurrentIndex(max(0, self._nor_variant.findData(wanted or current)))
         self._nor_variant.blockSignals(was_blocked)
+        self._lock_nor_variants()
+
+    def _lock_nor_variants(self) -> None:
+        """A film's own curve is put back by the Curve menu and again by a film tone curve, which would apply it twice: while the Curve has a film chosen, the "Film:" tone curves are greyed out."""
+        locked = bool(self._film_profile.currentData()) if hasattr(self, "_film_profile") else False
+        model = self._nor_variant.model()
+        for i in range(self._nor_variant.count()):
+            if noritsu_logic.is_film_variant(self._nor_variant.itemData(i) or ""):
+                item = model.item(i)
+                if item is not None:
+                    item.setEnabled(not locked)
+                    item.setToolTip("Greyed out: the Curve above already puts this film's curve back. Set Curve to None to use a film as the tone curve." if locked else "")
 
     def _fill_nor_stocks(self) -> None:
         """The Stock list: none, the three profiles that come with noritsu-tool, then yours."""
@@ -862,8 +900,6 @@ class NegativeToolPanel(CollapsiblePanel):
         self._nor_stock.addItem("None (use the sliders)", "")
         for stock, name in noritsu_logic.stocks().items():
             self._nor_stock.addItem(name if not stock.startswith("user:") else f"{name} (yours)", stock)
-        for label, ident in getattr(self, "_film_choices", []):
-            self._nor_stock.addItem(f"Film: {label}", noritsu_logic.FILM_PREFIX + ident)
         self._nor_stock.setCurrentIndex(max(0, self._nor_stock.findData(current)))
         self._nor_stock.blockSignals(was_blocked)
 
@@ -907,7 +943,13 @@ class NegativeToolPanel(CollapsiblePanel):
         for key in ("nor_contrast", "nor_toe", "nor_gamma"):
             self._nor_rows[key].setEnabled(synthetic)
         self._nor_rows["nor_sat"].setEnabled(not self._nor_lab.isChecked())
+        for key in ("nor_wb_warmth", "nor_wb_tint"):
+            self._nor_rows[key].setEnabled(not calibrated)      # (a calibration profile has the white balance in it)
         self._nor_variant.setEnabled(not calibrated and (self._nor_real_curve.isChecked() or self._nor_lab.isChecked()))
+        self._lock_nor_variants()
+        noritsu_now = (self._conversion.currentData() or "") == "noritsu"
+        self._film_profile.setEnabled(not (noritsu_now and calibrated))      # (a calibration profile was fitted without a film curve and has the tone in it)
+        self._film_profile.setToolTip(self._film_profile_tip + ("\n\nLocked while a calibration profile is chosen as the Stock: set the Stock to None to use a film curve." if (noritsu_now and calibrated) else ""))
 
     def show_noritsu_suggestion(self, params: dict | None) -> None:
         """Set the sliders to noritsu-tool's suggestion for this scan (None: nothing has been read yet)."""

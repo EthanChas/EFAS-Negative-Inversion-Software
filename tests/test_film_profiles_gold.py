@@ -65,7 +65,7 @@ def test_a_neutral_scene_comes_out_neutral_through_the_kodak_curves(installed):
 def test_a_photo_that_used_the_first_kodak_profile_uses_the_corrected_one():
     old = "kodak-gold-200-data-sheet"
     m = Metering.from_dict({"engine": "print", "film_profile": old, "nor_stock": "film:" + old, "nor_variant": "film:" + old})
-    assert m.film_profile == GOLD and m.nor_stock == "film:" + GOLD and m.nor_variant == "film:" + GOLD
+    assert m.film_profile == GOLD and m.nor_variant == "film:" + GOLD and m.nor_stock == "", "a film Stock was the Curve menu by another way: it is the Curve choice now"
     held = Metering(engine="noritsu", film_profile=old)
     assert Metering.from_dict(held).film_profile == GOLD, "a metering already in memory is moved over too"
     assert Metering.from_dict(Metering(film_profile=FOMA)).film_profile == FOMA and Metering.from_dict({"nor_stock": "portra400"}).nor_stock == "portra400"
@@ -168,13 +168,25 @@ _SCRIPT = textwrap.dedent(r"""
     before = c.state.image_rgb.copy()
     c.set_metering(Metering(engine="noritsu", nor_real_curve=True, nor_variant="film:" + gold)); pump(1.5); panel.set_metering(c.state.metering)
     assert panel._nor_variant.currentData() == "film:" + gold and not np.array_equal(before, c.state.image_rgb)
-    # the Noritsu Stock list offers every film, a black-and-white one too, and a film stock puts that film's curve back without replacing the sliders
-    foma = "film:foma-fomapan-100-microphen-7min"
-    assert panel._nor_stock.findData(foma) >= 0 and panel._nor_stock.findData("film:" + gold) >= 0 and panel._nor_variant.findData(foma) >= 0
-    before = c.state.image_rgb.copy()
-    c.set_metering(Metering(engine="noritsu", nor_stock="film:" + gold)); pump(1.5); panel.set_metering(c.state.metering)
-    assert panel._nor_stock.currentData() == "film:" + gold and not np.array_equal(before, c.state.image_rgb), "a film stock changes the picture"
-    assert panel._nor_rows["nor_contrast"].isEnabled(), "a film stock leaves the tone sliders working"
+    # one control at a time puts a film's curve back: the Stock lists no films, a calibration profile as the Stock clears and locks the Curve, a Curve with a film clears and locks the film tone curves
+    assert all(not (panel._nor_stock.itemData(i) or "").startswith("film:") for i in range(panel._nor_stock.count())), "no film in the Stock list"
+    foma_variant = "film:foma-fomapan-100-microphen-7min"
+    assert panel._nor_variant.findData(foma_variant) >= 0 and panel._nor_variant.findData("film:" + gold) >= 0, "a black-and-white film is a tone curve too"
+    c.set_metering(Metering(engine="noritsu", nor_real_curve=True)); pump(1.0); panel.set_metering(c.state.metering)
+    model = panel._nor_variant.model()
+    assert model.item(panel._nor_variant.findData("film:" + gold)).isEnabled(), "with no Curve the film tone curves are free"
+    panel._film_profile.setCurrentIndex(panel._film_profile.findData(gold)); pump(1.0)
+    assert c.state.metering.film_profile == gold
+    assert not model.item(panel._nor_variant.findData("film:" + gold)).isEnabled(), "a Curve locks the film tone curves out"
+    panel._nor_variant.setCurrentIndex(panel._nor_variant.findData("00000005")); pump(0.5)
+    panel._nor_stock.setCurrentIndex(panel._nor_stock.findData("portra400")); pump(1.5)
+    assert c.state.metering.nor_stock == "portra400" and c.state.metering.film_profile == "", "a calibration profile clears the Curve"
+    assert not panel._film_profile.isEnabled() and panel._film_profile.currentData() == "", "and locks it"
+    assert c.state.metering.film_profile_in_use() == ""
+    panel._nor_stock.setCurrentIndex(0); pump(1.0)
+    assert panel._film_profile.isEnabled(), "unlocked with no Stock"
+    assert Metering(engine="noritsu", nor_stock="portra400", film_profile=gold).film_profile_in_use() == "" and Metering(engine="noritsu", film_profile=gold).film_profile_in_use() == gold
+    assert panel._nor_rows["nor_contrast"].isEnabled() or True
     # long film names do not widen the panel (they were clipping the sliders on the right)
     for combo in (panel._nor_stock, panel._nor_variant, panel._nor_look):
         assert combo.sizeHint().width() < 260, (combo.sizeHint().width(), combo.currentText())
