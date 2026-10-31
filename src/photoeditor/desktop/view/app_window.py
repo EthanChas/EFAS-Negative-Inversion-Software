@@ -5117,8 +5117,6 @@ class AppWindow(QMainWindow):
             return
         if self._module_search.active() or self._search_panel._is_open or self._module_search_edit.text():
             self._module_search.dismiss()   # a tab was chosen: the modules the search gathered go back to their own tabs before anything else moves
-        if not checked:
-            self._sidebar_pane.setMinimumWidth(self._sidebar_base_min)      # (no tab open: the sidebar's own limit again)
         was_open = [other for other, p in panels.items() if p._is_open and (other != tab_id or not checked)]
         panels[tab_id].set_open(checked)
         self._open_tab = tab_id if checked else (self._open_tab if self._open_tab != tab_id else "")
@@ -5336,6 +5334,14 @@ class AppWindow(QMainWindow):
 
         QTimer.singleShot(240, fold)
 
+    @staticmethod
+    def _natural_tab_width(scroll) -> int:
+        """The width a tab's modules want when there is room: the widest of them. (The modules are made able to be narrower than that, so the content's own minimum no longer says.)"""
+        layout = scroll.widget().layout() if scroll.widget() is not None else None
+        if layout is None:
+            return 0
+        return max((item.widget().minimumSizeHint().width() for item in (layout.itemAt(i) for i in range(layout.count())) if item is not None and item.widget() is not None), default=0)
+
     def _refit_negative_tab(self) -> None:
         """The Convert tab is open and its controls changed (a conversion method has controls of its own): give it the room it now needs, as opening it does."""
         panel = self._tool_tab_panels().get("negative")
@@ -5349,17 +5355,15 @@ class AppWindow(QMainWindow):
         if right <= 0:
             return
         scroll = panel._content
-        inner = scroll.widget().minimumSizeHint().width() if scroll.widget() is not None else 0
+        inner = self._natural_tab_width(scroll)
         scrollbar = self.style().pixelMetric(self.style().PixelMetric.PM_ScrollBarExtent)
         needed = (
             self._tool_rail.width() + THEME.space_sm + max(inner, scroll.minimumWidth(), scroll.minimumSizeHint().width())
             + scrollbar + 2 + THEME.space_md + 4
         )
-        overflow = inner - scroll.viewport().width()      # (what the tab's content is wider than the room it really has: the sum above leaves out a few margins)
+        overflow = inner - scroll.viewport().width()      # (what the tab's modules want beyond the room they really have: the sum above leaves out a few margins)
         if overflow > 0 and scroll.viewport().width() > 0:
             needed = max(needed, right + overflow)
-        # the sidebar cannot be dragged narrower than the open tab needs: squeezed past that, the modules ran behind the frame instead of stopping at their limit
-        self._sidebar_pane.setMinimumWidth(max(self._sidebar_base_min, needed if overflow > 0 else needed))
         if needed > right:
             grow = min(needed - right, max(center - 200, 0))
             self._splitter.setSizes([left, center - grow, right + grow])

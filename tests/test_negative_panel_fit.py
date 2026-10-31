@@ -51,6 +51,13 @@ _SCRIPT = textwrap.dedent(r"""
         past = [type(w).__name__ for w in sc.widget().findChildren(QWidget) if w.isVisible() and w.width() > 0 and w.mapToGlobal(w.rect().topRight()).x() > edge + 1]
         assert not past, (tab_id, "something runs behind the frame", past[:6])
         win._on_tool_tab_toggled(tab_id, False); win._tool_rail.set_tab_checked(tab_id, False); pump(0.4)
+    # the module titles are there (a title given no room at all vanished), full at the width the tab opens at
+    from photoeditor.desktop.view.collapsible_panel import CollapsiblePanel as _CP
+    win._on_tool_tab_toggled("exposure", True); win._tool_rail.set_tab_checked("exposure", True); pump(1.2)
+    for module in win._tool_tab_panels()["exposure"]._content.widget().findChildren(_CP):
+        title = module._header._title_label
+        assert title.width() >= title.sizeHint().width() - 1 and title.text(), ("a module's title is cut at the width the tab opens at", title.text(), title.width(), title.sizeHint().width())
+    win._on_tool_tab_toggled("exposure", False); win._tool_rail.set_tab_checked("exposure", False); pump(0.4)
     # the scroll bar of a tall tab has room of its own
     assert scroll.sizeHint().width() >= scroll.widget().sizeHint().width()
     print("OK negative panel fit")
