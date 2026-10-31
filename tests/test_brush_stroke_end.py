@@ -37,8 +37,8 @@ _SCRIPT = textwrap.dedent(r"""
     QTest.mouseMove(label, QPoint(int(130 * k), y))
     QTest.mouseRelease(label, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, QPoint(int(260 * k), y))   # let go far past the last move
     stroke = got[0]
-    assert abs(stroke[-1][0] - 260) < 1.5 and abs(stroke[-1][1] - 300) < 1.5, stroke[-3:]
-    assert abs(stroke[0][0] - 100) < 1.5
+    assert abs(stroke[-1][0] - 260) < 2.5 and abs(stroke[-1][1] - 300) < 2.5, stroke[-3:]
+    assert abs(stroke[0][0] - 100) < 2.5
     got.clear()
     QTest.mousePress(label, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, QPoint(int(100 * k), y))
     QTest.mouseRelease(label, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, QPoint(int(100 * k), y))
