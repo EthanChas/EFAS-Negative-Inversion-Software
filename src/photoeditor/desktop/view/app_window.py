@@ -1453,7 +1453,6 @@ class AppWindow(QMainWindow):
         self._negative_tool.rgb_changed.connect(self.controller.set_invert_rgb)
         self._negative_tool.light_source_requested.connect(self._on_light_source)
         self._negative_tool.metering_changed.connect(self.controller.set_metering)
-        self._negative_tool.metering_changed.connect(lambda _m: QTimer.singleShot(0, self._refit_negative_tab))      # (another conversion method has other controls, which may need more room)
         self._negative_tool.pick_better_requested.connect(self._open_pick_better)
         self._negative_tool.metering_preview.connect(self.controller.preview_metering)
         self._negative_tool.region_draw_toggled.connect(self._on_region_draw_toggled)
@@ -5125,7 +5124,6 @@ class AppWindow(QMainWindow):
                 self._close_modules_when_hidden(panels[left])
         self._end_masking_in([panels[o] for o in was_open] + ([] if checked else [panels[tab_id]]))
         if checked:
-            QTimer.singleShot(260, lambda p=panels[tab_id]: self._fit_sidebar_to_tab(p))
             for other_id, other_panel in panels.items():
                 if other_id != tab_id:
                     other_panel.set_open(False)
@@ -5311,7 +5309,6 @@ class AppWindow(QMainWindow):
                 self._open_tab = ""
                 self._tool_rail.set_tab_checked("active", self._active_tab_open)
                 self._search_panel.set_open(True)
-                QTimer.singleShot(260, lambda: self._fit_sidebar_to_tab(self._search_panel))
             return
         if self._search_panel._is_open:
             self._search_panel.set_open(False)
@@ -5333,41 +5330,6 @@ class AppWindow(QMainWindow):
                     module.collapse_now()
 
         QTimer.singleShot(240, fold)
-
-    @staticmethod
-    def _natural_tab_width(scroll) -> int:
-        """The width a tab's modules want when there is room: the widest of them. (The modules are made able to be narrower than that, so the content's own minimum no longer says.)"""
-        layout = scroll.widget().layout() if scroll.widget() is not None else None
-        if layout is None:
-            return 0
-        return max((item.widget().minimumSizeHint().width() for item in (layout.itemAt(i) for i in range(layout.count())) if item is not None and item.widget() is not None), default=0)
-
-    def _refit_negative_tab(self) -> None:
-        """The Convert tab is open and its controls changed (a conversion method has controls of its own): give it the room it now needs, as opening it does."""
-        panel = self._tool_tab_panels().get("negative")
-        if panel is not None and panel._is_open:
-            self._fit_sidebar_to_tab(panel)
-
-    def _fit_sidebar_to_tab(self, panel) -> None:
-        """Widen the right sidebar, at the image's expense, when the opened tab needs more room than the sidebar has - otherwise the
-        tab's controls run past the window's right edge. A tab's real minimum is its content's own, or the scroll area's floor if larger."""
-        left, center, right = self._splitter.sizes()
-        if right <= 0:
-            return
-        scroll = panel._content
-        inner = self._natural_tab_width(scroll)
-        scrollbar = self.style().pixelMetric(self.style().PixelMetric.PM_ScrollBarExtent)
-        needed = (
-            self._tool_rail.width() + THEME.space_sm + max(inner, scroll.minimumWidth(), scroll.minimumSizeHint().width())
-            + scrollbar + 2 + THEME.space_md + 4
-        )
-        overflow = inner - scroll.viewport().width()      # (what the tab's modules want beyond the room they really have: the sum above leaves out a few margins)
-        if overflow > 0 and scroll.viewport().width() > 0:
-            needed = max(needed, right + overflow)
-        if needed > right:
-            grow = min(needed - right, max(center - 200, 0))
-            self._splitter.setSizes([left, center - grow, right + grow])
-            self._sidebar_last_width = right + grow
 
     def _on_negative_detect_requested(self) -> None:
         mode = self.controller.detect_negative_mode()

@@ -39,6 +39,7 @@ _SCRIPT = textwrap.dedent(r"""
     # squeezing the sidebar makes the modules narrower with it, down to the sidebar's own limit: no module, header button or control runs behind the frame (as in the versions before 0.12)
     from PyQt6.QtWidgets import QWidget
     from photoeditor.desktop.view.collapsible_panel import CollapsiblePanel
+    start = win._splitter.sizes()
     for tab_id in ("exposure", "negative", "color", "detail", "correction"):
         win._on_tool_tab_toggled(tab_id, True); win._tool_rail.set_tab_checked(tab_id, True); pump(1.0)
         sc = win._tool_tab_panels()[tab_id]._content
@@ -51,12 +52,19 @@ _SCRIPT = textwrap.dedent(r"""
         past = [type(w).__name__ for w in sc.widget().findChildren(QWidget) if w.isVisible() and w.width() > 0 and w.mapToGlobal(w.rect().topRight()).x() > edge + 1]
         assert not past, (tab_id, "something runs behind the frame", past[:6])
         win._on_tool_tab_toggled(tab_id, False); win._tool_rail.set_tab_checked(tab_id, False); pump(0.4)
-    # the module titles are there (a title given no room at all vanished), full at the width the tab opens at
+    # swapping between tabs leaves the sidebar's width alone (it used to be widened to each tab's widest module, so it kept resizing)
+    win._splitter.setSizes(start); pump(0.6)
+    before = win._splitter.sizes()
+    for tab_id in ("negative", "exposure", "color", "detail", "negative", "correction", "exposure"):
+        win._on_tool_tab_toggled(tab_id, True); win._tool_rail.set_tab_checked(tab_id, True); pump(0.6)
+        assert win._splitter.sizes() == before, (tab_id, "the sidebar was resized by opening the tab", before, win._splitter.sizes())
+    win._on_tool_tab_toggled("exposure", False); win._tool_rail.set_tab_checked("exposure", False); pump(0.4)
+    # the module titles are there (a title given no room at all vanished); a long one is cut at the default width
     from photoeditor.desktop.view.collapsible_panel import CollapsiblePanel as _CP
     win._on_tool_tab_toggled("exposure", True); win._tool_rail.set_tab_checked("exposure", True); pump(1.2)
     for module in win._tool_tab_panels()["exposure"]._content.widget().findChildren(_CP):
         title = module._header._title_label
-        assert title.width() >= title.sizeHint().width() - 1 and title.text(), ("a module's title is cut at the width the tab opens at", title.text(), title.width(), title.sizeHint().width())
+        assert title.text() and title.width() >= min(title.sizeHint().width(), 80), ("a module's title has no room", title.text(), title.width(), title.sizeHint().width())
     win._on_tool_tab_toggled("exposure", False); win._tool_rail.set_tab_checked("exposure", False); pump(0.4)
     # the scroll bar of a tall tab has room of its own
     assert scroll.sizeHint().width() >= scroll.widget().sizeHint().width()
