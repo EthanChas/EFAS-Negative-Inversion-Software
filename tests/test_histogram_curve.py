@@ -49,6 +49,21 @@ def test_nothing_to_draw_gives_none():
     assert cv.build(np.zeros((4, 4), np.uint16), _ramp_lut(), True, 13000.0) is None
 
 
+def test_the_density_scale_fills_the_graph_and_a_clipped_level_takes_the_lowest_density():
+    from photoeditor.desktop.view.histogram_panel import HistogramPanel as H
+
+    bottom, top, step = H._density_axis(0.2, 1.1)
+    assert bottom < 0.2 and top > 1.1 and top - bottom < 1.5, "the scale is the range the picture uses with a margin, not the film's 0 to 3"
+    assert (top - bottom) / step <= 7.5 and step in (0.1, 0.2, 0.25, 0.5, 1.0, 2.0)
+    assert H._density_axis(0.0, 0.05)[1] - H._density_axis(0.0, 0.05)[0] >= 0.2, "a very thin range still gets a usable scale"
+    density = np.linspace(0.0, 3.0, 256)
+    table = np.minimum(np.linspace(0.0, 255.0, 256) * 3.0, 255.0)      # prints white from a third of the way up: every density past that is the same level
+    at = H._density_at_levels(table, density, np.array([0.0, 128.0, 255.0, 300.0]))
+    assert at[0] == 0.0 and abs(at[1] - 128.0 / 3.0 / 255.0 * 3.0) < 0.03
+    assert abs(at[2] - 1.0) < 0.02, "level 255 is reached at density 1, not at the top of the scale where the table is flat"
+    assert np.isnan(at[3]), "a level the curve never reaches is not drawn"
+
+
 _SCRIPT = textwrap.dedent(r"""
     import os, tempfile, time
     os.environ["QT_QPA_PLATFORM"] = "offscreen"; os.environ["PHOTOEDITOR_DATA_DIR"] = tempfile.mkdtemp(); os.environ["PHOTOEDITOR_AUDIO"] = "off"

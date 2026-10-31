@@ -340,56 +340,84 @@ class HistogramPanel(BevelPanel):
         painter.end()
 
     # ------------------------------------------------------------ the density curve, over the histogram
+    @staticmethod
+    def _density_axis(low: float, high: float) -> tuple[float, float, float]:
+        """The density scale of the overlay as (bottom, top, step): the range the picture uses with a margin, not the film's whole span, so the curve fills the graph as NegPy's does, with a step
+        of 0.1, 0.2, 0.25, 0.5 or 1 that gives a handful of ticks."""
+        pad = 0.12 * max(high - low, 0.0)
+        bottom, top = max(0.0, low - pad), high + pad
+        if top - bottom < 0.2:       # a very thin range still gets a scale to read
+            middle = (top + bottom) / 2.0
+            bottom = max(0.0, middle - 0.1)
+            top = bottom + 0.2
+        step = next(st for st in (0.1, 0.2, 0.25, 0.5, 1.0, 2.0) if (top - bottom) / st <= 7.5)
+        return bottom, top, step
+
+    @staticmethod
+    def _density_at_levels(curve, density, levels):
+        """The density of negative that prints as each level: the lowest density that reaches it (the table is flat where the print clips, and every density past that prints as the same level),
+        and nan outside what the curve covers."""
+        rising = np.maximum.accumulate(np.asarray(curve, dtype=float))
+        idx = np.clip(np.searchsorted(rising, levels, side="left"), 1, len(rising) - 1)
+        x0, x1 = rising[idx - 1], rising[idx]
+        t = np.clip((levels - x0) / np.maximum(x1 - x0, 1e-9), 0.0, 1.0)
+        out = density[idx - 1] + t * (density[idx] - density[idx - 1])
+        return np.where((levels >= rising[0]) & (levels <= rising[-1]), out, np.nan)
+
     def _draw_curve_overlay(self, painter: QPainter, rect: QRect) -> None:
         """The conversion's paper curve drawn over the histogram, on the histogram's own axis (the print's level, along the bottom) with the negative's density on a scale of its own down the
-        right: at each print level, the density of negative that prints as it (the curve of features/negative/curveview.py turned on its side). Where the line is steep a lot of negative
-        density is squeezed into few levels; where it is flat the levels are spread thin. One line for each colour in the Color graph, the mean of them in Exposure. The density the
-        picture really uses (its 0.5 to 99.5 percent) lies between the two dashed lines."""
+        right: at each print level, the density of negative that prints as it (the curve of features/negative/curveview.py turned on its side). The scale runs over the density the picture really
+        uses (its 0.5 to 99.5 percent, with a margin), so the line spreads over the whole graph: where it is steep a lot of negative density is squeezed into few levels, where it is flat the
+        levels are spread thin. One line for each colour in the Color graph, the mean of them in Exposure; the two dashed lines are the density the picture uses."""
         data = self._curve_data
         if data is None:
             return
         font = painter.font()
         font.setPointSize(THEME.font_size_small)
         painter.setFont(font)
-        d_max = float(data["density"][-1])
         density = np.asarray(data["density"], dtype=float)
         curves = np.asarray(data["curve"], dtype=float)
-        painter.setPen(QColor(THEME.text_secondary))
-        for i in range(int(d_max / 0.5) + 1):       # the density scale, down the right edge
-            y = rect.bottom() - rect.height() * (i * 0.5) / d_max
-            painter.drawText(QRect(rect.right() + 3, int(y) - 7, _AXIS_LABEL_WIDTH, 14), int(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter), f"{i * 0.5:.1f}")
-        painter.setClipRect(QRectF(rect))
         low, high = data["range"]
+        bottom, top, step = self._density_axis(float(low), float(high))
+
+        def y_of(d):
+            return rect.bottom() - rect.height() * (d - bottom) / (top - bottom)
+
+        painter.setPen(QColor(THEME.text_secondary))
+        d = math.ceil(bottom / step - 1e-9) * step
+        while d <= top + 1e-9:       # the density scale, down the right edge
+            painter.drawText(QRect(rect.right() + 3, int(y_of(d)) - 7, _AXIS_LABEL_WIDTH, 14), int(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter), f"{d:.2f}" if step < 0.2 or step == 0.25 else f"{d:.1f}")
+            d += step
+        painter.setClipRect(QRectF(rect))
         mark = QColor(THEME.accent_primary)
         mark.setAlpha(150)
         painter.setPen(QPen(mark, 1, Qt.PenStyle.DashLine))
-        for d in (low, high):       # the density the picture uses, between two dashed lines
-            y = rect.bottom() - rect.height() * min(max(d, 0.0), d_max) / d_max
-            painter.drawLine(QPointF(rect.left(), y), QPointF(rect.right(), y))
+        for edge in (low, high):       # the density the picture uses, between two dashed lines
+            painter.drawLine(QPointF(rect.left(), y_of(edge)), QPointF(rect.right(), y_of(edge)))
         levels = np.arange(256, dtype=float)
-        lines = [(THEME.channel_red, curves[0]), (THEME.channel_green, curves[1]), (THEME.channel_blue, curves[2])] if self._mode == "color" else [(THEME.accent_primary, curves.mean(axis=0))]
         mean_curve = curves.mean(axis=0)
+        lines = [(THEME.channel_red, curves[0]), (THEME.channel_green, curves[1]), (THEME.channel_blue, curves[2])] if self._mode == "color" else [(THEME.accent_primary, mean_curve)]
         for colour, curve in lines:
-            rising = np.maximum.accumulate(curve)
-            inside = (levels >= rising[0]) & (levels <= rising[-1])
-            if not inside.any():
-                continue
-            at = np.interp(levels[inside], rising, density)
+            at = self._density_at_levels(curve, density, levels)
             path = QPainterPath()
-            for n, (level, d) in enumerate(zip(levels[inside], at)):
-                point = QPointF(self._x_for_value(rect, level), rect.bottom() - rect.height() * d / d_max)
-                path.moveTo(point) if n == 0 else path.lineTo(point)
+            started = False
+            for level, dens in zip(levels, at):
+                if np.isnan(dens):
+                    started = False
+                    continue
+                point = QPointF(self._x_for_value(rect, level), y_of(dens))
+                path.lineTo(point) if started else path.moveTo(point)
+                started = True
             painter.setPen(QPen(QColor(0, 0, 0, 170), 3.4, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin))      # (a dark edge, so the line shows on the bright fill too)
             painter.drawPath(path)
             painter.setPen(QPen(QColor(colour), 1.6, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin))
             painter.drawPath(path)
         painter.setClipping(False)
         if self._cursor_value is not None:      # the density that prints as the level under the pointer
-            rising = np.maximum.accumulate(mean_curve)
-            if rising[0] <= self._cursor_value <= rising[-1]:
-                d = float(np.interp(float(self._cursor_value), rising, density))
+            at = self._density_at_levels(mean_curve, density, np.array([float(self._cursor_value)]))[0]
+            if not np.isnan(at):
                 painter.setPen(QColor(THEME.text_primary))
-                painter.drawText(QRect(rect.left(), rect.top() + 2, rect.width() - 4, _LEGEND_HEIGHT), int(Qt.AlignmentFlag.AlignRight), f"D {d:.2f}")
+                painter.drawText(QRect(rect.left(), rect.top() + 2, rect.width() - 4, _LEGEND_HEIGHT), int(Qt.AlignmentFlag.AlignRight), f"D {at:.2f}")
 
     # ------------------------------------------------------------ the data, in the chosen style
     def _draw_data(self, painter: QPainter, rect: QRect) -> None:
