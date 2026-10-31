@@ -210,7 +210,7 @@ def apply_tca(pixels: np.ndarray, fields: list[np.ndarray | None]) -> np.ndarray
             dx = cv2.remap(np.ascontiguousarray(field[..., 0]), gx, gy, interpolation=cv2.INTER_LINEAR, borderMode=cv2.BORDER_REPLICATE)
             dy = cv2.remap(np.ascontiguousarray(field[..., 1]), gx, gy, interpolation=cv2.INTER_LINEAR, borderMode=cv2.BORDER_REPLICATE)
             out[y0:y1, :, c] = cv2.remap(np.ascontiguousarray(pixels[:, :, c]), (px + dx).astype(np.float32), (py + dy).astype(np.float32),
-                                         interpolation=cv2.INTER_LINEAR, borderMode=cv2.BORDER_REPLICATE)
+                                         interpolation=cv2.INTER_LANCZOS4, borderMode=cv2.BORDER_REPLICATE)      # (Lanczos: linear softens the grain)
     return out
 
 

@@ -101,7 +101,7 @@ def fine_rotate(pixels: np.ndarray, degrees: float, nearest: bool = False) -> np
 
     h, w = pixels.shape[:2]
     matrix = _fine_matrix(degrees, w, h)
-    flags = cv2.INTER_NEAREST if nearest else cv2.INTER_LINEAR
+    flags = cv2.INTER_NEAREST if nearest else cv2.INTER_LANCZOS4      # (not linear: linear keeps only two thirds of the film's grain through any warp)
     return cv2.warpAffine(np.ascontiguousarray(pixels), matrix, (w, h), flags=flags, borderMode=cv2.BORDER_REPLICATE)
 
 
@@ -183,7 +183,7 @@ def radial_distort(pixels: np.ndarray, k1: float, nearest: bool = False) -> np.n
 
     h, w = pixels.shape[:2]
     map_x, map_y = _radial_maps(k1, w, h)
-    flags = cv2.INTER_NEAREST if nearest else cv2.INTER_LINEAR
+    flags = cv2.INTER_NEAREST if nearest else cv2.INTER_LANCZOS4      # (not linear: linear keeps only two thirds of the film's grain through any warp)
     return cv2.remap(np.ascontiguousarray(pixels), map_x, map_y, interpolation=flags, borderMode=cv2.BORDER_REPLICATE)
 
 
@@ -228,7 +228,7 @@ def keystone(pixels: np.ndarray, v: float, h: float, nearest: bool = False) -> n
     import cv2
 
     hgt, w = pixels.shape[:2]
-    flags = cv2.INTER_NEAREST if nearest else cv2.INTER_LINEAR
+    flags = cv2.INTER_NEAREST if nearest else cv2.INTER_LANCZOS4      # (not linear: linear keeps only two thirds of the film's grain through any warp)
     return cv2.warpPerspective(np.ascontiguousarray(pixels), _keystone_matrix(v, h, w, hgt), (w, hgt), flags=flags, borderMode=cv2.BORDER_REPLICATE)
 
 
