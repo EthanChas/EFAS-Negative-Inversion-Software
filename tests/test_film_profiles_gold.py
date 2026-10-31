@@ -62,6 +62,15 @@ def test_a_neutral_scene_comes_out_neutral_through_the_kodak_curves(installed):
         assert float(diff.max() - diff.min()) < 0.12, ("a neutral ramp's layers disagree about the exposure", c, diff.round(3).tolist())
 
 
+def test_a_photo_that_used_the_first_kodak_profile_uses_the_corrected_one():
+    old = "kodak-gold-200-data-sheet"
+    m = Metering.from_dict({"engine": "print", "film_profile": old, "nor_stock": "film:" + old, "nor_variant": "film:" + old})
+    assert m.film_profile == GOLD and m.nor_stock == "film:" + GOLD and m.nor_variant == "film:" + GOLD
+    held = Metering(engine="noritsu", film_profile=old)
+    assert Metering.from_dict(held).film_profile == GOLD, "a metering already in memory is moved over too"
+    assert Metering.from_dict(Metering(film_profile=FOMA)).film_profile == FOMA and Metering.from_dict({"nor_stock": "portra400"}).nor_stock == "portra400"
+
+
 def test_the_profile_that_was_shipped_wrong_is_taken_out_of_a_folder_that_has_it(tmp_path):
     from photoeditor.features.densitometry import film_profile as fp
 

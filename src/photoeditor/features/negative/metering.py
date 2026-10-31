@@ -25,7 +25,21 @@ ENGINES = ("print", "standard", "negpy056", "noritsu")   # "noritsu" is the Nori
 DEFAULT_ENGINE = "print"
 BW_FILTER_KEYS = ("none", "yellow8", "deepyellow15", "orange21", "red25", "yellowgreen11", "green58")     # (printengine.BW_FILTERS, which this file cannot import: it is read first)
 NOR_VARIANTS = ("00000005", "00000002", "00000000")   # (noritsu.VARIANTS, which this file cannot import: it is read first)
+RENAMED_PROFILES = {"kodak-gold-200-data-sheet": "kodak-gold-200-kodak-e7022"}   # film profiles that were replaced under a new id (the first Kodak Gold 200 kept the base density in its curves): a photo that used the old one uses the new
 TRANSFERS = ("auto", "srgb", "bt709", "linear")   # how the scan's codes were made from light; "auto" reads it from the file (RAW decoded by EFAS: bt709, anything else: srgb)
+
+
+def _migrated(m: "Metering") -> "Metering":
+    """The metering with any film profile that has been replaced under a new id (RENAMED_PROFILES) pointing at its replacement, in the Curve menu, a Noritsu film Stock or a Noritsu film tone curve."""
+    changes = {}
+    for field, prefix in (("film_profile", ""), ("nor_stock", "film:"), ("nor_variant", "film:")):
+        value = getattr(m, field)
+        if prefix and not value.startswith(prefix):
+            continue
+        new = RENAMED_PROFILES.get(value[len(prefix):])
+        if new:
+            changes[field] = prefix + new
+    return dataclasses.replace(m, **changes) if changes else m
 
 
 def _num(value: Any, low: float, high: float, default: float) -> float:
@@ -122,7 +136,7 @@ class Metering:
         """Always valid: unknown keys are ignored, bad values fall back to the default, numbers are pulled into range. A saved dict with no conversion method was made before
         the NegPy Conversion existed and keeps the Original one; one with no scan encoding was made when every scan was read as sRGB and keeps that."""
         if isinstance(data, Metering):
-            return data
+            return _migrated(data)
         if not isinstance(data, dict):
             return cls()
         rect = None
@@ -134,7 +148,7 @@ class Metering:
                     rect = (x1, y1, x2, y2)
             except (TypeError, ValueError):
                 rect = None
-        return cls(
+        return _migrated(cls(
             buffer=_num(data.get("buffer"), 0.0, MAX_BUFFER, DEFAULT_BUFFER), rect=rect,
             range_clip=_num(data.get("range_clip"), -1.0, 1.0, 0.0), cast_removal=_num(data.get("cast_removal"), 0.0, 1.0, 1.0),
             white=_num(data.get("white"), -1.0, 1.0, 0.0), black=_num(data.get("black"), -1.0, 1.0, 0.0),
@@ -155,7 +169,7 @@ class Metering:
             hold_black=data.get("hold_black") is True, print_stock=data["print_stock"] if isinstance(data.get("print_stock"), str) and 0 < len(data["print_stock"]) <= 60 else "",
             stock_colour=_num(data.get("stock_colour"), 0.0, 1.0, 1.0), grey_balance=_num(data.get("grey_balance"), 0.0, 1.0, 0.0), contrast_mask=_num(data.get("contrast_mask"), 0.0, 1.0, 0.0),
             bw_filter=data["bw_filter"] if data.get("bw_filter") in BW_FILTER_KEYS else "", meter_frame=data.get("meter_frame") is True,
-        )
+        ))
 
 
 def changes(old: Metering, new: Metering) -> list[str]:
