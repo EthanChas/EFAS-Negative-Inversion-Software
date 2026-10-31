@@ -43,7 +43,7 @@ _SCRIPT = textwrap.dedent(r"""
     assert column(columns["exposure"]) == ["Exposure", "Contrast", "Shadows & Highlights", "Tone Equalizer", "Tone Curve", "Print Response"], column(columns["exposure"])
     assert column(columns["color"]) == ["Color", "Color Balance RGB", "Color Mixer", "Color Toning", "Lab Look", "Edge Color", "Halation"], column(columns["color"])
     assert column(columns["detail"]) == ["Chroma Denoise", "Local Contrast", "Sharpening", "Grain Sharpening", "Diffuse or Sharpen"], column(columns["detail"])
-    assert column(columns["watermark"]) == ["Finishing", "Watermark", "Canister Watermark"], column(columns["watermark"])
+    assert column(columns["watermark"]) == ["Finishing", "Negative Carrier", "Watermark", "Canister Watermark"], column(columns["watermark"])
     meta = column(columns["metadata"])
     assert meta[0] == "Tags", meta
     titles = [m._title for m in win.findChildren(CollapsiblePanel)]

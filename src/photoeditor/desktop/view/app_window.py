@@ -1251,12 +1251,14 @@ class AppWindow(QMainWindow):
                                         "with the print's histogram along the right. Needs an inverted negative.")
         self._hist_curve_btn.toggled.connect(self._on_histogram_curve_toggled)
         button_row.addWidget(self._hist_curve_btn)
+        second_row = QHBoxLayout()      # (a sixth button in the one row made the whole sidebar about 100 px wider: Split and Style go on a row of their own)
+        second_row.setSpacing(THEME.space_sm)
         self._hist_split_btn = QPushButton("Split")
         self._hist_split_btn.setCheckable(True)
         self._hist_split_btn.setChecked(app_settings.get("histogram_split"))
         self._hist_split_btn.setToolTip("Show red, green and blue one above the other, each on its own scale, instead of blended together (Color graph only)")
         self._hist_split_btn.toggled.connect(self._on_histogram_split_toggled)
-        button_row.addWidget(self._hist_split_btn)
+        second_row.addWidget(self._hist_split_btn)
         self._hist_style_btn = QPushButton("Style")
         self._hist_style_btn.setToolTip("How the graph is drawn: Chunky (every level, as it has always been), Smooth (a smoothed curve with value bars) or Bars (a bar graph in 64 steps)")
         style_menu = QMenu(self._hist_style_btn)
@@ -1267,9 +1269,11 @@ class AppWindow(QMainWindow):
             action.triggered.connect(lambda _c=False, k=key: self._on_histogram_style(k))
             self._hist_style_actions[key] = action
         self._hist_style_btn.setMenu(style_menu)
-        button_row.addWidget(self._hist_style_btn)
+        second_row.addWidget(self._hist_style_btn)
+        second_row.addStretch(1)
         self._mode_before_bw: str | None = None
         button_frame.layout().addLayout(button_row)
+        button_frame.layout().addLayout(second_row)
         body.addWidget(button_frame)
 
         self._clip_row = QWidget()
