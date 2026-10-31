@@ -78,6 +78,12 @@ _SCRIPT = textwrap.dedent(r"""
         assert data is not None and data["hist"].shape[0] == 4, engine
         assert panel._curve_data is data, "the panel is given the curve"
         assert float(data["curve"].max()) > float(data["curve"].min()), ("a curve that is not flat", engine)
+    # the density curve shows the tone the picture really gets: Exposure and Contrast move it, not only the conversion's own table
+    before = np.asarray(c.state.curve_view["curve"]).copy()
+    c.set_exposure_ev(1.0); pump(2.0)
+    after = np.asarray(c.state.curve_view["curve"])
+    assert not np.allclose(before, after), "the density curve follows the Exposure module"
+    c.set_exposure_ev(0.0); pump(1.5)
     win._hist_curve_btn.setChecked(True); pump(0.5)
     assert panel.curve_view() and S.load()["histogram_curve"] is True
     panel.resize(600, 260); pump(0.3)

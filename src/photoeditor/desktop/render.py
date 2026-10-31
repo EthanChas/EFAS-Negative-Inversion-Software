@@ -1327,7 +1327,13 @@ class Renderer:
             image = apply_crop(pixels, rect)
             stats = compute_stats(self._inside_frame(image, film_frame, rect)) if want_stats else None
             if stats is not None and curve_codes is not None:
-                stats["curve"] = curveview.build(curve_codes, curve_lut, converts_in_density(params.metering), printengine.DENSITY_SCALE)
+                table = curve_lut      # the conversion's own table, then what Exposure, Contrast, Print Response, the tone curves and Lab Look do to it (they are tables too), so the density curve shows the tone the picture really gets
+                if not blender.staged():
+                    try:
+                        table = np.ascontiguousarray(np.asarray(lab(tone(ramp)))[0].T)
+                    except Exception:      # (anything that is not a plain table: the conversion's own is shown)
+                        table = curve_lut
+                stats["curve"] = curveview.build(curve_codes, table, converts_in_density(params.metering), printengine.DENSITY_SCALE)
             overlay_rgba = None
             if overlay:
                 base_hw = (round(image.shape[0] / scale), round(image.shape[1] / scale))
