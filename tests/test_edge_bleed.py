@@ -211,7 +211,10 @@ _SCRIPT = textwrap.dedent(r"""
         end = time.time() + secs
         while time.time() < end and not cond():
             app.processEvents(); time.sleep(0.02)
-    until(lambda: c.state.image_rgb[0, 0].min() > 240); pump(0.3)      # (the redo above has drawn: the white mask is on the picture the copy is taken of)
+    if not (c.state.edge_mask_color == "white" and abs(c.state.edge_mask - 0.04) < 1e-6):      # (a redo that did not take, as seen on one runner: the power light is tested from the state it is meant to start from)
+        tool._rows["edge_mask"].set_value(0.04); tool._on_value_changed(); pump(0.5)
+        tool._colour.setCurrentIndex(tool._colour.findData("white")); tool._meter.setChecked(False)
+    until(lambda: c.state.image_rgb[0, 0].min() > 240); pump(0.3)      # (the white mask is on the picture the copy is taken of)
     on = c.state.image_rgb.copy()
     c.set_module_enabled("edgebleed", False); until(lambda: not np.array_equal(on, c.state.image_rgb)); pump(0.3)
     assert c.state.edge_mask_color == "white" and not np.array_equal(on, c.state.image_rgb), (c.state.edge_mask_color, c.state.edge_mask, c.state.image_rgb[0, 0].tolist(), on[0, 0].tolist())

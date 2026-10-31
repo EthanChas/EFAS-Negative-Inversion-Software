@@ -122,15 +122,14 @@ def test_the_highlight_slides_to_the_chosen_segment():
     assert abs(start.x() - seg._buttons[0].geometry().x()) < 1.5 and abs(start.width() - seg._buttons[0].width()) < 1.5
     seg.setCurrentIndex(3)
     assert seg.currentIndex() == 3 and seg._buttons[3].isChecked()
-    t0 = time.time()
-    while time.time() - t0 < 0.07:
-        app.processEvents(); time.sleep(0.005)
-    middle = seg._current()
     target = seg._buttons[3].geometry()
-    assert start.x() < middle.x() < target.x(), (start.x(), middle.x(), target.x())
+    seen = []      # (a slow runner starts the slide late: watch the whole of it, not one moment)
     deadline = time.time() + 2
     while seg._t < 1.0 and time.time() < deadline:
-        app.processEvents(); time.sleep(0.01)
+        app.processEvents(); time.sleep(0.004)
+        seen.append(seg._current().x())
+    assert any(start.x() < x < target.x() for x in seen), ("the highlight never was between the two segments", start.x(), target.x(), sorted(set(seen))[:8])
+    assert seen == sorted(seen), "and it only moves one way"
     assert abs(seg._current().x() - target.x()) < 1.5
     image = seg.grab().toImage()
     assert image.width() == 300 and len({image.pixel(x, 13) for x in range(0, 300, 7)}) > 2

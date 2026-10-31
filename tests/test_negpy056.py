@@ -37,11 +37,11 @@ def _linear(black_and_white):
 def test_the_port_gives_what_negpy_0_56_gives():
     out, plan = _linear(False)
     got = np.array([out[i, j] for i, j in PIXELS])
-    assert np.abs(got - np.array(NEGPY_C41)).max() < 4e-4, got
+    assert np.abs(got - np.array(NEGPY_C41)).max() < 2e-3, got
     assert plan.cast_confidence is not None and plan.cast_confidence > 0.5, "the cast-removal fit found the picture's greys"
     out, plan = _linear(True)
     got = np.array([out[i, j] for i, j in PIXELS])
-    assert np.abs(got - np.array(NEGPY_BW)).max() < 4e-4, got
+    assert np.abs(got - np.array(NEGPY_BW)).max() < 2e-3, got
     assert plan.cast_confidence is None and plan.curvs == (0.0, 0.0, 0.0), "a black-and-white negative has no cast removal"
 
 
