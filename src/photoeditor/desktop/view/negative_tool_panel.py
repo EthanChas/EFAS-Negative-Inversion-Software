@@ -475,6 +475,15 @@ class NegativeToolPanel(CollapsiblePanel):
         self._settle_timer.setSingleShot(True)
         self._settle_timer.setInterval(_SETTLE_DEBOUNCE_MS)
         self._settle_timer.timeout.connect(self._on_settled)
+        self._fit_dropdowns()
+
+    def _fit_dropdowns(self) -> None:
+        """No drop-down sets the panel's width by its longest item (Method and Film did: the panel was wider than its column, so its right side was clipped): each takes the room it is
+        given, and a long item is cut with an ellipsis."""
+        for combo in self.findChildren(QComboBox):
+            if combo.sizeAdjustPolicy() != QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon:
+                combo.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
+                combo.setMinimumContentsLength(10)
 
     def _pick_light(self, name: str, kelvin: float) -> None:
         self.light_source_requested.emit(*lightsource.trim_for(kelvin), name)
@@ -758,8 +767,9 @@ class NegativeToolPanel(CollapsiblePanel):
         body.addWidget(stock_row)
         self._nor_widgets.append(stock_row)
         profile_row = QWidget()
-        profile_layout = QHBoxLayout(profile_row)
+        profile_layout = QVBoxLayout(profile_row)      # (one above the other: side by side the two buttons were wider than the rest of the panel, and its right side was clipped)
         profile_layout.setContentsMargins(0, 0, 0, 0)
+        profile_layout.setSpacing(THEME.space_sm)
         self._nor_import = QPushButton("Import profile...")
         self._nor_import.setToolTip("Add a calibration profile of your own to the Stock list: a .npz file such as noritsu-tool's calibrate writes (lut, dmin, dmax).")
         self._nor_import.clicked.connect(self._on_nor_import)

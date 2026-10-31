@@ -238,7 +238,9 @@ class _ToolListScroll(QScrollArea):
         if widget is None:
             return super().sizeHint()
         hint = widget.sizeHint()
-        return QSize(hint.width(), min(hint.height(), self.maximumHeight()))
+        # (a tab taller than it may be gets a scroll bar, which takes its share of the width: without it the content was wider than what was left and its right side was clipped)
+        bar = self.verticalScrollBar().sizeHint().width() if (hint.height() > self.maximumHeight() or self.verticalScrollBar().isVisible()) else 0
+        return QSize(hint.width() + bar, min(hint.height(), self.maximumHeight()))
 
 
 class _ClickableLabel(QLabel):
@@ -1451,6 +1453,7 @@ class AppWindow(QMainWindow):
         self._negative_tool.rgb_changed.connect(self.controller.set_invert_rgb)
         self._negative_tool.light_source_requested.connect(self._on_light_source)
         self._negative_tool.metering_changed.connect(self.controller.set_metering)
+        self._negative_tool.metering_changed.connect(lambda _m: QTimer.singleShot(0, self._refit_negative_tab))      # (another conversion method has other controls, which may need more room)
         self._negative_tool.pick_better_requested.connect(self._open_pick_better)
         self._negative_tool.metering_preview.connect(self.controller.preview_metering)
         self._negative_tool.region_draw_toggled.connect(self._on_region_draw_toggled)
@@ -5322,6 +5325,12 @@ class AppWindow(QMainWindow):
 
         QTimer.singleShot(240, fold)
 
+    def _refit_negative_tab(self) -> None:
+        """The Convert tab is open and its controls changed (a conversion method has controls of its own): give it the room it now needs, as opening it does."""
+        panel = self._tool_tab_panels().get("negative")
+        if panel is not None and panel._is_open:
+            self._fit_sidebar_to_tab(panel)
+
     def _fit_sidebar_to_tab(self, panel) -> None:
         """Widen the right sidebar, at the image's expense, when the opened tab needs more room than the sidebar has - otherwise the
         tab's controls run past the window's right edge. A tab's real minimum is its content's own, or the scroll area's floor if larger."""
@@ -5335,6 +5344,9 @@ class AppWindow(QMainWindow):
             self._tool_rail.width() + THEME.space_sm + max(inner, scroll.minimumWidth(), scroll.minimumSizeHint().width())
             + scrollbar + 2 + THEME.space_md + 4
         )
+        overflow = inner - scroll.viewport().width()      # (what the tab's content is wider than the room it really has: the sum above leaves out a few margins)
+        if overflow > 0 and scroll.viewport().width() > 0:
+            needed = max(needed, right + overflow)
         if needed > right:
             grow = min(needed - right, max(center - 200, 0))
             self._splitter.setSizes([left, center - grow, right + grow])
